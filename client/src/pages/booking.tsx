@@ -300,10 +300,9 @@ export default function Booking() {
                       return (
                         <div
                           key={service.id}
-                          className={`border rounded-md p-4 cursor-pointer hover-elevate ${
+                          className={`border rounded-md p-4 ${
                             isSelected ? "border-primary bg-primary/5" : ""
                           }`}
-                          onClick={() => toggleService(service.id)}
                           data-testid={`service-${service.id}`}
                         >
                           <div className="flex items-start gap-4">

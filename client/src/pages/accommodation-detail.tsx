@@ -14,6 +14,11 @@ export default function AccommodationDetail() {
   
   const { data: accommodation, isLoading } = useQuery<Accommodation>({
     queryKey: ["/api/accommodations", id],
+    queryFn: async () => {
+      const response = await fetch(`/api/accommodations/${id}`);
+      if (!response.ok) throw new Error("Failed to fetch accommodation");
+      return response.json();
+    },
   });
 
   if (isLoading) {
@@ -76,7 +81,7 @@ export default function AccommodationDetail() {
                     </div>
                     <div className="flex items-center gap-1">
                       <Star className="h-4 w-4 fill-primary text-primary" />
-                      <span className="font-medium">{accommodation.rating / 10}</span>
+                      <span className="font-medium">{(accommodation.rating / 10).toFixed(1)}</span>
                       <span className="text-sm">({accommodation.reviewCount} reviews)</span>
                     </div>
                   </div>

@@ -98,7 +98,7 @@ export default function Accommodations() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1">
                     <Star className="h-4 w-4 fill-primary text-primary" />
-                    <span className="font-medium">{accommodation.rating / 10}</span>
+                    <span className="font-medium">{(accommodation.rating / 10).toFixed(1)}</span>
                     <span className="text-sm text-muted-foreground">
                       ({accommodation.reviewCount})
                     </span>

@@ -59,7 +59,7 @@ export class MemStorage implements IStorage {
         bedrooms: 4,
         bathrooms: 4,
         imageUrl: "/attached_assets/generated_images/Luxury_beachfront_villa_hero_b917e1ae.png",
-        rating: 48,
+        rating: 48, // Stored as integer (4.8 * 10) for consistency
         reviewCount: 127,
         amenities: ["Ocean View", "Infinity Pool", "Beach Access", "WiFi", "Air Conditioning", "Full Kitchen", "Parking"],
       },
@@ -72,7 +72,7 @@ export class MemStorage implements IStorage {
         bedrooms: 3,
         bathrooms: 3,
         imageUrl: "/attached_assets/generated_images/Mountain_cabin_accommodation_49b66a1c.png",
-        rating: 47,
+        rating: 47, // Stored as integer (4.7 * 10)
         reviewCount: 94,
         amenities: ["Mountain View", "Fireplace", "Hot Tub", "WiFi", "Heating", "Full Kitchen", "Ski Storage"],
       },
@@ -85,7 +85,7 @@ export class MemStorage implements IStorage {
         bedrooms: 2,
         bathrooms: 2,
         imageUrl: "/attached_assets/generated_images/City_penthouse_accommodation_12c167e3.png",
-        rating: 49,
+        rating: 49, // Stored as integer (4.9 * 10)
         reviewCount: 156,
         amenities: ["City View", "Rooftop Access", "Gym", "WiFi", "Air Conditioning", "Full Kitchen", "Concierge"],
       },
@@ -98,7 +98,7 @@ export class MemStorage implements IStorage {
         bedrooms: 3,
         bathrooms: 2,
         imageUrl: "/attached_assets/generated_images/Mediterranean_villa_accommodation_649da59e.png",
-        rating: 50,
+        rating: 50, // Stored as integer (5.0 * 10)
         reviewCount: 203,
         amenities: ["Sea View", "Private Terrace", "Pool", "WiFi", "Air Conditioning", "Full Kitchen", "BBQ Area"],
       },
@@ -163,7 +163,7 @@ export class MemStorage implements IStorage {
       {
         name: "Elite Car Rentals",
         serviceType: "car-rental",
-        rating: 48,
+        rating: 48, // Stored as integer (4.8 * 10)
         reviewCount: 342,
         experience: 8,
         bio: "Premium car rental service specializing in luxury and exotic vehicles with white-glove service.",
@@ -174,7 +174,7 @@ export class MemStorage implements IStorage {
       {
         name: "Chef Marcus Anderson",
         serviceType: "personal-cook",
-        rating: 50,
+        rating: 50, // Stored as integer (5.0 * 10)
         reviewCount: 128,
         experience: 15,
         bio: "Award-winning chef with Michelin-star experience. Specializes in farm-to-table and international cuisine.",
@@ -185,7 +185,7 @@ export class MemStorage implements IStorage {
       {
         name: "Prestige Chauffeur Service",
         serviceType: "car-with-driver",
-        rating: 49,
+        rating: 49, // Stored as integer (4.9 * 10)
         reviewCount: 456,
         experience: 12,
         bio: "Professional chauffeur service with certified drivers and luxury fleet. Background-checked and insured.",
