@@ -762,14 +762,20 @@ We believe luxury service is built on trust, and our vetting process ensures you
   async createBlogPost(insertBlogPost: InsertBlogPost): Promise<BlogPost> {
     const id = randomUUID();
     const now = new Date().toISOString();
+    const status = insertBlogPost.status ?? "draft";
+    // Auto-set publishedAt to now if status is published and publishedAt not provided
+    const publishedAt = status === "published" && !insertBlogPost.publishedAt 
+      ? now 
+      : insertBlogPost.publishedAt ?? null;
+    
     const blogPost: BlogPost = { 
       ...insertBlogPost, 
       id,
       createdAt: now,
       updatedAt: now,
-      status: insertBlogPost.status ?? "draft",
+      status,
       featuredImage: insertBlogPost.featuredImage ?? null,
-      publishedAt: insertBlogPost.publishedAt ?? null,
+      publishedAt,
     };
     this.blogPosts.set(id, blogPost);
     return blogPost;
@@ -779,7 +785,15 @@ We believe luxury service is built on trust, and our vetting process ensures you
     const existing = this.blogPosts.get(id);
     if (!existing) return undefined;
     const updatedAt = new Date().toISOString();
-    const updated: BlogPost = { ...existing, ...update, updatedAt };
+    
+    // Auto-set publishedAt if status is being changed to published and publishedAt not provided
+    const newStatus = update.status ?? existing.status;
+    let publishedAt = update.publishedAt ?? existing.publishedAt;
+    if (newStatus === "published" && !publishedAt) {
+      publishedAt = updatedAt;
+    }
+    
+    const updated: BlogPost = { ...existing, ...update, updatedAt, publishedAt };
     this.blogPosts.set(id, updated);
     return updated;
   }
