@@ -1,7 +1,13 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertBookingSchema } from "@shared/schema";
+import {
+  insertBookingSchema,
+  insertAccommodationSchema,
+  insertServiceSchema,
+  insertProviderSchema,
+  insertBlogPostSchema,
+} from "@shared/schema";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Accommodations
@@ -110,6 +116,221 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else {
         res.status(500).json({ error: "Failed to create booking" });
       }
+    }
+  });
+
+  // Blog Posts (Public)
+  app.get("/api/blog", async (_req, res) => {
+    try {
+      const posts = await storage.getPublishedBlogPosts();
+      res.json(posts);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch blog posts" });
+    }
+  });
+
+  app.get("/api/blog/:slug", async (req, res) => {
+    try {
+      const post = await storage.getBlogPostBySlug(req.params.slug);
+      if (!post || post.status !== "published") {
+        return res.status(404).json({ error: "Blog post not found" });
+      }
+      res.json(post);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch blog post" });
+    }
+  });
+
+  // ===== ADMIN ROUTES =====
+  
+  // Admin Dashboard Analytics
+  app.get("/api/admin/dashboard", async (_req, res) => {
+    try {
+      const metrics = await storage.getDashboardMetrics();
+      res.json(metrics);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch dashboard metrics" });
+    }
+  });
+
+  app.get("/api/admin/analytics/popular-services", async (_req, res) => {
+    try {
+      const popularServices = await storage.getPopularServices();
+      res.json(popularServices);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch popular services" });
+    }
+  });
+
+  app.get("/api/admin/analytics/revenue", async (_req, res) => {
+    try {
+      const revenue = await storage.getRevenueByMonth();
+      res.json(revenue);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch revenue data" });
+    }
+  });
+
+  // Admin Accommodations Management
+  app.post("/api/admin/accommodations", async (req, res) => {
+    try {
+      const validatedData = insertAccommodationSchema.parse(req.body);
+      const accommodation = await storage.createAccommodation(validatedData);
+      res.status(201).json(accommodation);
+    } catch (error) {
+      if (error instanceof Error) {
+        res.status(400).json({ error: error.message });
+      } else {
+        res.status(500).json({ error: "Failed to create accommodation" });
+      }
+    }
+  });
+
+  app.patch("/api/admin/accommodations/:id", async (req, res) => {
+    try {
+      const accommodation = await storage.updateAccommodation(req.params.id, req.body);
+      if (!accommodation) {
+        return res.status(404).json({ error: "Accommodation not found" });
+      }
+      res.json(accommodation);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update accommodation" });
+    }
+  });
+
+  app.delete("/api/admin/accommodations/:id", async (req, res) => {
+    try {
+      const success = await storage.deleteAccommodation(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Accommodation not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete accommodation" });
+    }
+  });
+
+  // Admin Services Management
+  app.post("/api/admin/services", async (req, res) => {
+    try {
+      const validatedData = insertServiceSchema.parse(req.body);
+      const service = await storage.createService(validatedData);
+      res.status(201).json(service);
+    } catch (error) {
+      if (error instanceof Error) {
+        res.status(400).json({ error: error.message });
+      } else {
+        res.status(500).json({ error: "Failed to create service" });
+      }
+    }
+  });
+
+  app.patch("/api/admin/services/:id", async (req, res) => {
+    try {
+      const service = await storage.updateService(req.params.id, req.body);
+      if (!service) {
+        return res.status(404).json({ error: "Service not found" });
+      }
+      res.json(service);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update service" });
+    }
+  });
+
+  app.delete("/api/admin/services/:id", async (req, res) => {
+    try {
+      const success = await storage.deleteService(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Service not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete service" });
+    }
+  });
+
+  // Admin Bookings Management
+  app.patch("/api/admin/bookings/:id", async (req, res) => {
+    try {
+      const booking = await storage.updateBooking(req.params.id, req.body);
+      if (!booking) {
+        return res.status(404).json({ error: "Booking not found" });
+      }
+      res.json(booking);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update booking" });
+    }
+  });
+
+  app.delete("/api/admin/bookings/:id", async (req, res) => {
+    try {
+      const success = await storage.deleteBooking(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Booking not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete booking" });
+    }
+  });
+
+  // Admin Blog Management
+  app.get("/api/admin/blog", async (_req, res) => {
+    try {
+      const posts = await storage.getBlogPosts();
+      res.json(posts);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch blog posts" });
+    }
+  });
+
+  app.get("/api/admin/blog/:id", async (req, res) => {
+    try {
+      const post = await storage.getBlogPost(req.params.id);
+      if (!post) {
+        return res.status(404).json({ error: "Blog post not found" });
+      }
+      res.json(post);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch blog post" });
+    }
+  });
+
+  app.post("/api/admin/blog", async (req, res) => {
+    try {
+      const validatedData = insertBlogPostSchema.parse(req.body);
+      const blogPost = await storage.createBlogPost(validatedData);
+      res.status(201).json(blogPost);
+    } catch (error) {
+      if (error instanceof Error) {
+        res.status(400).json({ error: error.message });
+      } else {
+        res.status(500).json({ error: "Failed to create blog post" });
+      }
+    }
+  });
+
+  app.patch("/api/admin/blog/:id", async (req, res) => {
+    try {
+      const blogPost = await storage.updateBlogPost(req.params.id, req.body);
+      if (!blogPost) {
+        return res.status(404).json({ error: "Blog post not found" });
+      }
+      res.json(blogPost);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update blog post" });
+    }
+  });
+
+  app.delete("/api/admin/blog/:id", async (req, res) => {
+    try {
+      const success = await storage.deleteBlogPost(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Blog post not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete blog post" });
     }
   });
 
