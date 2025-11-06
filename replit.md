@@ -1,7 +1,7 @@
-# Luxescape - Lifestyle Concierge Platform
+# Tembea Bila Matata - Lifestyle Concierge Platform
 
 ## Overview
-Luxescape is a premium lifestyle concierge platform that seamlessly integrates luxury accommodation bookings with essential local services. The platform bridges the gap between Airbnb's convenience and hotel-style concierge service, offering guests a single booking experience with access to vetted service providers.
+Tembea Bila Matata is a premium lifestyle concierge platform that seamlessly integrates luxury accommodation bookings with essential local services. The platform bridges the gap between Airbnb's convenience and hotel-style concierge service, offering guests a single booking experience with access to vetted service providers. Travel Local. Stay Easy. Live Bila Matata.
 
 ## Core Features
 - **Luxury Accommodations**: Browse and book premium properties with detailed listings and high-quality imagery

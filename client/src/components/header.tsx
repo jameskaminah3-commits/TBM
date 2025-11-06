@@ -14,7 +14,7 @@ export function Header() {
           className="flex items-center space-x-2"
           data-testid="link-home"
         >
-          <span className="font-serif text-2xl font-semibold">Luxescape</span>
+          <span className="font-serif text-xl md:text-2xl font-semibold">Tembea Bila Matata</span>
         </Link>
 
         <nav className="hidden md:flex items-center space-x-6">

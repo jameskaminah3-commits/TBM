@@ -1,5 +1,5 @@
 import { useLocation } from "wouter";
-import { Search, MapPin, Calendar, Users, Star, Car, ChefHat, ShoppingBag, CheckCircle2 } from "lucide-react";
+import { Search, MapPin, Calendar, Users, Home as HomeIcon, Car, ChefHat, ShoppingBag, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -20,12 +20,12 @@ export default function Home() {
         <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/50 to-black/70" />
         
         <div className="relative z-10 container mx-auto px-4 md:px-8 text-center">
-          <h1 className="font-serif text-5xl md:text-6xl lg:text-7xl font-semibold text-white mb-6 leading-tight">
-            Your Home Away<br />From Home
+          <h1 className="font-serif text-4xl md:text-5xl lg:text-6xl font-semibold text-white mb-6 leading-tight">
+            Stay + Drive + Dine + Relax<br />
+            <span className="text-3xl md:text-4xl lg:text-5xl">— All in One Place</span>
           </h1>
           <p className="text-lg md:text-xl text-white/90 mb-12 max-w-2xl mx-auto leading-relaxed">
-            Luxury accommodations paired with vetted local services.<br />
-            One booking. One payment. Unforgettable experiences.
+            Travel Local. Stay Easy. Live Bila Matata.
           </p>
 
           {/* Search Widget */}
@@ -95,58 +95,78 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Services Section */}
+      {/* Service Icons Section */}
+      <section className="py-16 md:py-20 bg-muted/30">
+        <div className="container mx-auto px-4 md:px-8">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 md:gap-12 max-w-4xl mx-auto">
+            <div className="text-center" data-testid="service-icon-stay">
+              <div className="w-20 h-20 mx-auto mb-4 flex items-center justify-center">
+                <HomeIcon className="w-16 h-16 text-primary" strokeWidth={1.5} />
+              </div>
+              <h3 className="text-lg font-semibold">Stay</h3>
+            </div>
+
+            <div className="text-center" data-testid="service-icon-drive">
+              <div className="w-20 h-20 mx-auto mb-4 flex items-center justify-center">
+                <Car className="w-16 h-16 text-primary" strokeWidth={1.5} />
+              </div>
+              <h3 className="text-lg font-semibold">Drive</h3>
+            </div>
+
+            <div className="text-center" data-testid="service-icon-dine">
+              <div className="w-20 h-20 mx-auto mb-4 flex items-center justify-center">
+                <ChefHat className="w-16 h-16 text-primary" strokeWidth={1.5} />
+              </div>
+              <h3 className="text-lg font-semibold">Dine</h3>
+            </div>
+
+            <div className="text-center" data-testid="service-icon-relax">
+              <div className="w-20 h-20 mx-auto mb-4 flex items-center justify-center">
+                <ShoppingBag className="w-16 h-16 text-primary" strokeWidth={1.5} />
+              </div>
+              <h3 className="text-lg font-semibold">Relax</h3>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* How It Works Section */}
       <section className="py-20 md:py-24">
         <div className="container mx-auto px-4 md:px-8">
           <div className="text-center mb-16">
-            <h2 className="font-serif text-4xl md:text-5xl font-semibold mb-4">Curated Local Services</h2>
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              Enhance your stay with our vetted network of local providers, all managed with clear service-level agreements
-            </p>
+            <h2 className="font-serif text-4xl md:text-5xl font-semibold mb-4">How It Works</h2>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <Card className="p-6 hover-elevate cursor-pointer" data-testid="card-service-car">
-              <div className="w-12 h-12 rounded-md bg-primary/10 flex items-center justify-center mb-4">
-                <Car className="h-6 w-6 text-primary" />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-12 max-w-5xl mx-auto">
+            <div className="text-center">
+              <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center mx-auto mb-6">
+                <MapPin className="h-10 w-10 text-primary" />
               </div>
-              <h3 className="text-xl font-semibold mb-2">Car Rentals</h3>
-              <p className="text-muted-foreground mb-4">
-                Self-drive or chauffeur-driven vehicles. Premium fleet with insurance and 24/7 support.
+              <h3 className="text-xl font-semibold mb-3">Choose a Stay</h3>
+              <p className="text-muted-foreground">
+                Browse our curated selection of premium accommodations in your desired destination
               </p>
-              <div className="flex items-center gap-2">
-                <Badge variant="secondary" className="text-xs">From $50/day</Badge>
-                <Badge variant="outline" className="text-xs">24hr Response</Badge>
-              </div>
-            </Card>
+            </div>
 
-            <Card className="p-6 hover-elevate cursor-pointer" data-testid="card-service-chef">
-              <div className="w-12 h-12 rounded-md bg-primary/10 flex items-center justify-center mb-4">
-                <ChefHat className="h-6 w-6 text-primary" />
+            <div className="text-center">
+              <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center mx-auto mb-6">
+                <CheckCircle2 className="h-10 w-10 text-primary" />
               </div>
-              <h3 className="text-xl font-semibold mb-2">Personal Chefs</h3>
-              <p className="text-muted-foreground mb-4">
-                Experienced chefs for in-home dining. Custom menus tailored to your preferences.
+              <h3 className="text-xl font-semibold mb-3">Add Your Services</h3>
+              <p className="text-muted-foreground">
+                Select from car rentals, personal chefs, and local errand services to enhance your stay
               </p>
-              <div className="flex items-center gap-2">
-                <Badge variant="secondary" className="text-xs">From $150/meal</Badge>
-                <Badge variant="outline" className="text-xs">Verified</Badge>
-              </div>
-            </Card>
+            </div>
 
-            <Card className="p-6 hover-elevate cursor-pointer" data-testid="card-service-errands">
-              <div className="w-12 h-12 rounded-md bg-primary/10 flex items-center justify-center mb-4">
-                <ShoppingBag className="h-6 w-6 text-primary" />
+            <div className="text-center">
+              <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center mx-auto mb-6">
+                <CheckCircle2 className="h-10 w-10 text-primary" />
               </div>
-              <h3 className="text-xl font-semibold mb-2">Errand Services</h3>
-              <p className="text-muted-foreground mb-4">
-                Shopping, fridge stocking, and local errands. Arrive to a fully prepared home.
+              <h3 className="text-xl font-semibold mb-3">Pay Securely</h3>
+              <p className="text-muted-foreground">
+                Complete your booking with one secure payment for accommodation and all services
               </p>
-              <div className="flex items-center gap-2">
-                <Badge variant="secondary" className="text-xs">From $30/service</Badge>
-                <Badge variant="outline" className="text-xs">Same-day</Badge>
-              </div>
-            </Card>
+            </div>
           </div>
         </div>
       </section>
@@ -155,7 +175,7 @@ export default function Home() {
       <section className="py-20 md:py-24 bg-muted/30">
         <div className="container mx-auto px-4 md:px-8">
           <div className="text-center mb-16">
-            <h2 className="font-serif text-4xl md:text-5xl font-semibold mb-4">Why Luxescape</h2>
+            <h2 className="font-serif text-4xl md:text-5xl font-semibold mb-4">Why Tembea Bila Matata</h2>
             <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
               We bridge the gap between Airbnb convenience and hotel-style concierge service
             </p>
