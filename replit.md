@@ -7,10 +7,11 @@ Tembea Bila Matata is a premium lifestyle concierge platform that seamlessly int
 - **Luxury Accommodations**: Browse and book premium properties with detailed listings and high-quality imagery
 - **Curated Services**: Add-on services including car rentals (with/without drivers), personal chefs, and errand services
 - **Interactive Service Browsing**: Dedicated pages for Drive, Dine, and Relax services with detailed filtering and options
+- **Standalone Service Booking**: Book services independently without accommodation - perfect for locals or existing guests
 - **Diverse Car Rental Options**: 6 different vehicle types including self-driven and chauffeur options with various vehicle types (sedan, SUV, luxury, van)
-- **Single Checkout**: One booking, one payment for accommodation and all selected services
+- **Flexible Booking Options**: Book accommodation with services OR book services alone
 - **Vetted Providers**: Background-checked service professionals with clear SLA agreements
-- **Booking Management**: Complete dashboard for managing reservations and services
+- **Booking Management**: Complete dashboard for managing both accommodation and service-only reservations
 - **Responsive Design**: Beautiful, mobile-optimized interface following Airbnb-inspired design patterns
 
 ## Tech Stack
@@ -54,7 +55,7 @@ Tembea Bila Matata is a premium lifestyle concierge platform that seamlessly int
 - **Accommodations**: Properties with pricing, amenities, and capacity
 - **Services**: Add-on services with type, pricing, descriptions, and car rental specific fields (deliveryType, vehicleType, transmission, seatingCapacity)
 - **Providers**: Vetted service professionals with ratings and SLA info
-- **Bookings**: Guest reservations with dates, services, and total pricing
+- **Bookings**: Guest reservations with dates, services, and total pricing. Supports both accommodation+service bookings and standalone service bookings (accommodationId optional, bookingType: "accommodation" or "service")
 
 ## Service Types
 - **Car Rentals**: 6 options including self-driven (compact sedan, luxury SUV, sports car, budget manual) and chauffeur-driven (luxury sedan, executive van)
@@ -76,10 +77,13 @@ Tembea Bila Matata is a premium lifestyle concierge platform that seamlessly int
 - `/services/drive` - Browse car rental services (self-driven & chauffeur options)
 - `/services/dine` - Browse personal chef services
 - `/services/relax` - Browse shopping and errand services
-- `/book/:id` - Booking form with service selection
-- `/bookings` - Booking history and management
+- `/book/:id` - Booking form for accommodation with service selection
+- `/book/service/:id` - Standalone service booking form (no accommodation required)
+- `/bookings` - Booking history and management (shows both accommodation and service-only bookings)
 
 ## Recent Changes (November 6, 2025)
+
+### Session 1: Core Service Browsing
 - **Branding Update**: Changed platform name to "Tembea Bila Matata" with tagline "Travel Local. Stay Easy. Live Bila Matata."
 - **Homepage Redesign**: Updated hero section with "Stay + Drive + Dine + Relax — All in One Place" and added How It Works section
 - **Interactive Service Icons**: Made all 4 service icons clickable with navigation to respective service pages
@@ -94,7 +98,19 @@ Tembea Bila Matata is a premium lifestyle concierge platform that seamlessly int
   - /services/dine - Personal chef and cooking services
   - /services/relax - Shopping, errands, and convenience services
 - **Enhanced Schema**: Updated services schema to support car rental specific attributes
-- **Complete E2E Testing**: All navigation and service browsing flows tested and verified working
+
+### Session 2: Standalone Service Booking
+- **Independent Service Purchasing**: Users can now book services without accommodation
+- **New Booking Page**: Created /book/service/:id for standalone service bookings with:
+  - Service details and pricing display
+  - Start/end date selection
+  - Guest information form
+  - Dynamic price calculation (per-day vs one-time services)
+  - Real-time booking summary
+- **Schema Enhancement**: Made accommodationId optional in bookings, added bookingType field
+- **Bookings Page Update**: Now displays both accommodation+service and service-only bookings with distinct UI for each type
+- **Complete Integration**: All "Book Now" buttons on service pages navigate to standalone booking flow
+- **Full E2E Testing**: Complete booking flow tested from service selection through booking confirmation
 
 ## User Experience Highlights
 - Hero section with immersive background imagery
