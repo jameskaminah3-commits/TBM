@@ -7,6 +7,11 @@ import {
   type InsertProvider,
   type Booking,
   type InsertBooking,
+  type BlogPost,
+  type InsertBlogPost,
+  type DashboardMetrics,
+  type PopularService,
+  type RevenueByMonth,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 
@@ -15,22 +20,44 @@ export interface IStorage {
   getAccommodations(): Promise<Accommodation[]>;
   getAccommodation(id: string): Promise<Accommodation | undefined>;
   createAccommodation(accommodation: InsertAccommodation): Promise<Accommodation>;
+  updateAccommodation(id: string, accommodation: Partial<InsertAccommodation>): Promise<Accommodation | undefined>;
+  deleteAccommodation(id: string): Promise<boolean>;
 
   // Services
   getServices(): Promise<Service[]>;
   getService(id: string): Promise<Service | undefined>;
   createService(service: InsertService): Promise<Service>;
+  updateService(id: string, service: Partial<InsertService>): Promise<Service | undefined>;
+  deleteService(id: string): Promise<boolean>;
 
   // Providers
   getProviders(): Promise<Provider[]>;
   getProvider(id: string): Promise<Provider | undefined>;
   getProvidersByServiceType(serviceType: string): Promise<Provider[]>;
   createProvider(provider: InsertProvider): Promise<Provider>;
+  updateProvider(id: string, provider: Partial<InsertProvider>): Promise<Provider | undefined>;
+  deleteProvider(id: string): Promise<boolean>;
 
   // Bookings
   getBookings(): Promise<Booking[]>;
   getBooking(id: string): Promise<Booking | undefined>;
   createBooking(booking: InsertBooking): Promise<Booking>;
+  updateBooking(id: string, booking: Partial<InsertBooking>): Promise<Booking | undefined>;
+  deleteBooking(id: string): Promise<boolean>;
+
+  // Blog Posts
+  getBlogPosts(): Promise<BlogPost[]>;
+  getPublishedBlogPosts(): Promise<BlogPost[]>;
+  getBlogPost(id: string): Promise<BlogPost | undefined>;
+  getBlogPostBySlug(slug: string): Promise<BlogPost | undefined>;
+  createBlogPost(blogPost: InsertBlogPost): Promise<BlogPost>;
+  updateBlogPost(id: string, blogPost: Partial<InsertBlogPost>): Promise<BlogPost | undefined>;
+  deleteBlogPost(id: string): Promise<boolean>;
+
+  // Analytics
+  getDashboardMetrics(): Promise<DashboardMetrics>;
+  getPopularServices(): Promise<PopularService[]>;
+  getRevenueByMonth(): Promise<RevenueByMonth[]>;
 }
 
 export class MemStorage implements IStorage {
@@ -38,12 +65,14 @@ export class MemStorage implements IStorage {
   private services: Map<string, Service>;
   private providers: Map<string, Provider>;
   private bookings: Map<string, Booking>;
+  private blogPosts: Map<string, BlogPost>;
 
   constructor() {
     this.accommodations = new Map();
     this.services = new Map();
     this.providers = new Map();
     this.bookings = new Map();
+    this.blogPosts = new Map();
     this.seedData();
   }
 
@@ -336,6 +365,18 @@ export class MemStorage implements IStorage {
     return accommodation;
   }
 
+  async updateAccommodation(id: string, update: Partial<InsertAccommodation>): Promise<Accommodation | undefined> {
+    const existing = this.accommodations.get(id);
+    if (!existing) return undefined;
+    const updated: Accommodation = { ...existing, ...update };
+    this.accommodations.set(id, updated);
+    return updated;
+  }
+
+  async deleteAccommodation(id: string): Promise<boolean> {
+    return this.accommodations.delete(id);
+  }
+
   // Services
   async getServices(): Promise<Service[]> {
     return Array.from(this.services.values());
@@ -358,6 +399,18 @@ export class MemStorage implements IStorage {
     };
     this.services.set(id, service);
     return service;
+  }
+
+  async updateService(id: string, update: Partial<InsertService>): Promise<Service | undefined> {
+    const existing = this.services.get(id);
+    if (!existing) return undefined;
+    const updated: Service = { ...existing, ...update };
+    this.services.set(id, updated);
+    return updated;
+  }
+
+  async deleteService(id: string): Promise<boolean> {
+    return this.services.delete(id);
   }
 
   // Providers
@@ -387,6 +440,18 @@ export class MemStorage implements IStorage {
     return provider;
   }
 
+  async updateProvider(id: string, update: Partial<InsertProvider>): Promise<Provider | undefined> {
+    const existing = this.providers.get(id);
+    if (!existing) return undefined;
+    const updated: Provider = { ...existing, ...update };
+    this.providers.set(id, updated);
+    return updated;
+  }
+
+  async deleteProvider(id: string): Promise<boolean> {
+    return this.providers.delete(id);
+  }
+
   // Bookings
   async getBookings(): Promise<Booking[]> {
     return Array.from(this.bookings.values());
@@ -403,10 +468,149 @@ export class MemStorage implements IStorage {
       ...insertBooking, 
       id, 
       createdAt,
+      accommodationId: insertBooking.accommodationId ?? null,
       status: insertBooking.status ?? "upcoming",
+      bookingType: insertBooking.bookingType ?? "accommodation",
     };
     this.bookings.set(id, booking);
     return booking;
+  }
+
+  async updateBooking(id: string, update: Partial<InsertBooking>): Promise<Booking | undefined> {
+    const existing = this.bookings.get(id);
+    if (!existing) return undefined;
+    const updated: Booking = { ...existing, ...update };
+    this.bookings.set(id, updated);
+    return updated;
+  }
+
+  async deleteBooking(id: string): Promise<boolean> {
+    return this.bookings.delete(id);
+  }
+
+  // Blog Posts
+  async getBlogPosts(): Promise<BlogPost[]> {
+    return Array.from(this.blogPosts.values()).sort((a, b) => 
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  }
+
+  async getPublishedBlogPosts(): Promise<BlogPost[]> {
+    return Array.from(this.blogPosts.values())
+      .filter(post => post.status === "published" && post.publishedAt)
+      .sort((a, b) => 
+        new Date(b.publishedAt!).getTime() - new Date(a.publishedAt!).getTime()
+      );
+  }
+
+  async getBlogPost(id: string): Promise<BlogPost | undefined> {
+    return this.blogPosts.get(id);
+  }
+
+  async getBlogPostBySlug(slug: string): Promise<BlogPost | undefined> {
+    return Array.from(this.blogPosts.values()).find(post => post.slug === slug);
+  }
+
+  async createBlogPost(insertBlogPost: InsertBlogPost): Promise<BlogPost> {
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    const blogPost: BlogPost = { 
+      ...insertBlogPost, 
+      id,
+      createdAt: now,
+      updatedAt: now,
+      status: insertBlogPost.status ?? "draft",
+      featuredImage: insertBlogPost.featuredImage ?? null,
+      publishedAt: insertBlogPost.publishedAt ?? null,
+    };
+    this.blogPosts.set(id, blogPost);
+    return blogPost;
+  }
+
+  async updateBlogPost(id: string, update: Partial<InsertBlogPost>): Promise<BlogPost | undefined> {
+    const existing = this.blogPosts.get(id);
+    if (!existing) return undefined;
+    const updatedAt = new Date().toISOString();
+    const updated: BlogPost = { ...existing, ...update, updatedAt };
+    this.blogPosts.set(id, updated);
+    return updated;
+  }
+
+  async deleteBlogPost(id: string): Promise<boolean> {
+    return this.blogPosts.delete(id);
+  }
+
+  // Analytics
+  async getDashboardMetrics(): Promise<DashboardMetrics> {
+    const allBookings = Array.from(this.bookings.values());
+    const totalBookings = allBookings.length;
+    const activeBookings = allBookings.filter(b => b.status === "upcoming" || b.status === "in-progress").length;
+    const totalRevenue = allBookings.reduce((sum, b) => sum + b.totalPrice, 0);
+    const accommodationBookings = allBookings.filter(b => b.bookingType === "accommodation").length;
+    const serviceOnlyBookings = allBookings.filter(b => b.bookingType === "service").length;
+    const recentBookings = allBookings
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, 5);
+
+    return {
+      totalBookings,
+      activeBookings,
+      totalRevenue,
+      accommodationBookings,
+      serviceOnlyBookings,
+      recentBookings,
+    };
+  }
+
+  async getPopularServices(): Promise<PopularService[]> {
+    const allBookings = Array.from(this.bookings.values());
+    const serviceCounts = new Map<string, number>();
+
+    allBookings.forEach(booking => {
+      booking.selectedServices.forEach(serviceId => {
+        serviceCounts.set(serviceId, (serviceCounts.get(serviceId) || 0) + 1);
+      });
+    });
+
+    const popularServices: PopularService[] = [];
+    for (const [serviceId, count] of Array.from(serviceCounts.entries())) {
+      const service = this.services.get(serviceId);
+      if (service) {
+        popularServices.push({
+          serviceId,
+          serviceName: service.name,
+          bookingCount: count,
+        });
+      }
+    }
+
+    return popularServices.sort((a, b) => b.bookingCount - a.bookingCount).slice(0, 5);
+  }
+
+  async getRevenueByMonth(): Promise<RevenueByMonth[]> {
+    const allBookings = Array.from(this.bookings.values());
+    const monthlyData = new Map<string, { revenue: number; count: number }>();
+
+    allBookings.forEach(booking => {
+      const date = new Date(booking.createdAt);
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      const existing = monthlyData.get(monthKey) || { revenue: 0, count: 0 };
+      monthlyData.set(monthKey, {
+        revenue: existing.revenue + booking.totalPrice,
+        count: existing.count + 1,
+      });
+    });
+
+    const result: RevenueByMonth[] = [];
+    for (const [month, data] of Array.from(monthlyData.entries())) {
+      result.push({
+        month,
+        revenue: data.revenue,
+        bookingCount: data.count,
+      });
+    }
+
+    return result.sort((a, b) => a.month.localeCompare(b.month));
   }
 }
 
