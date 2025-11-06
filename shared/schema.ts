@@ -97,3 +97,49 @@ export const insertBookingSchema = createInsertSchema(bookings).omit({
 
 export type InsertBooking = z.infer<typeof insertBookingSchema>;
 export type Booking = typeof bookings.$inferSelect;
+
+// Blog Posts
+export const blogPosts = pgTable("blog_posts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(),
+  slug: text("slug").notNull(),
+  excerpt: text("excerpt").notNull(),
+  contentMarkdown: text("content_markdown").notNull(),
+  featuredImage: text("featured_image"),
+  author: text("author").notNull(),
+  publishedAt: text("published_at"),
+  status: text("status").notNull().default("draft"), // "draft" or "published"
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const insertBlogPostSchema = createInsertSchema(blogPosts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertBlogPost = z.infer<typeof insertBlogPostSchema>;
+export type BlogPost = typeof blogPosts.$inferSelect;
+
+// Analytics Types
+export type DashboardMetrics = {
+  totalBookings: number;
+  activeBookings: number;
+  totalRevenue: number;
+  accommodationBookings: number;
+  serviceOnlyBookings: number;
+  recentBookings: Booking[];
+};
+
+export type PopularService = {
+  serviceId: string;
+  serviceName: string;
+  bookingCount: number;
+};
+
+export type RevenueByMonth = {
+  month: string;
+  revenue: number;
+  bookingCount: number;
+};
