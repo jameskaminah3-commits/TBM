@@ -6,6 +6,8 @@ Tembea Bila Matata is a premium lifestyle concierge platform that seamlessly int
 ## Core Features
 - **Luxury Accommodations**: Browse and book premium properties with detailed listings and high-quality imagery
 - **Curated Services**: Add-on services including car rentals (with/without drivers), personal chefs, and errand services
+- **Interactive Service Browsing**: Dedicated pages for Drive, Dine, and Relax services with detailed filtering and options
+- **Diverse Car Rental Options**: 6 different vehicle types including self-driven and chauffeur options with various vehicle types (sedan, SUV, luxury, van)
 - **Single Checkout**: One booking, one payment for accommodation and all selected services
 - **Vetted Providers**: Background-checked service professionals with clear SLA agreements
 - **Booking Management**: Complete dashboard for managing reservations and services
@@ -50,24 +52,49 @@ Tembea Bila Matata is a premium lifestyle concierge platform that seamlessly int
 
 ## Data Models
 - **Accommodations**: Properties with pricing, amenities, and capacity
-- **Services**: Add-on services with type, pricing, and descriptions
+- **Services**: Add-on services with type, pricing, descriptions, and car rental specific fields (deliveryType, vehicleType, transmission, seatingCapacity)
 - **Providers**: Vetted service professionals with ratings and SLA info
 - **Bookings**: Guest reservations with dates, services, and total pricing
+
+## Service Types
+- **Car Rentals**: 6 options including self-driven (compact sedan, luxury SUV, sports car, budget manual) and chauffeur-driven (luxury sedan, executive van)
+- **Personal Chefs**: 3 options including daily chef service, breakfast chef, and special occasion chef
+- **Shopping & Errands**: 4 options including grocery shopping, fridge stocking, personal shopping assistant, and laundry service
 
 ## API Routes
 - `GET /api/accommodations` - List all accommodations
 - `GET /api/accommodations/:id` - Get specific accommodation
-- `GET /api/services` - List available services
-- `GET /api/providers` - List service providers
+- `GET /api/services` - List available services (includes car rental details)
+- `GET /api/providers` - List service providers (supports ?serviceType filter)
 - `POST /api/bookings` - Create new booking
 - `GET /api/bookings` - List user bookings
 
-## Recent Changes
-- Initial project setup with complete schema definitions
-- Created all frontend pages with exceptional visual design
-- Implemented booking flow with service selection
-- Added seeded sample data for accommodations and services
-- Configured theme system with light/dark mode support
+## Pages
+- `/` - Homepage with hero, service icons, and how it works
+- `/accommodations` - Browse all accommodations
+- `/accommodation/:id` - Accommodation details
+- `/services/drive` - Browse car rental services (self-driven & chauffeur options)
+- `/services/dine` - Browse personal chef services
+- `/services/relax` - Browse shopping and errand services
+- `/book/:id` - Booking form with service selection
+- `/bookings` - Booking history and management
+
+## Recent Changes (November 6, 2025)
+- **Branding Update**: Changed platform name to "Tembea Bila Matata" with tagline "Travel Local. Stay Easy. Live Bila Matata."
+- **Homepage Redesign**: Updated hero section with "Stay + Drive + Dine + Relax — All in One Place" and added How It Works section
+- **Interactive Service Icons**: Made all 4 service icons clickable with navigation to respective service pages
+- **Expanded Car Rental Services**: Added 6 diverse car rental options with variety in:
+  - Delivery type (self-driven vs chauffeur)
+  - Vehicle type (sedan, SUV, luxury, van)
+  - Transmission (automatic vs manual)
+  - Seating capacity (2-8 seats)
+  - Price range ($35-$300 per day)
+- **Dedicated Service Pages**: Created three new browsing pages:
+  - /services/drive - Car rental services with detailed specs
+  - /services/dine - Personal chef and cooking services
+  - /services/relax - Shopping, errands, and convenience services
+- **Enhanced Schema**: Updated services schema to support car rental specific attributes
+- **Complete E2E Testing**: All navigation and service browsing flows tested and verified working
 
 ## User Experience Highlights
 - Hero section with immersive background imagery
