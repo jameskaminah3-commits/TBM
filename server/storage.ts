@@ -347,6 +347,254 @@ export class MemStorage implements IStorage {
       const id = randomUUID();
       this.providers.set(id, { ...data, id });
     });
+
+    // Seed blog posts
+    const blogPostData = [
+      {
+        title: "Top 5 Luxury Destinations for Your Next Vacation",
+        slug: "top-5-luxury-destinations",
+        excerpt: "Discover the world's most exclusive destinations that combine breathtaking beauty with unparalleled luxury and service.",
+        contentMarkdown: `# Top 5 Luxury Destinations
+
+Planning your next luxury getaway? These five destinations offer the perfect blend of natural beauty, world-class amenities, and unforgettable experiences.
+
+## 1. Maldives
+
+The Maldives remains the ultimate tropical paradise. With crystal-clear waters, pristine beaches, and overwater villas that redefine luxury, it's the perfect escape for those seeking tranquility and romance.
+
+**What to expect:**
+- Private island resorts
+- World-class diving and snorkeling
+- Spa treatments over turquoise waters
+- Michelin-star dining experiences
+
+## 2. Santorini, Greece
+
+The whitewashed villages perched on volcanic cliffs create one of the world's most iconic views. Santorini combines ancient history with modern luxury.
+
+**Highlights:**
+- Stunning sunset views in Oia
+- Boutique cave hotels
+- World-renowned wineries
+- Fresh Mediterranean cuisine
+
+## 3. Dubai, UAE
+
+Experience futuristic luxury in the city of superlatives. From the world's tallest building to artificial islands shaped like palms, Dubai never ceases to amaze.
+
+## 4. Bora Bora, French Polynesia
+
+This small island in the South Pacific is synonymous with romantic luxury. The iconic overwater bungalows and vibrant coral reefs make it a bucket-list destination.
+
+## 5. Tuscany, Italy
+
+For those who prefer rolling hills and vineyards to beaches, Tuscany offers luxury in a more rustic setting. Stay in converted villas, tour world-class wineries, and indulge in authentic Italian cuisine.
+
+---
+
+Ready to plan your luxury escape? Our concierge service can help you book the perfect accommodation and arrange all the details for an unforgettable trip.`,
+        author: "Sarah Mitchell",
+        status: "published",
+        featuredImage: "/attached_assets/generated_images/Mediterranean_villa_accommodation_649da59e.png",
+        publishedAt: "2024-10-15T10:00:00.000Z",
+      },
+      {
+        title: "The Ultimate Guide to Hiring a Personal Chef",
+        slug: "guide-to-hiring-personal-chef",
+        excerpt: "Everything you need to know about adding a personal chef to your luxury vacation experience, from costs to cuisine options.",
+        contentMarkdown: `# The Ultimate Guide to Hiring a Personal Chef
+
+One of the most luxurious additions to any vacation is having a personal chef prepare gourmet meals in the comfort of your rental. Here's everything you need to know.
+
+## Why Hire a Personal Chef?
+
+### Convenience
+Skip the restaurant reservations and enjoy restaurant-quality meals without leaving your accommodation.
+
+### Customization
+Work with your chef to create menus tailored to your dietary preferences, allergies, and favorite cuisines.
+
+### Experience
+Many personal chefs offer cooking classes and wine pairing experiences as part of their service.
+
+## What to Expect
+
+**Initial Consultation**
+Your chef will discuss your preferences, dietary restrictions, and any special requests before your arrival.
+
+**Menu Planning**
+Receive custom menus featuring local ingredients and seasonal specialties.
+
+**Shopping and Preparation**
+The chef handles all grocery shopping and meal preparation, leaving you to simply enjoy.
+
+## Pricing
+
+Personal chef services typically range from $200-500 per day, depending on:
+- Number of meals per day
+- Number of guests
+- Complexity of cuisine
+- Special dietary requirements
+
+## Tips for Success
+
+1. **Communicate clearly** about dietary restrictions
+2. **Be specific** about meal times and preferences
+3. **Stay flexible** with seasonal ingredient availability
+4. **Consider** trying local specialties
+
+Ready to elevate your vacation dining experience? Our vetted personal chefs are standing by to create unforgettable culinary moments.`,
+        author: "James Chen",
+        status: "published",
+        featuredImage: "/attached_assets/generated_images/Personal_chef_service_2a86c242.png",
+        publishedAt: "2024-11-01T14:30:00.000Z",
+      },
+      {
+        title: "Luxury Car Rentals: Self-Drive vs. Chauffeur Service",
+        slug: "luxury-car-rentals-guide",
+        excerpt: "Comparing the benefits of self-drive luxury vehicles versus chauffeur-driven experiences for your next trip.",
+        contentMarkdown: `# Luxury Car Rentals: Making the Right Choice
+
+When it comes to luxury car rentals, you have two main options: take the wheel yourself or let a professional chauffeur handle the driving. Here's how to choose.
+
+## Self-Drive Luxury Vehicles
+
+### Pros
+- **Freedom and flexibility** to explore at your own pace
+- **Privacy** for intimate conversations
+- **Driving experience** of exotic and high-performance vehicles
+- **Cost-effective** for longer rentals
+
+### Best For
+- Scenic coastal drives
+- Mountain explorations
+- Romantic getaways
+- Car enthusiasts
+
+## Chauffeur Service
+
+### Pros
+- **Stress-free** navigation and parking
+- **Productive** use of travel time
+- **Local knowledge** from experienced drivers
+- **Safety** on unfamiliar roads
+- **Professional appearance** for business meetings
+
+### Best For
+- Airport transfers
+- Business travel
+- Wine tours (enjoy without worrying about driving)
+- City exploration
+- Group outings
+
+## Making Your Decision
+
+Consider these factors:
+
+1. **Destination** - Is it easy to navigate?
+2. **Purpose** - Business or leisure?
+3. **Itinerary** - Multiple stops or point-to-point?
+4. **Group size** - Traveling alone or with others?
+5. **Budget** - Self-drive is typically more economical
+
+## Our Fleet
+
+We offer both options with vehicles ranging from:
+- Compact sedans for city driving
+- Luxury SUVs for family comfort
+- Sports cars for the driving enthusiast
+- Executive vehicles with professional chauffeurs
+
+Whatever you choose, we ensure a premium experience with 24/7 support, comprehensive insurance, and impeccably maintained vehicles.`,
+        author: "Sarah Mitchell",
+        status: "published",
+        featuredImage: "/attached_assets/generated_images/Chauffeur_car_service_1e2a411b.png",
+        publishedAt: "2024-11-03T09:00:00.000Z",
+      },
+      {
+        title: "Behind the Scenes: How We Vet Our Service Providers",
+        slug: "vetting-service-providers",
+        excerpt: "Learn about our rigorous screening process that ensures only the best professionals serve our clients.",
+        contentMarkdown: `# Behind the Scenes: Our Vetting Process
+
+At our concierge service, we pride ourselves on partnering only with the most qualified, professional, and trustworthy service providers. Here's how we ensure excellence.
+
+## The Screening Process
+
+### 1. Initial Application Review
+Every potential service provider must submit:
+- Business licenses and certifications
+- Proof of insurance
+- Professional references
+- Portfolio of previous work
+
+### 2. Background Checks
+We conduct comprehensive background checks including:
+- Criminal history screening
+- Driving records (for chauffeurs)
+- Professional credential verification
+- Review of any complaints or legal issues
+
+### 3. Skills Assessment
+Providers demonstrate their expertise through:
+- In-person interviews
+- Skills demonstrations
+- Sample services
+- Mystery shopping evaluations
+
+### 4. Quality Standards
+All providers must meet our minimum requirements:
+- Years of professional experience
+- Client satisfaction ratings
+- Response time guarantees (SLAs)
+- Professional liability insurance
+
+## Ongoing Monitoring
+
+Our commitment doesn't end after initial approval:
+
+**Regular Reviews**
+- Quarterly performance evaluations
+- Client feedback analysis
+- Mystery shopper assessments
+
+**Continued Education**
+- Training on new industry standards
+- Customer service workshops
+- Safety certifications
+
+**Client Feedback**
+After each service, we collect detailed feedback to ensure consistent quality.
+
+## Your Peace of Mind
+
+This rigorous process means when you book through us, you can trust that:
+- Providers are properly licensed and insured
+- They've been thoroughly background-checked
+- Their skills have been verified
+- They maintain our high standards
+- You're protected by our satisfaction guarantee
+
+We believe luxury service is built on trust, and our vetting process ensures you receive nothing but the best.`,
+        author: "James Chen",
+        status: "draft",
+        featuredImage: null,
+        publishedAt: null,
+      },
+    ];
+
+    blogPostData.forEach((data) => {
+      const id = randomUUID();
+      const now = new Date().toISOString();
+      this.blogPosts.set(id, {
+        ...data,
+        id,
+        createdAt: now,
+        updatedAt: now,
+        featuredImage: data.featuredImage ?? null,
+        publishedAt: data.publishedAt ?? null,
+      });
+    });
   }
 
   // Accommodations

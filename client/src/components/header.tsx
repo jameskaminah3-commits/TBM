@@ -37,6 +37,15 @@ export function Header() {
             Accommodations
           </Link>
           <Link
+            href="/blog"
+            className={`text-sm font-medium transition-colors hover:text-primary ${
+              location.startsWith("/blog") ? "text-foreground" : "text-muted-foreground"
+            }`}
+            data-testid="link-nav-blog"
+          >
+            Blog
+          </Link>
+          <Link
             href="/bookings"
             className={`text-sm font-medium transition-colors hover:text-primary ${
               location === "/bookings" ? "text-foreground" : "text-muted-foreground"
