@@ -4,6 +4,8 @@
 Tembea Bila Matata is a premium lifestyle concierge platform that seamlessly integrates luxury accommodation bookings with essential local services. The platform bridges the gap between Airbnb's convenience and hotel-style concierge service, offering guests a single booking experience with access to vetted service providers. Travel Local. Stay Easy. Live Bila Matata.
 
 ## Core Features
+
+### Customer-Facing
 - **Luxury Accommodations**: Browse and book premium properties with detailed listings and high-quality imagery
 - **Curated Services**: Add-on services including car rentals (with/without drivers), personal chefs, and errand services
 - **Interactive Service Browsing**: Dedicated pages for Drive, Dine, and Relax services with detailed filtering and options
@@ -12,6 +14,12 @@ Tembea Bila Matata is a premium lifestyle concierge platform that seamlessly int
 - **Flexible Booking Options**: Book accommodation with services OR book services alone
 - **Vetted Providers**: Background-checked service professionals with clear SLA agreements
 - **Booking Management**: Complete dashboard for managing both accommodation and service-only reservations
+- **Public Blog**: Read travel tips, destination guides, and luxury lifestyle content
+
+### Admin Features
+- **Admin Dashboard**: Comprehensive analytics overview with metrics cards (total bookings, active bookings, revenue, booking types) and recent bookings list
+- **Bookings Management**: Full CRUD operations with status/type filtering and quick status updates via dropdown
+- **Blog Management**: Create, edit, and delete blog posts with markdown editor, draft/published workflow, and auto-publish logic
 - **Responsive Design**: Beautiful, mobile-optimized interface following Airbnb-inspired design patterns
 
 ## Tech Stack
@@ -55,7 +63,9 @@ Tembea Bila Matata is a premium lifestyle concierge platform that seamlessly int
 - **Accommodations**: Properties with pricing, amenities, and capacity
 - **Services**: Add-on services with type, pricing, descriptions, and car rental specific fields (deliveryType, vehicleType, transmission, seatingCapacity)
 - **Providers**: Vetted service professionals with ratings and SLA info
-- **Bookings**: Guest reservations with dates, services, and total pricing. Supports both accommodation+service bookings and standalone service bookings (accommodationId optional, bookingType: "accommodation" or "service")
+- **Bookings**: Guest reservations with dates, services, and total pricing. Supports both accommodation+service bookings and standalone service bookings (accommodationId optional, bookingType: "accommodation" or "service"). Uses BookingStatus enum for type-safe status values
+- **BlogPost**: Blog content with title, slug, excerpt, markdown content, featured image, author, status (draft/published), publishedAt timestamp, createdAt, and updatedAt
+- **Analytics**: DashboardMetrics, PopularService, and RevenueByMonth for admin insights
 
 ## Service Types
 - **Car Rentals**: 6 options including self-driven (compact sedan, luxury SUV, sports car, budget manual) and chauffeur-driven (luxury sedan, executive van)
@@ -63,14 +73,33 @@ Tembea Bila Matata is a premium lifestyle concierge platform that seamlessly int
 - **Shopping & Errands**: 4 options including grocery shopping, fridge stocking, personal shopping assistant, and laundry service
 
 ## API Routes
+
+### Public Routes
 - `GET /api/accommodations` - List all accommodations
 - `GET /api/accommodations/:id` - Get specific accommodation
 - `GET /api/services` - List available services (includes car rental details)
 - `GET /api/providers` - List service providers (supports ?serviceType filter)
 - `POST /api/bookings` - Create new booking
 - `GET /api/bookings` - List user bookings
+- `GET /api/blog` - List published blog posts
+- `GET /api/blog/:slug` - Get individual blog post by slug
+
+### Admin Routes
+- `GET /api/admin/dashboard` - Dashboard metrics (total bookings, active bookings, revenue, booking types, recent bookings)
+- `GET /api/admin/analytics/popular-services` - Popular services chart data
+- `GET /api/admin/analytics/revenue` - Revenue by month chart data
+- `GET /api/admin/bookings` - List all bookings (admin view)
+- `PATCH /api/admin/bookings/:id` - Update booking (status updates)
+- `DELETE /api/admin/bookings/:id` - Delete booking
+- `GET /api/admin/blog` - List all blog posts (drafts + published)
+- `GET /api/admin/blog/:id` - Get specific blog post
+- `POST /api/admin/blog` - Create new blog post
+- `PATCH /api/admin/blog/:id` - Update blog post
+- `DELETE /api/admin/blog/:id` - Delete blog post
 
 ## Pages
+
+### Customer Pages
 - `/` - Homepage with hero, service icons, and how it works
 - `/accommodations` - Browse all accommodations
 - `/accommodation/:id` - Accommodation details
@@ -80,6 +109,13 @@ Tembea Bila Matata is a premium lifestyle concierge platform that seamlessly int
 - `/book/:id` - Booking form for accommodation with service selection
 - `/book/service/:id` - Standalone service booking form (no accommodation required)
 - `/bookings` - Booking history and management (shows both accommodation and service-only bookings)
+- `/blog` - Public blog listing with published posts
+- `/blog/:slug` - Individual blog post detail with markdown rendering
+
+### Admin Pages
+- `/admin/dashboard` - Dashboard overview with metrics, charts, and recent bookings
+- `/admin/bookings` - Bookings management with filters and status updates
+- `/admin/blog` - Blog management with create/edit/delete operations
 
 ## Recent Changes (November 6, 2025)
 
@@ -111,6 +147,43 @@ Tembea Bila Matata is a premium lifestyle concierge platform that seamlessly int
 - **Bookings Page Update**: Now displays both accommodation+service and service-only bookings with distinct UI for each type
 - **Complete Integration**: All "Book Now" buttons on service pages navigate to standalone booking flow
 - **Full E2E Testing**: Complete booking flow tested from service selection through booking confirmation
+
+### Session 3: Admin Dashboard & Blog System (November 6, 2025)
+- **Admin Layout**: Created AdminLayout with Shadcn Sidebar component for consistent admin navigation
+- **Admin Dashboard** (`/admin/dashboard`):
+  - 5 metrics cards: Total Bookings, Active Bookings, Total Revenue (USD formatted), Accommodation Bookings, Service-Only Bookings
+  - Recent bookings list showing 5 most recent reservations
+  - Full TypeScript typing for dashboard metrics
+- **Admin Bookings Management** (`/admin/bookings`):
+  - Client-side filtering by status (all, upcoming, in-progress, completed, cancelled) and type (all, accommodation, service)
+  - Quick status updates via dropdown on each booking card
+  - Empty state handling for filtered results
+  - Real-time result count display
+- **Admin Blog Management** (`/admin/blog`):
+  - Full CRUD operations: create, edit, delete blog posts
+  - Modal-based forms with react-hook-form and Zod validation
+  - Markdown content editor for rich text posts
+  - Draft/published workflow with auto-publish logic
+  - Featured image support (optional)
+  - Auto-generated slugs from titles
+- **Public Blog System**:
+  - `/blog` listing page with published posts in card grid
+  - `/blog/:slug` detail page with markdown rendering (react-markdown + remark-gfm)
+  - Blog link added to main header navigation
+  - Posts only visible when status="published" AND publishedAt is set
+- **Schema Enhancements**:
+  - Added BlogPost model with full metadata (title, slug, excerpt, contentMarkdown, author, status, publishedAt, etc.)
+  - Added BookingStatus enum for type-safe status handling
+  - Added analytics types: DashboardMetrics, PopularService, RevenueByMonth
+- **Auto-Publish Logic**:
+  - Creating post with status="published" automatically sets publishedAt to current timestamp
+  - Updating post to status="published" auto-sets publishedAt if missing
+  - Ensures published posts appear immediately in public API without manual date entry
+- **Bug Fixes**:
+  - Fixed apiRequest parameter order in admin pages (method, url, data)
+  - Fixed blog post visibility: auto-setting publishedAt prevents published posts from being hidden
+- **Package Additions**: Installed react-markdown and remark-gfm for markdown rendering
+- **E2E Testing**: Comprehensive end-to-end testing of all admin and public blog features confirmed working
 
 ## User Experience Highlights
 - Hero section with immersive background imagery
