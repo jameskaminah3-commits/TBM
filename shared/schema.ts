@@ -30,6 +30,10 @@ export type Accommodation = typeof accommodations.$inferSelect;
 export const serviceTypes = ["car-rental", "car-with-driver", "personal-cook", "shopping", "fridge-stocking"] as const;
 export type ServiceType = typeof serviceTypes[number];
 
+// Booking Status
+export const bookingStatus = z.enum(["upcoming", "in-progress", "completed", "cancelled"]);
+export type BookingStatus = z.infer<typeof bookingStatus>;
+
 // Services
 export const services = pgTable("services", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

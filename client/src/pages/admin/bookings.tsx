@@ -1,5 +1,6 @@
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Calendar, MapPin, Users, Car, ChefHat, ShoppingBag } from "lucide-react";
+import { Calendar, MapPin, Users, Car, ChefHat, ShoppingBag, Filter } from "lucide-react";
 import { AdminLayout } from "@/components/admin-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -15,9 +16,14 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Booking, Accommodation, Service } from "@shared/schema";
+import { bookingStatus } from "@shared/schema";
+
+type BookingStatus = typeof bookingStatus.options[number];
 
 export default function AdminBookings() {
   const { toast } = useToast();
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
   
   const { data: bookings, isLoading: bookingsLoading } = useQuery<Booking[]>({
     queryKey: ["/api/bookings"],
@@ -31,8 +37,22 @@ export default function AdminBookings() {
     queryKey: ["/api/services"],
   });
 
+  // Filter bookings based on status and type
+  const filteredBookings = useMemo(() => {
+    if (!bookings) return [];
+    
+    return bookings.filter((booking) => {
+      const statusMatch = statusFilter === "all" || booking.status === statusFilter;
+      const typeMatch = typeFilter === "all" || 
+        (typeFilter === "accommodation" && booking.accommodationId) ||
+        (typeFilter === "service" && !booking.accommodationId);
+      
+      return statusMatch && typeMatch;
+    });
+  }, [bookings, statusFilter, typeFilter]);
+
   const updateStatusMutation = useMutation({
-    mutationFn: async ({ id, status }: { id: string; status: string }) => {
+    mutationFn: async ({ id, status }: { id: string; status: BookingStatus }) => {
       return await apiRequest(`/api/admin/bookings/${id}`, "PATCH", { status });
     },
     onSuccess: () => {
@@ -127,6 +147,52 @@ export default function AdminBookings() {
           </p>
         </div>
 
+        {/* Filters */}
+        <Card className="mb-6">
+          <CardContent className="p-6">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">Filters:</span>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-muted-foreground">Status:</label>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-40" data-testid="filter-status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="upcoming">Upcoming</SelectItem>
+                    <SelectItem value="in-progress">In Progress</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-muted-foreground">Type:</label>
+                <Select value={typeFilter} onValueChange={setTypeFilter}>
+                  <SelectTrigger className="w-48" data-testid="filter-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    <SelectItem value="accommodation">Accommodation + Services</SelectItem>
+                    <SelectItem value="service">Service Only</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="ml-auto text-sm text-muted-foreground">
+                Showing {filteredBookings.length} of {bookings?.length || 0} bookings
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         {bookings && bookings.length === 0 ? (
           <Card className="p-12 text-center">
             <div className="max-w-md mx-auto">
@@ -139,9 +205,32 @@ export default function AdminBookings() {
               </p>
             </div>
           </Card>
+        ) : filteredBookings.length === 0 ? (
+          <Card className="p-12 text-center">
+            <div className="max-w-md mx-auto">
+              <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+                <Filter className="h-8 w-8 text-muted-foreground" />
+              </div>
+              <h3 className="text-xl font-semibold mb-2">No bookings match your filters</h3>
+              <p className="text-muted-foreground">
+                Try adjusting your filters to see more results
+              </p>
+              <Button
+                variant="outline"
+                className="mt-4"
+                onClick={() => {
+                  setStatusFilter("all");
+                  setTypeFilter("all");
+                }}
+                data-testid="button-reset-filters"
+              >
+                Reset Filters
+              </Button>
+            </div>
+          </Card>
         ) : (
           <div className="space-y-4">
-            {bookings?.map((booking) => {
+            {filteredBookings.map((booking) => {
               const accommodation = getAccommodation(booking.accommodationId);
               const isServiceOnly = booking.bookingType === "service" || !booking.accommodationId;
 
@@ -234,7 +323,7 @@ export default function AdminBookings() {
                           <div className="text-sm font-medium mb-2">Update Status</div>
                           <Select
                             value={booking.status}
-                            onValueChange={(status) => updateStatusMutation.mutate({ id: booking.id, status })}
+                            onValueChange={(status) => updateStatusMutation.mutate({ id: booking.id, status: status as BookingStatus })}
                             disabled={updateStatusMutation.isPending}
                           >
                             <SelectTrigger className="w-full" data-testid={`select-status-${booking.id}`}>
