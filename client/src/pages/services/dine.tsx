@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -6,6 +7,7 @@ import { ChefHat, Clock, Utensils } from "lucide-react";
 import type { Service } from "@shared/schema";
 
 export default function DinePage() {
+  const [, setLocation] = useLocation();
   const { data: services, isLoading } = useQuery<Service[]>({
     queryKey: ["/api/services"],
   });
@@ -82,7 +84,10 @@ export default function DinePage() {
                       {service.priceType === "per-day" ? "per day" : "per event"}
                     </p>
                   </div>
-                  <Button data-testid={`button-book-${service.id}`}>
+                  <Button 
+                    onClick={() => setLocation(`/book/service/${service.id}`)}
+                    data-testid={`button-book-${service.id}`}
+                  >
                     Book Now
                   </Button>
                 </div>

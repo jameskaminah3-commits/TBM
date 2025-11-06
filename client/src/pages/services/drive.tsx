@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -6,6 +7,7 @@ import { Car, Users, Gauge, Settings } from "lucide-react";
 import type { Service } from "@shared/schema";
 
 export default function DrivePage() {
+  const [, setLocation] = useLocation();
   const { data: services, isLoading } = useQuery<Service[]>({
     queryKey: ["/api/services"],
   });
@@ -105,7 +107,10 @@ export default function DrivePage() {
                     <p className="text-2xl font-semibold">${service.pricePerDay}</p>
                     <p className="text-sm text-muted-foreground">per day</p>
                   </div>
-                  <Button data-testid={`button-book-${service.id}`}>
+                  <Button 
+                    onClick={() => setLocation(`/book/service/${service.id}`)}
+                    data-testid={`button-book-${service.id}`}
+                  >
                     Book Now
                   </Button>
                 </div>

@@ -77,7 +77,7 @@ export type Provider = typeof providers.$inferSelect;
 // Bookings
 export const bookings = pgTable("bookings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  accommodationId: varchar("accommodation_id").notNull(),
+  accommodationId: varchar("accommodation_id"), // Optional - allows standalone service bookings
   guestName: text("guest_name").notNull(),
   guestEmail: text("guest_email").notNull(),
   checkIn: text("check_in").notNull(),
@@ -87,6 +87,7 @@ export const bookings = pgTable("bookings", {
   totalPrice: integer("total_price").notNull(),
   status: text("status").notNull().default("upcoming"),
   createdAt: text("created_at").notNull(),
+  bookingType: text("booking_type").notNull().default("accommodation"), // "accommodation" or "service"
 });
 
 export const insertBookingSchema = createInsertSchema(bookings).omit({

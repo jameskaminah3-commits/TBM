@@ -9,6 +9,7 @@ import Home from "@/pages/home";
 import Accommodations from "@/pages/accommodations";
 import AccommodationDetail from "@/pages/accommodation-detail";
 import Booking from "@/pages/booking";
+import ServiceBooking from "@/pages/service-booking";
 import Bookings from "@/pages/bookings";
 import DrivePage from "@/pages/services/drive";
 import DinePage from "@/pages/services/dine";
@@ -22,6 +23,7 @@ function Router() {
       <Route path="/accommodations" component={Accommodations} />
       <Route path="/accommodation/:id" component={AccommodationDetail} />
       <Route path="/book/:id" component={Booking} />
+      <Route path="/book/service/:id" component={ServiceBooking} />
       <Route path="/bookings" component={Bookings} />
       <Route path="/services/drive" component={DrivePage} />
       <Route path="/services/dine" component={DinePage} />
