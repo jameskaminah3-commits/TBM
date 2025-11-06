@@ -39,6 +39,11 @@ export const services = pgTable("services", {
   pricePerDay: integer("price_per_day").notNull(),
   priceType: text("price_type").notNull(), // "per-day", "one-time", "per-hour"
   imageUrl: text("image_url"),
+  // Car rental specific fields
+  deliveryType: text("delivery_type"), // "self-driven", "chauffeur"
+  vehicleType: text("vehicle_type"), // "sedan", "suv", "luxury", "van"
+  transmission: text("transmission"), // "automatic", "manual"
+  seatingCapacity: integer("seating_capacity"),
 });
 
 export const insertServiceSchema = createInsertSchema(services).omit({

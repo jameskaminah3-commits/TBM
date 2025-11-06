@@ -10,6 +10,9 @@ import Accommodations from "@/pages/accommodations";
 import AccommodationDetail from "@/pages/accommodation-detail";
 import Booking from "@/pages/booking";
 import Bookings from "@/pages/bookings";
+import DrivePage from "@/pages/services/drive";
+import DinePage from "@/pages/services/dine";
+import RelaxPage from "@/pages/services/relax";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -20,6 +23,9 @@ function Router() {
       <Route path="/accommodation/:id" component={AccommodationDetail} />
       <Route path="/book/:id" component={Booking} />
       <Route path="/bookings" component={Bookings} />
+      <Route path="/services/drive" component={DrivePage} />
+      <Route path="/services/dine" component={DinePage} />
+      <Route path="/services/relax" component={RelaxPage} />
       <Route component={NotFound} />
     </Switch>
   );

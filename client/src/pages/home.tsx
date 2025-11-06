@@ -1,4 +1,4 @@
-import { useLocation } from "wouter";
+import { useLocation, Link } from "wouter";
 import { Search, MapPin, Calendar, Users, Home as HomeIcon, Car, ChefHat, ShoppingBag, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -99,33 +99,41 @@ export default function Home() {
       <section className="py-16 md:py-20 bg-muted/30">
         <div className="container mx-auto px-4 md:px-8">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 md:gap-12 max-w-4xl mx-auto">
-            <div className="text-center" data-testid="service-icon-stay">
-              <div className="w-20 h-20 mx-auto mb-4 flex items-center justify-center">
-                <HomeIcon className="w-16 h-16 text-primary" strokeWidth={1.5} />
+            <Link href="/accommodations" data-testid="service-icon-stay">
+              <div className="text-center hover-elevate cursor-pointer rounded-lg p-4 transition-all">
+                <div className="w-20 h-20 mx-auto mb-4 flex items-center justify-center">
+                  <HomeIcon className="w-16 h-16 text-primary" strokeWidth={1.5} />
+                </div>
+                <h3 className="text-lg font-semibold">Stay</h3>
               </div>
-              <h3 className="text-lg font-semibold">Stay</h3>
-            </div>
+            </Link>
 
-            <div className="text-center" data-testid="service-icon-drive">
-              <div className="w-20 h-20 mx-auto mb-4 flex items-center justify-center">
-                <Car className="w-16 h-16 text-primary" strokeWidth={1.5} />
+            <Link href="/services/drive" data-testid="service-icon-drive">
+              <div className="text-center hover-elevate cursor-pointer rounded-lg p-4 transition-all">
+                <div className="w-20 h-20 mx-auto mb-4 flex items-center justify-center">
+                  <Car className="w-16 h-16 text-primary" strokeWidth={1.5} />
+                </div>
+                <h3 className="text-lg font-semibold">Drive</h3>
               </div>
-              <h3 className="text-lg font-semibold">Drive</h3>
-            </div>
+            </Link>
 
-            <div className="text-center" data-testid="service-icon-dine">
-              <div className="w-20 h-20 mx-auto mb-4 flex items-center justify-center">
-                <ChefHat className="w-16 h-16 text-primary" strokeWidth={1.5} />
+            <Link href="/services/dine" data-testid="service-icon-dine">
+              <div className="text-center hover-elevate cursor-pointer rounded-lg p-4 transition-all">
+                <div className="w-20 h-20 mx-auto mb-4 flex items-center justify-center">
+                  <ChefHat className="w-16 h-16 text-primary" strokeWidth={1.5} />
+                </div>
+                <h3 className="text-lg font-semibold">Dine</h3>
               </div>
-              <h3 className="text-lg font-semibold">Dine</h3>
-            </div>
+            </Link>
 
-            <div className="text-center" data-testid="service-icon-relax">
-              <div className="w-20 h-20 mx-auto mb-4 flex items-center justify-center">
-                <ShoppingBag className="w-16 h-16 text-primary" strokeWidth={1.5} />
+            <Link href="/services/relax" data-testid="service-icon-relax">
+              <div className="text-center hover-elevate cursor-pointer rounded-lg p-4 transition-all">
+                <div className="w-20 h-20 mx-auto mb-4 flex items-center justify-center">
+                  <ShoppingBag className="w-16 h-16 text-primary" strokeWidth={1.5} />
+                </div>
+                <h3 className="text-lg font-semibold">Relax</h3>
               </div>
-              <h3 className="text-lg font-semibold">Relax</h3>
-            </div>
+            </Link>
           </div>
         </div>
       </section>

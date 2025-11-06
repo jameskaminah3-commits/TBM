@@ -111,22 +111,80 @@ export class MemStorage implements IStorage {
 
     // Seed services
     const serviceData = [
+      // Car Rental - Variety of Options
       {
-        name: "Self-Drive Car Rental",
+        name: "Compact Sedan - Self Drive",
         type: "car-rental",
-        description: "Premium vehicle rental with comprehensive insurance and 24/7 roadside assistance. Choose from luxury sedans, SUVs, and sports cars.",
-        pricePerDay: 80,
+        description: "Fuel-efficient compact sedan perfect for city driving. Includes GPS, insurance, and 24/7 roadside assistance.",
+        pricePerDay: 50,
         priceType: "per-day",
         imageUrl: "/attached_assets/generated_images/Chauffeur_car_service_1e2a411b.png",
+        deliveryType: "self-driven",
+        vehicleType: "sedan",
+        transmission: "automatic",
+        seatingCapacity: 5,
       },
       {
-        name: "Chauffeur Service",
-        type: "car-with-driver",
-        description: "Professional chauffeur-driven service with luxury vehicles. Perfect for airport transfers, city tours, or special occasions.",
+        name: "Luxury SUV - Self Drive",
+        type: "car-rental",
+        description: "Premium SUV with ample space and advanced features. Ideal for families or groups exploring in comfort.",
+        pricePerDay: 120,
+        priceType: "per-day",
+        imageUrl: "/attached_assets/generated_images/Chauffeur_car_service_1e2a411b.png",
+        deliveryType: "self-driven",
+        vehicleType: "suv",
+        transmission: "automatic",
+        seatingCapacity: 7,
+      },
+      {
+        name: "Sports Car - Self Drive",
+        type: "car-rental",
+        description: "High-performance sports car for an exhilarating driving experience. Premium insurance included.",
+        pricePerDay: 200,
+        priceType: "per-day",
+        imageUrl: "/attached_assets/generated_images/Chauffeur_car_service_1e2a411b.png",
+        deliveryType: "self-driven",
+        vehicleType: "luxury",
+        transmission: "automatic",
+        seatingCapacity: 2,
+      },
+      {
+        name: "Luxury Sedan - Chauffeur Driven",
+        type: "car-rental",
+        description: "Professional chauffeur service in a luxury sedan. Perfect for business meetings and airport transfers.",
         pricePerDay: 250,
         priceType: "per-day",
         imageUrl: "/attached_assets/generated_images/Chauffeur_car_service_1e2a411b.png",
+        deliveryType: "chauffeur",
+        vehicleType: "luxury",
+        transmission: "automatic",
+        seatingCapacity: 4,
       },
+      {
+        name: "Executive Van - Chauffeur Driven",
+        type: "car-rental",
+        description: "Spacious executive van with professional driver. Ideal for group tours and family outings.",
+        pricePerDay: 300,
+        priceType: "per-day",
+        imageUrl: "/attached_assets/generated_images/Chauffeur_car_service_1e2a411b.png",
+        deliveryType: "chauffeur",
+        vehicleType: "van",
+        transmission: "automatic",
+        seatingCapacity: 8,
+      },
+      {
+        name: "Budget Sedan - Manual",
+        type: "car-rental",
+        description: "Affordable manual transmission sedan for budget-conscious travelers. Reliable and economical.",
+        pricePerDay: 35,
+        priceType: "per-day",
+        imageUrl: "/attached_assets/generated_images/Chauffeur_car_service_1e2a411b.png",
+        deliveryType: "self-driven",
+        vehicleType: "sedan",
+        transmission: "manual",
+        seatingCapacity: 5,
+      },
+      // Personal Chef Services
       {
         name: "Personal Chef Service",
         type: "personal-cook",
@@ -134,7 +192,36 @@ export class MemStorage implements IStorage {
         pricePerDay: 200,
         priceType: "per-day",
         imageUrl: "/attached_assets/generated_images/Personal_chef_service_2a86c242.png",
+        deliveryType: null,
+        vehicleType: null,
+        transmission: null,
+        seatingCapacity: null,
       },
+      {
+        name: "Breakfast Chef Service",
+        type: "personal-cook",
+        description: "Start your day right with a personal chef preparing fresh, healthy breakfasts every morning.",
+        pricePerDay: 80,
+        priceType: "per-day",
+        imageUrl: "/attached_assets/generated_images/Personal_chef_service_2a86c242.png",
+        deliveryType: null,
+        vehicleType: null,
+        transmission: null,
+        seatingCapacity: null,
+      },
+      {
+        name: "Special Occasion Chef",
+        type: "personal-cook",
+        description: "Expert chef for special events and celebrations. Multi-course meals with wine pairing recommendations.",
+        pricePerDay: 500,
+        priceType: "one-time",
+        imageUrl: "/attached_assets/generated_images/Personal_chef_service_2a86c242.png",
+        deliveryType: null,
+        vehicleType: null,
+        transmission: null,
+        seatingCapacity: null,
+      },
+      // Errand and Shopping Services
       {
         name: "Grocery Shopping Service",
         type: "shopping",
@@ -142,6 +229,10 @@ export class MemStorage implements IStorage {
         pricePerDay: 75,
         priceType: "one-time",
         imageUrl: null,
+        deliveryType: null,
+        vehicleType: null,
+        transmission: null,
+        seatingCapacity: null,
       },
       {
         name: "Premium Fridge Stocking",
@@ -150,6 +241,34 @@ export class MemStorage implements IStorage {
         pricePerDay: 150,
         priceType: "one-time",
         imageUrl: null,
+        deliveryType: null,
+        vehicleType: null,
+        transmission: null,
+        seatingCapacity: null,
+      },
+      {
+        name: "Personal Shopping Assistant",
+        type: "shopping",
+        description: "Personal shopper for clothing, gifts, or specialty items. Includes delivery to your accommodation.",
+        pricePerDay: 100,
+        priceType: "one-time",
+        imageUrl: null,
+        deliveryType: null,
+        vehicleType: null,
+        transmission: null,
+        seatingCapacity: null,
+      },
+      {
+        name: "Laundry & Dry Cleaning",
+        type: "shopping",
+        description: "Professional laundry and dry cleaning pickup and delivery service.",
+        pricePerDay: 50,
+        priceType: "one-time",
+        imageUrl: null,
+        deliveryType: null,
+        vehicleType: null,
+        transmission: null,
+        seatingCapacity: null,
       },
     ];
 
@@ -228,7 +347,15 @@ export class MemStorage implements IStorage {
 
   async createService(insertService: InsertService): Promise<Service> {
     const id = randomUUID();
-    const service: Service = { ...insertService, id };
+    const service: Service = { 
+      ...insertService, 
+      id,
+      imageUrl: insertService.imageUrl ?? null,
+      deliveryType: insertService.deliveryType ?? null,
+      vehicleType: insertService.vehicleType ?? null,
+      transmission: insertService.transmission ?? null,
+      seatingCapacity: insertService.seatingCapacity ?? null,
+    };
     this.services.set(id, service);
     return service;
   }
@@ -250,7 +377,12 @@ export class MemStorage implements IStorage {
 
   async createProvider(insertProvider: InsertProvider): Promise<Provider> {
     const id = randomUUID();
-    const provider: Provider = { ...insertProvider, id };
+    const provider: Provider = { 
+      ...insertProvider, 
+      id,
+      imageUrl: insertProvider.imageUrl ?? null,
+      verified: insertProvider.verified ?? true,
+    };
     this.providers.set(id, provider);
     return provider;
   }
@@ -267,7 +399,12 @@ export class MemStorage implements IStorage {
   async createBooking(insertBooking: InsertBooking): Promise<Booking> {
     const id = randomUUID();
     const createdAt = new Date().toISOString();
-    const booking: Booking = { ...insertBooking, id, createdAt };
+    const booking: Booking = { 
+      ...insertBooking, 
+      id, 
+      createdAt,
+      status: insertBooking.status ?? "upcoming",
+    };
     this.bookings.set(id, booking);
     return booking;
   }
