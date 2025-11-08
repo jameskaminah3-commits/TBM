@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Calendar, Users, CheckCircle2, Car, ChefHat, ShoppingBag, Truck } from "lucide-react";
@@ -132,12 +132,26 @@ export default function Booking() {
     return Math.max(1, Math.ceil(diff / (1000 * 60 * 60 * 24)));
   };
 
-  const nights = calculateNights(form.watch("checkIn"), form.watch("checkOut"));
-  const accommodationTotal = (accommodation?.price || 0) * nights;
-  const servicesTotal = addonServices
-    ?.filter((s) => selectedServices.includes(s.id))
-    .reduce((sum, s) => sum + (s.price * nights), 0) || 0;
-  const totalPrice = accommodationTotal + servicesTotal;
+  const checkInValue = useWatch({ control: form.control, name: "checkIn" });
+  const checkOutValue = useWatch({ control: form.control, name: "checkOut" });
+  
+  const nights = useMemo(() => {
+    return calculateNights(checkInValue || "", checkOutValue || "");
+  }, [checkInValue, checkOutValue]);
+  
+  const accommodationTotal = useMemo(() => {
+    return (accommodation?.price || 0) * nights;
+  }, [accommodation?.price, nights]);
+  
+  const servicesTotal = useMemo(() => {
+    return addonServices
+      ?.filter((s) => selectedServices.includes(s.id))
+      .reduce((sum, s) => sum + (s.price * nights), 0) || 0;
+  }, [addonServices, selectedServices, nights]);
+  
+  const totalPrice = useMemo(() => {
+    return accommodationTotal + servicesTotal;
+  }, [accommodationTotal, servicesTotal]);
 
   const getServiceIcon = (category: string) => {
     switch (category) {
@@ -280,7 +294,10 @@ export default function Booking() {
                                 max="20"
                                 className="pl-10"
                                 {...field}
-                                onChange={(e) => field.onChange(parseInt(e.target.value))}
+                                onChange={(e) => {
+                                  const value = e.target.value === '' ? 1 : parseInt(e.target.value);
+                                  field.onChange(isNaN(value) ? 1 : value);
+                                }}
                                 data-testid="input-booking-guests"
                               />
                             </div>
@@ -309,10 +326,9 @@ export default function Booking() {
                         return (
                           <div
                             key={service.id}
-                            className={`border rounded-md p-4 cursor-pointer transition-colors ${
-                              isSelected ? "border-primary bg-primary/5" : "hover-elevate"
+                            className={`border rounded-md p-4 transition-colors ${
+                              isSelected ? "border-primary bg-primary/5" : ""
                             }`}
-                            onClick={() => toggleService(service.id)}
                             data-testid={`service-${service.id}`}
                           >
                             <div className="flex items-start gap-4">
