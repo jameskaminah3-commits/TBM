@@ -27,9 +27,15 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 const bookingFormSchema = insertBookingSchema.extend({
   checkIn: z.string().min(1, "Check-in date is required"),
   checkOut: z.string().min(1, "Check-out date is required"),
-  guests: z.number().min(1, "At least 1 guest required"),
+  guests: z.coerce.number().min(1, "At least 1 guest required"),
   guestName: z.string().min(2, "Name is required"),
   guestEmail: z.string().email("Valid email is required"),
+}).refine((data) => {
+  if (!data.checkIn || !data.checkOut) return true;
+  return new Date(data.checkOut) > new Date(data.checkIn);
+}, {
+  message: "Check-out date must be after check-in date",
+  path: ["checkOut"],
 });
 
 type BookingFormValues = z.infer<typeof bookingFormSchema>;
