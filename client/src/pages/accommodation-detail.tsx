@@ -6,16 +6,16 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
-import type { Accommodation } from "@shared/schema";
+import type { Listing } from "@shared/schema";
 
 export default function AccommodationDetail() {
   const { id } = useParams();
   const [, setLocation] = useLocation();
   
-  const { data: accommodation, isLoading } = useQuery<Accommodation>({
-    queryKey: ["/api/accommodations", id],
+  const { data: accommodation, isLoading } = useQuery<Listing>({
+    queryKey: ["/api/listings", id],
     queryFn: async () => {
-      const response = await fetch(`/api/accommodations/${id}`);
+      const response = await fetch(`/api/listings/${id}`);
       if (!response.ok) throw new Error("Failed to fetch accommodation");
       return response.json();
     },
@@ -59,7 +59,7 @@ export default function AccommodationDetail() {
         {/* Hero Image */}
         <div className="relative aspect-[16/9] rounded-xl overflow-hidden mb-8">
           <img
-            src={accommodation.imageUrl}
+            src={accommodation.imageUrl || "https://images.unsplash.com/photo-1564501049412-61c2a3083791?w=800"}
             alt={accommodation.title}
             className="w-full h-full object-cover"
           />
@@ -79,27 +79,7 @@ export default function AccommodationDetail() {
                       <MapPin className="h-4 w-4" />
                       <span>{accommodation.location}</span>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <Star className="h-4 w-4 fill-primary text-primary" />
-                      <span className="font-medium">{(accommodation.rating / 10).toFixed(1)}</span>
-                      <span className="text-sm">({accommodation.reviewCount} reviews)</span>
-                    </div>
                   </div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-6 mb-6">
-                <div className="flex items-center gap-2">
-                  <Users className="h-5 w-5 text-muted-foreground" />
-                  <span>{accommodation.maxGuests} guests</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Bed className="h-5 w-5 text-muted-foreground" />
-                  <span>{accommodation.bedrooms} bedrooms</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Bath className="h-5 w-5 text-muted-foreground" />
-                  <span>{accommodation.bathrooms} bathrooms</span>
                 </div>
               </div>
 
@@ -114,12 +94,12 @@ export default function AccommodationDetail() {
             </div>
 
             <div>
-              <h2 className="text-xl font-semibold mb-4">Amenities</h2>
+              <h2 className="text-xl font-semibold mb-4">Features</h2>
               <div className="grid grid-cols-2 gap-3">
-                {accommodation.amenities.map((amenity, index) => (
+                {accommodation.features.map((feature, index) => (
                   <div key={index} className="flex items-center gap-2">
                     <CheckCircle2 className="h-4 w-4 text-primary" />
-                    <span className="text-sm">{amenity}</span>
+                    <span className="text-sm">{feature}</span>
                   </div>
                 ))}
               </div>
@@ -195,9 +175,9 @@ export default function AccommodationDetail() {
             <Card className="p-6">
               <div className="mb-6">
                 <div className="text-3xl font-semibold mb-1">
-                  ${accommodation.pricePerNight}
+                  ${accommodation.price}
                 </div>
-                <div className="text-sm text-muted-foreground">per night</div>
+                <div className="text-sm text-muted-foreground">per day</div>
               </div>
 
               <Button
