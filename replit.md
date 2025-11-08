@@ -99,9 +99,36 @@ The frontend `useAuth` hook manages authentication state, and the header compone
   - Created test admin user (id: test-admin-001, email: admin@tembea.test, role: admin)
   - Regular users default to customer role on first login
 
+### Phase 3: Complete Booking Flow with Addon Selection
+- **Fixed 404 Errors**: Migrated AccommodationDetail and Booking pages from deprecated `/api/accommodations` and `/api/services` endpoints to unified `/api/listings` API
+
+- **Accommodation Detail Page**:
+  - Updated to fetch from `/api/listings/:id` using Listing type
+  - Adjusted UI to display Listing fields (price, features)
+
+- **Booking Flow Implementation**:
+  - Completely refactored booking page to use Listing type throughout
+  - Fetches accommodation from `/api/listings/:id`
+  - Fetches addon services from `/api/listings?category=(cars|cooks|errands)` in parallel
+  - Implemented addon selection UI with checkboxes, category icons, and service cards
+  - Added form validation with z.coerce.number() for guest count
+  - Added date range validation (check-out after check-in)
+
+- **Price Calculation System**:
+  - Accommodation total = listing.price × nights
+  - Addon totals = addon.price × nights (for each selected addon)
+  - Total price = accommodation total + sum of all selected addons
+  - All calculations memoized using useMemo to prevent infinite render loops
+
+- **Critical Bug Fixes**:
+  - Fixed infinite render loop by replacing `form.watch()` with `useWatch` and memoizing all price calculations
+  - Fixed double-toggle bug by removing redundant onClick handler from parent div
+  - Fixed NaN errors in guest count input with proper empty/invalid value handling
+
 - **E2E Testing**: 
-  - Verified listings display on all service pages with correct category filtering
-  - Tested admin login flow with role verification and dashboard redirect
-  - Confirmed non-admin users receive "Access Denied" when using admin login
-  - Validated protected admin API routes return 401 for unauthenticated and 403 for non-admin users
-  - Tested public listings API with and without category filters
+  - Verified complete booking flow end-to-end
+  - Tested addon selection with multiple services
+  - Confirmed no infinite render loops during form interaction
+  - Validated price calculations update correctly
+  - Verified booking submission (POST /api/bookings returns 201)
+  - Confirmed success toast and redirect to /bookings page
