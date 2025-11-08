@@ -1,0 +1,72 @@
+I want you to improve the visual aesthetics and overall design of my website 
+Do NOT change any backend logic, API calls, or admin functionality.
+Only improve the frontend styling, layout, structure, animations, and user interface components.
+1.	BRAND STYLE
+Apply a modern, premium, coastal travel theme.
+Color Palette:
+Primary: #0DA9A4 (turquoise ocean)
+Accent: #FF8C5A (coral sunset)
+Background: #F7F3EE (sand)
+Text: #1F2A2E (dark slate)
+Typography:
+Use Google Fonts:
+Headings: Poppins
+Body: Inter
+Replace all system fonts with these and ensure consistent font sizing and hierarchy.
+2.	HOMEPAGE REDESIGN REQUIREMENTS
+Redesign the homepage to feel like a real travel/lifestyle startup. Include:
+1. Hero Section
+Full-width hero background image (beach house, coast, or vacation theme).
+Large headline: “Tembea Bila Matata — Travel Without Worries”
+Sub-headline: “Stays, Cars, Cooks, and Errands — all in one place.”
+Prominent CTA button: “Explore Services” (accent color).
+Add light overlay gradient for readability.
+2. Service Cards Section
+Add four large clickable cards for:
+Stays
+Cars
+Cooks
+Errands
+Each card should have:
+Coastal-themed image or icon
+Title
+Short description
+Soft shadows
+Rounded corners
+Hover animation (lift + subtle glow)
+Use a responsive grid layout.
+3. “Why Tembe Bila Matata” Section
+Add a clean 4-column section with icons + text:
+Verified Local Stays
+Reliable Cars
+Authentic Local Cooks
+Stress-Free Errands
+Use muted neutral backgrounds with sand (#F7F3EE).
+4. Footer
+Brand name
+Tagline
+WhatsApp contact
+Social links
+Copyright
+3.	GLOBAL UI IMPROVEMENTS
+Add more spacing (padding/margins) around sections for a modern feel
+Use consistent section widths (max-width container, centered)
+Add soft drop shadows for cards and hero elements
+Add smooth hover effects on buttons
+Make buttons rounded (8–12px)
+Use coastal-themed color accents on CTAs
+Use a sticky navigation bar with subtle transparency
+Add a smooth fade-in animation when scrolling
+Ensure everything is fully responsive on mobile.
+4.	PAGE STRUCTURE IMPROVEMENTS
+Make sure all grids collapse into one column on mobile
+Standardize image aspect ratios for uniformity
+Improve alignment and spacing for a clean and professional feel
+5.	WHAT TO OUTPUT
+Update or regenerate the following files with the new design:
+index.html (homepage aesthetic improvements)
+styles.css (complete revamped UI theme)
+Any React/JSX components that render homepage sections
+Do NOT remove or break existing admin, authentication, or backend routing.
+The goal is a visually polished, modern, professional coastal travel website aesthetic.
+After generating changes, explain what was improved visually.

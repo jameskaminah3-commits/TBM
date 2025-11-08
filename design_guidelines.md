@@ -1,55 +1,73 @@
-# Lifestyle Concierge Platform - Design Guidelines
+# Coastal Travel Platform - Design Guidelines
 
 ## Design Approach
 
-**Selected Approach:** Reference-Based (Airbnb + Luxury Concierge Hybrid)
+**Selected Approach:** Modern Premium Coastal Travel Theme
 
-**Primary References:**
-- Airbnb: For accommodation browsing, card layouts, and booking flows
-- Luxury hotel websites (Four Seasons, Ritz-Carlton): For premium concierge service presentation
-- Linear: For clean typography and information hierarchy in dashboard areas
+**Brand Identity:**
+- Tembea Bila Matata: Travel Without Worries
+- Tagline: "Stays, Cars, Cooks, and Errands — all in one place"
+- Lifestyle-focused navigation and coastal aesthetic
 
 **Core Principles:**
-1. **Aspirational Yet Accessible:** Evoke luxury without intimidation
-2. **Trust Through Transparency:** Clear pricing, SLA indicators, provider credentials prominent
-3. **Simplified Complexity:** Multi-service booking feels effortless despite backend complexity
-4. **Visual Storytelling:** Images sell the lifestyle, not just the accommodation
+1. **Coastal Luxury:** Evoke seaside tranquility with turquoise, coral, and sand tones
+2. **Modern & Premium:** Clean layouts with generous spacing and soft shadows
+3. **Trust Through Design:** Professional appearance with verified service indicators
+4. **Mobile-First Responsive:** Seamless experience across all devices
+
+---
+
+## Color Palette
+
+**Brand Colors:**
+- **Primary:** #0DA9A4 (Turquoise Ocean) - HSL(178, 86%, 36%)
+  - Used for CTAs, links, and brand accents
+- **Accent:** #FF8C5A (Coral Sunset) - HSL(18, 100%, 68%)
+  - Used for secondary CTAs, highlights, and hover states
+- **Background:** #F7F3EE (Sand) - HSL(33, 38%, 95%)
+  - Main page background color
+- **Text:** #1F2A2E (Dark Slate) - HSL(196, 19%, 15%)
+  - Primary text color
+
+**Supporting Colors:**
+- **Light Neutrals:** Soft grays and off-whites for cards and sections
+- **Overlay Gradients:** Dark gradients over hero images for text readability
 
 ---
 
 ## Typography
 
 **Font System:** Google Fonts via CDN
-- **Primary Font:** Inter (400, 500, 600, 700) - Clean, modern, excellent readability
-- **Accent Font:** Playfair Display (600, 700) - For hero headlines and luxury touchpoints
+- **Headings:** Poppins (400, 500, 600, 700) - Modern, clean, geometric
+- **Body:** Inter (400, 500, 600) - Excellent readability for long-form content
 
 **Hierarchy:**
-- **Hero Headlines:** Playfair Display, 4xl to 6xl (56-72px), font-semibold, leading-tight
-- **Section Titles:** Inter, 3xl to 4xl (36-48px), font-semibold, leading-tight
-- **Card Titles:** Inter, xl to 2xl (24-32px), font-semibold
+- **Hero Headlines:** Poppins, 3xl to 6xl (48-72px), font-semibold, leading-tight
+- **Section Titles:** Poppins, 2xl to 4xl (32-48px), font-semibold
+- **Card Titles:** Poppins, xl to 2xl (20-32px), font-medium
 - **Body Text:** Inter, base to lg (16-18px), font-normal, leading-relaxed
 - **Metadata/Labels:** Inter, sm to base (14-16px), font-medium
-- **Fine Print/SLA Terms:** Inter, xs to sm (12-14px), font-normal
+- **Fine Print:** Inter, xs to sm (12-14px), font-normal
 
 ---
 
 ## Layout System
 
-**Spacing Primitives:** Tailwind units of 2, 4, 6, 8, 12, 16, 20, 24
-- **Micro spacing:** p-2, gap-2 (buttons, icons, tight elements)
-- **Component spacing:** p-4, p-6, gap-4, gap-6 (cards, forms)
-- **Section padding:** py-12, py-16, py-20 (mobile to desktop)
-- **Major spacing:** mb-8, mb-12, mb-16 (section breaks)
+**Spacing Primitives:** Generous spacing for modern feel
+- **Micro spacing:** gap-2, gap-3 (8-12px)
+- **Component spacing:** p-6, p-8, gap-6 (24-32px)
+- **Section padding:** py-16, py-20, py-24 (64-96px desktop)
+- **Major spacing:** mb-12, mb-16, mb-20 (section breaks)
 
 **Grid System:**
-- **Accommodation Cards:** grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4
-- **Service Selection:** grid-cols-1 md:grid-cols-2 lg:grid-cols-3 (during booking)
-- **Provider Profiles:** grid-cols-1 md:grid-cols-2 (detailed cards)
-- **Dashboard Layout:** 2-column split on desktop (sidebar + main content)
+- **Service Cards:** grid-cols-1 md:grid-cols-2 lg:grid-cols-4 (equal columns)
+- **Feature Cards:** grid-cols-1 md:grid-cols-3 (3-column layout)
+- **Content Cards:** grid-cols-1 md:grid-cols-2 lg:grid-cols-3
+- **Mobile:** All grids collapse to single column
 
 **Container Widths:**
-- **Hero/Full-width sections:** w-full with inner max-w-7xl px-4 md:px-8
-- **Content sections:** max-w-6xl mx-auto px-4
+- **Hero sections:** w-full with inner max-w-7xl px-4 md:px-8
+- **Content sections:** max-w-6xl mx-auto px-4 md:px-8
 - **Reading content:** max-w-4xl mx-auto
 
 ---
@@ -57,136 +75,140 @@
 ## Component Library
 
 ### Navigation
-**Header:** Sticky top navigation with logo left, search bar center (desktop), account/menu right. On mobile: logo left, hamburger right, search expands into full-width below.
-- Height: h-16 to h-20
-- Search bar: Rounded-full, shadow-sm, icon left
-- User menu: Avatar + dropdown with booking history, favorites, settings
+**Header:** Sticky navigation with transparency
+- Height: h-16
+- Subtle backdrop blur
+- Logo left, navigation center, theme toggle right
+- On mobile: Logo left, hamburger menu right
 
 ### Hero Section
-**Layout:** Full-viewport-height hero (min-h-screen) with large background image
-- Centered content overlay with headline + subheading + primary CTA
-- Search widget positioned prominently (centered or bottom-aligned card)
-- Subtle gradient overlay for text readability
+**Layout:** Full-width hero with coastal beach image
+- Large headline: "Tembea Bila Matata — Travel Without Worries"
+- Sub-headline: "Stays, Cars, Cooks, and Errands — all in one place"
+- CTA button in accent color
+- Dark gradient overlay for text readability
 
-**Search Widget:** Elevated card (shadow-xl) containing:
-- Destination input (autocomplete)
-- Check-in/Check-out date pickers (calendar icon)
-- Guest count selector
-- "Search" button (rounded-lg, w-full on mobile)
+**Search Widget:** Elevated card with backdrop blur
+- Destination, check-in, check-out, guests
+- Rounded corners (rounded-xl)
+- Soft shadows (shadow-xl)
 
-### Accommodation Cards
-**Structure:** Vertical card with 4:3 aspect ratio image, rounded-xl, shadow-md, hover:shadow-xl transition
-- Image carousel with dots indicator
-- Wishlist heart icon (top-right absolute positioning)
-- Title, location, rating stars, price per night
-- Service badges (if car rental/cook included): Small pills below title
+### Service Cards
+**Layout:** Large clickable cards for each service
+- **Stays, Drive, Dine, Relax**
+- Coastal-themed images or large icons
+- Title in Poppins font
+- Short descriptive text
+- Rounded corners (rounded-xl)
+- Soft shadows (shadow-md)
+- Hover: Lift effect + glow (transform + shadow-lg)
+- Responsive grid: 1 column mobile, 2 tablet, 4 desktop
 
-### Service Selection Cards (Booking Flow)
-**Layout:** 3-column grid of service categories
-- Icon at top (via Heroicons)
-- Service name and brief description
-- Checkbox or toggle switch for selection
-- "View Providers" link to see vetted options
-- Pricing displayed clearly (per service, per day)
+### "Why Choose Us" Section
+**Layout:** 4-column feature grid
+- Icons with circular backgrounds
+- Feature title in Poppins
+- Description text in Inter
+- Sand background (#F7F3EE)
+- Even spacing between items
+- Mobile: Single column stack
 
-### Provider Profiles
-**Layout:** 2-column cards with provider photo left, details right
-- Name, rating (stars + review count), years of experience
-- Service description (2-3 lines)
-- Availability indicator (green dot for available)
-- "View Full Profile" button
-- Trust badges: Verified, Background Check, SLA Agreement
-
-### Booking Summary Panel
-**Fixed Sidebar (Desktop) / Sticky Bottom (Mobile):**
-- Accommodation thumbnail + name
-- Selected services with individual pricing
-- Dates and guest count
-- Subtotal, service fees, total
-- Primary CTA: "Confirm & Pay"
-- Secondary link: "View Cancellation Policy"
-
-### Dashboard Components
-**Booking Cards:** Timeline-style layout
-- Accommodation image thumbnail (left)
-- Booking details (center): dates, services, provider assignments
-- Status badge (Upcoming, In Progress, Completed)
-- Quick actions: "Modify Services", "Contact Provider", "View Receipt"
-
-**Service Provider Directory:**
-- Filter sidebar: Service type, rating, availability, price range
-- Results grid: Provider cards with photo, rating, specialties
-- Sort options: Rating, Experience, Price
-
-### Trust Elements
-**SLA Indicators:** Small badge components showing:
-- Response time guarantee (e.g., "24hr response")
-- Cancellation flexibility
-- Quality assurance seal
-
-**Review Cards:**
-- Guest photo + name
-- Star rating
-- Review text (expandable)
-- Booking details: "Stayed in [City], [Month Year]"
-- Services used indicator
-
-### Forms
-**Booking Form:** Multi-step wizard
-- Step indicators at top (numbered circles with connecting lines)
-- Section headers with Inter font-semibold
-- Input fields: rounded-lg, border focus state with ring
-- Helper text below inputs (text-sm)
-- Navigation: "Back" + "Continue" buttons
+### Footer
+**Layout:** Clean footer with brand info
+- Brand name "Tembea Bila Matata"
+- Tagline
+- WhatsApp contact link
+- Social media icons
+- Copyright notice
+- Sand background
 
 ---
 
-## Images
+## Images & Visual Elements
 
-**Hero Image:** Full-width, high-quality lifestyle photograph showing a luxurious accommodation with local context (beach villa, mountain cabin, city penthouse). Image should evoke aspiration and relaxation. Dimensions: 1920x1080 minimum.
+**Hero Image:** Beach house, coastal villa, or vacation setting
+- Full-width, high-quality
+- Dimensions: 1920x1080 minimum
+- Dark gradient overlay for text contrast
 
-**Accommodation Listings:** Multiple images per property (4-8), showcasing:
-- Exterior/arrival view
-- Living spaces
-- Bedroom(s)
-- Kitchen/dining
-- Unique features (pool, view, outdoor space)
+**Service Card Images:** Coastal-themed imagery
+- Beaches, cars, local cuisine, lifestyle
+- Consistent aspect ratio (4:3 or 16:9)
+- Soft corners matching card border-radius
 
-**Service Provider Photos:** Professional headshots or action shots (chef cooking, driver with vehicle). Square format, 400x400px minimum.
-
-**Trust Signals:** Small badge graphics for certifications, SLA seals (can use icon fonts initially, replaced with brand assets later).
-
-**Background Textures:** Subtle, abstract patterns for section breaks or empty states (optional, use sparingly).
-
-**Icons:** Heroicons (outline for default, solid for active states) for all UI icons - services, amenities, navigation.
+**Icons:** Lucide React icons
+- Outline style for default state
+- Consistent sizing (h-10 w-10 for large features)
+- Turquoise primary color
 
 ---
 
 ## Responsive Behavior
 
 **Breakpoints:**
-- Mobile: < 768px (single column, stacked layout)
-- Tablet: 768px - 1024px (2-column grids)
-- Desktop: > 1024px (3-4 column grids, sidebar layouts)
+- Mobile: < 768px (single column, stacked)
+- Tablet: 768px - 1024px (2 columns)
+- Desktop: > 1024px (3-4 columns)
 
 **Mobile Priorities:**
-- Hero search widget simplified (fewer fields, expand on tap)
-- Booking summary becomes sticky bottom sheet
-- Image carousels become swipeable
-- Filters collapse into drawer
-- Provider profiles stack vertically
+- Service cards stack vertically
+- Hero search form simplified
+- All grids become single column
+- Touch-friendly button sizes (min-h-12)
+- Reduced padding for smaller screens
 
 ---
 
-## Key Interactions
+## Interactions & Animations
 
-**Minimal Animation:**
-- Card hover: Subtle scale (scale-105) + shadow increase
-- Button hover: Slight opacity/brightness shift
-- Page transitions: Simple fade (200ms)
-- Image carousel: Smooth slide transition
+**Smooth Hover Effects:**
+- Buttons: Subtle lift (translateY)
+- Cards: Scale + shadow increase (scale-105 + shadow-lg)
+- Links: Color transition to accent
+- Transition duration: 200-300ms
 
-**No Animations:**
-- Scroll-triggered effects
-- Complex parallax
-- Loading spinners (use simple pulse)
+**Scroll Animations:**
+- Fade-in on scroll for sections
+- Smooth reveal for content cards
+
+**Button Styles:**
+- Rounded corners (rounded-lg to rounded-xl, 8-12px)
+- Accent color for primary CTAs
+- Border-style for secondary actions
+- Ghost style for tertiary actions
+
+---
+
+## Key Design Features
+
+**Coastal Aesthetic:**
+- Turquoise and coral accent colors
+- Sand-toned backgrounds
+- Beach/ocean imagery
+- Light, airy spacing
+- Soft, inviting shadows
+
+**Premium Feel:**
+- Generous whitespace
+- High-quality imagery
+- Professional typography
+- Subtle animations
+- Clean, modern layouts
+
+**Trust Signals:**
+- Verified badges
+- SLA indicators
+- Professional service cards
+- Clear pricing
+- Transparent information
+
+---
+
+## Implementation Notes
+
+- Use Tailwind CSS for all styling
+- Apply coastal color variables from index.css
+- Ensure all interactive elements have hover states
+- Maintain consistent spacing throughout
+- Test on mobile, tablet, and desktop viewports
+- Optimize images for web performance

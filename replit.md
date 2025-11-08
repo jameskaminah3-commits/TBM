@@ -53,11 +53,16 @@ Tembea Bila Matata is a premium lifestyle concierge platform that seamlessly int
 ```
 
 ## Design System
-- **Primary Font**: Inter for UI elements
-- **Accent Font**: Playfair Display for headlines
-- **Color Scheme**: Professional blue primary with neutral grays
-- **Components**: Shadcn UI with custom styling
-- **Theme**: Light/Dark mode support
+- **Primary Font**: Inter for body text and UI elements
+- **Accent Font**: Poppins for headings and brand elements
+- **Color Scheme**: Coastal travel theme
+  - Primary: #0DA9A4 (Turquoise Ocean) - buttons, links, accents
+  - Accent: #FF8C5A (Coral Sunset) - CTAs, highlights
+  - Background: #F7F3EE (Sand) - page backgrounds
+  - Text: #1F2A2E (Dark Slate) - primary text
+- **Components**: Shadcn UI with coastal styling
+- **Visual Style**: Modern premium with generous spacing, soft shadows, rounded corners
+- **Animations**: Smooth hover effects (card lift, shadow glow)
 
 ## Data Models
 - **Accommodations**: Properties with pricing, amenities, and capacity
@@ -184,6 +189,25 @@ Tembea Bila Matata is a premium lifestyle concierge platform that seamlessly int
   - Fixed blog post visibility: auto-setting publishedAt prevents published posts from being hidden
 - **Package Additions**: Installed react-markdown and remark-gfm for markdown rendering
 - **E2E Testing**: Comprehensive end-to-end testing of all admin and public blog features confirmed working
+
+### Session 4: Coastal Visual Redesign (November 8, 2025)
+- **Brand Color System**: Implemented coastal travel theme with turquoise, coral, and sand palette
+- **Typography Update**: Switched to Poppins for headings, retained Inter for body text
+- **Homepage Redesign**:
+  - New hero headline: "Tembea Bila Matata — Travel Without Worries"
+  - Enlarged service cards with hover animations (lift + shadow glow)
+  - Rounded corners (xl) and soft drop shadows throughout
+  - "Explore Services" CTA in coral accent color
+  - Enhanced "Why Tembea Bila Matata" section with 4 features
+  - New footer with brand info, contact, and social links
+- **Visual Enhancements**:
+  - Increased spacing (py-20, py-24 for sections)
+  - Smooth transitions (300ms) on all interactive elements
+  - Card hover effects: -translate-y-2 + shadow-2xl
+  - Backdrop blur on hero search widget
+  - Circular icon backgrounds with primary/15 opacity
+- **Responsive Design**: All grids collapse to single column on mobile, touch-friendly buttons
+- **Design Guidelines**: Complete overhaul of design_guidelines.md with coastal theme specifications
 
 ## Navigation & User Experience
 
