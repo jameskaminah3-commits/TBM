@@ -9,7 +9,7 @@ import type { Listing } from "@shared/schema";
 export default function DinePage() {
   const [, setLocation] = useLocation();
   const { data: cooks, isLoading } = useQuery<Listing[]>({
-    queryKey: ["/api/listings", "cooks"],
+    queryKey: ["/api/listings?category=cooks"],
   });
 
   const cookListings = cooks || [];

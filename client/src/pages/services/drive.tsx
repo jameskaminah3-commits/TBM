@@ -9,7 +9,7 @@ import type { Listing } from "@shared/schema";
 export default function DrivePage() {
   const [, setLocation] = useLocation();
   const { data: cars, isLoading } = useQuery<Listing[]>({
-    queryKey: ["/api/listings", "cars"],
+    queryKey: ["/api/listings?category=cars"],
   });
 
   const carListings = cars || [];

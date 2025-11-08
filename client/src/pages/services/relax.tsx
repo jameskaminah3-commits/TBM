@@ -9,7 +9,7 @@ import type { Listing } from "@shared/schema";
 export default function RelaxPage() {
   const [, setLocation] = useLocation();
   const { data: errands, isLoading } = useQuery<Listing[]>({
-    queryKey: ["/api/listings", "errands"],
+    queryKey: ["/api/listings?category=errands"],
   });
 
   const errandListings = errands || [];

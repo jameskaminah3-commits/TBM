@@ -112,10 +112,12 @@ export async function setupAuth(app: Express) {
 
   // Admin login route - secret URL for admin access
   app.get("/admin/auth/login", (req, res, next) => {
+    req.session.adminLogin = true;
     ensureStrategy(req.hostname);
     passport.authenticate(`replitauth:${req.hostname}`, {
       prompt: "login consent",
       scope: ["openid", "email", "profile", "offline_access"],
+      callbackURL: `${req.protocol}://${req.hostname}/admin/auth/callback`,
     })(req, res, next);
   });
 
@@ -128,9 +130,14 @@ export async function setupAuth(app: Express) {
   });
 
   // Admin callback - redirects to admin dashboard after successful admin login
-  app.get("/admin/auth/callback", async (req, res, next) => {
+  app.get("/admin/auth/callback", (req, res, next) => {
     ensureStrategy(req.hostname);
-    passport.authenticate(`replitauth:${req.hostname}`, async (err: any, user: any) => {
+    const isAdminLogin = req.session.adminLogin;
+    delete req.session.adminLogin;
+
+    passport.authenticate(`replitauth:${req.hostname}`, {
+      callbackURL: `${req.protocol}://${req.hostname}/admin/auth/callback`,
+    }, async (err: any, user: any) => {
       if (err || !user) {
         return res.redirect("/admin/auth/login");
       }
