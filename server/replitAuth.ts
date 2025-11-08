@@ -110,11 +110,65 @@ export async function setupAuth(app: Express) {
     })(req, res, next);
   });
 
+  // Admin login route - secret URL for admin access
+  app.get("/admin/auth/login", (req, res, next) => {
+    ensureStrategy(req.hostname);
+    passport.authenticate(`replitauth:${req.hostname}`, {
+      prompt: "login consent",
+      scope: ["openid", "email", "profile", "offline_access"],
+    })(req, res, next);
+  });
+
   app.get("/api/callback", (req, res, next) => {
     ensureStrategy(req.hostname);
     passport.authenticate(`replitauth:${req.hostname}`, {
       successReturnToOrRedirect: "/",
       failureRedirect: "/api/login",
+    })(req, res, next);
+  });
+
+  // Admin callback - redirects to admin dashboard after successful admin login
+  app.get("/admin/auth/callback", async (req, res, next) => {
+    ensureStrategy(req.hostname);
+    passport.authenticate(`replitauth:${req.hostname}`, async (err: any, user: any) => {
+      if (err || !user) {
+        return res.redirect("/admin/auth/login");
+      }
+
+      // Check if user has admin role
+      try {
+        const userId = user.claims.sub;
+        await storage.upsertUser({
+          id: userId,
+          email: user.claims.email,
+          firstName: user.claims.first_name,
+          lastName: user.claims.last_name,
+          profileImageUrl: user.claims.profile_image_url,
+        });
+
+        const dbUser = await storage.getUser(userId);
+        if (!dbUser || dbUser.role !== "admin") {
+          return res.status(403).send(`
+            <html>
+              <body style="font-family: system-ui; padding: 40px; text-align: center;">
+                <h1>Access Denied</h1>
+                <p>You do not have admin privileges. Only administrators can access this area.</p>
+                <a href="/">Return to Home</a>
+              </body>
+            </html>
+          `);
+        }
+
+        req.logIn(user, (err) => {
+          if (err) {
+            return next(err);
+          }
+          res.redirect("/admin/dashboard");
+        });
+      } catch (error) {
+        console.error("Error during admin login:", error);
+        res.status(500).send("Internal server error");
+      }
     })(req, res, next);
   });
 
@@ -156,5 +210,42 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
   } catch (error) {
     res.status(401).json({ message: "Unauthorized" });
     return;
+  }
+};
+
+export const requireAdmin: RequestHandler = async (req, res, next) => {
+  const user = req.user as any;
+
+  // First check if user is authenticated
+  if (!req.isAuthenticated() || !user.expires_at) {
+    return res.status(401).json({ message: "Unauthorized - Please log in" });
+  }
+
+  // Get user from database to check role
+  try {
+    const userId = user.claims.sub;
+    const dbUser = await storage.getUser(userId);
+    
+    if (!dbUser || dbUser.role !== "admin") {
+      return res.status(403).json({ message: "Forbidden - Admin access required" });
+    }
+
+    // Refresh token if needed (same logic as isAuthenticated)
+    const now = Math.floor(Date.now() / 1000);
+    if (now > user.expires_at) {
+      const refreshToken = user.refresh_token;
+      if (!refreshToken) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const config = await getOidcConfig();
+      const tokenResponse = await client.refreshTokenGrant(config, refreshToken);
+      updateUserSession(user, tokenResponse);
+    }
+
+    return next();
+  } catch (error) {
+    console.error("Error checking admin role:", error);
+    return res.status(500).json({ message: "Internal server error" });
   }
 };

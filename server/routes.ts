@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated } from "./replitAuth";
+import { setupAuth, isAuthenticated, requireAdmin } from "./replitAuth";
 import {
   insertBookingSchema,
   insertAccommodationSchema,
@@ -190,7 +190,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===== ADMIN ROUTES ===== (Protected by Replit Auth)
   
   // Admin Dashboard Analytics
-  app.get("/api/admin/dashboard", isAuthenticated, async (_req, res) => {
+  app.get("/api/admin/dashboard", requireAdmin, async (_req, res) => {
     try {
       const metrics = await storage.getDashboardMetrics();
       res.json(metrics);
@@ -199,7 +199,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/admin/analytics/popular-services", isAuthenticated, async (_req, res) => {
+  app.get("/api/admin/analytics/popular-services", requireAdmin, async (_req, res) => {
     try {
       const popularServices = await storage.getPopularServices();
       res.json(popularServices);
@@ -208,7 +208,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/admin/analytics/revenue", isAuthenticated, async (_req, res) => {
+  app.get("/api/admin/analytics/revenue", requireAdmin, async (_req, res) => {
     try {
       const revenue = await storage.getRevenueByMonth();
       res.json(revenue);
@@ -218,7 +218,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin Accommodations Management
-  app.post("/api/admin/accommodations", isAuthenticated, async (req, res) => {
+  app.post("/api/admin/accommodations", requireAdmin, async (req, res) => {
     try {
       const validatedData = insertAccommodationSchema.parse(req.body);
       const accommodation = await storage.createAccommodation(validatedData);
@@ -232,7 +232,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/admin/accommodations/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/admin/accommodations/:id", requireAdmin, async (req, res) => {
     try {
       const accommodation = await storage.updateAccommodation(req.params.id, req.body);
       if (!accommodation) {
@@ -244,7 +244,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/admin/accommodations/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/admin/accommodations/:id", requireAdmin, async (req, res) => {
     try {
       const success = await storage.deleteAccommodation(req.params.id);
       if (!success) {
@@ -257,7 +257,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin Services Management
-  app.post("/api/admin/services", isAuthenticated, async (req, res) => {
+  app.post("/api/admin/services", requireAdmin, async (req, res) => {
     try {
       const validatedData = insertServiceSchema.parse(req.body);
       const service = await storage.createService(validatedData);
@@ -271,7 +271,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/admin/services/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/admin/services/:id", requireAdmin, async (req, res) => {
     try {
       const service = await storage.updateService(req.params.id, req.body);
       if (!service) {
@@ -283,7 +283,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/admin/services/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/admin/services/:id", requireAdmin, async (req, res) => {
     try {
       const success = await storage.deleteService(req.params.id);
       if (!success) {
@@ -296,7 +296,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin Bookings Management
-  app.patch("/api/admin/bookings/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/admin/bookings/:id", requireAdmin, async (req, res) => {
     try {
       const booking = await storage.updateBooking(req.params.id, req.body);
       if (!booking) {
@@ -308,7 +308,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/admin/bookings/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/admin/bookings/:id", requireAdmin, async (req, res) => {
     try {
       const success = await storage.deleteBooking(req.params.id);
       if (!success) {
@@ -321,7 +321,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin Blog Management
-  app.get("/api/admin/blog", isAuthenticated, async (_req, res) => {
+  app.get("/api/admin/blog", requireAdmin, async (_req, res) => {
     try {
       const posts = await storage.getBlogPosts();
       res.json(posts);
@@ -330,7 +330,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/admin/blog/:id", isAuthenticated, async (req, res) => {
+  app.get("/api/admin/blog/:id", requireAdmin, async (req, res) => {
     try {
       const post = await storage.getBlogPost(req.params.id);
       if (!post) {
@@ -342,7 +342,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/admin/blog", isAuthenticated, async (req, res) => {
+  app.post("/api/admin/blog", requireAdmin, async (req, res) => {
     try {
       const validatedData = insertBlogPostSchema.parse(req.body);
       const blogPost = await storage.createBlogPost(validatedData);
@@ -356,7 +356,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/admin/blog/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/admin/blog/:id", requireAdmin, async (req, res) => {
     try {
       const blogPost = await storage.updateBlogPost(req.params.id, req.body);
       if (!blogPost) {
@@ -368,7 +368,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/admin/blog/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/admin/blog/:id", requireAdmin, async (req, res) => {
     try {
       const success = await storage.deleteBlogPost(req.params.id);
       if (!success) {
@@ -381,7 +381,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin Listings Management
-  app.get("/api/admin/listings", isAuthenticated, async (_req, res) => {
+  app.get("/api/admin/listings", requireAdmin, async (_req, res) => {
     try {
       const listings = await storage.getListings();
       res.json(listings);
@@ -390,7 +390,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/admin/listings/:id", isAuthenticated, async (req, res) => {
+  app.get("/api/admin/listings/:id", requireAdmin, async (req, res) => {
     try {
       const listing = await storage.getListing(req.params.id);
       if (!listing) {
@@ -402,7 +402,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/admin/listings", isAuthenticated, async (req, res) => {
+  app.post("/api/admin/listings", requireAdmin, async (req, res) => {
     try {
       const validatedData = insertListingSchema.parse(req.body);
       const listing = await storage.createListing(validatedData);
@@ -416,7 +416,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/admin/listings/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/admin/listings/:id", requireAdmin, async (req, res) => {
     try {
       const listing = await storage.updateListing(req.params.id, req.body);
       if (!listing) {
@@ -428,7 +428,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/admin/listings/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/admin/listings/:id", requireAdmin, async (req, res) => {
     try {
       const success = await storage.deleteListing(req.params.id);
       if (!success) {

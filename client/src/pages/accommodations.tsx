@@ -1,18 +1,22 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { Star, MapPin, Users, Bed, Bath } from "lucide-react";
+import { Star, MapPin, Users, Bed, Bath, Sparkles } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { Accommodation } from "@shared/schema";
+import type { Listing } from "@shared/schema";
 
 export default function Accommodations() {
   const [, setLocation] = useLocation();
   
-  const { data: accommodations, isLoading } = useQuery<Accommodation[]>({
-    queryKey: ["/api/accommodations"],
+  const { data: accommodations, isLoading } = useQuery<Listing[]>({
+    queryKey: ["/api/listings"],
+    queryFn: async () => {
+      const response = await fetch("/api/listings?category=stays");
+      return response.json();
+    },
   });
 
   if (isLoading) {
@@ -62,7 +66,7 @@ export default function Accommodations() {
             >
               <div className="relative aspect-[4/3] overflow-hidden">
                 <img
-                  src={accommodation.imageUrl}
+                  src={accommodation.imageUrl || "https://images.unsplash.com/photo-1564501049412-61c2a3083791?w=800"}
                   alt={accommodation.title}
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                 />
@@ -80,32 +84,27 @@ export default function Accommodations() {
                   <span className="line-clamp-1">{accommodation.location}</span>
                 </div>
 
-                <div className="flex items-center gap-4 text-sm text-muted-foreground mb-3">
-                  <div className="flex items-center gap-1">
-                    <Users className="h-4 w-4" />
-                    <span>{accommodation.maxGuests}</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Bed className="h-4 w-4" />
-                    <span>{accommodation.bedrooms}</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Bath className="h-4 w-4" />
-                    <span>{accommodation.bathrooms}</span>
-                  </div>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {accommodation.features.slice(0, 3).map((feature, idx) => (
+                    <Badge key={idx} variant="secondary" className="text-xs">
+                      {feature}
+                    </Badge>
+                  ))}
+                  {accommodation.features.length > 3 && (
+                    <Badge variant="secondary" className="text-xs">
+                      +{accommodation.features.length - 3} more
+                    </Badge>
+                  )}
                 </div>
 
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1">
-                    <Star className="h-4 w-4 fill-primary text-primary" />
-                    <span className="font-medium">{(accommodation.rating / 10).toFixed(1)}</span>
-                    <span className="text-sm text-muted-foreground">
-                      ({accommodation.reviewCount})
-                    </span>
+                    <Sparkles className="h-4 w-4 text-primary" />
+                    <span className="text-sm text-muted-foreground">Luxury Stay</span>
                   </div>
                   <div className="text-right">
-                    <div className="font-semibold">${accommodation.pricePerNight}</div>
-                    <div className="text-xs text-muted-foreground">per night</div>
+                    <div className="font-semibold">${accommodation.price}</div>
+                    <div className="text-xs text-muted-foreground">per day</div>
                   </div>
                 </div>
               </div>
