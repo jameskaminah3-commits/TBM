@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { Menu } from "lucide-react";
+import { Menu, LogIn, LogOut, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "./theme-toggle";
 import {
@@ -10,10 +10,12 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { useState } from "react";
+import { useAuth } from "@/hooks/useAuth";
 
 export function Header() {
   const [location] = useLocation();
   const [open, setOpen] = useState(false);
+  const { isAuthenticated, isLoading } = useAuth();
 
   const navLinks = [
     { href: "/", label: "Home", testId: "link-nav-home" },
@@ -60,6 +62,49 @@ export function Header() {
         </nav>
 
         <div className="flex items-center gap-2">
+          {/* Auth Buttons - Desktop */}
+          <div className="hidden md:flex items-center gap-2">
+            {!isLoading && isAuthenticated && (
+              <Button
+                variant="ghost"
+                size="sm"
+                asChild
+                data-testid="button-admin"
+              >
+                <Link href="/admin/dashboard">
+                  <Shield className="h-4 w-4 mr-2" />
+                  Admin
+                </Link>
+              </Button>
+            )}
+            {!isLoading && !isAuthenticated && (
+              <Button
+                variant="default"
+                size="sm"
+                asChild
+                data-testid="button-login"
+              >
+                <a href="/api/login">
+                  <LogIn className="h-4 w-4 mr-2" />
+                  Log In
+                </a>
+              </Button>
+            )}
+            {!isLoading && isAuthenticated && (
+              <Button
+                variant="ghost"
+                size="sm"
+                asChild
+                data-testid="button-logout"
+              >
+                <a href="/api/logout">
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Log Out
+                </a>
+              </Button>
+            )}
+          </div>
+          
           <ThemeToggle />
           
           {/* Mobile Menu */}
@@ -87,6 +132,50 @@ export function Header() {
                     {link.label}
                   </Link>
                 ))}
+                
+                {/* Auth Links - Mobile */}
+                <div className="pt-4 border-t flex flex-col space-y-3">
+                  {!isLoading && isAuthenticated && (
+                    <Button
+                      variant="outline"
+                      className="justify-start"
+                      asChild
+                      data-testid="mobile-button-admin"
+                      onClick={() => setOpen(false)}
+                    >
+                      <Link href="/admin/dashboard">
+                        <Shield className="h-4 w-4 mr-2" />
+                        Admin
+                      </Link>
+                    </Button>
+                  )}
+                  {!isLoading && !isAuthenticated && (
+                    <Button
+                      variant="default"
+                      className="justify-start"
+                      asChild
+                      data-testid="mobile-button-login"
+                    >
+                      <a href="/api/login">
+                        <LogIn className="h-4 w-4 mr-2" />
+                        Log In
+                      </a>
+                    </Button>
+                  )}
+                  {!isLoading && isAuthenticated && (
+                    <Button
+                      variant="ghost"
+                      className="justify-start"
+                      asChild
+                      data-testid="mobile-button-logout"
+                    >
+                      <a href="/api/logout">
+                        <LogOut className="h-4 w-4 mr-2" />
+                        Log Out
+                      </a>
+                    </Button>
+                  )}
+                </div>
               </nav>
             </SheetContent>
           </Sheet>

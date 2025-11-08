@@ -11,6 +11,8 @@ import {
   type InsertBlogPost,
   type Listing,
   type InsertListing,
+  type User,
+  type UpsertUser,
   type DashboardMetrics,
   type PopularService,
   type RevenueByMonth,
@@ -20,11 +22,17 @@ import {
   bookings,
   blogPosts,
   listings,
+  users,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
 
 export interface IStorage {
+  // Replit Auth Integration: User operations
+  // (IMPORTANT) these user operations are mandatory for Replit Auth.
+  getUser(id: string): Promise<User | undefined>;
+  upsertUser(user: UpsertUser): Promise<User>;
+
   // Accommodations
   getAccommodations(): Promise<Accommodation[]>;
   getAccommodation(id: string): Promise<Accommodation | undefined>;
@@ -78,6 +86,28 @@ export interface IStorage {
 
 // Database Storage implementation using Drizzle ORM and PostgreSQL
 export class DatabaseStorage implements IStorage {
+  // Replit Auth Integration: User operations
+  // (IMPORTANT) these user operations are mandatory for Replit Auth.
+  async getUser(id: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
+  }
+
+  async upsertUser(userData: UpsertUser): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values(userData)
+      .onConflictDoUpdate({
+        target: users.id,
+        set: {
+          ...userData,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return user;
+  }
+
   // Accommodations
   async getAccommodations(): Promise<Accommodation[]> {
     return await db.select().from(accommodations);
