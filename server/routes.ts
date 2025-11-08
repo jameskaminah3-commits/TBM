@@ -7,6 +7,7 @@ import {
   insertServiceSchema,
   insertProviderSchema,
   insertBlogPostSchema,
+  insertListingSchema,
 } from "@shared/schema";
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -331,6 +332,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete blog post" });
+    }
+  });
+
+  // Admin Listings Management
+  app.get("/api/admin/listings", async (_req, res) => {
+    try {
+      const listings = await storage.getListings();
+      res.json(listings);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch listings" });
+    }
+  });
+
+  app.get("/api/admin/listings/:id", async (req, res) => {
+    try {
+      const listing = await storage.getListing(req.params.id);
+      if (!listing) {
+        return res.status(404).json({ error: "Listing not found" });
+      }
+      res.json(listing);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch listing" });
+    }
+  });
+
+  app.post("/api/admin/listings", async (req, res) => {
+    try {
+      const validatedData = insertListingSchema.parse(req.body);
+      const listing = await storage.createListing(validatedData);
+      res.status(201).json(listing);
+    } catch (error) {
+      if (error instanceof Error) {
+        res.status(400).json({ error: error.message });
+      } else {
+        res.status(500).json({ error: "Failed to create listing" });
+      }
+    }
+  });
+
+  app.patch("/api/admin/listings/:id", async (req, res) => {
+    try {
+      const listing = await storage.updateListing(req.params.id, req.body);
+      if (!listing) {
+        return res.status(404).json({ error: "Listing not found" });
+      }
+      res.json(listing);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update listing" });
+    }
+  });
+
+  app.delete("/api/admin/listings/:id", async (req, res) => {
+    try {
+      const success = await storage.deleteListing(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Listing not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete listing" });
     }
   });
 
