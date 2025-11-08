@@ -8,6 +8,13 @@ import heroImage from "@assets/generated_images/Luxury_beachfront_villa_hero_b91
 export default function Home() {
   const [, setLocation] = useLocation();
 
+  const scrollToServices = () => {
+    const servicesSection = document.getElementById('services-section');
+    if (servicesSection) {
+      servicesSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
   return (
     <div className="min-h-screen">
       {/* Hero Section */}
@@ -32,7 +39,7 @@ export default function Home() {
           <Button
             size="lg"
             className="bg-accent hover:bg-accent/90 text-white px-8 py-6 text-lg rounded-xl shadow-xl hover:shadow-2xl transition-all hover:scale-105 mb-16"
-            onClick={() => setLocation("/accommodations")}
+            onClick={scrollToServices}
             data-testid="button-explore-services"
           >
             Explore Services
@@ -106,7 +113,7 @@ export default function Home() {
       </section>
 
       {/* Service Cards Section */}
-      <section className="py-20 md:py-24 bg-background">
+      <section id="services-section" className="py-20 md:py-24 bg-background">
         <div className="container mx-auto px-4 md:px-8">
           <div className="text-center mb-16">
             <h2 className="font-serif text-3xl md:text-4xl lg:text-5xl font-semibold mb-4">Our Services</h2>

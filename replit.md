@@ -208,6 +208,14 @@ Tembea Bila Matata is a premium lifestyle concierge platform that seamlessly int
   - Circular icon backgrounds with primary/15 opacity
 - **Responsive Design**: All grids collapse to single column on mobile, touch-friendly buttons
 - **Design Guidelines**: Complete overhaul of design_guidelines.md with coastal theme specifications
+- **Mobile Navigation**: Added mobile dropdown menu with Sheet component
+  - Hamburger menu icon opens slide-out navigation drawer
+  - All navigation links accessible on mobile
+  - Smooth close animation when selecting a link
+- **Scroll Navigation**: "Explore Services" button now scrolls to services section
+  - Smooth scroll behavior using scrollIntoView
+  - Works on both mobile and desktop
+  - Keeps users on homepage instead of navigating away
 
 ## Navigation & User Experience
 

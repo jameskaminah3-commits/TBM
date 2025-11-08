@@ -1,10 +1,36 @@
 import { Link, useLocation } from "wouter";
-import { User } from "lucide-react";
+import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "./theme-toggle";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import { useState } from "react";
 
 export function Header() {
   const [location] = useLocation();
+  const [open, setOpen] = useState(false);
+
+  const navLinks = [
+    { href: "/", label: "Home", testId: "link-nav-home" },
+    { href: "/accommodations", label: "Stay", testId: "link-nav-stay" },
+    { href: "/services/drive", label: "Drive", testId: "link-nav-drive" },
+    { href: "/services/dine", label: "Dine", testId: "link-nav-dine" },
+    { href: "/services/relax", label: "Relax", testId: "link-nav-relax" },
+    { href: "/blog", label: "Blog", testId: "link-nav-blog" },
+    { href: "/bookings", label: "My Bookings", testId: "link-nav-bookings" },
+  ];
+
+  const isActive = (href: string) => {
+    if (href === "/") return location === "/";
+    if (href === "/accommodations") return location === "/accommodations" || location.startsWith("/accommodation/");
+    if (href.startsWith("/blog")) return location.startsWith("/blog");
+    return location === href;
+  };
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -17,79 +43,53 @@ export function Header() {
           <span className="font-serif text-xl md:text-2xl font-semibold">Tembea Bila Matata</span>
         </Link>
 
+        {/* Desktop Navigation */}
         <nav className="hidden md:flex items-center space-x-6">
-          <Link
-            href="/"
-            className={`text-sm font-medium transition-colors hover:text-primary ${
-              location === "/" ? "text-foreground" : "text-muted-foreground"
-            }`}
-            data-testid="link-nav-home"
-          >
-            Home
-          </Link>
-          <Link
-            href="/accommodations"
-            className={`text-sm font-medium transition-colors hover:text-primary ${
-              location === "/accommodations" || location.startsWith("/accommodation/") ? "text-foreground" : "text-muted-foreground"
-            }`}
-            data-testid="link-nav-stay"
-          >
-            Stay
-          </Link>
-          <Link
-            href="/services/drive"
-            className={`text-sm font-medium transition-colors hover:text-primary ${
-              location === "/services/drive" ? "text-foreground" : "text-muted-foreground"
-            }`}
-            data-testid="link-nav-drive"
-          >
-            Drive
-          </Link>
-          <Link
-            href="/services/dine"
-            className={`text-sm font-medium transition-colors hover:text-primary ${
-              location === "/services/dine" ? "text-foreground" : "text-muted-foreground"
-            }`}
-            data-testid="link-nav-dine"
-          >
-            Dine
-          </Link>
-          <Link
-            href="/services/relax"
-            className={`text-sm font-medium transition-colors hover:text-primary ${
-              location === "/services/relax" ? "text-foreground" : "text-muted-foreground"
-            }`}
-            data-testid="link-nav-relax"
-          >
-            Relax
-          </Link>
-          <Link
-            href="/blog"
-            className={`text-sm font-medium transition-colors hover:text-primary ${
-              location.startsWith("/blog") ? "text-foreground" : "text-muted-foreground"
-            }`}
-            data-testid="link-nav-blog"
-          >
-            Blog
-          </Link>
-          <Link
-            href="/bookings"
-            className={`text-sm font-medium transition-colors hover:text-primary ${
-              location === "/bookings" ? "text-foreground" : "text-muted-foreground"
-            }`}
-            data-testid="link-nav-bookings"
-          >
-            My Bookings
-          </Link>
+          {navLinks.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className={`text-sm font-medium transition-colors hover:text-primary ${
+                isActive(link.href) ? "text-foreground" : "text-muted-foreground"
+              }`}
+              data-testid={link.testId}
+            >
+              {link.label}
+            </Link>
+          ))}
         </nav>
 
         <div className="flex items-center gap-2">
           <ThemeToggle />
-          <div className="md:hidden">
-            <Button variant="ghost" size="icon" data-testid="button-menu">
-              <User className="h-5 w-5" />
-            </Button>
-          </div>
+          
+          {/* Mobile Menu */}
+          <Sheet open={open} onOpenChange={setOpen}>
+            <SheetTrigger asChild className="md:hidden">
+              <Button variant="ghost" size="icon" data-testid="button-mobile-menu">
+                <Menu className="h-5 w-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="right" className="w-[280px] sm:w-[350px]">
+              <SheetHeader>
+                <SheetTitle className="font-serif text-xl">Menu</SheetTitle>
+              </SheetHeader>
+              <nav className="flex flex-col space-y-4 mt-8">
+                {navLinks.map((link) => (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    onClick={() => setOpen(false)}
+                    className={`text-base font-medium transition-colors hover:text-primary py-2 ${
+                      isActive(link.href) ? "text-primary font-semibold" : "text-muted-foreground"
+                    }`}
+                    data-testid={`mobile-${link.testId}`}
+                  >
+                    {link.label}
+                  </Link>
+                ))}
+              </nav>
+            </SheetContent>
+          </Sheet>
         </div>
       </div>
     </header>
