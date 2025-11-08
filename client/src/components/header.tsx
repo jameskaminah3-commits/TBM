@@ -30,11 +30,38 @@ export function Header() {
           <Link
             href="/accommodations"
             className={`text-sm font-medium transition-colors hover:text-primary ${
-              location === "/accommodations" ? "text-foreground" : "text-muted-foreground"
+              location === "/accommodations" || location.startsWith("/accommodation/") ? "text-foreground" : "text-muted-foreground"
             }`}
-            data-testid="link-nav-accommodations"
+            data-testid="link-nav-stay"
           >
-            Accommodations
+            Stay
+          </Link>
+          <Link
+            href="/services/drive"
+            className={`text-sm font-medium transition-colors hover:text-primary ${
+              location === "/services/drive" ? "text-foreground" : "text-muted-foreground"
+            }`}
+            data-testid="link-nav-drive"
+          >
+            Drive
+          </Link>
+          <Link
+            href="/services/dine"
+            className={`text-sm font-medium transition-colors hover:text-primary ${
+              location === "/services/dine" ? "text-foreground" : "text-muted-foreground"
+            }`}
+            data-testid="link-nav-dine"
+          >
+            Dine
+          </Link>
+          <Link
+            href="/services/relax"
+            className={`text-sm font-medium transition-colors hover:text-primary ${
+              location === "/services/relax" ? "text-foreground" : "text-muted-foreground"
+            }`}
+            data-testid="link-nav-relax"
+          >
+            Relax
           </Link>
           <Link
             href="/blog"

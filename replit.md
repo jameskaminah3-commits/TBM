@@ -185,7 +185,19 @@ Tembea Bila Matata is a premium lifestyle concierge platform that seamlessly int
 - **Package Additions**: Installed react-markdown and remark-gfm for markdown rendering
 - **E2E Testing**: Comprehensive end-to-end testing of all admin and public blog features confirmed working
 
-## User Experience Highlights
+## Navigation & User Experience
+
+### Main Navigation (Lifestyle Terms)
+The website uses lifestyle-focused navigation terminology:
+- **Home** - Homepage with hero and platform overview
+- **Stay** - Browse luxury BnBs and accommodations
+- **Drive** - Car rental services (self-drive and chauffeur)
+- **Dine** - Personal chef and cooking services
+- **Relax** - Errands and personal assistance services
+- **Blog** - Travel tips and lifestyle content
+- **My Bookings** - Manage all reservations
+
+### User Experience Highlights
 - Hero section with immersive background imagery
 - Card-based accommodation browsing with hover effects
 - Detailed property pages with amenities and service add-ons
