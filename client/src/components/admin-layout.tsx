@@ -3,6 +3,8 @@ import {
   LayoutDashboard,
   Calendar,
   FileText,
+  List,
+  Plus,
 } from "lucide-react";
 import {
   Sidebar,
@@ -29,6 +31,16 @@ const menuItems = [
     title: "Bookings",
     url: "/admin/bookings",
     icon: Calendar,
+  },
+  {
+    title: "Listings",
+    url: "/admin/listings",
+    icon: List,
+  },
+  {
+    title: "Add Listing",
+    url: "/admin/listings/new",
+    icon: Plus,
   },
   {
     title: "Blog",
