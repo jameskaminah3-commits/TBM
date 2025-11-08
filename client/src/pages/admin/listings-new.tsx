@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { insertListingSchema } from "@shared/schema";
 
 const featureOptions = [
@@ -75,6 +75,7 @@ export default function AdminListingsNew() {
       return apiRequest("POST", "/api/admin/listings", data);
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/listings"] });
       toast({
         title: "Success",
         description: "Listing created successfully",
