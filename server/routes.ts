@@ -136,6 +136,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Listings (Public) - Unified catalog for all services
+  app.get("/api/listings", async (req, res) => {
+    try {
+      const { category } = req.query;
+      const listings = await storage.getListings();
+      
+      // Filter by category if provided
+      const filteredListings = category 
+        ? listings.filter(l => l.category === category)
+        : listings;
+      
+      res.json(filteredListings);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch listings" });
+    }
+  });
+
+  app.get("/api/listings/:id", async (req, res) => {
+    try {
+      const listing = await storage.getListing(req.params.id);
+      if (!listing) {
+        return res.status(404).json({ error: "Listing not found" });
+      }
+      res.json(listing);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch listing" });
+    }
+  });
+
   // Blog Posts (Public)
   app.get("/api/blog", async (_req, res) => {
     try {

@@ -17,12 +17,16 @@ export const sessions = pgTable(
 
 // Replit Auth Integration: User storage table
 // (IMPORTANT) This table is mandatory for Replit Auth, don't drop it.
+export const userRoles = ["admin", "customer"] as const;
+export type UserRole = typeof userRoles[number];
+
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   email: varchar("email").unique(),
   firstName: varchar("first_name"),
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
+  role: varchar("role").notNull().default("customer"), // admin or customer
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
