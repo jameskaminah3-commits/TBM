@@ -126,6 +126,32 @@ export const insertBlogPostSchema = createInsertSchema(blogPosts).omit({
 export type InsertBlogPost = z.infer<typeof insertBlogPostSchema>;
 export type BlogPost = typeof blogPosts.$inferSelect;
 
+// Listings (Admin-managed service listings)
+export const listingCategories = ["stays", "cars", "cooks", "errands"] as const;
+export type ListingCategory = typeof listingCategories[number];
+
+export const listings = pgTable("listings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(),
+  category: text("category").notNull(), // "stays", "cars", "cooks", "errands"
+  price: integer("price").notNull(),
+  location: text("location").notNull(),
+  imageUrl: text("image_url"),
+  description: text("description").notNull(),
+  features: text("features").array().notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const insertListingSchema = createInsertSchema(listings).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertListing = z.infer<typeof insertListingSchema>;
+export type Listing = typeof listings.$inferSelect;
+
 // Analytics Types
 export type DashboardMetrics = {
   totalBookings: number;
