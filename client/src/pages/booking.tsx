@@ -20,7 +20,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import type { Accommodation, Service } from "@shared/schema";
+import type { Listing } from "@shared/schema";
 import { insertBookingSchema } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
@@ -40,12 +40,25 @@ export default function Booking() {
   const { toast } = useToast();
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
 
-  const { data: accommodation } = useQuery<Accommodation>({
-    queryKey: ["/api/accommodations", id],
+  const { data: accommodation } = useQuery<Listing>({
+    queryKey: ["/api/listings", id],
+    queryFn: async () => {
+      const response = await fetch(`/api/listings/${id}`);
+      if (!response.ok) throw new Error("Failed to fetch listing");
+      return response.json();
+    },
   });
 
-  const { data: services } = useQuery<Service[]>({
-    queryKey: ["/api/services"],
+  const { data: addonServices } = useQuery<Listing[]>({
+    queryKey: ["/api/listings/addons"],
+    queryFn: async () => {
+      const [cars, cooks, errands] = await Promise.all([
+        fetch("/api/listings?category=cars").then(r => r.json()),
+        fetch("/api/listings?category=cooks").then(r => r.json()),
+        fetch("/api/listings?category=errands").then(r => r.json()),
+      ]);
+      return [...cars, ...cooks, ...errands];
+    },
   });
 
   const form = useForm<BookingFormValues>({
@@ -93,13 +106,10 @@ export default function Booking() {
 
   const onSubmit = (data: BookingFormValues) => {
     const nights = calculateNights(data.checkIn, data.checkOut);
-    const accommodationTotal = (accommodation?.pricePerNight || 0) * nights;
-    const servicesTotal = services
+    const accommodationTotal = (accommodation?.price || 0) * nights;
+    const servicesTotal = addonServices
       ?.filter((s) => selectedServices.includes(s.id))
-      .reduce((sum, s) => {
-        const multiplier = s.priceType === "per-day" ? nights : 1;
-        return sum + s.pricePerDay * multiplier;
-      }, 0) || 0;
+      .reduce((sum, s) => sum + (s.price * nights), 0) || 0;
 
     createBookingMutation.mutate({
       ...data,
@@ -117,26 +127,20 @@ export default function Booking() {
   };
 
   const nights = calculateNights(form.watch("checkIn"), form.watch("checkOut"));
-  const accommodationTotal = (accommodation?.pricePerNight || 0) * nights;
-  const servicesTotal = services
+  const accommodationTotal = (accommodation?.price || 0) * nights;
+  const servicesTotal = addonServices
     ?.filter((s) => selectedServices.includes(s.id))
-    .reduce((sum, s) => {
-      const multiplier = s.priceType === "per-day" ? nights : 1;
-      return sum + s.pricePerDay * multiplier;
-    }, 0) || 0;
+    .reduce((sum, s) => sum + (s.price * nights), 0) || 0;
   const totalPrice = accommodationTotal + servicesTotal;
 
-  const getServiceIcon = (type: string) => {
-    switch (type) {
-      case "car-rental":
-      case "car-with-driver":
+  const getServiceIcon = (category: string) => {
+    switch (category) {
+      case "cars":
         return Car;
-      case "personal-cook":
+      case "cooks":
         return ChefHat;
-      case "shopping":
+      case "errands":
         return ShoppingBag;
-      case "fridge-stocking":
-        return Truck;
       default:
         return CheckCircle2;
     }
@@ -267,7 +271,7 @@ export default function Booking() {
                               <Input
                                 type="number"
                                 min="1"
-                                max={accommodation.maxGuests}
+                                max="20"
                                 className="pl-10"
                                 {...field}
                                 onChange={(e) => field.onChange(parseInt(e.target.value))}
@@ -290,45 +294,59 @@ export default function Booking() {
                   </p>
 
                   <div className="space-y-4">
-                    {services?.map((service) => {
-                      const Icon = getServiceIcon(service.type);
-                      const isSelected = selectedServices.includes(service.id);
-                      const price = service.priceType === "per-day" 
-                        ? `$${service.pricePerDay}/day` 
-                        : `$${service.pricePerDay} one-time`;
+                    {addonServices && addonServices.length > 0 ? (
+                      addonServices.map((service) => {
+                        const Icon = getServiceIcon(service.category);
+                        const isSelected = selectedServices.includes(service.id);
+                        const price = `$${service.price}/day`;
 
-                      return (
-                        <div
-                          key={service.id}
-                          className={`border rounded-md p-4 ${
-                            isSelected ? "border-primary bg-primary/5" : ""
-                          }`}
-                          data-testid={`service-${service.id}`}
-                        >
-                          <div className="flex items-start gap-4">
-                            <Checkbox
-                              checked={isSelected}
-                              onCheckedChange={() => toggleService(service.id)}
-                              data-testid={`checkbox-service-${service.id}`}
-                            />
-                            <div className="flex-1">
-                              <div className="flex items-center gap-3 mb-2">
-                                <div className="w-10 h-10 rounded-md bg-primary/10 flex items-center justify-center">
-                                  <Icon className="h-5 w-5 text-primary" />
+                        return (
+                          <div
+                            key={service.id}
+                            className={`border rounded-md p-4 cursor-pointer transition-colors ${
+                              isSelected ? "border-primary bg-primary/5" : "hover-elevate"
+                            }`}
+                            onClick={() => toggleService(service.id)}
+                            data-testid={`service-${service.id}`}
+                          >
+                            <div className="flex items-start gap-4">
+                              <Checkbox
+                                checked={isSelected}
+                                onCheckedChange={() => toggleService(service.id)}
+                                data-testid={`checkbox-service-${service.id}`}
+                              />
+                              <div className="flex-1">
+                                <div className="flex items-center gap-3 mb-2">
+                                  <div className="w-10 h-10 rounded-md bg-primary/10 flex items-center justify-center flex-shrink-0">
+                                    <Icon className="h-5 w-5 text-primary" />
+                                  </div>
+                                  <div>
+                                    <div className="font-semibold">{service.title}</div>
+                                    <div className="text-sm text-muted-foreground">{price}</div>
+                                  </div>
                                 </div>
-                                <div>
-                                  <div className="font-semibold">{service.name}</div>
-                                  <div className="text-sm text-muted-foreground">{price}</div>
-                                </div>
+                                <p className="text-sm text-muted-foreground line-clamp-2">
+                                  {service.description}
+                                </p>
+                                {service.features.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 mt-2">
+                                    {service.features.slice(0, 3).map((feature, idx) => (
+                                      <Badge key={idx} variant="secondary" className="text-xs">
+                                        {feature}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
-                              <p className="text-sm text-muted-foreground">
-                                {service.description}
-                              </p>
                             </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })
+                    ) : (
+                      <p className="text-sm text-muted-foreground text-center py-4">
+                        No addon services available at the moment.
+                      </p>
+                    )}
                   </div>
                 </Card>
 
@@ -354,7 +372,7 @@ export default function Booking() {
                 <div>
                   <div className="aspect-[4/3] rounded-md overflow-hidden mb-3">
                     <img
-                      src={accommodation.imageUrl}
+                      src={accommodation.imageUrl || "https://images.unsplash.com/photo-1564501049412-61c2a3083791?w=800"}
                       alt={accommodation.title}
                       className="w-full h-full object-cover"
                     />
@@ -382,14 +400,13 @@ export default function Booking() {
 
                 {selectedServices.length > 0 && (
                   <>
-                    {services
+                    {addonServices
                       ?.filter((s) => selectedServices.includes(s.id))
                       .map((service) => {
-                        const multiplier = service.priceType === "per-day" ? nights : 1;
-                        const serviceTotal = service.pricePerDay * multiplier;
+                        const serviceTotal = service.price * nights;
                         return (
                           <div key={service.id} className="flex justify-between">
-                            <span className="text-muted-foreground">{service.name}</span>
+                            <span className="text-muted-foreground">{service.title}</span>
                             <span className="font-medium">${serviceTotal}</span>
                           </div>
                         );
