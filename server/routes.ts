@@ -127,14 +127,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/bookings", async (req: any, res) => {
+  app.post("/api/bookings", isAuthenticated, async (req: any, res) => {
     try {
-      // Get userId from session if authenticated, otherwise null (for public bookings)
-      const userId = req.user?.claims?.sub || null;
-      console.log("[BOOKING] Creating booking, userId:", userId, "hasUser:", !!req.user, "hasClaims:", !!req.user?.claims);
+      const userId = req.user.claims.sub;
       const validatedData = insertBookingSchema.parse(req.body);
       const booking = await storage.createBooking({ ...validatedData, userId } as any);
-      console.log("[BOOKING] Created booking:", booking.id, "userId:", booking.userId);
       res.status(201).json(booking);
     } catch (error) {
       console.error("[BOOKING] Error creating booking:", error);

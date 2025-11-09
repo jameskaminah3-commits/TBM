@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import {
   Form,
   FormControl,
@@ -66,9 +67,22 @@ export default function ServiceBooking() {
   const { serviceType, id } = useParams<{ serviceType: string; id: string }>();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [withDriver, setWithDriver] = React.useState(false);
 
   const config = SERVICE_CONFIG[serviceType as keyof typeof SERVICE_CONFIG];
+
+  React.useEffect(() => {
+    if (!authLoading && !isAuthenticated) {
+      toast({
+        title: "Login Required",
+        description: "Please log in to book services.",
+        variant: "destructive",
+      });
+      setLocation("/");
+      window.location.href = "/api/login";
+    }
+  }, [authLoading, isAuthenticated, setLocation, toast]);
 
   const { data: allServices, isLoading } = useQuery<ServiceItem[]>({
     queryKey: [config?.endpoint],
