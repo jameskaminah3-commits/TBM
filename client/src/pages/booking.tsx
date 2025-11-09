@@ -408,7 +408,7 @@ export default function Booking() {
                   size="lg"
                   className="w-full"
                   disabled={createBookingMutation.isPending}
-                  data-testid="button-confirm-booking"
+                  data-testid="button-complete-booking"
                 >
                   {createBookingMutation.isPending ? "Processing..." : "Confirm & Pay"}
                 </Button>
