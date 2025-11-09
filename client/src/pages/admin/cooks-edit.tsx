@@ -54,6 +54,7 @@ export default function AdminCooksEdit() {
 
   const { data: cook, isLoading } = useQuery<CookType>({
     queryKey: ["/api/admin/cooks", cookId],
+    enabled: !!cookId,
   });
 
   const form = useForm<FormData>({

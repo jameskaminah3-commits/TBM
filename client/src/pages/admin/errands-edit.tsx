@@ -54,6 +54,7 @@ export default function AdminErrandsEdit() {
 
   const { data: errand, isLoading } = useQuery<ErrandType>({
     queryKey: ["/api/admin/errands", errandId],
+    enabled: !!errandId,
   });
 
   const form = useForm<FormData>({

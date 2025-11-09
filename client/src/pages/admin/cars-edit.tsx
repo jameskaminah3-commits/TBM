@@ -66,6 +66,7 @@ export default function AdminCarsEdit() {
 
   const { data: car, isLoading } = useQuery<CarType>({
     queryKey: ["/api/admin/cars", carId],
+    enabled: !!carId,
   });
 
   const form = useForm<FormData>({

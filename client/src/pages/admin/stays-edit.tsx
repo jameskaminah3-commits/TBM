@@ -56,6 +56,7 @@ export default function AdminStaysEdit() {
 
   const { data: stay, isLoading } = useQuery<Stay>({
     queryKey: ["/api/admin/stays", stayId],
+    enabled: !!stayId,
   });
 
   const form = useForm<FormData>({

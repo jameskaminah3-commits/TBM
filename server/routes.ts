@@ -456,6 +456,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/admin/stays/:id", requireAdmin, async (req, res) => {
+    try {
+      const stay = await storage.getStay(req.params.id);
+      if (!stay) {
+        return res.status(404).json({ error: "Stay not found" });
+      }
+      res.json(stay);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch stay" });
+    }
+  });
+
   app.post("/api/admin/stays", requireAdmin, async (req, res) => {
     try {
       const validatedData = insertStaySchema.parse(req.body);
@@ -508,6 +520,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(cars);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch cars" });
+    }
+  });
+
+  app.get("/api/admin/cars/:id", requireAdmin, async (req, res) => {
+    try {
+      const car = await storage.getCar(req.params.id);
+      if (!car) {
+        return res.status(404).json({ error: "Car not found" });
+      }
+      res.json(car);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch car" });
     }
   });
 
@@ -566,6 +590,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/admin/cooks/:id", requireAdmin, async (req, res) => {
+    try {
+      const cook = await storage.getCook(req.params.id);
+      if (!cook) {
+        return res.status(404).json({ error: "Cook not found" });
+      }
+      res.json(cook);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch cook" });
+    }
+  });
+
   app.post("/api/admin/cooks", requireAdmin, async (req, res) => {
     try {
       const validatedData = insertCookSchema.parse(req.body);
@@ -618,6 +654,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(errands);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch errands" });
+    }
+  });
+
+  app.get("/api/admin/errands/:id", requireAdmin, async (req, res) => {
+    try {
+      const errand = await storage.getErrand(req.params.id);
+      if (!errand) {
+        return res.status(404).json({ error: "Errand not found" });
+      }
+      res.json(errand);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch errand" });
     }
   });
 
