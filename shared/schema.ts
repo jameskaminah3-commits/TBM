@@ -332,3 +332,28 @@ export type RevenueByMonth = {
   revenue: number;
   bookingCount: number;
 };
+
+// Admin Clients Types
+export type ServiceSummary = {
+  type: "accommodation" | "car" | "cook" | "errand";
+  id: string;
+  title: string;
+};
+
+export type BookingWithServices = Omit<Booking, "selectedServices"> & {
+  services: ServiceSummary[];
+};
+
+export type ClientUser = {
+  id: string;
+  email?: string;
+  firstName?: string;
+  lastName?: string;
+} | null;
+
+export type ClientWithBookings = {
+  user: ClientUser;
+  contactEmail: string;
+  contactName: string;
+  bookings: BookingWithServices[];
+};

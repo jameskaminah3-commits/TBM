@@ -41,7 +41,7 @@ import {
   users,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 
 export interface IStorage {
   // Replit Auth Integration: User operations
@@ -133,6 +133,9 @@ export interface IStorage {
   getDashboardMetrics(): Promise<DashboardMetrics>;
   getPopularServices(): Promise<PopularService[]>;
   getRevenueByMonth(): Promise<RevenueByMonth[]>;
+
+  // Admin Clients
+  getClientsWithBookings(): Promise<import("@shared/schema").ClientWithBookings[]>;
 }
 
 // Database Storage implementation using Drizzle ORM and PostgreSQL
@@ -591,6 +594,85 @@ export class DatabaseStorage implements IStorage {
         bookingCount: data.count,
       }))
       .sort((a, b) => a.month.localeCompare(b.month));
+  }
+
+  async getClientsWithBookings(): Promise<import("@shared/schema").ClientWithBookings[]> {
+    const allBookings = await this.getBookings();
+    
+    const accommodationIds = allBookings.filter(b => b.accommodationId).map(b => b.accommodationId!);
+    const selectedServiceIds = Array.from(new Set(allBookings.flatMap(b => b.selectedServices)));
+    const userIds = allBookings.filter(b => b.userId).map(b => b.userId!);
+
+    const [accommodationsList, servicesList, usersList] = await Promise.all([
+      accommodationIds.length > 0 ? db.select().from(stays).where(inArray(stays.id, accommodationIds)) : Promise.resolve([]),
+      selectedServiceIds.length > 0 ? db.select().from(services).where(inArray(services.id, selectedServiceIds)) : Promise.resolve([]),
+      userIds.length > 0 ? db.select().from(users).where(inArray(users.id, userIds)) : Promise.resolve([]),
+    ]);
+
+    const accommodationsMap = new Map(accommodationsList.map(a => [a.id, a]));
+    const servicesMap = new Map(servicesList.map(s => [s.id, s]));
+    const usersMap = new Map(usersList.map(u => [u.id, u]));
+
+    const bookingsWithServices: import("@shared/schema").BookingWithServices[] = allBookings.map(booking => {
+      const serviceSummaries: import("@shared/schema").ServiceSummary[] = [];
+      
+      if (booking.accommodationId && accommodationsMap.has(booking.accommodationId)) {
+        const stay = accommodationsMap.get(booking.accommodationId)!;
+        serviceSummaries.push({ type: "accommodation", id: stay.id, title: stay.title });
+      }
+      
+      booking.selectedServices.forEach(serviceId => {
+        const service = servicesMap.get(serviceId);
+        if (service) {
+          const serviceType = service.type.includes("car") ? "car" as const 
+            : service.type.includes("cook") ? "cook" as const
+            : service.type.includes("shopping") || service.type.includes("stocking") ? "errand" as const
+            : "errand" as const;
+          
+          serviceSummaries.push({ 
+            type: serviceType, 
+            id: service.id, 
+            title: service.name 
+          });
+        }
+      });
+
+      const { selectedServices, ...bookingWithoutSelectedServices } = booking;
+      return {
+        ...bookingWithoutSelectedServices,
+        services: serviceSummaries,
+      };
+    });
+
+    const clientsMap = new Map<string, import("@shared/schema").ClientWithBookings>();
+
+    bookingsWithServices.forEach(booking => {
+      const groupKey = booking.userId || booking.guestEmail || "unknown";
+      
+      if (!clientsMap.has(groupKey)) {
+        const user = booking.userId ? usersMap.get(booking.userId) : null;
+        
+        clientsMap.set(groupKey, {
+          user: user ? {
+            id: user.id,
+            email: user.email || undefined,
+            firstName: user.firstName || undefined,
+            lastName: user.lastName || undefined,
+          } : null,
+          contactEmail: user?.email || booking.guestEmail || "",
+          contactName: user 
+            ? `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email || "Unknown"
+            : booking.guestName || booking.guestEmail || "Guest",
+          bookings: [],
+        });
+      }
+
+      clientsMap.get(groupKey)!.bookings.push(booking);
+    });
+
+    return Array.from(clientsMap.values()).sort((a, b) => 
+      a.contactName.localeCompare(b.contactName)
+    );
   }
 }
 

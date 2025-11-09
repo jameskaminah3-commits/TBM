@@ -16,6 +16,7 @@ import DinePage from "@/pages/services/dine";
 import RelaxPage from "@/pages/services/relax";
 import AdminDashboard from "@/pages/admin/dashboard";
 import AdminBookings from "@/pages/admin/bookings";
+import AdminClients from "@/pages/admin/clients";
 import AdminListings from "@/pages/admin/listings";
 import AdminStaysNew from "@/pages/admin/stays-new";
 import AdminStaysEdit from "@/pages/admin/stays-edit";
@@ -46,6 +47,7 @@ function Router() {
       <Route path="/blog" component={Blog} />
       <Route path="/admin/dashboard" component={AdminDashboard} />
       <Route path="/admin/bookings" component={AdminBookings} />
+      <Route path="/admin/clients" component={AdminClients} />
       <Route path="/admin/stays/new" component={AdminStaysNew} />
       <Route path="/admin/stays/:id/edit" component={AdminStaysEdit} />
       <Route path="/admin/cars/new" component={AdminCarsNew} />

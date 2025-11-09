@@ -240,6 +240,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/admin/clients", requireAdmin, async (_req, res) => {
+    try {
+      const clients = await storage.getClientsWithBookings();
+      res.json(clients);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch client data" });
+    }
+  });
+
   // Admin Accommodations Management
   app.post("/api/admin/accommodations", requireAdmin, async (req, res) => {
     try {

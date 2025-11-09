@@ -10,6 +10,7 @@ import {
   Car,
   ChefHat,
   Briefcase,
+  Users,
 } from "lucide-react";
 import {
   Sidebar,
@@ -42,6 +43,11 @@ const menuItems = [
     title: "Bookings",
     url: "/admin/bookings",
     icon: Calendar,
+  },
+  {
+    title: "Clients",
+    url: "/admin/clients",
+    icon: Users,
   },
   {
     title: "Listings",
