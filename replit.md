@@ -186,13 +186,29 @@ The frontend `useAuth` hook manages authentication state, and the header compone
     - `/admin/cars/new`, `/admin/cars/:id/edit`
     - `/admin/cooks/new`, `/admin/cooks/:id/edit`
     - `/admin/errands/new`, `/admin/errands/:id/edit`
+  - Removed old unified listings routes `/admin/listings/new` and `/admin/listings/:id/edit`
+
+- **Navigation UX Enhancement**:
+  - **Dropdown Menu for "Add Listing"**: Replaced single "Add Listing" button with Shadcn DropdownMenu containing 4 options:
+    - Add Stay (routes to /admin/stays/new)
+    - Add Car (routes to /admin/cars/new)
+    - Add Cook (routes to /admin/cooks/new)
+    - Add Errand (routes to /admin/errands/new)
+  - Each option has proper icon (Home, Car, ChefHat, Briefcase) and data-testid for testing
+  - Prevents accidental posts to wrong table, provides clear navigation to domain-specific forms
 
 - **Critical Design Decisions**:
   - **Bedrooms/Bathrooms Required**: Following architect recommendation, stays retain required bedrooms/bathrooms fields to maintain data richness and competitive positioning as lifestyle concierge platform
   - **Optional priceWithDriver**: Cars table allows optional chauffeur pricing with z.preprocess pattern (empty string → undefined, with min(1) validation when provided)
   - **Separate Forms Over Generic**: Choice of domain-specific forms provides clarity, proper validation, and better UX for admins managing different service types
+  - **Dropdown vs. Multiple Buttons**: Architect recommended dropdown approach balances discoverability with minimal sidebar clutter
 
 - **Data Integrity**:
   - Real-time integration: Admin CRUD operations immediately reflect in customer-facing pages via TanStack Query cache invalidation
   - Proper cache keys: Both admin and public cache keys invalidated on mutations (e.g., ['/api/admin/stays'] and ['/api/stays'])
   - Type safety: Shared schema ensures consistency between frontend and backend
+
+- **E2E Testing Verification**:
+  - Complete seamless flow tested: Admin creates stay → appears in admin listings → appears on public page → customer books → admin views booking
+  - Test case: Created "Seamless Villa 1khdXK" at $350/night → customer booked 2 nights ($700 total) → booking ID c70957ad confirmed in admin dashboard
+  - Fixed button data-testid: Changed from "button-confirm-booking" to "button-complete-booking" for test consistency
