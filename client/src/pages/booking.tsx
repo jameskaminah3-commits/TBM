@@ -128,12 +128,25 @@ export default function Booking() {
     return (service as ErrandType).serviceName;
   };
 
+  const getServicePriceLabel = (service: AddonService): string => {
+    const price = getServicePrice(service);
+    if (service.category === "cars") return `$${price}/day`;
+    if (service.category === "cooks") return `$${price}/session`;
+    return `$${price} base`;
+  };
+
+  const calculateServiceTotal = (service: AddonService, nights: number): number => {
+    const basePrice = getServicePrice(service);
+    if (service.category === "cars") return basePrice * nights;
+    return basePrice;
+  };
+
   const onSubmit = (data: BookingFormValues) => {
     const nights = calculateNights(data.checkIn, data.checkOut);
     const accommodationTotal = (accommodation?.price || 0) * nights;
     const servicesTotal = addonServices
       ?.filter((s) => selectedServices.includes(s.id))
-      .reduce((sum, s) => sum + (getServicePrice(s) * nights), 0) || 0;
+      .reduce((sum, s) => sum + calculateServiceTotal(s, nights), 0) || 0;
 
     createBookingMutation.mutate({
       ...data,
@@ -164,7 +177,7 @@ export default function Booking() {
   const servicesTotal = useMemo(() => {
     return addonServices
       ?.filter((s) => selectedServices.includes(s.id))
-      .reduce((sum, s) => sum + (getServicePrice(s) * nights), 0) || 0;
+      .reduce((sum, s) => sum + calculateServiceTotal(s, nights), 0) || 0;
   }, [addonServices, selectedServices, nights]);
   
   const totalPrice = useMemo(() => {
@@ -339,7 +352,7 @@ export default function Booking() {
                       addonServices.map((service) => {
                         const Icon = getServiceIcon(service.category);
                         const isSelected = selectedServices.includes(service.id);
-                        const price = `$${getServicePrice(service)}/day`;
+                        const price = getServicePriceLabel(service);
 
                         return (
                           <div
@@ -443,7 +456,7 @@ export default function Booking() {
                     {addonServices
                       ?.filter((s) => selectedServices.includes(s.id))
                       .map((service) => {
-                        const serviceTotal = getServicePrice(service) * nights;
+                        const serviceTotal = calculateServiceTotal(service, nights);
                         return (
                           <div key={service.id} className="flex justify-between">
                             <span className="text-muted-foreground">{getServiceTitle(service)}</span>
