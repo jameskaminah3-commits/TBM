@@ -40,22 +40,34 @@ The frontend `useAuth` hook manages authentication state, and the header compone
 
 ### System Design Choices
 - **API Structure**: 
-  - Public routes: `/api/listings` with optional `?category=` filter for frontend display
-  - Admin routes: All `/api/admin/*` endpoints protected by `requireAdmin` middleware
-  - CRUD operations for accommodations, services, bookings, blog posts, and listings
+  - **Public routes**: Separate domain endpoints for type-safe data fetching:
+    - `/api/stays` - stays listings with bedrooms/bathrooms fields
+    - `/api/cars` - car rentals with optional priceWithDriver
+    - `/api/cooks` - chef services with specialty field
+    - `/api/errands` - errand services with basePrice
+  - **Admin routes**: All `/api/admin/*` endpoints protected by `requireAdmin` middleware:
+    - `/api/admin/stays`, `/api/admin/cars`, `/api/admin/cooks`, `/api/admin/errands` - Domain-specific CRUD
+    - `/api/admin/bookings` - Booking management
+    - `/api/admin/blog` - Blog post management
 - **Authentication & Authorization**: 
   - All `/api/admin/*` routes protected by `requireAdmin` middleware (checks authentication + admin role)
   - Regular users get role='customer', admins get role='admin' in database
   - Admin login via secret URL `/admin/auth/login` with role verification on callback
-- **Data Models**: Comprehensive models for Users (with role column), Sessions, Accommodations, Services, Providers, Bookings, BlogPosts, and Listings. Listings use UUIDs for primary keys and store category-specific metadata in JSONB `features` column
-- **Listings System**: 
-  - Single unified `listings` table for all service categories (stays, cars, cooks, errands)
-  - Frontend pages fetch filtered data via `/api/listings?category=X`
-  - Features stored as JSON for flexible category-specific attributes
+- **Data Models**: 
+  - **Separate domain tables**: Stays, Cars, Cooks, Errands with service-specific fields
+  - **Stays**: title, location, price, maxOccupancy, bedrooms, bathrooms, imageUrl, features[], description
+  - **Cars**: model, location, pricePerDay, priceWithDriver (optional), seats, transmission, imageUrl, features[], description
+  - **Cooks**: name, location, specialty, pricePerSession, imageUrl, description
+  - **Errands**: serviceName, location, basePrice, imageUrl, description
+  - **Shared models**: Users (with role), Sessions, Bookings, BlogPosts
+- **Admin Interface**: 
+  - Tabbed listings page showing category-specific tables with proper columns per service type
+  - Separate create/edit forms per domain (8 forms total) with domain-specific validation
+  - Real-time cache invalidation ensures admin CRUD changes immediately reflect in frontend
 - **Service Types**: Diverse offerings including luxury accommodations, car rentals (self-drive/chauffeur), personal chef services, and errand services
 - **Navigation**: Lifestyle-focused main navigation (Stay, Drive, Dine, Relax) alongside standard Home, Blog, and My Bookings
 - **Development Standards**: PostgreSQL for persistent data storage, strong TypeScript typing, and Zod for validation
-- **Sample Data**: Platform includes 16 sample listings (4 stays, 4 cars, 4 cooks, 4 errands), 3 published blog posts, and 1 test admin user
+- **Sample Data**: Platform includes sample data across all domains, 3 published blog posts, and 1 test admin user
 
 ## External Dependencies
 - **PostgreSQL Database**: Provided by Neon for persistent data storage
@@ -132,3 +144,55 @@ The frontend `useAuth` hook manages authentication state, and the header compone
   - Validated price calculations update correctly
   - Verified booking submission (POST /api/bookings returns 201)
   - Confirmed success toast and redirect to /bookings page
+
+### Phase 4: Separate Domain Models with Admin CRUD (November 9, 2025)
+
+- **Database Migration to Separate Tables**:
+  - Migrated from unified `listings` table to separate domain tables: `stays`, `cars`, `cooks`, `errands`
+  - Each table has domain-specific fields for accurate data representation
+  - Stays: Added required `bedrooms` and `bathrooms` fields for property completeness
+  - Cars: Implemented optional `priceWithDriver` field with z.preprocess pattern for proper validation
+  - Cooks: Specialty field for cuisine expertise
+  - Errands: BasePrice for service pricing model
+
+- **Frontend Migration**:
+  - Updated all customer-facing pages (Stay, Drive, Dine, Relax) to use domain-specific endpoints
+  - Booking page refactored to fetch accommodation and addons from correct domain endpoints
+  - Type safety ensured throughout with proper TypeScript types per domain
+
+- **Admin Interface Overhaul**:
+  - **Tabbed Listings Page**: Implemented tabs (Stays, Cars, Cooks, Errands) with category-specific table columns
+  - **Domain-Specific Forms**: Created 8 separate admin forms (new + edit for each domain):
+    - Stays forms: Include all required fields (bedrooms, bathrooms, maxOccupancy) with proper validation
+    - Cars forms: Handle optional priceWithDriver using z.preprocess for empty → undefined conversion
+    - Cooks forms: Specialty selection and pricing
+    - Errands forms: Service-specific fields
+  - **Form Features**:
+    - Proper validation using Zod schemas with domain-specific rules
+    - Features array managed via controlled checkboxes
+    - Cache invalidation on mutations for real-time updates
+    - Success toasts and navigation on completion
+    - All forms have proper data-testid attributes for testing
+
+- **Backend API Updates**:
+  - Separate CRUD endpoints per domain: `/api/admin/stays`, `/api/admin/cars`, `/api/admin/cooks`, `/api/admin/errands`
+  - Public endpoints follow same pattern: `/api/stays`, `/api/cars`, `/api/cooks`, `/api/errands`
+  - All admin routes protected by `requireAdmin` middleware
+  - Proper Zod validation on all request bodies
+
+- **Routing**:
+  - Registered all new admin routes in App.tsx:
+    - `/admin/stays/new`, `/admin/stays/:id/edit`
+    - `/admin/cars/new`, `/admin/cars/:id/edit`
+    - `/admin/cooks/new`, `/admin/cooks/:id/edit`
+    - `/admin/errands/new`, `/admin/errands/:id/edit`
+
+- **Critical Design Decisions**:
+  - **Bedrooms/Bathrooms Required**: Following architect recommendation, stays retain required bedrooms/bathrooms fields to maintain data richness and competitive positioning as lifestyle concierge platform
+  - **Optional priceWithDriver**: Cars table allows optional chauffeur pricing with z.preprocess pattern (empty string → undefined, with min(1) validation when provided)
+  - **Separate Forms Over Generic**: Choice of domain-specific forms provides clarity, proper validation, and better UX for admins managing different service types
+
+- **Data Integrity**:
+  - Real-time integration: Admin CRUD operations immediately reflect in customer-facing pages via TanStack Query cache invalidation
+  - Proper cache keys: Both admin and public cache keys invalidated on mutations (e.g., ['/api/admin/stays'] and ['/api/stays'])
+  - Type safety: Shared schema ensures consistency between frontend and backend
