@@ -41,6 +41,8 @@ const featureOptions = [
 const formSchema = insertStaySchema.extend({
   price: z.coerce.number().min(1, "Price must be at least $1"),
   maxOccupancy: z.coerce.number().min(1, "At least 1 guest required"),
+  bedrooms: z.coerce.number().min(1, "At least 1 bedroom required"),
+  bathrooms: z.coerce.number().min(1, "At least 1 bathroom required"),
 });
 
 type FormData = z.infer<typeof formSchema>;
@@ -63,6 +65,8 @@ export default function AdminStaysEdit() {
       price: 0,
       location: "",
       maxOccupancy: 2,
+      bedrooms: 1,
+      bathrooms: 1,
       imageUrl: "",
       description: "",
       features: [],
@@ -76,6 +80,8 @@ export default function AdminStaysEdit() {
         price: stay.price,
         location: stay.location,
         maxOccupancy: stay.maxOccupancy,
+        bedrooms: stay.bedrooms,
+        bathrooms: stay.bathrooms,
         imageUrl: stay.imageUrl || "",
         description: stay.description,
         features: stay.features,
@@ -210,6 +216,48 @@ export default function AdminStaysEdit() {
                           />
                         </FormControl>
                         <FormDescription>Maximum guests</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="bedrooms"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Bedrooms</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min="1"
+                            placeholder="3"
+                            {...field}
+                            data-testid="input-stay-bedrooms"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="bathrooms"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Bathrooms</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min="1"
+                            placeholder="2"
+                            {...field}
+                            data-testid="input-stay-bathrooms"
+                          />
+                        </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
