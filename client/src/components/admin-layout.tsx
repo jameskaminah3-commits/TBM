@@ -5,6 +5,11 @@ import {
   FileText,
   List,
   Plus,
+  ChevronDown,
+  Home,
+  Car,
+  ChefHat,
+  Briefcase,
 } from "lucide-react";
 import {
   Sidebar,
@@ -19,6 +24,12 @@ import {
   SidebarTrigger,
   SidebarHeader,
 } from "@/components/ui/sidebar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 const menuItems = [
@@ -38,14 +49,36 @@ const menuItems = [
     icon: List,
   },
   {
-    title: "Add Listing",
-    url: "/admin/listings/new",
-    icon: Plus,
-  },
-  {
     title: "Blog",
     url: "/admin/blog",
     icon: FileText,
+  },
+];
+
+const addListingOptions = [
+  {
+    title: "Add Stay",
+    url: "/admin/stays/new",
+    icon: Home,
+    testId: "link-add-stay",
+  },
+  {
+    title: "Add Car",
+    url: "/admin/cars/new",
+    icon: Car,
+    testId: "link-add-car",
+  },
+  {
+    title: "Add Cook",
+    url: "/admin/cooks/new",
+    icon: ChefHat,
+    testId: "link-add-cook",
+  },
+  {
+    title: "Add Errand",
+    url: "/admin/errands/new",
+    icon: Briefcase,
+    testId: "link-add-errand",
   },
 ];
 
@@ -84,6 +117,28 @@ function AdminSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
+              
+              <SidebarMenuItem>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <SidebarMenuButton data-testid="button-add-listing">
+                      <Plus />
+                      <span>Add Listing</span>
+                      <ChevronDown className="ml-auto h-4 w-4" />
+                    </SidebarMenuButton>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent side="right" align="start" className="w-48">
+                    {addListingOptions.map((option) => (
+                      <DropdownMenuItem key={option.title} asChild>
+                        <Link href={option.url} data-testid={option.testId}>
+                          <option.icon className="mr-2 h-4 w-4" />
+                          {option.title}
+                        </Link>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

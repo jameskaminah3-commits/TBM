@@ -17,8 +17,6 @@ import RelaxPage from "@/pages/services/relax";
 import AdminDashboard from "@/pages/admin/dashboard";
 import AdminBookings from "@/pages/admin/bookings";
 import AdminListings from "@/pages/admin/listings";
-import AdminListingsNew from "@/pages/admin/listings-new";
-import AdminListingsEdit from "@/pages/admin/listings-edit";
 import AdminStaysNew from "@/pages/admin/stays-new";
 import AdminStaysEdit from "@/pages/admin/stays-edit";
 import AdminCarsNew from "@/pages/admin/cars-new";
@@ -56,8 +54,6 @@ function Router() {
       <Route path="/admin/cooks/:id/edit" component={AdminCooksEdit} />
       <Route path="/admin/errands/new" component={AdminErrandsNew} />
       <Route path="/admin/errands/:id/edit" component={AdminErrandsEdit} />
-      <Route path="/admin/listings/:id/edit" component={AdminListingsEdit} />
-      <Route path="/admin/listings/new" component={AdminListingsNew} />
       <Route path="/admin/listings" component={AdminListings} />
       <Route path="/admin/blog" component={AdminBlog} />
       <Route component={NotFound} />
