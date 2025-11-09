@@ -142,19 +142,36 @@ export async function setupAuth(app: Express) {
         return res.redirect("/admin/auth/login");
       }
 
-      // Check if user has admin role
+      // Check if user has admin role or is in admin allowlist
       try {
         const userId = user.claims.sub;
+        const userEmail = user.claims.email;
+        
         await storage.upsertUser({
           id: userId,
-          email: user.claims.email,
+          email: userEmail,
           firstName: user.claims.first_name,
           lastName: user.claims.last_name,
           profileImageUrl: user.claims.profile_image_url,
         });
 
-        const dbUser = await storage.getUser(userId);
-        if (!dbUser || dbUser.role !== "admin") {
+        let dbUser = await storage.getUser(userId);
+        
+        // Check if email is in admin allowlist
+        const isAdminEmail = userEmail && ADMIN_EMAILS.includes(userEmail);
+        
+        // Auto-promote if in allowlist but not admin yet
+        if (isAdminEmail && dbUser && dbUser.role !== "admin") {
+          console.log(`[SECURITY] Auto-promoting allowlisted email to admin during login: ${userEmail}`);
+          await storage.updateUserRole(userId, "admin");
+          dbUser = await storage.getUser(userId); // Refresh user data
+        }
+        
+        // Check admin access
+        const hasAdminAccess = (dbUser && dbUser.role === "admin") || isAdminEmail;
+        
+        if (!hasAdminAccess) {
+          console.log(`Admin access denied for user ${userId} (${userEmail}). Role: ${dbUser?.role}, In allowlist: ${isAdminEmail}`);
           return res.status(403).send(`
             <html>
               <body style="font-family: system-ui; padding: 40px; text-align: center;">
@@ -223,6 +240,7 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
 // Admin email allowlist - fallback for reliable access
 const ADMIN_EMAILS = [
   "admin@tembea.test",
+  "admin@test.com", // For E2E testing
   // Add more admin emails here as needed
 ];
 
