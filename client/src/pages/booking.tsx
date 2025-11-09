@@ -32,6 +32,7 @@ const bookingFormSchema = insertBookingSchema.extend({
   guests: z.coerce.number().min(1, "At least 1 guest required"),
   guestName: z.string().min(2, "Name is required"),
   guestEmail: z.string().email("Valid email is required"),
+  guestPhone: z.string().optional(),
 }).refine((data) => {
   if (!data.checkIn || !data.checkOut) return true;
   return new Date(data.checkOut) > new Date(data.checkIn);
@@ -79,6 +80,7 @@ export default function Booking() {
       accommodationId: id || "",
       guestName: "",
       guestEmail: "",
+      guestPhone: "",
       checkIn: "",
       checkOut: "",
       guests: 2,
@@ -253,6 +255,25 @@ export default function Booking() {
                               placeholder="john@example.com"
                               {...field}
                               data-testid="input-guest-email"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="guestPhone"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Phone (Optional)</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="tel"
+                              placeholder="+1 (555) 123-4567"
+                              {...field}
+                              data-testid="input-guest-phone"
                             />
                           </FormControl>
                           <FormMessage />

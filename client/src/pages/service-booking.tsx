@@ -30,6 +30,7 @@ const serviceBookingFormSchema = insertBookingSchema.extend({
   guests: z.coerce.number().min(1, "At least 1 person required"),
   guestName: z.string().min(2, "Name is required"),
   guestEmail: z.string().email("Valid email is required"),
+  guestPhone: z.string().optional(),
 }).omit({
   accommodationId: true,
 });
@@ -83,6 +84,7 @@ export default function ServiceBooking() {
     defaultValues: {
       guestName: "",
       guestEmail: "",
+      guestPhone: "",
       checkIn: "",
       checkOut: "",
       guests: 2,
@@ -407,6 +409,25 @@ export default function ServiceBooking() {
                                 type="email"
                                 placeholder="john@example.com"
                                 data-testid="input-guest-email"
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="guestPhone"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Phone (Optional)</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="tel"
+                                placeholder="+1 (555) 123-4567"
+                                data-testid="input-guest-phone"
                                 {...field}
                               />
                             </FormControl>

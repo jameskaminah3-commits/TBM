@@ -105,9 +105,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Bookings
-  app.get("/api/bookings", async (_req, res) => {
+  app.get("/api/bookings", isAuthenticated, async (req: any, res) => {
     try {
-      const bookings = await storage.getBookings();
+      const userId = req.user.claims.sub;
+      const bookings = await storage.getBookingsByUserId(userId);
       res.json(bookings);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch bookings" });
@@ -126,10 +127,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/bookings", async (req, res) => {
+  app.post("/api/bookings", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const validatedData = insertBookingSchema.parse(req.body);
-      const booking = await storage.createBooking(validatedData);
+      const booking = await storage.createBooking({ ...validatedData, userId });
       res.status(201).json(booking);
     } catch (error) {
       if (error instanceof Error) {

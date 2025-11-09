@@ -112,9 +112,11 @@ export type Provider = typeof providers.$inferSelect;
 // Bookings
 export const bookings = pgTable("bookings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id"), // Links booking to authenticated user
   accommodationId: varchar("accommodation_id"), // Optional - allows standalone service bookings
   guestName: text("guest_name").notNull(),
   guestEmail: text("guest_email").notNull(),
+  guestPhone: text("guest_phone"), // Contact phone number
   checkIn: text("check_in").notNull(),
   checkOut: text("check_out").notNull(),
   guests: integer("guests").notNull(),
