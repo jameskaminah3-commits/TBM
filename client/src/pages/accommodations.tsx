@@ -6,17 +6,13 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { Listing } from "@shared/schema";
+import type { Stay } from "@shared/schema";
 
 export default function Accommodations() {
   const [, setLocation] = useLocation();
   
-  const { data: accommodations, isLoading } = useQuery<Listing[]>({
-    queryKey: ["/api/listings"],
-    queryFn: async () => {
-      const response = await fetch("/api/listings?category=stays");
-      return response.json();
-    },
+  const { data: accommodations, isLoading } = useQuery<Stay[]>({
+    queryKey: ["/api/stays"],
   });
 
   if (isLoading) {

@@ -4,25 +4,15 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ChefHat, Clock, Utensils, MapPin } from "lucide-react";
-import type { Listing } from "@shared/schema";
+import type { Cook } from "@shared/schema";
 
 export default function DinePage() {
   const [, setLocation] = useLocation();
-  const { data: cooks, isLoading } = useQuery<Listing[]>({
-    queryKey: ["/api/listings?category=cooks"],
+  const { data: cooks, isLoading } = useQuery<Cook[]>({
+    queryKey: ["/api/cooks"],
   });
 
   const cookListings = cooks || [];
-
-  const parseFeatures = (listing: Listing) => {
-    try {
-      return typeof listing.features === 'string' 
-        ? JSON.parse(listing.features) 
-        : listing.features || {};
-    } catch {
-      return {};
-    }
-  };
 
   if (isLoading) {
     return (
@@ -54,19 +44,18 @@ export default function DinePage() {
       <section className="py-16 md:py-20">
         <div className="container mx-auto px-4 md:px-8">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {cookListings.map((listing) => {
-              const features = parseFeatures(listing);
+            {cookListings.map((cook) => {
               return (
                 <Card
-                  key={listing.id}
+                  key={cook.id}
                   className="overflow-hidden hover-elevate cursor-pointer"
-                  data-testid={`card-service-${listing.id}`}
+                  data-testid={`card-service-${cook.id}`}
                 >
-                  {listing.imageUrl && (
+                  {cook.imageUrl && (
                     <div className="aspect-video overflow-hidden bg-muted">
                       <img 
-                        src={listing.imageUrl} 
-                        alt={listing.title}
+                        src={cook.imageUrl} 
+                        alt={cook.title}
                         className="w-full h-full object-cover"
                       />
                     </div>
@@ -78,35 +67,30 @@ export default function DinePage() {
                         <ChefHat className="h-6 w-6 text-primary" strokeWidth={1.5} />
                       </div>
                       <div className="flex-1">
-                        <h3 className="text-xl font-semibold mb-2">{listing.title}</h3>
-                        {listing.location && (
-                          <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                            <MapPin className="h-3 w-3" />
-                            <span>{listing.location}</span>
-                          </div>
-                        )}
+                        <h3 className="text-xl font-semibold mb-2">{cook.title}</h3>
+                        <Badge variant="secondary" className="text-xs capitalize">
+                          <Utensils className="h-3 w-3 mr-1" />
+                          {cook.speciality}
+                        </Badge>
                       </div>
                     </div>
 
                     <p className="text-muted-foreground mb-4 line-clamp-3">
-                      {listing.description}
+                      {cook.description}
                     </p>
 
-                    {(features.cuisine || features.specialty) && (
-                      <div className="flex flex-wrap gap-2 mb-4">
-                        {features.cuisine && (
-                          <Badge variant="secondary" className="text-xs capitalize">
-                            <Utensils className="h-3 w-3 mr-1" />
-                            {features.cuisine}
-                          </Badge>
-                        )}
-                        {features.specialty && (
-                          <Badge variant="outline" className="text-xs capitalize">
-                            {features.specialty}
-                          </Badge>
-                        )}
-                      </div>
-                    )}
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      {cook.features.slice(0, 3).map((feature, idx) => (
+                        <Badge key={idx} variant="outline" className="text-xs">
+                          {feature}
+                        </Badge>
+                      ))}
+                      {cook.features.length > 3 && (
+                        <Badge variant="outline" className="text-xs">
+                          +{cook.features.length - 3} more
+                        </Badge>
+                      )}
+                    </div>
 
                     <div className="flex items-center gap-2 text-sm mb-4">
                       <Clock className="h-4 w-4 text-muted-foreground" />
@@ -115,12 +99,12 @@ export default function DinePage() {
 
                     <div className="flex items-center justify-between pt-4 border-t">
                       <div>
-                        <p className="text-2xl font-semibold">${listing.price}</p>
-                        <p className="text-sm text-muted-foreground">per day</p>
+                        <p className="text-2xl font-semibold">${cook.pricePerSession}</p>
+                        <p className="text-sm text-muted-foreground">per session</p>
                       </div>
                       <Button 
-                        onClick={() => setLocation(`/book/listing/${listing.id}`)}
-                        data-testid={`button-book-${listing.id}`}
+                        onClick={() => setLocation(`/book/cook/${cook.id}`)}
+                        data-testid={`button-book-${cook.id}`}
                       >
                         Book Now
                       </Button>

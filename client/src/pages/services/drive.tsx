@@ -4,25 +4,15 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Car, Users, Gauge, Settings, MapPin } from "lucide-react";
-import type { Listing } from "@shared/schema";
+import type { Car as CarType } from "@shared/schema";
 
 export default function DrivePage() {
   const [, setLocation] = useLocation();
-  const { data: cars, isLoading } = useQuery<Listing[]>({
-    queryKey: ["/api/listings?category=cars"],
+  const { data: cars, isLoading } = useQuery<CarType[]>({
+    queryKey: ["/api/cars"],
   });
 
   const carListings = cars || [];
-
-  const parseFeatures = (listing: Listing) => {
-    try {
-      return typeof listing.features === 'string' 
-        ? JSON.parse(listing.features) 
-        : listing.features || {};
-    } catch {
-      return {};
-    }
-  };
 
   if (isLoading) {
     return (
@@ -54,19 +44,18 @@ export default function DrivePage() {
       <section className="py-16 md:py-20">
         <div className="container mx-auto px-4 md:px-8">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {carListings.map((listing) => {
-              const features = parseFeatures(listing);
+            {carListings.map((car) => {
               return (
                 <Card
-                  key={listing.id}
+                  key={car.id}
                   className="overflow-hidden hover-elevate cursor-pointer"
-                  data-testid={`card-service-${listing.id}`}
+                  data-testid={`card-service-${car.id}`}
                 >
-                  {listing.imageUrl && (
+                  {car.imageUrl && (
                     <div className="aspect-video overflow-hidden bg-muted">
                       <img 
-                        src={listing.imageUrl} 
-                        alt={listing.title}
+                        src={car.imageUrl} 
+                        alt={car.model}
                         className="w-full h-full object-cover"
                       />
                     </div>
@@ -78,48 +67,41 @@ export default function DrivePage() {
                         <Car className="h-6 w-6 text-primary" strokeWidth={1.5} />
                       </div>
                       <div className="flex-1">
-                        <h3 className="text-xl font-semibold mb-2">{listing.title}</h3>
-                        {listing.location && (
-                          <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                            <MapPin className="h-3 w-3" />
-                            <span>{listing.location}</span>
-                          </div>
-                        )}
+                        <h3 className="text-xl font-semibold mb-2">{car.model}</h3>
                       </div>
                     </div>
 
                     <p className="text-muted-foreground mb-4 line-clamp-3">
-                      {listing.description}
+                      {car.description}
                     </p>
 
-                    {(features.transmission || features.seats || features.type) && (
-                      <div className="flex flex-wrap gap-2 mb-4">
-                        {features.type && (
-                          <Badge variant="secondary" className="text-xs capitalize">
-                            {features.type}
-                          </Badge>
-                        )}
-                        {features.transmission && (
-                          <Badge variant="outline" className="text-xs capitalize">
-                            {features.transmission}
-                          </Badge>
-                        )}
-                        {features.seats && (
-                          <Badge variant="outline" className="text-xs">
-                            {features.seats} seats
-                          </Badge>
-                        )}
-                      </div>
-                    )}
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      <Badge variant="outline" className="text-xs capitalize">
+                        {car.transmission}
+                      </Badge>
+                      <Badge variant="outline" className="text-xs">
+                        {car.seats} seats
+                      </Badge>
+                      {car.features.slice(0, 2).map((feature, idx) => (
+                        <Badge key={idx} variant="secondary" className="text-xs">
+                          {feature}
+                        </Badge>
+                      ))}
+                    </div>
 
                     <div className="flex items-center justify-between pt-4 border-t">
                       <div>
-                        <p className="text-2xl font-semibold">${listing.price}</p>
+                        <p className="text-2xl font-semibold">${car.pricePerDay}</p>
                         <p className="text-sm text-muted-foreground">per day</p>
+                        {car.priceWithDriver && (
+                          <p className="text-sm text-muted-foreground mt-1">
+                            ${car.priceWithDriver}/day with driver
+                          </p>
+                        )}
                       </div>
                       <Button 
-                        onClick={() => setLocation(`/book/listing/${listing.id}`)}
-                        data-testid={`button-book-${listing.id}`}
+                        onClick={() => setLocation(`/book/car/${car.id}`)}
+                        data-testid={`button-book-${car.id}`}
                       >
                         Book Now
                       </Button>
