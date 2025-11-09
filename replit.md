@@ -28,7 +28,7 @@ The frontend is built with React and TypeScript, using Tailwind CSS for styling 
 - **Service Types**: Diverse offerings including luxury accommodations, car rentals (self-drive/chauffeur), personal chef services, and errand services.
 - **Navigation**: Lifestyle-focused main navigation (Stay, Drive, Dine, Relax) alongside standard Home, Blog, and My Bookings.
 - **Data Integrity**: Real-time cache invalidation ensures admin CRUD changes immediately reflect on the frontend. User-specific booking filtering ensures data privacy.
-- **Booking System**: Bookings are linked to authenticated users via `userId` field. POST /api/bookings captures userId from session. Users can only view their own bookings. Phone numbers are stored in `guestPhone` field for communication.
+- **Booking System**: Bookings require authentication - both frontend booking pages and POST /api/bookings endpoint enforce login. Bookings are linked to authenticated users via `userId` field. GET /api/bookings filters by userId so users can only view their own bookings. Phone numbers are stored in `guestPhone` field for communication. Unauthenticated users are redirected to login when attempting to book.
 - **Pending Features**: Email confirmations for bookings (SendGrid/EmailJS integration deferred - user dismissed setup modal). Note: To implement later, ask user for SendGrid or EmailJS API keys and store as secrets.
 
 ## External Dependencies
