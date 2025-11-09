@@ -241,7 +241,7 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
 const ADMIN_EMAILS = [
   "admin@tembea.test",
   "admin@test.com", // For E2E testing
-  // Add more admin emails here as needed
+  "jameskaminah3@gmail.com", // Primary admin user
 ];
 
 export const requireAdmin: RequestHandler = async (req, res, next) => {
