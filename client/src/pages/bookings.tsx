@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { Booking, Accommodation, Service } from "@shared/schema";
+import type { Booking, Stay, Car as CarType, Cook, Errand } from "@shared/schema";
 
 export default function Bookings() {
   const [, setLocation] = useLocation();
@@ -14,21 +14,32 @@ export default function Bookings() {
     queryKey: ["/api/bookings"],
   });
 
-  const { data: accommodations } = useQuery<Accommodation[]>({
-    queryKey: ["/api/accommodations"],
+  const { data: stays } = useQuery<Stay[]>({
+    queryKey: ["/api/stays"],
   });
 
-  const { data: services } = useQuery<Service[]>({
-    queryKey: ["/api/services"],
+  const { data: cars } = useQuery<CarType[]>({
+    queryKey: ["/api/cars"],
   });
 
-  const getAccommodation = (id: string | null) => {
+  const { data: cooks } = useQuery<Cook[]>({
+    queryKey: ["/api/cooks"],
+  });
+
+  const { data: errands } = useQuery<Errand[]>({
+    queryKey: ["/api/errands"],
+  });
+
+  const getStay = (id: string | null) => {
     if (!id) return null;
-    return accommodations?.find((a) => a.id === id);
+    return stays?.find((s) => s.id === id);
   };
 
-  const getService = (id: string) => {
-    return services?.find((s) => s.id === id);
+  const getServiceItem = (id: string) => {
+    // Check all service types
+    return cars?.find((c) => c.id === id) || 
+           cooks?.find((c) => c.id === id) || 
+           errands?.find((e) => e.id === id);
   };
 
   const getServiceIcon = (type: string) => {
@@ -112,13 +123,17 @@ export default function Bookings() {
         ) : (
           <div className="space-y-4">
             {bookings?.map((booking) => {
-              const accommodation = getAccommodation(booking.accommodationId);
+              const stay = getStay(booking.accommodationId);
               const isServiceOnly = booking.bookingType === "service" || !booking.accommodationId;
               
               // For service-only bookings
               if (isServiceOnly) {
-                const mainService = booking.selectedServices[0] ? getService(booking.selectedServices[0]) : null;
+                const mainService = booking.selectedServices[0] ? getServiceItem(booking.selectedServices[0]) : null;
                 if (!mainService) return null;
+
+                const serviceName = 'model' in mainService ? mainService.model :
+                                  'title' in mainService ? mainService.title :
+                                  'serviceName' in mainService ? mainService.serviceName : 'Service';
 
                 return (
                   <Card key={booking.id} className="overflow-hidden" data-testid={`booking-${booking.id}`}>
@@ -127,7 +142,9 @@ export default function Bookings() {
                       <div className="md:col-span-1">
                         <div className="aspect-[4/3] rounded-md bg-primary/10 flex items-center justify-center">
                           <div className="text-primary">
-                            {getServiceIcon(mainService.type)}
+                            {'model' in mainService ? <Car className="h-8 w-8" /> :
+                             'speciality' in mainService ? <ChefHat className="h-8 w-8" /> :
+                             <ShoppingBag className="h-8 w-8" />}
                           </div>
                         </div>
                       </div>
@@ -138,7 +155,7 @@ export default function Bookings() {
                           <div>
                             <Badge variant="outline" className="mb-2">Service Booking</Badge>
                             <h3 className="font-semibold text-lg mb-1">
-                              {mainService.name}
+                              {serviceName}
                             </h3>
                             <p className="text-sm text-muted-foreground">
                               {mainService.description}
@@ -185,7 +202,7 @@ export default function Bookings() {
               }
 
               // For accommodation bookings
-              if (!accommodation) return null;
+              if (!stay) return null;
 
               return (
                 <Card key={booking.id} className="overflow-hidden" data-testid={`booking-${booking.id}`}>
@@ -194,8 +211,8 @@ export default function Bookings() {
                     <div className="md:col-span-1">
                       <div className="aspect-[4/3] rounded-md overflow-hidden">
                         <img
-                          src={accommodation.imageUrl}
-                          alt={accommodation.title}
+                          src={stay.imageUrl || '/placeholder-image.jpg'}
+                          alt={stay.title}
                           className="w-full h-full object-cover"
                         />
                       </div>
@@ -206,11 +223,11 @@ export default function Bookings() {
                       <div className="flex items-start justify-between gap-4">
                         <div>
                           <h3 className="font-semibold text-lg mb-1">
-                            {accommodation.title}
+                            {stay.title}
                           </h3>
                           <div className="flex items-center gap-1 text-sm text-muted-foreground">
                             <MapPin className="h-4 w-4" />
-                            <span>{accommodation.location}</span>
+                            <span>{stay.location}</span>
                           </div>
                         </div>
                         {getStatusBadge(booking.status)}
@@ -243,11 +260,17 @@ export default function Bookings() {
                           <div className="text-sm font-medium mb-2">Selected Services</div>
                           <div className="flex flex-wrap gap-2">
                             {booking.selectedServices.map((serviceId) => {
-                              const service = getService(serviceId);
+                              const service = getServiceItem(serviceId);
+                              if (!service) return null;
+                              const serviceName = 'model' in service ? service.model :
+                                                'title' in service ? service.title :
+                                                'serviceName' in service ? service.serviceName : 'Service';
                               return (
                                 <Badge key={serviceId} variant="secondary" className="text-xs flex items-center gap-1">
-                                  {service && getServiceIcon(service.type)}
-                                  {service?.name || "Service"}
+                                  {'model' in service ? <Car className="h-3 w-3" /> :
+                                   'speciality' in service ? <ChefHat className="h-3 w-3" /> :
+                                   <ShoppingBag className="h-3 w-3" />}
+                                  {serviceName}
                                 </Badge>
                               );
                             })}
