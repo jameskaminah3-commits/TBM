@@ -127,16 +127,25 @@ export const bookings = pgTable("bookings", {
   bookingType: text("booking_type").notNull().default("accommodation"), // "accommodation" or "service"
 });
 
+// Client-side booking schema - omits fields that backend injects from session
 export const insertBookingSchema = createInsertSchema(bookings).omit({
   id: true,
   createdAt: true,
-  userId: true, // userId is set by backend from session, not by client
+  userId: true, // Backend injects from session
+  guestEmail: true, // Backend injects from session
 }).extend({
   accommodationId: z.string().nullable(),
   guestPhone: z.string().optional(),
 });
 
+// Server-side schema for validation after injecting session data
+export const serverBookingSchema = insertBookingSchema.extend({
+  userId: z.string(),
+  guestEmail: z.string().email(),
+});
+
 export type InsertBooking = z.infer<typeof insertBookingSchema>;
+export type ServerBooking = z.infer<typeof serverBookingSchema>;
 export type Booking = typeof bookings.$inferSelect;
 
 // Blog Posts

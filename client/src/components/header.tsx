@@ -15,7 +15,7 @@ import { useAuth } from "@/hooks/useAuth";
 export function Header() {
   const [location] = useLocation();
   const [open, setOpen] = useState(false);
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, isAdmin } = useAuth();
 
   const navLinks = [
     { href: "/", label: "Home", testId: "link-nav-home" },
@@ -64,7 +64,7 @@ export function Header() {
         <div className="flex items-center gap-2">
           {/* Auth Buttons - Desktop */}
           <div className="hidden md:flex items-center gap-2">
-            {!isLoading && isAuthenticated && (
+            {!isLoading && isAdmin && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -135,7 +135,7 @@ export function Header() {
                 
                 {/* Auth Links - Mobile */}
                 <div className="pt-4 border-t flex flex-col space-y-3">
-                  {!isLoading && isAuthenticated && (
+                  {!isLoading && isAdmin && (
                     <Button
                       variant="outline"
                       className="justify-start"

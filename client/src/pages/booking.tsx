@@ -32,7 +32,6 @@ const bookingFormSchema = insertBookingSchema.extend({
   checkOut: z.string().min(1, "Check-out date is required"),
   guests: z.coerce.number().min(1, "At least 1 guest required"),
   guestName: z.string().min(2, "Name is required"),
-  guestEmail: z.string().email("Valid email is required"),
   guestPhone: z.string().optional(),
 }).refine((data) => {
   if (!data.checkIn || !data.checkOut) return true;
@@ -48,7 +47,7 @@ export default function Booking() {
   const { id } = useParams();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
 
   useEffect(() => {
@@ -88,12 +87,16 @@ export default function Booking() {
     },
   });
 
+  // Pre-fill guest name from authenticated user
+  const defaultGuestName = user 
+    ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || ''
+    : '';
+
   const form = useForm<BookingFormValues>({
     resolver: zodResolver(bookingFormSchema),
     defaultValues: {
       accommodationId: id || "",
-      guestName: "",
-      guestEmail: "",
+      guestName: defaultGuestName,
       guestPhone: "",
       checkIn: "",
       checkOut: "",
@@ -103,6 +106,16 @@ export default function Booking() {
       status: "upcoming",
     },
   });
+
+  // Update guestName when user data loads
+  useEffect(() => {
+    if (user && !form.getValues('guestName')) {
+      const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+      if (fullName) {
+        form.setValue('guestName', fullName);
+      }
+    }
+  }, [user, form]);
 
   const createBookingMutation = useMutation({
     mutationFn: (data: BookingFormValues) =>
@@ -250,25 +263,6 @@ export default function Booking() {
                               placeholder="John Doe"
                               {...field}
                               data-testid="input-guest-name"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="guestEmail"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Email Address</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="email"
-                              placeholder="john@example.com"
-                              {...field}
-                              data-testid="input-guest-email"
                             />
                           </FormControl>
                           <FormMessage />

@@ -25,15 +25,14 @@ import type { Car as CarType, Cook as CookType, Errand as ErrandType } from "@sh
 import { insertBookingSchema } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
-const serviceBookingFormSchema = insertBookingSchema.extend({
+const serviceBookingFormSchema = insertBookingSchema.omit({
+  accommodationId: true,
+}).extend({
   checkIn: z.string().min(1, "Start date is required"),
   checkOut: z.string().min(1, "End date is required"),
   guests: z.coerce.number().min(1, "At least 1 person required"),
   guestName: z.string().min(2, "Name is required"),
-  guestEmail: z.string().email("Valid email is required"),
   guestPhone: z.string().optional(),
-}).omit({
-  accommodationId: true,
 });
 
 type ServiceBookingFormValues = z.infer<typeof serviceBookingFormSchema>;
@@ -67,7 +66,7 @@ export default function ServiceBooking() {
   const { serviceType, id } = useParams<{ serviceType: string; id: string }>();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const [withDriver, setWithDriver] = React.useState(false);
 
   const config = SERVICE_CONFIG[serviceType as keyof typeof SERVICE_CONFIG];
@@ -93,11 +92,15 @@ export default function ServiceBooking() {
     return allServices?.find((s) => s.id === id);
   }, [allServices, id]);
 
+  // Pre-fill guest name from authenticated user
+  const defaultGuestName = user 
+    ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || ''
+    : '';
+
   const form = useForm<ServiceBookingFormValues>({
     resolver: zodResolver(serviceBookingFormSchema),
     defaultValues: {
-      guestName: "",
-      guestEmail: "",
+      guestName: defaultGuestName,
       guestPhone: "",
       checkIn: "",
       checkOut: "",
@@ -107,6 +110,16 @@ export default function ServiceBooking() {
       status: "upcoming",
     },
   });
+
+  // Update guestName when user data loads
+  React.useEffect(() => {
+    if (user && !form.getValues('guestName')) {
+      const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+      if (fullName) {
+        form.setValue('guestName', fullName);
+      }
+    }
+  }, [user, form]);
 
   // For cook bookings (single date), auto-set checkOut to match checkIn
   React.useEffect(() => {
@@ -404,25 +417,6 @@ export default function ServiceBooking() {
                               <Input
                                 placeholder="John Doe"
                                 data-testid="input-guest-name"
-                                {...field}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={form.control}
-                        name="guestEmail"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Email</FormLabel>
-                            <FormControl>
-                              <Input
-                                type="email"
-                                placeholder="john@example.com"
-                                data-testid="input-guest-email"
                                 {...field}
                               />
                             </FormControl>

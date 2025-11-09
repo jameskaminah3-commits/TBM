@@ -110,8 +110,39 @@ export async function setupAuth(app: Express) {
     })(req, res, next);
   });
 
-  // Admin login route - secret URL for admin access
-  app.get("/admin/auth/login", (req, res, next) => {
+  // Admin login route - restricted to admins only
+  app.get("/admin/auth/login", async (req: any, res, next) => {
+    // If already authenticated, check if they're an admin
+    if (req.isAuthenticated() && req.user?.claims?.sub) {
+      try {
+        const userId = req.user.claims.sub;
+        const userEmail = req.user.claims.email;
+        const dbUser = await storage.getUser(userId);
+        
+        const isAdminRole = dbUser && dbUser.role === "admin";
+        const isAdminEmail = userEmail && ADMIN_EMAILS.includes(userEmail);
+        
+        // If already an admin, redirect to dashboard
+        if (isAdminRole || isAdminEmail) {
+          return res.redirect("/admin/dashboard");
+        }
+        
+        // If authenticated but not admin, deny access
+        return res.status(403).send(`
+          <html>
+            <body style="font-family: system-ui; padding: 40px; text-align: center;">
+              <h1>Access Denied</h1>
+              <p>You do not have admin privileges. This area is restricted to administrators only.</p>
+              <a href="/" style="color: #0DA9A4; text-decoration: none;">Return to Home</a>
+            </body>
+          </html>
+        `);
+      } catch (error) {
+        console.error("Error checking admin status:", error);
+      }
+    }
+    
+    // Not authenticated, proceed with login
     req.session.adminLogin = true;
     ensureStrategy(req.hostname);
     passport.authenticate(`replitauth:${req.hostname}`, {

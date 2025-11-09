@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { setupAuth, isAuthenticated, requireAdmin } from "./replitAuth";
 import {
   insertBookingSchema,
+  serverBookingSchema,
   insertAccommodationSchema,
   insertServiceSchema,
   insertProviderSchema,
@@ -130,8 +131,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/bookings", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const validatedData = insertBookingSchema.parse(req.body);
-      const booking = await storage.createBooking({ ...validatedData, userId } as any);
+      const guestEmail = req.user.claims.email;
+      
+      // Validate that we have the required session data
+      if (!guestEmail) {
+        return res.status(400).json({ error: "User email not found in session" });
+      }
+      
+      // Inject session data into the request body
+      const bookingData = {
+        ...req.body,
+        userId,
+        guestEmail,
+      };
+      
+      // Validate with server-side schema that includes injected fields
+      const validatedData = serverBookingSchema.parse(bookingData);
+      const booking = await storage.createBooking(validatedData);
       res.status(201).json(booking);
     } catch (error) {
       console.error("[BOOKING] Error creating booking:", error);
