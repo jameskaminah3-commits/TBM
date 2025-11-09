@@ -6,16 +6,16 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
-import type { Listing } from "@shared/schema";
+import type { Stay } from "@shared/schema";
 
 export default function AccommodationDetail() {
   const { id } = useParams();
   const [, setLocation] = useLocation();
   
-  const { data: accommodation, isLoading } = useQuery<Listing>({
-    queryKey: ["/api/listings", id],
+  const { data: accommodation, isLoading } = useQuery<Stay>({
+    queryKey: ["/api/stays", id],
     queryFn: async () => {
-      const response = await fetch(`/api/listings/${id}`);
+      const response = await fetch(`/api/stays/${id}`);
       if (!response.ok) throw new Error("Failed to fetch accommodation");
       return response.json();
     },

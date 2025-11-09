@@ -20,9 +20,11 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import type { Listing } from "@shared/schema";
+import type { Stay, Car as CarType, Cook as CookType, Errand as ErrandType } from "@shared/schema";
 import { insertBookingSchema } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+
+type AddonService = (CarType | CookType | ErrandType) & { category: "cars" | "cooks" | "errands" };
 
 const bookingFormSchema = insertBookingSchema.extend({
   checkIn: z.string().min(1, "Check-in date is required"),
@@ -46,24 +48,28 @@ export default function Booking() {
   const { toast } = useToast();
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
 
-  const { data: accommodation } = useQuery<Listing>({
-    queryKey: ["/api/listings", id],
+  const { data: accommodation } = useQuery<Stay>({
+    queryKey: ["/api/stays", id],
     queryFn: async () => {
-      const response = await fetch(`/api/listings/${id}`);
-      if (!response.ok) throw new Error("Failed to fetch listing");
+      const response = await fetch(`/api/stays/${id}`);
+      if (!response.ok) throw new Error("Failed to fetch stay");
       return response.json();
     },
   });
 
-  const { data: addonServices } = useQuery<Listing[]>({
-    queryKey: ["/api/listings/addons"],
+  const { data: addonServices } = useQuery<AddonService[]>({
+    queryKey: ["/api/addons"],
     queryFn: async () => {
       const [cars, cooks, errands] = await Promise.all([
-        fetch("/api/listings?category=cars").then(r => r.json()),
-        fetch("/api/listings?category=cooks").then(r => r.json()),
-        fetch("/api/listings?category=errands").then(r => r.json()),
+        fetch("/api/cars").then(r => r.json()),
+        fetch("/api/cooks").then(r => r.json()),
+        fetch("/api/errands").then(r => r.json()),
       ]);
-      return [...cars, ...cooks, ...errands];
+      return [
+        ...(cars as CarType[]).map(c => ({ ...c, category: "cars" as const })),
+        ...(cooks as CookType[]).map(c => ({ ...c, category: "cooks" as const })),
+        ...(errands as ErrandType[]).map(e => ({ ...e, category: "errands" as const })),
+      ];
     },
   });
 
@@ -110,12 +116,24 @@ export default function Booking() {
     );
   };
 
+  const getServicePrice = (service: AddonService): number => {
+    if (service.category === "cars") return (service as CarType).pricePerDay;
+    if (service.category === "cooks") return (service as CookType).pricePerSession;
+    return (service as ErrandType).basePrice;
+  };
+
+  const getServiceTitle = (service: AddonService): string => {
+    if (service.category === "cars") return (service as CarType).model;
+    if (service.category === "cooks") return (service as CookType).title;
+    return (service as ErrandType).serviceName;
+  };
+
   const onSubmit = (data: BookingFormValues) => {
     const nights = calculateNights(data.checkIn, data.checkOut);
     const accommodationTotal = (accommodation?.price || 0) * nights;
     const servicesTotal = addonServices
       ?.filter((s) => selectedServices.includes(s.id))
-      .reduce((sum, s) => sum + (s.price * nights), 0) || 0;
+      .reduce((sum, s) => sum + (getServicePrice(s) * nights), 0) || 0;
 
     createBookingMutation.mutate({
       ...data,
@@ -146,7 +164,7 @@ export default function Booking() {
   const servicesTotal = useMemo(() => {
     return addonServices
       ?.filter((s) => selectedServices.includes(s.id))
-      .reduce((sum, s) => sum + (s.price * nights), 0) || 0;
+      .reduce((sum, s) => sum + (getServicePrice(s) * nights), 0) || 0;
   }, [addonServices, selectedServices, nights]);
   
   const totalPrice = useMemo(() => {
@@ -321,7 +339,7 @@ export default function Booking() {
                       addonServices.map((service) => {
                         const Icon = getServiceIcon(service.category);
                         const isSelected = selectedServices.includes(service.id);
-                        const price = `$${service.price}/day`;
+                        const price = `$${getServicePrice(service)}/day`;
 
                         return (
                           <div
@@ -343,7 +361,7 @@ export default function Booking() {
                                     <Icon className="h-5 w-5 text-primary" />
                                   </div>
                                   <div>
-                                    <div className="font-semibold">{service.title}</div>
+                                    <div className="font-semibold">{getServiceTitle(service)}</div>
                                     <div className="text-sm text-muted-foreground">{price}</div>
                                   </div>
                                 </div>
@@ -425,10 +443,10 @@ export default function Booking() {
                     {addonServices
                       ?.filter((s) => selectedServices.includes(s.id))
                       .map((service) => {
-                        const serviceTotal = service.price * nights;
+                        const serviceTotal = getServicePrice(service) * nights;
                         return (
                           <div key={service.id} className="flex justify-between">
-                            <span className="text-muted-foreground">{service.title}</span>
+                            <span className="text-muted-foreground">{getServiceTitle(service)}</span>
                             <span className="font-medium">${serviceTotal}</span>
                           </div>
                         );
