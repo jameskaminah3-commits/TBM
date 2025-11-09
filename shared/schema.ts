@@ -130,6 +130,10 @@ export const bookings = pgTable("bookings", {
 export const insertBookingSchema = createInsertSchema(bookings).omit({
   id: true,
   createdAt: true,
+  userId: true, // userId is set by backend from session, not by client
+}).extend({
+  accommodationId: z.string().nullable(),
+  guestPhone: z.string().optional(),
 });
 
 export type InsertBooking = z.infer<typeof insertBookingSchema>;
