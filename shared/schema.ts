@@ -157,7 +157,7 @@ export const insertBlogPostSchema = createInsertSchema(blogPosts).omit({
 export type InsertBlogPost = z.infer<typeof insertBlogPostSchema>;
 export type BlogPost = typeof blogPosts.$inferSelect;
 
-// Listings (Admin-managed service listings)
+// Listings (Admin-managed service listings) - DEPRECATED: Use separate tables below
 export const listingCategories = ["stays", "cars", "cooks", "errands"] as const;
 export type ListingCategory = typeof listingCategories[number];
 
@@ -182,6 +182,119 @@ export const insertListingSchema = createInsertSchema(listings).omit({
 
 export type InsertListing = z.infer<typeof insertListingSchema>;
 export type Listing = typeof listings.$inferSelect;
+
+// ===== NEW SEPARATE SERVICE TABLES =====
+
+// Stays
+export const stays = pgTable("stays", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(),
+  location: text("location").notNull(),
+  description: text("description").notNull(),
+  price: integer("price").notNull(), // price per night
+  maxOccupancy: integer("max_occupancy").notNull(),
+  bedrooms: integer("bedrooms").notNull(),
+  bathrooms: integer("bathrooms").notNull(),
+  imageUrl: text("image_url"),
+  features: text("features").array().notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const insertStaySchema = createInsertSchema(stays).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertStay = z.infer<typeof insertStaySchema>;
+export type Stay = typeof stays.$inferSelect;
+
+// Stay Reservations (for availability tracking)
+export const stayReservations = pgTable("stay_reservations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  stayId: varchar("stay_id").notNull(),
+  startDate: text("start_date").notNull(), // ISO date string
+  endDate: text("end_date").notNull(), // ISO date string
+  status: text("status").notNull().default("booked"), // "booked" or "blocked"
+  bookingId: varchar("booking_id"), // Optional reference to booking
+  createdAt: text("created_at").notNull(),
+});
+
+export const insertStayReservationSchema = createInsertSchema(stayReservations).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertStayReservation = z.infer<typeof insertStayReservationSchema>;
+export type StayReservation = typeof stayReservations.$inferSelect;
+
+// Cars
+export const cars = pgTable("cars", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  model: text("model").notNull(),
+  pricePerDay: integer("price_per_day").notNull(),
+  priceWithDriver: integer("price_with_driver"), // Optional - only if chauffeur available
+  seats: integer("seats").notNull(),
+  transmission: text("transmission").notNull(), // "automatic" or "manual"
+  description: text("description").notNull(),
+  imageUrl: text("image_url"),
+  features: text("features").array().notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const insertCarSchema = createInsertSchema(cars).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertCar = z.infer<typeof insertCarSchema>;
+export type Car = typeof cars.$inferSelect;
+
+// Cooks
+export const cooks = pgTable("cooks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(), // e.g., "Chef John Doe"
+  speciality: text("speciality").notNull(), // e.g., "Italian Cuisine"
+  pricePerSession: integer("price_per_session").notNull(),
+  description: text("description").notNull(),
+  imageUrl: text("image_url"),
+  features: text("features").array().notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const insertCookSchema = createInsertSchema(cooks).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertCook = z.infer<typeof insertCookSchema>;
+export type Cook = typeof cooks.$inferSelect;
+
+// Errands
+export const errands = pgTable("errands", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  serviceName: text("service_name").notNull(), // e.g., "Grocery Shopping"
+  basePrice: integer("base_price").notNull(),
+  description: text("description").notNull(),
+  imageUrl: text("image_url"),
+  features: text("features").array().notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const insertErrandSchema = createInsertSchema(errands).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertErrand = z.infer<typeof insertErrandSchema>;
+export type Errand = typeof errands.$inferSelect;
 
 // Analytics Types
 export type DashboardMetrics = {

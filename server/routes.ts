@@ -9,6 +9,10 @@ import {
   insertProviderSchema,
   insertBlogPostSchema,
   insertListingSchema,
+  insertStaySchema,
+  insertCarSchema,
+  insertCookSchema,
+  insertErrandSchema,
 } from "@shared/schema";
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -437,6 +441,277 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete listing" });
+    }
+  });
+
+  // ===== NEW SEPARATE SERVICE ROUTES =====
+  
+  // Stays - Admin Routes
+  app.get("/api/admin/stays", requireAdmin, async (_req, res) => {
+    try {
+      const stays = await storage.getStays();
+      res.json(stays);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch stays" });
+    }
+  });
+
+  app.post("/api/admin/stays", requireAdmin, async (req, res) => {
+    try {
+      const validatedData = insertStaySchema.parse(req.body);
+      const stay = await storage.createStay(validatedData);
+      res.status(201).json(stay);
+    } catch (error) {
+      if (error instanceof Error && error.name === "ZodError") {
+        res.status(400).json({ error: error.message });
+      } else {
+        console.error("Failed to create stay:", error);
+        res.status(500).json({ error: "Failed to create stay" });
+      }
+    }
+  });
+
+  app.patch("/api/admin/stays/:id", requireAdmin, async (req, res) => {
+    try {
+      const validatedData = insertStaySchema.partial().parse(req.body);
+      const stay = await storage.updateStay(req.params.id, validatedData);
+      if (!stay) {
+        return res.status(404).json({ error: "Stay not found" });
+      }
+      res.json(stay);
+    } catch (error) {
+      if (error instanceof Error && error.name === "ZodError") {
+        res.status(400).json({ error: error.message });
+      } else {
+        console.error("Failed to update stay:", error);
+        res.status(500).json({ error: "Failed to update stay" });
+      }
+    }
+  });
+
+  app.delete("/api/admin/stays/:id", requireAdmin, async (req, res) => {
+    try {
+      const success = await storage.deleteStay(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Stay not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete stay" });
+    }
+  });
+
+  // Cars - Admin Routes
+  app.get("/api/admin/cars", requireAdmin, async (_req, res) => {
+    try {
+      const cars = await storage.getCars();
+      res.json(cars);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch cars" });
+    }
+  });
+
+  app.post("/api/admin/cars", requireAdmin, async (req, res) => {
+    try {
+      const validatedData = insertCarSchema.parse(req.body);
+      const car = await storage.createCar(validatedData);
+      res.status(201).json(car);
+    } catch (error) {
+      if (error instanceof Error && error.name === "ZodError") {
+        res.status(400).json({ error: error.message });
+      } else {
+        console.error("Failed to create car:", error);
+        res.status(500).json({ error: "Failed to create car" });
+      }
+    }
+  });
+
+  app.patch("/api/admin/cars/:id", requireAdmin, async (req, res) => {
+    try {
+      const validatedData = insertCarSchema.partial().parse(req.body);
+      const car = await storage.updateCar(req.params.id, validatedData);
+      if (!car) {
+        return res.status(404).json({ error: "Car not found" });
+      }
+      res.json(car);
+    } catch (error) {
+      if (error instanceof Error && error.name === "ZodError") {
+        res.status(400).json({ error: error.message });
+      } else {
+        console.error("Failed to update car:", error);
+        res.status(500).json({ error: "Failed to update car" });
+      }
+    }
+  });
+
+  app.delete("/api/admin/cars/:id", requireAdmin, async (req, res) => {
+    try {
+      const success = await storage.deleteCar(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Car not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete car" });
+    }
+  });
+
+  // Cooks - Admin Routes
+  app.get("/api/admin/cooks", requireAdmin, async (_req, res) => {
+    try {
+      const cooks = await storage.getCooks();
+      res.json(cooks);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch cooks" });
+    }
+  });
+
+  app.post("/api/admin/cooks", requireAdmin, async (req, res) => {
+    try {
+      const validatedData = insertCookSchema.parse(req.body);
+      const cook = await storage.createCook(validatedData);
+      res.status(201).json(cook);
+    } catch (error) {
+      if (error instanceof Error && error.name === "ZodError") {
+        res.status(400).json({ error: error.message });
+      } else {
+        console.error("Failed to create cook:", error);
+        res.status(500).json({ error: "Failed to create cook" });
+      }
+    }
+  });
+
+  app.patch("/api/admin/cooks/:id", requireAdmin, async (req, res) => {
+    try {
+      const validatedData = insertCookSchema.partial().parse(req.body);
+      const cook = await storage.updateCook(req.params.id, validatedData);
+      if (!cook) {
+        return res.status(404).json({ error: "Cook not found" });
+      }
+      res.json(cook);
+    } catch (error) {
+      if (error instanceof Error && error.name === "ZodError") {
+        res.status(400).json({ error: error.message });
+      } else {
+        console.error("Failed to update cook:", error);
+        res.status(500).json({ error: "Failed to update cook" });
+      }
+    }
+  });
+
+  app.delete("/api/admin/cooks/:id", requireAdmin, async (req, res) => {
+    try {
+      const success = await storage.deleteCook(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Cook not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete cook" });
+    }
+  });
+
+  // Errands - Admin Routes
+  app.get("/api/admin/errands", requireAdmin, async (_req, res) => {
+    try {
+      const errands = await storage.getErrands();
+      res.json(errands);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch errands" });
+    }
+  });
+
+  app.post("/api/admin/errands", requireAdmin, async (req, res) => {
+    try {
+      const validatedData = insertErrandSchema.parse(req.body);
+      const errand = await storage.createErrand(validatedData);
+      res.status(201).json(errand);
+    } catch (error) {
+      if (error instanceof Error && error.name === "ZodError") {
+        res.status(400).json({ error: error.message });
+      } else {
+        console.error("Failed to create errand:", error);
+        res.status(500).json({ error: "Failed to create errand" });
+      }
+    }
+  });
+
+  app.patch("/api/admin/errands/:id", requireAdmin, async (req, res) => {
+    try {
+      const validatedData = insertErrandSchema.partial().parse(req.body);
+      const errand = await storage.updateErrand(req.params.id, validatedData);
+      if (!errand) {
+        return res.status(404).json({ error: "Errand not found" });
+      }
+      res.json(errand);
+    } catch (error) {
+      if (error instanceof Error && error.name === "ZodError") {
+        res.status(400).json({ error: error.message });
+      } else {
+        console.error("Failed to update errand:", error);
+        res.status(500).json({ error: "Failed to update errand" });
+      }
+    }
+  });
+
+  app.delete("/api/admin/errands/:id", requireAdmin, async (req, res) => {
+    try {
+      const success = await storage.deleteErrand(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Errand not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete errand" });
+    }
+  });
+
+  // Public Routes for fetching services
+  app.get("/api/stays", async (_req, res) => {
+    try {
+      const stays = await storage.getStays();
+      res.json(stays);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch stays" });
+    }
+  });
+
+  app.get("/api/stays/:id", async (req, res) => {
+    try {
+      const stay = await storage.getStay(req.params.id);
+      if (!stay) {
+        return res.status(404).json({ error: "Stay not found" });
+      }
+      res.json(stay);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch stay" });
+    }
+  });
+
+  app.get("/api/cars", async (_req, res) => {
+    try {
+      const cars = await storage.getCars();
+      res.json(cars);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch cars" });
+    }
+  });
+
+  app.get("/api/cooks", async (_req, res) => {
+    try {
+      const cooks = await storage.getCooks();
+      res.json(cooks);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch cooks" });
+    }
+  });
+
+  app.get("/api/errands", async (_req, res) => {
+    try {
+      const errands = await storage.getErrands();
+      res.json(errands);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch errands" });
     }
   });
 

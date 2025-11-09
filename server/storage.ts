@@ -11,8 +11,19 @@ import {
   type InsertBlogPost,
   type Listing,
   type InsertListing,
+  type Stay,
+  type InsertStay,
+  type Car,
+  type InsertCar,
+  type Cook,
+  type InsertCook,
+  type Errand,
+  type InsertErrand,
+  type StayReservation,
+  type InsertStayReservation,
   type User,
   type UpsertUser,
+  type UserRole,
   type DashboardMetrics,
   type PopularService,
   type RevenueByMonth,
@@ -22,6 +33,11 @@ import {
   bookings,
   blogPosts,
   listings,
+  stays,
+  cars,
+  cooks,
+  errands,
+  stayReservations,
   users,
 } from "@shared/schema";
 import { db } from "./db";
@@ -32,6 +48,7 @@ export interface IStorage {
   // (IMPORTANT) these user operations are mandatory for Replit Auth.
   getUser(id: string): Promise<User | undefined>;
   upsertUser(user: UpsertUser): Promise<User>;
+  updateUserRole(userId: string, role: UserRole): Promise<User>;
 
   // Accommodations
   getAccommodations(): Promise<Accommodation[]>;
@@ -71,12 +88,45 @@ export interface IStorage {
   updateBlogPost(id: string, blogPost: Partial<InsertBlogPost>): Promise<BlogPost | undefined>;
   deleteBlogPost(id: string): Promise<boolean>;
 
-  // Listings
+  // Listings (DEPRECATED - use stays, cars, cooks, errands instead)
   getListings(): Promise<Listing[]>;
   getListing(id: string): Promise<Listing | undefined>;
   createListing(listing: InsertListing): Promise<Listing>;
   updateListing(id: string, listing: Partial<InsertListing>): Promise<Listing | undefined>;
   deleteListing(id: string): Promise<boolean>;
+
+  // Stays
+  getStays(): Promise<Stay[]>;
+  getStay(id: string): Promise<Stay | undefined>;
+  createStay(stay: InsertStay): Promise<Stay>;
+  updateStay(id: string, stay: Partial<InsertStay>): Promise<Stay | undefined>;
+  deleteStay(id: string): Promise<boolean>;
+
+  // Cars
+  getCars(): Promise<Car[]>;
+  getCar(id: string): Promise<Car | undefined>;
+  createCar(car: InsertCar): Promise<Car>;
+  updateCar(id: string, car: Partial<InsertCar>): Promise<Car | undefined>;
+  deleteCar(id: string): Promise<boolean>;
+
+  // Cooks
+  getCooks(): Promise<Cook[]>;
+  getCook(id: string): Promise<Cook | undefined>;
+  createCook(cook: InsertCook): Promise<Cook>;
+  updateCook(id: string, cook: Partial<InsertCook>): Promise<Cook | undefined>;
+  deleteCook(id: string): Promise<boolean>;
+
+  // Errands
+  getErrands(): Promise<Errand[]>;
+  getErrand(id: string): Promise<Errand | undefined>;
+  createErrand(errand: InsertErrand): Promise<Errand>;
+  updateErrand(id: string, errand: Partial<InsertErrand>): Promise<Errand | undefined>;
+  deleteErrand(id: string): Promise<boolean>;
+
+  // Stay Reservations (for availability tracking)
+  getStayReservations(stayId: string): Promise<StayReservation[]>;
+  createStayReservation(reservation: InsertStayReservation): Promise<StayReservation>;
+  deleteStayReservation(id: string): Promise<boolean>;
 
   // Analytics
   getDashboardMetrics(): Promise<DashboardMetrics>;
@@ -106,6 +156,24 @@ export class DatabaseStorage implements IStorage {
       })
       .returning();
     return user;
+  }
+
+  async updateUserRole(userId: string, role: UserRole): Promise<User> {
+    const [updated] = await db
+      .update(users)
+      .set({ 
+        role,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId))
+      .returning();
+    
+    if (!updated) {
+      throw new Error(`User not found: ${userId}`);
+    }
+    
+    console.log(`Updated user ${userId} role to ${role}`);
+    return updated;
   }
 
   // Accommodations
@@ -299,6 +367,126 @@ export class DatabaseStorage implements IStorage {
 
   async deleteListing(id: string): Promise<boolean> {
     const result = await db.delete(listings).where(eq(listings.id, id));
+    return result.rowCount ? result.rowCount > 0 : false;
+  }
+
+  // Stays
+  async getStays(): Promise<Stay[]> {
+    return await db.select().from(stays);
+  }
+
+  async getStay(id: string): Promise<Stay | undefined> {
+    const [stay] = await db.select().from(stays).where(eq(stays.id, id));
+    return stay;
+  }
+
+  async createStay(data: InsertStay): Promise<Stay> {
+    const now = new Date().toISOString();
+    const [stay] = await db.insert(stays).values({ ...data, createdAt: now, updatedAt: now }).returning();
+    return stay;
+  }
+
+  async updateStay(id: string, data: Partial<InsertStay>): Promise<Stay | undefined> {
+    const [stay] = await db.update(stays).set({ ...data, updatedAt: new Date().toISOString() }).where(eq(stays.id, id)).returning();
+    return stay;
+  }
+
+  async deleteStay(id: string): Promise<boolean> {
+    const result = await db.delete(stays).where(eq(stays.id, id));
+    return result.rowCount ? result.rowCount > 0 : false;
+  }
+
+  // Cars
+  async getCars(): Promise<Car[]> {
+    return await db.select().from(cars);
+  }
+
+  async getCar(id: string): Promise<Car | undefined> {
+    const [car] = await db.select().from(cars).where(eq(cars.id, id));
+    return car;
+  }
+
+  async createCar(data: InsertCar): Promise<Car> {
+    const now = new Date().toISOString();
+    const [car] = await db.insert(cars).values({ ...data, createdAt: now, updatedAt: now }).returning();
+    return car;
+  }
+
+  async updateCar(id: string, data: Partial<InsertCar>): Promise<Car | undefined> {
+    const [car] = await db.update(cars).set({ ...data, updatedAt: new Date().toISOString() }).where(eq(cars.id, id)).returning();
+    return car;
+  }
+
+  async deleteCar(id: string): Promise<boolean> {
+    const result = await db.delete(cars).where(eq(cars.id, id));
+    return result.rowCount ? result.rowCount > 0 : false;
+  }
+
+  // Cooks
+  async getCooks(): Promise<Cook[]> {
+    return await db.select().from(cooks);
+  }
+
+  async getCook(id: string): Promise<Cook | undefined> {
+    const [cook] = await db.select().from(cooks).where(eq(cooks.id, id));
+    return cook;
+  }
+
+  async createCook(data: InsertCook): Promise<Cook> {
+    const now = new Date().toISOString();
+    const [cook] = await db.insert(cooks).values({ ...data, createdAt: now, updatedAt: now }).returning();
+    return cook;
+  }
+
+  async updateCook(id: string, data: Partial<InsertCook>): Promise<Cook | undefined> {
+    const [cook] = await db.update(cooks).set({ ...data, updatedAt: new Date().toISOString() }).where(eq(cooks.id, id)).returning();
+    return cook;
+  }
+
+  async deleteCook(id: string): Promise<boolean> {
+    const result = await db.delete(cooks).where(eq(cooks.id, id));
+    return result.rowCount ? result.rowCount > 0 : false;
+  }
+
+  // Errands
+  async getErrands(): Promise<Errand[]> {
+    return await db.select().from(errands);
+  }
+
+  async getErrand(id: string): Promise<Errand | undefined> {
+    const [errand] = await db.select().from(errands).where(eq(errands.id, id));
+    return errand;
+  }
+
+  async createErrand(data: InsertErrand): Promise<Errand> {
+    const now = new Date().toISOString();
+    const [errand] = await db.insert(errands).values({ ...data, createdAt: now, updatedAt: now }).returning();
+    return errand;
+  }
+
+  async updateErrand(id: string, data: Partial<InsertErrand>): Promise<Errand | undefined> {
+    const [errand] = await db.update(errands).set({ ...data, updatedAt: new Date().toISOString() }).where(eq(errands.id, id)).returning();
+    return errand;
+  }
+
+  async deleteErrand(id: string): Promise<boolean> {
+    const result = await db.delete(errands).where(eq(errands.id, id));
+    return result.rowCount ? result.rowCount > 0 : false;
+  }
+
+  // Stay Reservations
+  async getStayReservations(stayId: string): Promise<StayReservation[]> {
+    return await db.select().from(stayReservations).where(eq(stayReservations.stayId, stayId));
+  }
+
+  async createStayReservation(data: InsertStayReservation): Promise<StayReservation> {
+    const now = new Date().toISOString();
+    const [reservation] = await db.insert(stayReservations).values({ ...data, createdAt: now }).returning();
+    return reservation;
+  }
+
+  async deleteStayReservation(id: string): Promise<boolean> {
+    const result = await db.delete(stayReservations).where(eq(stayReservations.id, id));
     return result.rowCount ? result.rowCount > 0 : false;
   }
 

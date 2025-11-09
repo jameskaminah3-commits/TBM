@@ -220,6 +220,12 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
   }
 };
 
+// Admin email allowlist - fallback for reliable access
+const ADMIN_EMAILS = [
+  "admin@tembea.test",
+  // Add more admin emails here as needed
+];
+
 export const requireAdmin: RequestHandler = async (req, res, next) => {
   const user = req.user as any;
 
@@ -231,10 +237,27 @@ export const requireAdmin: RequestHandler = async (req, res, next) => {
   // Get user from database to check role
   try {
     const userId = user.claims.sub;
+    const userEmail = user.claims.email;
     const dbUser = await storage.getUser(userId);
     
-    if (!dbUser || dbUser.role !== "admin") {
+    // Check if user has admin role OR is in the admin email allowlist
+    const isAdminRole = dbUser && dbUser.role === "admin";
+    const isAdminEmail = userEmail && ADMIN_EMAILS.includes(userEmail);
+    
+    if (!isAdminRole && !isAdminEmail) {
+      console.log(`Access denied for user ${userId} (${userEmail}). Role: ${dbUser?.role}, In allowlist: ${isAdminEmail}`);
       return res.status(403).json({ message: "Forbidden - Admin access required" });
+    }
+
+    // If user is in allowlist but doesn't have admin role in DB, update it
+    if (isAdminEmail && dbUser && dbUser.role !== "admin") {
+      try {
+        console.log(`[SECURITY] Auto-promoting allowlisted email to admin: ${userEmail}`);
+        await storage.updateUserRole(userId, "admin");
+      } catch (updateError) {
+        console.error(`[SECURITY] Failed to auto-promote user to admin:`, updateError);
+        // Continue anyway if user is in allowlist - allow access even if role update fails
+      }
     }
 
     // Refresh token if needed (same logic as isAuthenticated)
