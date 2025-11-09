@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useMemo } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import {
   Form,
@@ -19,35 +20,63 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import type { Service } from "@shared/schema";
+import type { Car as CarType, Cook as CookType, Errand as ErrandType } from "@shared/schema";
 import { insertBookingSchema } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
 const serviceBookingFormSchema = insertBookingSchema.extend({
   checkIn: z.string().min(1, "Start date is required"),
   checkOut: z.string().min(1, "End date is required"),
-  guests: z.number().min(1, "At least 1 person required"),
+  guests: z.coerce.number().min(1, "At least 1 person required"),
   guestName: z.string().min(2, "Name is required"),
   guestEmail: z.string().email("Valid email is required"),
 }).omit({
-  accommodationId: true, // Not needed for standalone service booking
+  accommodationId: true,
 });
 
 type ServiceBookingFormValues = z.infer<typeof serviceBookingFormSchema>;
+type ServiceItem = CarType | CookType | ErrandType;
+
+const SERVICE_CONFIG = {
+  car: {
+    endpoint: "/api/cars",
+    icon: Car,
+    label: "Car Rental",
+    priceLabel: "per day",
+    backPath: "/services/drive"
+  },
+  cook: {
+    endpoint: "/api/cooks",
+    icon: ChefHat,
+    label: "Personal Chef",
+    priceLabel: "per session",
+    backPath: "/services/dine"
+  },
+  errand: {
+    endpoint: "/api/errands",
+    icon: ShoppingBag,
+    label: "Errand Service",
+    priceLabel: "base price",
+    backPath: "/services/relax"
+  },
+} as const;
 
 export default function ServiceBooking() {
-  const { id } = useParams();
+  const { serviceType, id } = useParams<{ serviceType: string; id: string }>();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const [withDriver, setWithDriver] = React.useState(false);
 
-  const { data: service, isLoading } = useQuery<Service>({
-    queryKey: ["/api/services", id],
-    queryFn: async () => {
-      const response = await fetch(`/api/services`);
-      const services = await response.json();
-      return services.find((s: Service) => s.id === id);
-    },
+  const config = SERVICE_CONFIG[serviceType as keyof typeof SERVICE_CONFIG];
+
+  const { data: allServices, isLoading } = useQuery<ServiceItem[]>({
+    queryKey: [config?.endpoint],
+    enabled: !!config,
   });
+
+  const service = useMemo(() => {
+    return allServices?.find((s) => s.id === id);
+  }, [allServices, id]);
 
   const form = useForm<ServiceBookingFormValues>({
     resolver: zodResolver(serviceBookingFormSchema),
@@ -62,6 +91,18 @@ export default function ServiceBooking() {
       status: "upcoming",
     },
   });
+
+  // For cook bookings (single date), auto-set checkOut to match checkIn
+  React.useEffect(() => {
+    if (serviceType === 'cook') {
+      const subscription = form.watch((value, { name }) => {
+        if (name === 'checkIn' && value.checkIn) {
+          form.setValue('checkOut', value.checkIn);
+        }
+      });
+      return () => subscription.unsubscribe();
+    }
+  }, [serviceType, form]);
 
   const createBookingMutation = useMutation({
     mutationFn: (data: ServiceBookingFormValues) =>
@@ -95,37 +136,66 @@ export default function ServiceBooking() {
     return Math.max(1, Math.ceil(diff / (1000 * 60 * 60 * 24)));
   };
 
-  const onSubmit = (data: ServiceBookingFormValues) => {
-    if (!service) return;
-
-    const days = calculateDays(data.checkIn, data.checkOut);
-    const multiplier = service.priceType === "per-day" ? days : 1;
-    const totalPrice = service.pricePerDay * multiplier;
-
-    createBookingMutation.mutate({
-      ...data,
-      totalPrice,
-    });
+  const getServiceName = (svc: ServiceItem): string => {
+    if ('model' in svc) return svc.model;
+    if ('title' in svc) return svc.title;
+    if ('serviceName' in svc) return svc.serviceName;
+    return 'Service';
   };
 
-  const days = calculateDays(form.watch("checkIn"), form.watch("checkOut"));
-  const multiplier = service?.priceType === "per-day" ? days : 1;
-  const totalPrice = (service?.pricePerDay || 0) * multiplier;
+  const calculatePrice = (): number => {
+    if (!service) return 0;
+    
+    const checkIn = form.watch("checkIn");
+    const checkOut = form.watch("checkOut");
+    const days = calculateDays(checkIn, checkOut);
 
-  const getServiceIcon = (type: string) => {
-    switch (type) {
-      case "car-rental":
-      case "car-with-driver":
-        return Car;
-      case "personal-cook":
-        return ChefHat;
-      case "shopping":
-      case "fridge-stocking":
-        return ShoppingBag;
-      default:
-        return ShoppingBag;
+    if ('pricePerDay' in service) {
+      if (withDriver && service.priceWithDriver) {
+        return days * service.priceWithDriver;
+      }
+      return days * service.pricePerDay;
     }
+    
+    if ('pricePerSession' in service) {
+      return service.pricePerSession;
+    }
+    
+    if ('basePrice' in service) {
+      return service.basePrice;
+    }
+    
+    return 0;
   };
+
+  const onSubmit = (data: ServiceBookingFormValues) => {
+    const totalPrice = calculatePrice();
+    
+    // For cook bookings (single date), set checkOut to match checkIn
+    const bookingData: ServiceBookingFormValues = {
+      ...data,
+      checkOut: serviceType === 'cook' ? data.checkIn : data.checkOut,
+      totalPrice,
+    };
+    
+    createBookingMutation.mutate(bookingData);
+  };
+
+  const totalPrice = calculatePrice();
+  const days = calculateDays(form.watch("checkIn"), form.watch("checkOut"));
+
+  if (!config) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="max-w-4xl mx-auto text-center">
+          <h1 className="text-2xl font-bold mb-4">Invalid service type</h1>
+          <Button onClick={() => setLocation("/")} data-testid="button-back-home">
+            Back to Home
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -145,15 +215,16 @@ export default function ServiceBooking() {
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-4xl mx-auto text-center">
           <h1 className="text-2xl font-bold mb-4">Service not found</h1>
-          <Button onClick={() => setLocation("/")} data-testid="button-back-home">
-            Back to Home
+          <Button onClick={() => setLocation(config.backPath)} data-testid="button-back-home">
+            Back to {config.label}s
           </Button>
         </div>
       </div>
     );
   }
 
-  const ServiceIcon = getServiceIcon(service.type);
+  const ServiceIcon = config.icon;
+  const serviceName = getServiceName(service);
 
   return (
     <div className="min-h-screen bg-background">
@@ -161,7 +232,7 @@ export default function ServiceBooking() {
         <div className="max-w-4xl mx-auto">
           <Button
             variant="ghost"
-            onClick={() => window.history.back()}
+            onClick={() => setLocation(config.backPath)}
             className="mb-6"
             data-testid="button-back"
           >
@@ -180,23 +251,28 @@ export default function ServiceBooking() {
                     </div>
                     <div>
                       <h1 className="text-2xl font-bold" data-testid="text-service-name">
-                        {service.name}
+                        {serviceName}
                       </h1>
                       <p className="text-muted-foreground text-sm">{service.description}</p>
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Badge variant="secondary" data-testid="badge-service-type">
-                      {service.type.replace("-", " ").replace(/\b\w/g, (l) => l.toUpperCase())}
+                      {config.label}
                     </Badge>
-                    {service.deliveryType && (
-                      <Badge variant="outline" data-testid="badge-delivery-type">
-                        {service.deliveryType === "self-driven" ? "Self-Drive" : "Chauffeur"}
+                    {'transmission' in service && (
+                      <Badge variant="outline" className="capitalize">
+                        {service.transmission}
                       </Badge>
                     )}
-                    {service.vehicleType && (
-                      <Badge variant="outline" data-testid="badge-vehicle-type">
-                        {service.vehicleType.toUpperCase()}
+                    {'seats' in service && (
+                      <Badge variant="outline">
+                        {service.seats} seats
+                      </Badge>
+                    )}
+                    {'speciality' in service && (
+                      <Badge variant="outline" className="capitalize">
+                        {service.speciality}
                       </Badge>
                     )}
                   </div>
@@ -212,7 +288,9 @@ export default function ServiceBooking() {
                         name="checkIn"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Start Date</FormLabel>
+                            <FormLabel>
+                              {serviceType === 'cook' ? 'Service Date' : 'Start Date'}
+                            </FormLabel>
                             <FormControl>
                               <div className="relative">
                                 <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -229,27 +307,29 @@ export default function ServiceBooking() {
                         )}
                       />
 
-                      <FormField
-                        control={form.control}
-                        name="checkOut"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>End Date</FormLabel>
-                            <FormControl>
-                              <div className="relative">
-                                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                                <Input
-                                  type="date"
-                                  className="pl-10"
-                                  data-testid="input-end-date"
-                                  {...field}
-                                />
-                              </div>
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                      {serviceType !== 'cook' && (
+                        <FormField
+                          control={form.control}
+                          name="checkOut"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>End Date</FormLabel>
+                              <FormControl>
+                                <div className="relative">
+                                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                                  <Input
+                                    type="date"
+                                    className="pl-10"
+                                    data-testid="input-end-date"
+                                    {...field}
+                                  />
+                                </div>
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      )}
                     </div>
 
                     <FormField
@@ -275,6 +355,23 @@ export default function ServiceBooking() {
                         </FormItem>
                       )}
                     />
+
+                    {serviceType === 'car' && 'priceWithDriver' in service && service.priceWithDriver && (
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="with-driver"
+                          checked={withDriver}
+                          onCheckedChange={(checked) => setWithDriver(checked as boolean)}
+                          data-testid="checkbox-with-driver"
+                        />
+                        <label
+                          htmlFor="with-driver"
+                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                        >
+                          Add chauffeur service (+${service.priceWithDriver - service.pricePerDay}/day)
+                        </label>
+                      </div>
+                    )}
 
                     <Separator />
 
@@ -332,11 +429,11 @@ export default function ServiceBooking() {
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Service</span>
                     <span className="font-medium" data-testid="text-summary-service">
-                      {service.name}
+                      {serviceName}
                     </span>
                   </div>
 
-                  {service.priceType === "per-day" && (
+                  {serviceType === 'car' && days > 0 && (
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Duration</span>
                       <span className="font-medium" data-testid="text-summary-duration">
@@ -346,9 +443,16 @@ export default function ServiceBooking() {
                   )}
 
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Price per {service.priceType === "per-day" ? "day" : "service"}</span>
+                    <span className="text-muted-foreground">
+                      {'pricePerDay' in service ? (withDriver && service.priceWithDriver ? 'Price per day (with driver)' : 'Price per day') :
+                       'pricePerSession' in service ? 'Price per session' : 'Base price'}
+                    </span>
                     <span className="font-medium" data-testid="text-summary-unit-price">
-                      ${service.pricePerDay}
+                      ${
+                        'pricePerDay' in service ? (withDriver && service.priceWithDriver ? service.priceWithDriver : service.pricePerDay) :
+                        'pricePerSession' in service ? service.pricePerSession :
+                        'basePrice' in service ? service.basePrice : 0
+                      }
                     </span>
                   </div>
 
