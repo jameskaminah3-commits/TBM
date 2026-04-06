@@ -1,0 +1,139 @@
+<svg width="1600" height="1000" viewBox="0 0 1600 1000" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="180" y1="120" x2="1410" y2="910" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFF4E6"/>
+      <stop offset="0.45" stop-color="#DDF1F3"/>
+      <stop offset="1" stop-color="#F6E7D5"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="800" y1="110" x2="800" y2="890" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.74"/>
+    </linearGradient>
+    <linearGradient id="phoneGrad" x1="800" y1="228" x2="800" y2="806" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B3C49"/>
+      <stop offset="1" stop-color="#113C48"/>
+    </linearGradient>
+    <filter id="shadow" x="-80" y="-80" width="1760" height="1160" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="24" stdDeviation="30" flood-color="#11424A" flood-opacity="0.18"/>
+    </filter>
+    <filter id="softShadow" x="-40" y="-40" width="1680" height="1080" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#0A3140" flood-opacity="0.16"/>
+    </filter>
+    <clipPath id="clipStay">
+      <rect x="92" y="254" width="360" height="230" rx="28"/>
+    </clipPath>
+    <clipPath id="clipDrive">
+      <rect x="1148" y="252" width="360" height="230" rx="28"/>
+    </clipPath>
+    <clipPath id="clipChef">
+      <rect x="120" y="604" width="380" height="240" rx="28"/>
+    </clipPath>
+    <clipPath id="clipExperience">
+      <rect x="1100" y="606" width="380" height="240" rx="28"/>
+    </clipPath>
+  </defs>
+
+  <rect width="1600" height="1000" fill="url(#bg)"/>
+  <circle cx="210" cy="170" r="220" fill="#FFE1C3" fill-opacity="0.5"/>
+  <circle cx="1390" cy="850" r="280" fill="#D8EFF1" fill-opacity="0.7"/>
+  <circle cx="1310" cy="170" r="180" fill="#FBE0C9" fill-opacity="0.45"/>
+
+  <g filter="url(#shadow)">
+    <rect x="52" y="56" width="1496" height="888" rx="40" fill="url(#glass)"/>
+  </g>
+
+  <text x="120" y="150" fill="#0E3440" font-family="Georgia, 'Times New Roman', serif" font-size="62" font-weight="700">
+    One booking. Multiple services.
+  </text>
+  <text x="120" y="205" fill="#4D6A72" font-family="Arial, Helvetica, sans-serif" font-size="28">
+    Tembea Bila Matata brings stays, airport pickup, chef support and experiences
+  </text>
+  <text x="120" y="242" fill="#4D6A72" font-family="Arial, Helvetica, sans-serif" font-size="28">
+    into a single concierge-style app journey.
+  </text>
+
+  <path d="M510 370C620 350 648 340 706 392" stroke="#6E8E97" stroke-width="4" stroke-linecap="round" stroke-dasharray="10 14"/>
+  <path d="M1092 370C994 352 956 350 894 390" stroke="#6E8E97" stroke-width="4" stroke-linecap="round" stroke-dasharray="10 14"/>
+  <path d="M528 706C620 694 660 670 714 612" stroke="#6E8E97" stroke-width="4" stroke-linecap="round" stroke-dasharray="10 14"/>
+  <path d="M1076 706C982 696 946 678 886 616" stroke="#6E8E97" stroke-width="4" stroke-linecap="round" stroke-dasharray="10 14"/>
+
+  <g filter="url(#softShadow)">
+    <rect x="92" y="254" width="360" height="230" rx="28" fill="#FFFFFF"/>
+    <g clip-path="url(#clipStay)">
+      <image href="generated_images/Luxury_beachfront_villa_hero_b917e1ae.png" x="92" y="254" width="360" height="230" preserveAspectRatio="xMidYMid slice"/>
+    </g>
+    <rect x="116" y="276" width="120" height="34" rx="17" fill="#FFFFFF" fill-opacity="0.9"/>
+    <text x="142" y="299" fill="#0E3440" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700">Stay</text>
+    <text x="92" y="528" fill="#0E3440" font-family="Georgia, 'Times New Roman', serif" font-size="30" font-weight="700">Beachfront Villa</text>
+    <text x="92" y="562" fill="#5D7981" font-family="Arial, Helvetica, sans-serif" font-size="21">Check-in, add-ons and guest details stay together.</text>
+  </g>
+
+  <g filter="url(#softShadow)">
+    <rect x="1148" y="252" width="360" height="230" rx="28" fill="#FFFFFF"/>
+    <g clip-path="url(#clipDrive)">
+      <image href="generated_images/Chauffeur_car_service_1e2a411b.png" x="1148" y="252" width="360" height="230" preserveAspectRatio="xMidYMid slice"/>
+    </g>
+    <rect x="1172" y="274" width="136" height="34" rx="17" fill="#FFFFFF" fill-opacity="0.9"/>
+    <text x="1202" y="297" fill="#0E3440" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700">Drive</text>
+    <text x="1148" y="526" fill="#0E3440" font-family="Georgia, 'Times New Roman', serif" font-size="30" font-weight="700">Airport Pickup</text>
+    <text x="1148" y="560" fill="#5D7981" font-family="Arial, Helvetica, sans-serif" font-size="21">Arrival timing and chauffeur booking are coordinated automatically.</text>
+  </g>
+
+  <g filter="url(#softShadow)">
+    <rect x="120" y="604" width="380" height="240" rx="28" fill="#FFFFFF"/>
+    <g clip-path="url(#clipChef)">
+      <image href="generated_images/Personal_chef_service_2a86c242.png" x="120" y="604" width="380" height="240" preserveAspectRatio="xMidYMid slice"/>
+    </g>
+    <rect x="146" y="626" width="124" height="34" rx="17" fill="#FFFFFF" fill-opacity="0.9"/>
+    <text x="176" y="649" fill="#0E3440" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700">Dine</text>
+    <text x="120" y="888" fill="#0E3440" font-family="Georgia, 'Times New Roman', serif" font-size="30" font-weight="700">Private Chef</text>
+    <text x="120" y="922" fill="#5D7981" font-family="Arial, Helvetica, sans-serif" font-size="21">Menus, timing and special requests live inside the same booking.</text>
+  </g>
+
+  <g filter="url(#softShadow)">
+    <rect x="1100" y="606" width="380" height="240" rx="28" fill="#FFFFFF"/>
+    <g clip-path="url(#clipExperience)">
+      <image href="../uploads/1774814549989-438c82ccc20a.jpg" x="1100" y="606" width="380" height="240" preserveAspectRatio="xMidYMid slice"/>
+    </g>
+    <rect x="1126" y="628" width="166" height="34" rx="17" fill="#FFFFFF" fill-opacity="0.9"/>
+    <text x="1157" y="651" fill="#0E3440" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700">Experience</text>
+    <text x="1100" y="888" fill="#0E3440" font-family="Georgia, 'Times New Roman', serif" font-size="30" font-weight="700">Reef Adventure</text>
+    <text x="1100" y="922" fill="#5D7981" font-family="Arial, Helvetica, sans-serif" font-size="21">Activities can be added without leaving the trip flow.</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="676" y="220" width="248" height="500" rx="42" fill="#11161A"/>
+    <rect x="690" y="236" width="220" height="468" rx="34" fill="url(#phoneGrad)"/>
+    <rect x="764" y="248" width="72" height="8" rx="4" fill="#D9E6E8" fill-opacity="0.65"/>
+
+    <rect x="708" y="274" width="184" height="72" rx="24" fill="#FFFFFF" fill-opacity="0.14"/>
+    <text x="728" y="305" fill="#CBE8E6" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700">Tembea Bila Matata</text>
+    <text x="728" y="332" fill="#FFFFFF" font-family="Georgia, 'Times New Roman', serif" font-size="26" font-weight="700">Trip Overview</text>
+
+    <rect x="708" y="364" width="184" height="112" rx="24" fill="#FFFFFF"/>
+    <text x="726" y="396" fill="#70848A" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700">Stay</text>
+    <text x="726" y="428" fill="#0F3540" font-family="Georgia, 'Times New Roman', serif" font-size="22" font-weight="700">Ocean Villa Suite</text>
+    <text x="726" y="454" fill="#5E7881" font-family="Arial, Helvetica, sans-serif" font-size="15">2 nights • Check-in 14 Apr</text>
+
+    <rect x="722" y="494" width="156" height="46" rx="16" fill="#E8F4F2"/>
+    <text x="740" y="523" fill="#0E5D63" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="700">Services Added</text>
+
+    <circle cx="728" cy="572" r="8" fill="#42B5A4"/>
+    <text x="746" y="578" fill="#F5FCFC" font-family="Arial, Helvetica, sans-serif" font-size="17">Airport chauffeur</text>
+    <circle cx="728" cy="610" r="8" fill="#42B5A4"/>
+    <text x="746" y="616" fill="#F5FCFC" font-family="Arial, Helvetica, sans-serif" font-size="17">Private chef dinner</text>
+    <circle cx="728" cy="648" r="8" fill="#42B5A4"/>
+    <text x="746" y="654" fill="#F5FCFC" font-family="Arial, Helvetica, sans-serif" font-size="17">Snorkeling experience</text>
+
+    <rect x="708" y="670" width="184" height="64" rx="22" fill="#F6C18B"/>
+    <text x="751" y="710" fill="#5D3511" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700">Booked in one app</text>
+  </g>
+
+  <rect x="566" y="778" width="468" height="110" rx="28" fill="#0F3540"/>
+  <text x="600" y="826" fill="#FFFFFF" font-family="Georgia, 'Times New Roman', serif" font-size="36" font-weight="700">
+    Coordinated from one mobile booking flow
+  </text>
+  <text x="600" y="858" fill="#B5CBD0" font-family="Arial, Helvetica, sans-serif" font-size="22">
+    Guests choose a stay, then layer trusted local services without juggling separate vendors.
+  </text>
+</svg>

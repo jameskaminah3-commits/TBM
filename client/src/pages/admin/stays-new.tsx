@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -19,9 +19,17 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { AdminMediaField } from "@/components/admin-media-field";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { insertStaySchema } from "@shared/schema";
+import { insertStaySchema, type ProviderAccountSummary } from "@shared/schema";
 
 const featureOptions = [
   "WiFi",
@@ -40,6 +48,9 @@ const featureOptions = [
 
 const formSchema = insertStaySchema.extend({
   price: z.coerce.number().min(1, "Price must be at least $1"),
+  rating: z.coerce.number().min(1, "Rating must be at least 1").max(5, "Rating cannot exceed 5"),
+  reviewCount: z.coerce.number().min(0, "Review count cannot be negative"),
+  managerUserId: z.string().optional(),
   maxOccupancy: z.coerce.number().min(1, "At least 1 guest required"),
   bedrooms: z.coerce.number().min(1, "At least 1 bedroom required"),
   bathrooms: z.coerce.number().min(1, "At least 1 bathroom required"),
@@ -51,17 +62,26 @@ export default function AdminStaysNew() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
+  const { data: providers = [] } = useQuery<ProviderAccountSummary[]>({
+    queryKey: ["/api/admin/provider-accounts"],
+  });
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       title: "",
       price: 0,
+      rating: 5,
+      reviewCount: 0,
+      managerUserId: "unassigned",
       location: "",
       maxOccupancy: 2,
       bedrooms: 1,
       bathrooms: 1,
       imageUrl: "",
+      galleryUrls: [],
+      mediaType: "image",
+      isPublic: false,
       description: "",
       features: [],
     },
@@ -98,7 +118,11 @@ export default function AdminStaysNew() {
   };
 
   const onSubmit = async (data: FormData) => {
-    await createMutation.mutateAsync({ ...data, features: selectedFeatures });
+    await createMutation.mutateAsync({
+      ...data,
+      managerUserId: data.managerUserId === "unassigned" ? undefined : data.managerUserId,
+      features: selectedFeatures,
+    });
   };
 
   return (
@@ -135,7 +159,37 @@ export default function AdminStaysNew() {
                   )}
                 />
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <FormField
+                    control={form.control}
+                    name="rating"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Rating</FormLabel>
+                        <FormControl>
+                          <Input type="number" min="1" max="5" step="0.1" placeholder="4.8" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="reviewCount"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Review Count</FormLabel>
+                        <FormControl>
+                          <Input type="number" min="0" placeholder="24" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <FormField
                     control={form.control}
                     name="price"
@@ -179,7 +233,7 @@ export default function AdminStaysNew() {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <FormField
                     control={form.control}
                     name="bedrooms"
@@ -223,6 +277,33 @@ export default function AdminStaysNew() {
 
                 <FormField
                   control={form.control}
+                  name="managerUserId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Assigned Provider</FormLabel>
+                      <Select value={field.value ?? "unassigned"} onValueChange={field.onChange}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Assign a provider" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="unassigned">Unassigned</SelectItem>
+                          {providers.map((provider) => (
+                            <SelectItem key={provider.id} value={provider.id}>
+                              {[provider.firstName, provider.lastName].filter(Boolean).join(" ") || provider.email}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>Only the assigned provider will see this stay in their partner dashboard.</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
                   name="location"
                   render={({ field }) => (
                     <FormItem>
@@ -240,17 +321,36 @@ export default function AdminStaysNew() {
                   name="imageUrl"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Image URL (Optional)</FormLabel>
+                      <FormLabel>Media</FormLabel>
                       <FormControl>
-                        <Input
-                          type="url"
-                          placeholder="https://example.com/image.jpg"
-                          {...field}
-                          value={field.value || ""}
-                          data-testid="input-stay-image-url"
+                        <AdminMediaField
+                          value={field.value}
+                          galleryUrls={form.watch("galleryUrls")}
+                          mediaType={form.watch("mediaType")}
+                          onChange={({ mediaUrl, mediaType, galleryUrls }) => {
+                            form.setValue("imageUrl", mediaUrl);
+                            form.setValue("galleryUrls", galleryUrls);
+                            form.setValue("mediaType", mediaType);
+                          }}
                         />
                       </FormControl>
                       <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="isPublic"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                      <div className="space-y-1">
+                        <FormLabel>Public Listing</FormLabel>
+                        <FormDescription>Turn this on when the stay should appear on the live site.</FormDescription>
+                      </div>
+                      <FormControl>
+                        <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                      </FormControl>
                     </FormItem>
                   )}
                 />

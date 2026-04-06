@@ -1,16 +1,47 @@
-import { useParams, useLocation } from "wouter";
+import { useMemo, useState } from "react";
+import { useParams, useLocation, useSearch } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { Star, MapPin, Users, Bed, Bath, Wifi, Car, ChefHat, ShoppingBag, CheckCircle2 } from "lucide-react";
+import { Star, MapPin, Users, Bed, Bath, Car, ChefHat, ShoppingBag, CheckCircle2, CalendarDays } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Calendar } from "@/components/ui/calendar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
+import { ListingMedia } from "@/components/listing-media";
+import { CurrencyAmount } from "@/components/currency-amount";
+import { PublicReviewPreview } from "@/components/public-review-preview";
+import {
+  formatStaySearchDate,
+  getStaySearchNights,
+  hasStructuredStayFilters,
+  readStaySearchState,
+  toSearchSuffix,
+} from "@/lib/stay-search";
 import type { Stay } from "@shared/schema";
+import { eachDayOfInterval, format, parseISO, startOfDay } from "date-fns";
+
+type StayAvailability = {
+  blockedRanges: Array<{
+    id: string;
+    source: "booking" | "manual";
+    startDate: string;
+    endDate: string;
+    checkoutDate: string;
+    status: string;
+    guestName: string;
+  }>;
+  availableFrom: string;
+};
 
 export default function AccommodationDetail() {
   const { id } = useParams();
   const [, setLocation] = useLocation();
+  const search = useSearch();
+  const [calendarMonth, setCalendarMonth] = useState(startOfDay(new Date()));
+  const staySearch = useMemo(() => readStaySearchState(search), [search]);
+  const staySearchSuffix = toSearchSuffix(search);
+  const hasTripFilters = hasStructuredStayFilters(staySearch);
+  const stayNights = getStaySearchNights(staySearch.checkIn, staySearch.checkOut);
   
   const { data: accommodation, isLoading } = useQuery<Stay>({
     queryKey: ["/api/stays", id],
@@ -20,6 +51,29 @@ export default function AccommodationDetail() {
       return response.json();
     },
   });
+
+  const { data: availability } = useQuery<StayAvailability>({
+    queryKey: ["/api/stays", id, "availability"],
+    enabled: !!id,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    queryFn: async () => {
+      const response = await fetch(`/api/stays/${id}/availability`);
+      if (!response.ok) throw new Error("Failed to fetch availability");
+      return response.json();
+    },
+  });
+
+  const blockedDates = useMemo(() => {
+    if (!availability) return [];
+
+    return availability.blockedRanges.flatMap((range) =>
+      eachDayOfInterval({
+        start: parseISO(range.startDate),
+        end: parseISO(range.endDate),
+      }),
+    );
+  }, [availability]);
 
   if (isLoading) {
     return (
@@ -44,8 +98,8 @@ export default function AccommodationDetail() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <h2 className="text-2xl font-semibold mb-2">Accommodation not found</h2>
-          <Button onClick={() => setLocation("/accommodations")} data-testid="button-back">
+          <h2 className="font-serif text-2xl font-medium mb-2">Accommodation not found</h2>
+          <Button onClick={() => setLocation(`/accommodations${staySearchSuffix}`)} data-testid="button-back">
             Back to Accommodations
           </Button>
         </div>
@@ -55,29 +109,43 @@ export default function AccommodationDetail() {
 
   return (
     <div className="min-h-screen py-12">
-      <div className="container mx-auto px-4 md:px-8 max-w-6xl">
+      <div className="container mx-auto max-w-6xl px-4 sm:px-6 md:px-8">
         {/* Hero Image */}
         <div className="relative aspect-[16/9] rounded-xl overflow-hidden mb-8">
-          <img
+          <ListingMedia
             src={accommodation.imageUrl || "https://images.unsplash.com/photo-1564501049412-61c2a3083791?w=800"}
             alt={accommodation.title}
+            mediaType={accommodation.mediaType}
             className="w-full h-full object-cover"
           />
         </div>
+        {accommodation.galleryUrls.length > 1 && (
+          <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+            {accommodation.galleryUrls.slice(1).map((url) => (
+              <div key={url} className="aspect-[4/3] overflow-hidden rounded-lg">
+                <img src={url} alt={`${accommodation.title} gallery`} className="h-full w-full object-cover" loading="lazy" />
+              </div>
+            ))}
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Main Content */}
           <div className="lg:col-span-2 space-y-8">
             <div>
-              <div className="flex items-start justify-between gap-4 mb-4">
+              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <h1 className="font-serif text-3xl md:text-4xl font-semibold mb-2">
+                  <h1 className="mb-2 font-serif text-3xl font-medium md:text-4xl">
                     {accommodation.title}
                   </h1>
-                  <div className="flex items-center gap-4 text-muted-foreground">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-muted-foreground">
                     <div className="flex items-center gap-1">
                       <MapPin className="h-4 w-4" />
-                      <span>{accommodation.location}</span>
+                      <span className="break-words">{accommodation.location}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
+                      <span className="break-words">Rated {accommodation.rating.toFixed(1)}/5 by verified guests</span>
                     </div>
                   </div>
                 </div>
@@ -85,8 +153,35 @@ export default function AccommodationDetail() {
 
               <Separator className="my-6" />
 
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <Card className="p-4">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Users className="h-4 w-4 text-primary" />
+                    <span>Up to {accommodation.maxOccupancy} guests</span>
+                  </div>
+                </Card>
+                <Card className="p-4">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Bed className="h-4 w-4 text-primary" />
+                    <span>{accommodation.bedrooms} bedrooms</span>
+                  </div>
+                </Card>
+                <Card className="p-4">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Bath className="h-4 w-4 text-primary" />
+                    <span>{accommodation.bathrooms} bathrooms</span>
+                  </div>
+                </Card>
+                <Card className="p-4">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <CalendarDays className="h-4 w-4 text-primary" />
+                    <span>Available from {availability?.availableFrom ?? "today"}</span>
+                  </div>
+                </Card>
+              </div>
+
               <div>
-                <h2 className="text-xl font-semibold mb-3">About this place</h2>
+                <h2 className="mb-3 font-serif text-2xl font-medium">About this place</h2>
                 <p className="text-muted-foreground leading-relaxed">
                   {accommodation.description}
                 </p>
@@ -94,8 +189,8 @@ export default function AccommodationDetail() {
             </div>
 
             <div>
-              <h2 className="text-xl font-semibold mb-4">Features</h2>
-              <div className="grid grid-cols-2 gap-3">
+              <h2 className="mb-4 font-serif text-2xl font-medium">Features</h2>
+              <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
                 {accommodation.features.map((feature, index) => (
                   <div key={index} className="flex items-center gap-2">
                     <CheckCircle2 className="h-4 w-4 text-primary" />
@@ -106,7 +201,7 @@ export default function AccommodationDetail() {
             </div>
 
             <div>
-              <h2 className="text-xl font-semibold mb-4">Available Services</h2>
+              <h2 className="mb-4 font-serif text-2xl font-medium">Available Services</h2>
               <p className="text-muted-foreground mb-4">
                 Enhance your stay with our curated local services. Select add-ons during booking.
               </p>
@@ -168,22 +263,114 @@ export default function AccommodationDetail() {
                 </Card>
               </div>
             </div>
+
+            <PublicReviewPreview targetType="stay" targetId={accommodation.id} variant="full" maxItems={4} />
           </div>
 
           {/* Booking Sidebar */}
           <div className="lg:sticky lg:top-24 h-fit">
-            <Card className="p-6">
-              <div className="mb-6">
-                <div className="text-3xl font-semibold mb-1">
-                  ${accommodation.price}
+            <Card className="p-5 sm:p-6">
+              {hasTripFilters ? (
+                <div className="mb-5 rounded-2xl border bg-muted/30 p-4 text-sm">
+                  <div className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+                    Your trip
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {staySearch.destination ? (
+                      <span className="rounded-full bg-background px-3 py-1 text-foreground">
+                        {staySearch.destination}
+                      </span>
+                    ) : null}
+                    {staySearch.checkIn ? (
+                      <span className="rounded-full bg-background px-3 py-1 text-foreground">
+                        Check in {formatStaySearchDate(staySearch.checkIn)}
+                      </span>
+                    ) : null}
+                    {staySearch.checkOut ? (
+                      <span className="rounded-full bg-background px-3 py-1 text-foreground">
+                        Check out {formatStaySearchDate(staySearch.checkOut)}
+                      </span>
+                    ) : null}
+                    {stayNights ? (
+                      <span className="rounded-full bg-background px-3 py-1 text-foreground">
+                        {stayNights} night{stayNights === 1 ? "" : "s"}
+                      </span>
+                    ) : null}
+                    {staySearch.guests ? (
+                      <span className="rounded-full bg-background px-3 py-1 text-foreground">
+                        {staySearch.guests} guest{staySearch.guests === 1 ? "" : "s"}
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    These details will be prefilled when you continue to booking.
+                  </p>
                 </div>
+              ) : null}
+
+              <div className="mb-6">
+                <CurrencyAmount
+                  amountUsd={accommodation.price}
+                  primaryClassName="text-3xl font-semibold"
+                  className="mb-1"
+                />
                 <div className="text-sm text-muted-foreground">per day</div>
+              </div>
+
+              <div className="space-y-3 mb-6 rounded-xl border bg-muted/30 p-4 text-sm">
+                <div className="flex flex-col gap-1 min-[360px]:flex-row min-[360px]:items-center min-[360px]:justify-between">
+                  <span className="font-medium">Guest limit</span>
+                  <span className="text-muted-foreground">Up to {accommodation.maxOccupancy}</span>
+                </div>
+                <div className="flex flex-col gap-1 min-[360px]:flex-row min-[360px]:items-center min-[360px]:justify-between">
+                  <span className="font-medium">Next available</span>
+                  <span className="text-muted-foreground">{availability?.availableFrom ?? "Today"}</span>
+                </div>
+                <div className="rounded-xl border bg-background p-2">
+                  <div className="mb-2 flex items-center justify-between px-1">
+                    <span className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                      Booked days
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">
+                      {format(calendarMonth, "MMM yyyy")}
+                    </span>
+                  </div>
+                  <Calendar
+                    mode="single"
+                    month={calendarMonth}
+                    onMonthChange={setCalendarMonth}
+                    disabled={{ before: startOfDay(new Date()) }}
+                    modifiers={{
+                      booked: blockedDates,
+                    }}
+                    modifiersClassNames={{
+                      booked: "bg-red-100 text-red-700 hover:bg-red-100 hover:text-red-700 rounded-md font-medium",
+                    }}
+                    className="mx-auto w-full max-w-[19rem] p-0"
+                    classNames={{
+                      month: "space-y-2",
+                      caption: "flex items-center justify-center pt-1 relative",
+                      caption_label: "text-sm font-semibold",
+                      nav_button: "h-7 w-7",
+                      head_row: "flex",
+                      head_cell: "w-8 text-[10px] font-medium text-muted-foreground",
+                      row: "mt-1 flex w-full",
+                      cell: "h-8 w-8 p-0 text-center text-sm",
+                      day: "h-8 w-8 rounded-md text-xs font-normal",
+                      day_today: "bg-primary/10 text-primary font-semibold",
+                    }}
+                  />
+                  <div className="mt-2 flex items-center gap-2 px-1 text-[11px] text-muted-foreground">
+                    <span className="h-2.5 w-2.5 rounded-sm bg-red-100" />
+                    <span>Booked days</span>
+                  </div>
+                </div>
               </div>
 
               <Button
                 className="w-full"
                 size="lg"
-                onClick={() => setLocation(`/book/${accommodation.id}`)}
+                onClick={() => setLocation(`/book/${accommodation.id}${staySearchSuffix}`)}
                 data-testid="button-book-now"
               >
                 Book Now

@@ -1,11 +1,115 @@
+import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
+import type { ReactNode } from "react";
 import { type BlogPost } from "@shared/schema";
-import { Calendar, User, ArrowLeft } from "lucide-react";
+import { Calendar, User, ArrowLeft, ArrowUpRight } from "lucide-react";
 import { format } from "date-fns";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  buildTrackedHref,
+  captureMarketingQueryParams,
+  setMarketingAttributionContext,
+  trackMarketingEvent,
+  trackMarketingPageView,
+} from "@/lib/marketing-attribution";
+import { SeoHead } from "@/components/seo-head";
+
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function childrenToText(children: ReactNode): string {
+  if (typeof children === "string" || typeof children === "number") {
+    return String(children);
+  }
+  if (Array.isArray(children)) {
+    return children.map(childrenToText).join("");
+  }
+  if (children && typeof children === "object" && "props" in children) {
+    return childrenToText((children as { props?: { children?: ReactNode } }).props?.children ?? "");
+  }
+  return "";
+}
+
+function buildCanonicalUrl(path: string) {
+  if (typeof window === "undefined") {
+    return path;
+  }
+  return `${window.location.origin}${path}`;
+}
+
+function isInternalLink(href?: string) {
+  if (!href) {
+    return false;
+  }
+  return href.startsWith("/") || href.startsWith("#");
+}
+
+function extractFaqSection(markdown: string) {
+  const lines = markdown.split("\n");
+  const faqStartIndex = lines.findIndex((line) => /^##\s+(faq|frequently asked questions)/i.test(line.trim()));
+  if (faqStartIndex === -1) {
+    return null;
+  }
+
+  let faqEndIndex = lines.length;
+  for (let index = faqStartIndex + 1; index < lines.length; index += 1) {
+    if (/^##\s+/.test(lines[index].trim())) {
+      faqEndIndex = index;
+      break;
+    }
+  }
+
+  const faqTitle = lines[faqStartIndex].replace(/^##\s+/, "").trim();
+  const sectionLines = lines.slice(faqStartIndex + 1, faqEndIndex);
+  const items: Array<{ question: string; answerMarkdown: string }> = [];
+  let currentQuestion = "";
+  let currentAnswerLines: string[] = [];
+
+  const pushCurrentItem = () => {
+    if (!currentQuestion) {
+      return;
+    }
+    items.push({
+      question: currentQuestion,
+      answerMarkdown: currentAnswerLines.join("\n").trim(),
+    });
+  };
+
+  for (const line of sectionLines) {
+    const trimmed = line.trim();
+    const questionMatch = /^###\s+(.+)$/.exec(trimmed);
+    if (questionMatch) {
+      pushCurrentItem();
+      currentQuestion = questionMatch[1].trim();
+      currentAnswerLines = [];
+      continue;
+    }
+
+    currentAnswerLines.push(line);
+  }
+
+  pushCurrentItem();
+
+  if (items.length === 0) {
+    return null;
+  }
+
+  return {
+    beforeMarkdown: lines.slice(0, faqStartIndex).join("\n").trim(),
+    faqTitle,
+    items,
+    afterMarkdown: lines.slice(faqEndIndex).join("\n").trim(),
+  };
+}
 
 export default function BlogPostDetail() {
   const params = useParams<{ slug: string }>();
@@ -16,22 +120,82 @@ export default function BlogPostDetail() {
     enabled: !!slug,
   });
 
+  const faqSection = useMemo(
+    () => (post?.contentMarkdown ? extractFaqSection(post.contentMarkdown) : null),
+    [post?.contentMarkdown],
+  );
+  const trackedCtaHref = useMemo(() => {
+    if (!post?.primaryCtaHref) {
+      return null;
+    }
+
+    return buildTrackedHref(post.primaryCtaHref, {
+      sourceType: "blog",
+      sourceId: post.id,
+      sourceSlug: post.slug,
+      promoCode: post.primaryPromoCode ?? null,
+    });
+  }, [post?.id, post?.primaryCtaHref, post?.primaryPromoCode, post?.slug]);
+
+  useEffect(() => {
+    captureMarketingQueryParams();
+  }, []);
+
+  useEffect(() => {
+    if (!post) {
+      return;
+    }
+
+    const payload = {
+      sourceType: "blog" as const,
+      sourceId: post.id,
+      sourceSlug: post.slug,
+      sourcePath: `/blog/${post.slug}`,
+      sourceTitle: post.title,
+      promoCode: post.primaryPromoCode ?? null,
+      landingPath: post.primaryCtaHref ?? null,
+    };
+
+    setMarketingAttributionContext(payload);
+    void trackMarketingPageView(payload);
+  }, [post]);
+
+  const headings = useMemo(() => {
+    if (!post?.contentMarkdown) {
+      return [];
+    }
+
+    const baseMarkdown = faqSection
+      ? [faqSection.beforeMarkdown, `## ${faqSection.faqTitle}`, faqSection.afterMarkdown].filter(Boolean).join("\n")
+      : post.contentMarkdown;
+
+    return baseMarkdown
+      .split("\n")
+      .map((line) => line.match(/^(##|###)\s+(.+)$/))
+      .filter((match): match is RegExpMatchArray => Boolean(match))
+      .map((match) => ({
+        level: match[1] === "##" ? 2 : 3,
+        label: match[2].trim(),
+        id: slugify(match[2].trim()),
+      }));
+  }, [faqSection, post?.contentMarkdown]);
+
   if (isLoading) {
     return (
       <div className="min-h-screen">
-        <div className="max-w-4xl mx-auto px-4 py-12">
+        <div className="mx-auto max-w-5xl px-4 py-12">
           <div className="space-y-8 animate-pulse">
-            <div className="h-8 bg-muted rounded w-1/4" />
-            <div className="aspect-[21/9] bg-muted rounded-lg" />
-            <div className="h-12 bg-muted rounded w-3/4" />
+            <div className="h-8 w-1/4 rounded bg-muted" />
+            <div className="aspect-[21/9] rounded-lg bg-muted" />
+            <div className="h-12 w-3/4 rounded bg-muted" />
             <div className="flex gap-4">
-              <div className="h-6 bg-muted rounded w-32" />
-              <div className="h-6 bg-muted rounded w-32" />
+              <div className="h-6 w-32 rounded bg-muted" />
+              <div className="h-6 w-32 rounded bg-muted" />
             </div>
             <div className="space-y-4">
-              <div className="h-4 bg-muted rounded" />
-              <div className="h-4 bg-muted rounded" />
-              <div className="h-4 bg-muted rounded w-5/6" />
+              <div className="h-4 rounded bg-muted" />
+              <div className="h-4 rounded bg-muted" />
+              <div className="h-4 w-5/6 rounded bg-muted" />
             </div>
           </div>
         </div>
@@ -42,15 +206,15 @@ export default function BlogPostDetail() {
   if (error || !post) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <h1 className="text-4xl font-semibold" data-testid="text-error-heading">Blog Post Not Found</h1>
+        <div className="space-y-4 text-center">
+          <h1 className="font-serif text-4xl font-medium" data-testid="text-error-heading">Article Not Found</h1>
           <p className="text-muted-foreground" data-testid="text-error-message">
-            The blog post you're looking for doesn't exist or has been removed.
+            The article you're looking for doesn't exist or has been removed.
           </p>
           <Link href="/blog">
             <Button data-testid="button-back-to-blog">
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Blog
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Articles
             </Button>
           </Link>
         </div>
@@ -58,93 +222,255 @@ export default function BlogPostDetail() {
     );
   }
 
+  const canonicalUrl = buildCanonicalUrl(`/blog/${post.slug}`);
+  const structuredData = {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: post.seoTitle || post.title,
+    description: post.seoDescription || post.excerpt,
+    image: post.featuredImage ? [post.featuredImage] : undefined,
+    datePublished: post.publishedAt || undefined,
+    dateModified: post.updatedAt,
+    author: {
+      "@type": "Person",
+      name: post.author,
+    },
+    mainEntityOfPage: canonicalUrl,
+  };
+
+  const markdownComponents = {
+    h1: ({ children }: { children?: ReactNode }) => <h1 className="mt-10 font-serif text-3xl font-medium">{children}</h1>,
+    h2: ({ children }: { children?: ReactNode }) => {
+      const label = childrenToText(children);
+      return (
+        <h2 id={slugify(label)} className="scroll-mt-24 mt-12 font-serif text-2xl font-medium">
+          {children}
+        </h2>
+      );
+    },
+    h3: ({ children }: { children?: ReactNode }) => {
+      const label = childrenToText(children);
+      return (
+        <h3 id={slugify(label)} className="scroll-mt-24 mt-8 text-xl font-semibold">
+          {children}
+        </h3>
+      );
+    },
+    p: ({ children }: { children?: ReactNode }) => <p className="mb-5 leading-8 text-foreground">{children}</p>,
+    a: ({ children, href }: { children?: ReactNode; href?: string }) => {
+      if (isInternalLink(href)) {
+        if (href?.startsWith("#")) {
+          return (
+            <a href={href} className="hover:underline">
+              {children}
+            </a>
+          );
+        }
+
+        return (
+          <Link href={href || "/"}>
+            <a className="hover:underline">{children}</a>
+          </Link>
+        );
+      }
+
+      return (
+        <a href={href} className="inline-flex items-center gap-1 hover:underline" target="_blank" rel="noopener noreferrer">
+          {children}
+          <ArrowUpRight className="h-4 w-4" />
+        </a>
+      );
+    },
+    ul: ({ children }: { children?: ReactNode }) => <ul className="mb-5 list-disc space-y-2 pl-6">{children}</ul>,
+    ol: ({ children }: { children?: ReactNode }) => <ol className="mb-5 list-decimal space-y-2 pl-6">{children}</ol>,
+    blockquote: ({ children }: { children?: ReactNode }) => (
+      <blockquote className="my-6 rounded-r-2xl border-l-4 border-primary/40 bg-primary/5 px-5 py-4 italic">
+        {children}
+      </blockquote>
+    ),
+    code: ({ children }: { children?: ReactNode }) => <code className="rounded bg-muted px-1.5 py-0.5 text-sm font-mono">{children}</code>,
+    pre: ({ children }: { children?: ReactNode }) => <pre className="my-6 overflow-x-auto rounded-2xl bg-muted p-4">{children}</pre>,
+    img: ({ src, alt, title }: { src?: string; alt?: string; title?: string }) => (
+      <figure className="surface-soft-card my-10 overflow-hidden rounded-[1.75rem] border">
+        <img src={src || ""} alt={alt || ""} className="w-full object-cover" />
+        {title ? <figcaption className="border-t border-border/60 px-5 py-4 text-sm italic text-muted-foreground">{title}</figcaption> : null}
+      </figure>
+    ),
+  };
+
   return (
-    <div className="min-h-screen">
-      <article className="max-w-4xl mx-auto px-4 py-12">
+    <div className="app-shell min-h-screen">
+      <SeoHead
+        title={post.seoTitle || post.title}
+        description={post.seoDescription || post.excerpt}
+        keywords={post.seoKeywords}
+        image={post.featuredImage}
+        canonicalUrl={canonicalUrl}
+        articlePublishedTime={post.publishedAt}
+        articleModifiedTime={post.updatedAt}
+        articleAuthor={post.author}
+        structuredData={structuredData}
+      />
+
+      <article className="mx-auto max-w-6xl px-4 py-8 sm:py-10 lg:px-6">
         <Link href="/blog">
-          <a className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground mb-8 transition-colors" data-testid="link-back-to-blog">
+          <a className="mb-8 inline-flex items-center gap-2 text-muted-foreground transition-colors hover:text-foreground" data-testid="link-back-to-blog">
             <ArrowLeft className="h-4 w-4" />
-            Back to Blog
+            Back to Articles
           </a>
         </Link>
 
-        {post.featuredImage && (
-          <div className="aspect-[21/9] overflow-hidden rounded-lg mb-8">
-            <img
-              src={post.featuredImage}
-              alt={post.title}
-              className="w-full h-full object-cover"
-              data-testid="img-featured"
-            />
-          </div>
-        )}
-
-        <header className="mb-8 space-y-4">
-          <h1 className="text-4xl md:text-5xl font-semibold leading-tight font-serif" data-testid="text-title">
-            {post.title}
-          </h1>
-
-          <div className="flex flex-wrap items-center gap-6 text-muted-foreground">
-            <div className="flex items-center gap-2">
-              <User className="h-5 w-5" />
-              <span className="font-medium" data-testid="text-author">{post.author}</span>
-            </div>
-            {post.publishedAt && (
-              <div className="flex items-center gap-2">
-                <Calendar className="h-5 w-5" />
-                <time dateTime={post.publishedAt} data-testid="text-published-date">
-                  {format(new Date(post.publishedAt), "MMMM d, yyyy")}
-                </time>
+        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_18rem]">
+          <div className="space-y-8">
+            {post.featuredImage ? (
+              <div className="surface-soft-card overflow-hidden rounded-[2rem] border">
+                <img
+                  src={post.featuredImage}
+                  alt={post.featuredImageAlt || post.title}
+                  className="aspect-[21/9] w-full object-cover"
+                  data-testid="img-featured"
+                />
               </div>
-            )}
+            ) : null}
+
+            <header className="space-y-4 sm:space-y-5">
+              <div className="surface-badge inline-flex rounded-full border px-3 py-2 text-[0.65rem] font-medium uppercase tracking-[0.24em] text-muted-foreground sm:px-4 sm:text-xs sm:tracking-[0.28em]">
+                Concierge Journal
+              </div>
+              <h1 className="font-serif text-[2.5rem] font-medium leading-[0.98] sm:text-5xl" data-testid="text-title">
+                {post.title}
+              </h1>
+              <p className="max-w-3xl text-base leading-7 text-muted-foreground sm:text-lg sm:leading-8">{post.excerpt}</p>
+
+              <div className="flex flex-wrap items-center gap-6 text-muted-foreground">
+                <div className="flex items-center gap-2">
+                  <User className="h-5 w-5" />
+                  <span className="font-medium" data-testid="text-author">{post.author}</span>
+                </div>
+                {post.publishedAt ? (
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-5 w-5" />
+                    <time dateTime={post.publishedAt} data-testid="text-published-date">
+                      {format(new Date(post.publishedAt), "MMMM d, yyyy")}
+                    </time>
+                  </div>
+                ) : null}
+              </div>
+            </header>
+
+            <div className="prose max-w-none prose-headings:font-serif prose-headings:text-foreground prose-p:text-foreground prose-p:leading-7 prose-a:text-primary prose-blockquote:border-l-primary prose-blockquote:text-muted-foreground sm:prose-lg sm:prose-p:leading-8" data-testid="content-markdown">
+              {faqSection?.beforeMarkdown ? (
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                  {faqSection.beforeMarkdown}
+                </ReactMarkdown>
+              ) : null}
+
+              {faqSection ? (
+                <div className="my-12 scroll-mt-24" id={slugify(faqSection.faqTitle)}>
+                  <h2 className="mb-6 font-serif text-2xl font-medium">{faqSection.faqTitle}</h2>
+                  <Accordion type="single" collapsible className="surface-soft-card rounded-[1.75rem] border px-5 py-2">
+                    {faqSection.items.map((item, index) => (
+                      <AccordionItem key={`${item.question}-${index}`} value={`faq-${index}`} className="border-border/50">
+                        <AccordionTrigger className="py-5 text-left text-base font-medium hover:no-underline">
+                          {item.question}
+                        </AccordionTrigger>
+                        <AccordionContent className="pb-5">
+                          <div className="prose prose-sm max-w-none prose-p:leading-7 sm:prose-base">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                              {item.answerMarkdown}
+                            </ReactMarkdown>
+                          </div>
+                        </AccordionContent>
+                      </AccordionItem>
+                    ))}
+                  </Accordion>
+                </div>
+              ) : null}
+
+              {faqSection?.afterMarkdown ? (
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                  {faqSection.afterMarkdown}
+                </ReactMarkdown>
+              ) : null}
+
+              {!faqSection ? (
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                  {post.contentMarkdown}
+                </ReactMarkdown>
+              ) : null}
+            </div>
+
+            {post.primaryCtaLabel && trackedCtaHref ? (
+              <Card className="surface-accent-card">
+                <CardContent className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="space-y-2">
+                    <div className="text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+                      Ready To Book?
+                    </div>
+                    <p className="max-w-2xl text-sm leading-7 text-muted-foreground">
+                      Move from inspiration into a real offer path while keeping this article linked to the eventual booking.
+                    </p>
+                  </div>
+                  <Link href={trackedCtaHref}>
+                    <a
+                      className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                      onClick={() => {
+                        const payload = {
+                          sourceType: "blog" as const,
+                          sourceId: post.id,
+                          sourceSlug: post.slug,
+                          sourcePath: `/blog/${post.slug}`,
+                          sourceTitle: post.title,
+                          promoCode: post.primaryPromoCode ?? null,
+                          landingPath: post.primaryCtaHref ?? null,
+                        };
+                        setMarketingAttributionContext(payload);
+                        void trackMarketingEvent("cta-click", payload);
+                      }}
+                    >
+                      {post.primaryCtaLabel}
+                      <ArrowUpRight className="h-4 w-4" />
+                    </a>
+                  </Link>
+                </CardContent>
+              </Card>
+            ) : null}
+
+            <footer className="border-t pt-8">
+              <Link href="/blog">
+                <Button variant="outline" data-testid="button-back-bottom">
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  Back to Articles
+                </Button>
+              </Link>
+            </footer>
           </div>
-        </header>
 
-        <div className="prose prose-lg max-w-none" data-testid="content-markdown">
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            components={{
-              h1: ({ children }) => <h1 className="text-3xl font-semibold mt-8 mb-4">{children}</h1>,
-              h2: ({ children }) => <h2 className="text-2xl font-semibold mt-6 mb-3">{children}</h2>,
-              h3: ({ children }) => <h3 className="text-xl font-semibold mt-4 mb-2">{children}</h3>,
-              p: ({ children }) => <p className="mb-4 leading-relaxed text-foreground">{children}</p>,
-              a: ({ children, href }) => (
-                <a href={href} className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">
-                  {children}
-                </a>
-              ),
-              ul: ({ children }) => <ul className="list-disc list-inside mb-4 space-y-2">{children}</ul>,
-              ol: ({ children }) => <ol className="list-decimal list-inside mb-4 space-y-2">{children}</ol>,
-              blockquote: ({ children }) => (
-                <blockquote className="border-l-4 border-primary/30 pl-4 italic my-4 text-muted-foreground">
-                  {children}
-                </blockquote>
-              ),
-              code: ({ children }) => (
-                <code className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono">{children}</code>
-              ),
-              pre: ({ children }) => (
-                <pre className="bg-muted p-4 rounded-lg overflow-x-auto my-4">
-                  {children}
-                </pre>
-              ),
-              img: ({ src, alt }) => (
-                <img src={src} alt={alt || ""} className="rounded-lg my-6 w-full" />
-              ),
-            }}
-          >
-            {post.contentMarkdown}
-          </ReactMarkdown>
+          <aside className="lg:sticky lg:top-24 lg:self-start">
+            <Card className="surface-soft-card">
+              <CardContent className="p-5">
+                <div className="mb-4 text-sm font-medium uppercase tracking-[0.24em] text-muted-foreground">In This Article</div>
+                {headings.length ? (
+                  <nav className="space-y-3">
+                    {headings.map((heading) => (
+                      <a
+                        key={`${heading.id}-${heading.level}`}
+                        href={`#${heading.id}`}
+                        className={`block text-sm leading-6 text-muted-foreground transition-colors hover:text-foreground ${
+                          heading.level === 3 ? "pl-4" : ""
+                        }`}
+                      >
+                        {heading.label}
+                      </a>
+                    ))}
+                  </nav>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Add `##` headings in the article body to build a section navigation here.</p>
+                )}
+              </CardContent>
+            </Card>
+          </aside>
         </div>
-
-        <footer className="mt-12 pt-8 border-t">
-          <Link href="/blog">
-            <Button variant="outline" data-testid="button-back-bottom">
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Blog
-            </Button>
-          </Link>
-        </footer>
       </article>
     </div>
   );

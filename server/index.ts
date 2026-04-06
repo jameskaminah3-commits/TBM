@@ -1,46 +1,55 @@
-import express, { type Request, Response, NextFunction } from "express";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+import express, { type NextFunction, type Request, type Response } from "express";
+import path from "path";
+import { ensureMediaStorageReady, ensureUploadDir, usesLocalUploadStorage } from "./media";
 import { registerRoutes } from "./routes";
-import { setupVite, serveStatic, log } from "./vite";
+import { applySecurityHeaders } from "./security";
+import { log, serveStatic, setupVite } from "./vite";
 
 const app = express();
+const jsonBodyLimit = process.env.JSON_BODY_LIMIT ?? "24mb";
+const urlencodedBodyLimit = process.env.URLENCODED_BODY_LIMIT ?? "1mb";
 
-declare module 'http' {
+declare module "http" {
   interface IncomingMessage {
-    rawBody: unknown
+    rawBody: unknown;
   }
 }
+
+app.disable("x-powered-by");
+app.use(applySecurityHeaders);
+
 app.use(express.json({
+  limit: jsonBodyLimit,
   verify: (req, _res, buf) => {
     req.rawBody = buf;
-  }
+  },
 }));
-app.use(express.urlencoded({ extended: false }));
+app.use(express.urlencoded({ extended: false, limit: urlencodedBodyLimit }));
+
+ensureMediaStorageReady();
+if (usesLocalUploadStorage()) {
+  ensureUploadDir();
+  app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
+}
 
 app.use((req, res, next) => {
   const start = Date.now();
-  const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
-
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
+  const requestPath = req.path;
 
   res.on("finish", () => {
-    const duration = Date.now() - start;
-    if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
-
-      if (logLine.length > 80) {
-        logLine = logLine.slice(0, 79) + "…";
-      }
-
-      log(logLine);
+    if (!requestPath.startsWith("/api")) {
+      return;
     }
+
+    let logLine = `${req.method} ${requestPath} ${res.statusCode} in ${Date.now() - start}ms`;
+    if (logLine.length > 80) {
+      logLine = `${logLine.slice(0, 79)}...`;
+    }
+    log(logLine);
   });
 
   next();
@@ -53,29 +62,18 @@ app.use((req, res, next) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
+    console.error("[SERVER] Unhandled request error:", err);
     res.status(status).json({ message });
-    throw err;
   });
 
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
   if (app.get("env") === "development") {
     await setupVite(app, server);
   } else {
     serveStatic(app);
   }
 
-  // ALWAYS serve the app on the port specified in the environment variable PORT
-  // Other ports are firewalled. Default to 5000 if not specified.
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
-  const port = parseInt(process.env.PORT || '5000', 10);
-  server.listen({
-    port,
-    host: "0.0.0.0",
-    reusePort: true,
-  }, () => {
+  const port = Number.parseInt(process.env.PORT || "5000", 10);
+  server.listen(port, () => {
     log(`serving on port ${port}`);
   });
 })();

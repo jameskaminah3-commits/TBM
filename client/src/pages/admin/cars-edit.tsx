@@ -26,9 +26,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { AdminMediaField } from "@/components/admin-media-field";
+import { CarZonePricingEditor } from "@/components/car-zone-pricing-editor";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { insertCarSchema, type Car } from "@shared/schema";
+import { insertCarSchema, type Car, type CarZoneRate, type ProviderAccountSummary } from "@shared/schema";
 
 const featureOptions = [
   "GPS Navigation",
@@ -44,11 +46,24 @@ const featureOptions = [
 ];
 
 const formSchema = insertCarSchema.extend({
-  pricePerDay: z.coerce.number().min(1, "Price must be at least $1"),
-  priceWithDriver: z.preprocess(
+  pricePerDay: z.preprocess(
     (val) => (val === "" || val == null) ? undefined : val,
     z.coerce.number().min(1, "Price must be at least $1").optional()
   ),
+  priceWithDriver: z.coerce.number().min(1, "Chauffeur price must be at least $1"),
+  priceWithDriverHourly: z.preprocess(
+    (val) => (val === "" || val == null) ? undefined : val,
+    z.coerce.number().min(1, "Hourly chauffeur price must be at least $1").optional()
+  ),
+  selfDriveMileageLimitKm: z.preprocess(
+    (val) => (val === "" || val == null) ? undefined : val,
+    z.coerce.number().min(1, "Mileage limit must be at least 1 km").optional()
+  ),
+  selfDriveExtraKmRate: z.preprocess(
+    (val) => (val === "" || val == null) ? undefined : val,
+    z.coerce.number().min(1, "Extra km rate must be at least $1").optional()
+  ),
+  managerUserId: z.string().optional(),
   seats: z.coerce.number().min(2, "At least 2 seats required"),
 });
 
@@ -63,6 +78,10 @@ export default function AdminCarsEdit() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
+  const [chauffeurZones, setChauffeurZones] = useState<CarZoneRate[]>([]);
+  const { data: providers = [] } = useQuery<ProviderAccountSummary[]>({
+    queryKey: ["/api/admin/provider-accounts"],
+  });
 
   const { data: car, isLoading } = useQuery<CarType>({
     queryKey: ["/api/admin/cars", carId],
@@ -73,11 +92,20 @@ export default function AdminCarsEdit() {
     resolver: zodResolver(formSchema),
     defaultValues: {
       model: "",
-      pricePerDay: 0,
-      priceWithDriver: undefined,
+      location: "",
+      pricePerDay: undefined,
+      priceWithDriver: 0,
+      priceWithDriverHourly: undefined,
+      chauffeurZones: [],
+      selfDriveMileageLimitKm: undefined,
+      selfDriveExtraKmRate: undefined,
+      managerUserId: "unassigned",
       seats: 5,
       transmission: "automatic",
       imageUrl: "",
+      galleryUrls: [],
+      mediaType: "image",
+      isPublic: false,
       description: "",
       features: [],
     },
@@ -87,15 +115,25 @@ export default function AdminCarsEdit() {
     if (car) {
       form.reset({
         model: car.model,
-        pricePerDay: car.pricePerDay,
-        priceWithDriver: car.priceWithDriver || undefined,
+        location: car.location,
+        pricePerDay: car.pricePerDay ?? undefined,
+        priceWithDriver: car.priceWithDriver,
+        priceWithDriverHourly: car.priceWithDriverHourly || undefined,
+        chauffeurZones: car.chauffeurZones ?? [],
+        selfDriveMileageLimitKm: car.selfDriveMileageLimitKm ?? undefined,
+        selfDriveExtraKmRate: car.selfDriveExtraKmRate ?? undefined,
+        managerUserId: car.managerUserId ?? "unassigned",
         seats: car.seats,
         transmission: car.transmission,
         imageUrl: car.imageUrl || "",
+        galleryUrls: car.galleryUrls,
+        mediaType: car.mediaType,
+        isPublic: car.isPublic,
         description: car.description,
         features: car.features,
       });
       setSelectedFeatures(car.features);
+      setChauffeurZones(car.chauffeurZones ?? []);
     }
   }, [car, form]);
 
@@ -130,7 +168,12 @@ export default function AdminCarsEdit() {
   };
 
   const onSubmit = async (data: FormData) => {
-    await updateMutation.mutateAsync({ ...data, features: selectedFeatures });
+    await updateMutation.mutateAsync({
+      ...data,
+      managerUserId: data.managerUserId === "unassigned" ? undefined : data.managerUserId,
+      chauffeurZones,
+      features: selectedFeatures,
+    });
   };
 
   if (isLoading) {
@@ -187,34 +230,13 @@ export default function AdminCarsEdit() {
                   )}
                 />
 
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="pricePerDay"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Price per Day (Self-Drive)</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            min="1"
-                            placeholder="80"
-                            {...field}
-                            data-testid="input-car-price-per-day"
-                          />
-                        </FormControl>
-                        <FormDescription>USD per day</FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <FormField
                     control={form.control}
                     name="priceWithDriver"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Price with Chauffeur (Optional)</FormLabel>
+                        <FormLabel>Chauffeur Price per Day</FormLabel>
                         <FormControl>
                           <Input
                             type="number"
@@ -230,9 +252,116 @@ export default function AdminCarsEdit() {
                       </FormItem>
                     )}
                   />
+
+                  <FormField
+                    control={form.control}
+                    name="pricePerDay"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Self-Drive Price per Day</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min="1"
+                            placeholder="80"
+                            {...field}
+                            value={field.value || ""}
+                            data-testid="input-car-price-per-day"
+                          />
+                        </FormControl>
+                        <FormDescription>Optional. Leave empty if this car is chauffeur-only.</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-3">
+                  <FormLabel>Chauffeur Zones</FormLabel>
+                  <CarZonePricingEditor
+                    value={chauffeurZones}
+                    onChange={(value) => {
+                      setChauffeurZones(value);
+                      form.setValue("chauffeurZones", value);
+                    }}
+                  />
+                  <FormDescription>
+                    Add optional flat zone pricing for airport, SGR, CBD, and other frequent routes.
+                  </FormDescription>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <FormField
+                    control={form.control}
+                    name="selfDriveMileageLimitKm"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Self-Drive Included Km per Day</FormLabel>
+                        <FormControl>
+                          <Input type="number" min="1" placeholder="250" {...field} value={field.value || ""} />
+                        </FormControl>
+                        <FormDescription>Optional mileage cap included in the daily price.</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="selfDriveExtraKmRate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Self-Drive Extra Km Rate</FormLabel>
+                        <FormControl>
+                          <Input type="number" min="1" placeholder="1" {...field} value={field.value || ""} />
+                        </FormControl>
+                        <FormDescription>Optional extra charge per km after the daily cap.</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <FormField
+                    control={form.control}
+                    name="priceWithDriverHourly"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Chauffeur Price per Hour</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min="1"
+                            placeholder="25"
+                            {...field}
+                            value={field.value || ""}
+                            data-testid="input-car-price-with-driver-hourly"
+                          />
+                        </FormControl>
+                        <FormDescription>Optional. Hourly bookings will enforce a 3-hour minimum.</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="location"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Location</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Nairobi CBD" {...field} data-testid="input-car-location" />
+                        </FormControl>
+                        <FormDescription>Where the car is based or usually dispatched from.</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <FormField
                     control={form.control}
                     name="seats"
@@ -248,6 +377,32 @@ export default function AdminCarsEdit() {
                             data-testid="input-car-seats"
                           />
                         </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="managerUserId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Assigned Provider</FormLabel>
+                        <Select value={field.value ?? "unassigned"} onValueChange={field.onChange}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Assign a provider" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="unassigned">Unassigned</SelectItem>
+                            {providers.map((provider) => (
+                              <SelectItem key={provider.id} value={provider.id}>
+                                {[provider.firstName, provider.lastName].filter(Boolean).join(" ") || provider.email}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -284,17 +439,36 @@ export default function AdminCarsEdit() {
                   name="imageUrl"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Image URL (Optional)</FormLabel>
+                      <FormLabel>Media</FormLabel>
                       <FormControl>
-                        <Input
-                          type="url"
-                          placeholder="https://example.com/image.jpg"
-                          {...field}
-                          value={field.value || ""}
-                          data-testid="input-car-image-url"
+                        <AdminMediaField
+                          value={field.value}
+                          galleryUrls={form.watch("galleryUrls")}
+                          mediaType={form.watch("mediaType")}
+                          onChange={({ mediaUrl, mediaType, galleryUrls }) => {
+                            form.setValue("imageUrl", mediaUrl);
+                            form.setValue("galleryUrls", galleryUrls);
+                            form.setValue("mediaType", mediaType);
+                          }}
                         />
                       </FormControl>
                       <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="isPublic"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                      <div className="space-y-1">
+                        <FormLabel>Public Listing</FormLabel>
+                        <FormDescription>Turn this on when the car should appear on the live site.</FormDescription>
+                      </div>
+                      <FormControl>
+                        <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                      </FormControl>
                     </FormItem>
                   )}
                 />

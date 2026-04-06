@@ -1,7 +1,25 @@
 import { Link, useLocation } from "wouter";
-import { Menu, LogIn, LogOut, Shield } from "lucide-react";
+import {
+  Menu,
+  LogIn,
+  LogOut,
+  Shield,
+  BriefcaseBusiness,
+  Bell,
+  House,
+  Building2,
+  CarFront,
+  UtensilsCrossed,
+  Sparkles,
+  Compass,
+  CalendarDays,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { InboxQuickPanel } from "@/components/inbox-quick-panel";
 import { ThemeToggle } from "./theme-toggle";
+import { BrandMark } from "./brand-mark";
+import { useCurrency } from "@/lib/currency";
+import { cn } from "@/lib/utils";
 import {
   Sheet,
   SheetContent,
@@ -9,51 +27,93 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
+import { useInbox } from "@/hooks/use-inbox";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 export function Header() {
   const [location] = useLocation();
   const [open, setOpen] = useState(false);
-  const { isAuthenticated, isLoading, isAdmin } = useAuth();
+  const isMobile = useIsMobile();
+  const { user, isAuthenticated, isLoading, isAdmin, isProvider } = useAuth();
+  const { selectedCurrency, setSelectedCurrency } = useCurrency();
+  const { unreadCount } = useInbox({ enabled: isAuthenticated, refetchInterval: 15000 });
+  const isInboxRoute = location === "/inbox";
+
+  const handleLogout = async () => {
+    await apiRequest("POST", "/api/logout");
+    queryClient.setQueryData(["/api/auth/user"], null);
+    queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+    window.location.href = "/";
+  };
 
   const navLinks = [
-    { href: "/", label: "Home", testId: "link-nav-home" },
-    { href: "/accommodations", label: "Stay", testId: "link-nav-stay" },
-    { href: "/services/drive", label: "Drive", testId: "link-nav-drive" },
-    { href: "/services/dine", label: "Dine", testId: "link-nav-dine" },
-    { href: "/services/relax", label: "Relax", testId: "link-nav-relax" },
-    { href: "/blog", label: "Blog", testId: "link-nav-blog" },
-    { href: "/bookings", label: "My Bookings", testId: "link-nav-bookings" },
+    { href: "/", label: "Home", description: "Featured stays and services", icon: House, testId: "link-nav-home" },
+    { href: "/accommodations", label: "Stay", description: "Villas, suites, and homes", icon: Building2, testId: "link-nav-stay" },
+    { href: "/services/drive", label: "Drive", description: "Airport transfers and rides", icon: CarFront, testId: "link-nav-drive" },
+    { href: "/services/dine", label: "Dine", description: "Private chefs and dining", icon: UtensilsCrossed, testId: "link-nav-dine" },
+    { href: "/services/relax", label: "Relax", description: "Errands, laundry, and support", icon: Sparkles, testId: "link-nav-relax" },
+    { href: "/services/experience", label: "Experience", description: "Curated outings and moments", icon: Compass, testId: "link-nav-experience" },
+    ...(isAuthenticated
+      ? [{ href: "/bookings", label: "My Bookings", description: "Trips, updates, and status", icon: CalendarDays, testId: "link-nav-bookings" }]
+      : []),
   ];
 
   const isActive = (href: string) => {
     if (href === "/") return location === "/";
     if (href === "/accommodations") return location === "/accommodations" || location.startsWith("/accommodation/");
+    if (href === "/services/experience") return location === "/services/experience" || location.startsWith("/book/experience/");
     if (href.startsWith("/blog")) return location.startsWith("/blog");
     return location === href;
   };
 
+  const currencyOptions = [
+    { value: "USD" as const, label: "USD" },
+    { value: "KES" as const, label: "KSH" },
+  ];
+
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container mx-auto flex h-16 items-center justify-between px-4 md:px-8">
-        <Link
-          href="/"
-          className="flex items-center space-x-2"
-          data-testid="link-home"
-        >
-          <span className="font-serif text-xl md:text-2xl font-semibold">Tembea Bila Matata</span>
-        </Link>
+    <header className="sticky top-0 z-50 w-full border-b border-border/60 bg-background/94 shadow-[0_16px_40px_-32px_rgba(15,23,42,0.28)] backdrop-blur-xl supports-[backdrop-filter]:bg-background/84">
+      <div className="container mx-auto flex h-[4.7rem] min-w-0 items-center gap-2 px-4 md:gap-3 md:px-6 xl:px-8">
+        <div className="flex min-w-0 flex-1 items-center xl:flex-none">
+          <Link
+            href="/"
+            className="flex min-w-0 flex-1 items-center gap-3 sm:gap-3 xl:flex-none"
+            data-testid="link-home"
+          >
+            <BrandMark className="h-7 shrink-0 sm:h-9" />
+            <div className="min-w-0 flex-1">
+              <div className="max-w-[13.25rem] text-balance font-serif text-[1.08rem] font-semibold leading-[0.88] tracking-[0.045em] text-foreground sm:max-w-none sm:text-[1.02rem] sm:font-medium sm:leading-[0.92] xl:text-[1.1rem]">
+                Tembea Bila Matata
+              </div>
+              <div className="hidden text-[0.62rem] uppercase tracking-[0.2em] text-muted-foreground/75 2xl:block">
+                Travel without worries
+              </div>
+            </div>
+          </Link>
+        </div>
 
         {/* Desktop Navigation */}
-        <nav className="hidden md:flex items-center space-x-6">
+        <nav className="hidden min-w-0 flex-1 items-center justify-center gap-1 px-4 2xl:px-6 xl:flex">
           {navLinks.map((link) => (
             <Link
               key={link.href}
               href={link.href}
-              className={`text-sm font-medium transition-colors hover:text-primary ${
-                isActive(link.href) ? "text-foreground" : "text-muted-foreground"
-              }`}
+              className={cn(
+                "inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors",
+                isActive(link.href)
+                  ? "bg-primary/10 text-foreground"
+                  : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+              )}
               data-testid={link.testId}
             >
               {link.label}
@@ -61,9 +121,36 @@ export function Header() {
           ))}
         </nav>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-1 items-center justify-end gap-2 xl:flex-none xl:shrink-0">
+          <div className="hidden items-center rounded-full border border-border/70 bg-gradient-to-b from-background via-background to-muted/60 p-1 shadow-[0_10px_30px_-18px_rgba(15,23,42,0.9)] 2xl:flex">
+            {currencyOptions.map((option) => {
+              const isSelected = selectedCurrency === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setSelectedCurrency(option.value)}
+                  className={cn(
+                    "min-w-[72px] rounded-full px-4 py-2 text-xs font-semibold tracking-[0.18em] transition-all duration-200",
+                    isSelected
+                      ? "bg-foreground text-background shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                  data-testid={option.value === "USD" ? "select-currency-usd" : "select-currency-kes"}
+                  aria-pressed={isSelected}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {!isLoading && isAuthenticated && !isInboxRoute && !isMobile ? (
+            <InboxQuickPanel unreadCount={unreadCount} userRole={user?.role} />
+          ) : null}
+
           {/* Auth Buttons - Desktop */}
-          <div className="hidden md:flex items-center gap-2">
+          <div className="hidden items-center gap-2 xl:flex">
             {!isLoading && isAdmin && (
               <Button
                 variant="ghost"
@@ -77,6 +164,19 @@ export function Header() {
                 </Link>
               </Button>
             )}
+            {!isLoading && isProvider && !isAdmin && (
+              <Button
+                variant="ghost"
+                size="sm"
+                asChild
+                data-testid="button-provider"
+              >
+                <Link href="/provider/dashboard">
+                  <BriefcaseBusiness className="h-4 w-4 mr-2" />
+                  Partner
+                </Link>
+              </Button>
+            )}
             {!isLoading && !isAuthenticated && (
               <Button
                 variant="default"
@@ -84,97 +184,202 @@ export function Header() {
                 asChild
                 data-testid="button-login"
               >
-                <a href="/api/login">
+                <Link href={`/auth?next=${encodeURIComponent(location)}`}>
                   <LogIn className="h-4 w-4 mr-2" />
                   Log In
-                </a>
+                </Link>
               </Button>
             )}
             {!isLoading && isAuthenticated && (
               <Button
                 variant="ghost"
                 size="sm"
-                asChild
+                onClick={handleLogout}
                 data-testid="button-logout"
               >
-                <a href="/api/logout">
-                  <LogOut className="h-4 w-4 mr-2" />
-                  Log Out
-                </a>
+                <LogOut className="h-4 w-4 mr-2" />
+                Log Out
               </Button>
             )}
           </div>
-          
-          <ThemeToggle />
+
+          <div className="hidden xl:block">
+            <ThemeToggle />
+          </div>
           
           {/* Mobile Menu */}
           <Sheet open={open} onOpenChange={setOpen}>
-            <SheetTrigger asChild className="md:hidden">
-              <Button variant="ghost" size="icon" data-testid="button-mobile-menu">
+            <SheetTrigger asChild className="xl:hidden">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-10 w-10 shrink-0 rounded-full border border-border/70 bg-gradient-to-b from-background via-background to-muted/50 shadow-[0_10px_24px_-18px_rgba(15,23,42,0.7)]"
+                data-testid="button-mobile-menu"
+              >
                 <Menu className="h-5 w-5" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="right" className="w-[280px] sm:w-[350px]">
-              <SheetHeader>
-                <SheetTitle className="font-serif text-xl">Menu</SheetTitle>
+            <SheetContent
+              side="right"
+              className="surface-drawer inset-y-3 right-3 flex h-[calc(100vh-1.5rem)] w-[calc(100vw-1.25rem)] max-w-[360px] flex-col overflow-hidden rounded-[2rem] border p-3.5 sm:w-[86vw] sm:p-4"
+            >
+              <SheetHeader className="surface-panel rounded-[1.5rem] border px-4 py-4 text-left">
+                <div className="flex items-center gap-3 pr-10">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[1.15rem] bg-[radial-gradient(circle_at_top,hsl(var(--primary)/0.18),hsl(var(--card)/0.96)_68%)]">
+                    <BrandMark className="h-7" />
+                  </div>
+                  <div className="min-w-0">
+                    <SheetTitle className="truncate font-serif text-[1.02rem] tracking-[0.05em] text-foreground">
+                      Tembea Bila Matata
+                    </SheetTitle>
+                    <p className="mt-1 text-sm leading-5 text-muted-foreground">
+                      Plan your Coast, without the chaos
+                    </p>
+                  </div>
+                </div>
               </SheetHeader>
-              <nav className="flex flex-col space-y-4 mt-8">
-                {navLinks.map((link) => (
-                  <Link
-                    key={link.href}
-                    href={link.href}
-                    onClick={() => setOpen(false)}
-                    className={`text-base font-medium transition-colors hover:text-primary py-2 ${
-                      isActive(link.href) ? "text-primary font-semibold" : "text-muted-foreground"
-                    }`}
-                    data-testid={`mobile-${link.testId}`}
-                  >
-                    {link.label}
-                  </Link>
-                ))}
+              <nav className="mt-5 flex min-h-0 flex-1 flex-col overflow-y-auto pb-4 pr-1">
+                <div className="mb-3 px-2 text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+                  Explore
+                </div>
+                <div className="grid grid-cols-1 gap-3 min-[390px]:grid-cols-2">
+                  {navLinks.map((link) => {
+                    const Icon = link.icon;
+                    const active = isActive(link.href);
+
+                    return (
+                      <Link
+                        key={link.href}
+                        href={link.href}
+                        onClick={() => setOpen(false)}
+                        className={cn(
+                          "rounded-[1.35rem] border p-4 transition-all duration-200",
+                          active
+                            ? "border-primary/40 bg-primary/10 shadow-[0_18px_34px_-28px_rgba(13,148,136,0.7)]"
+                            : "border-border/70 bg-card/75 hover:border-border hover:bg-card/90 hover:shadow-[0_18px_34px_-30px_rgba(15,23,42,0.25)]",
+                        )}
+                        data-testid={`mobile-${link.testId}`}
+                      >
+                        <div
+                          className={cn(
+                            "mb-5 flex h-10 w-10 items-center justify-center rounded-xl",
+                            active ? "bg-card/85 text-primary" : "bg-muted/75 text-muted-foreground",
+                          )}
+                        >
+                          <Icon className="h-5 w-5" />
+                        </div>
+                        <div className="text-[1rem] font-semibold text-foreground">
+                          {link.label}
+                        </div>
+                        <div className={cn("mt-1 text-xs leading-5", active ? "text-foreground/72" : "text-muted-foreground")}>
+                          {link.description}
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
                 
                 {/* Auth Links - Mobile */}
-                <div className="pt-4 border-t flex flex-col space-y-3">
-                  {!isLoading && isAdmin && (
-                    <Button
-                      variant="outline"
-                      className="justify-start"
-                      asChild
-                      data-testid="mobile-button-admin"
-                      onClick={() => setOpen(false)}
-                    >
-                      <Link href="/admin/dashboard">
-                        <Shield className="h-4 w-4 mr-2" />
-                        Admin
-                      </Link>
-                    </Button>
-                  )}
-                  {!isLoading && !isAuthenticated && (
-                    <Button
-                      variant="default"
-                      className="justify-start"
-                      asChild
-                      data-testid="mobile-button-login"
-                    >
-                      <a href="/api/login">
-                        <LogIn className="h-4 w-4 mr-2" />
-                        Log In
-                      </a>
-                    </Button>
-                  )}
-                  {!isLoading && isAuthenticated && (
-                    <Button
-                      variant="ghost"
-                      className="justify-start"
-                      asChild
-                      data-testid="mobile-button-logout"
-                    >
-                      <a href="/api/logout">
-                        <LogOut className="h-4 w-4 mr-2" />
-                        Log Out
-                      </a>
-                    </Button>
-                  )}
+                <div className="mt-5 space-y-4">
+                  <div className="surface-panel rounded-[1.5rem] border p-4">
+                    <div className="mb-3 px-1 text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+                      Preferences
+                    </div>
+                    <Select value={selectedCurrency} onValueChange={(value) => setSelectedCurrency(value as "USD" | "KES")}>
+                      <SelectTrigger className="h-12 rounded-[1rem] border-border/70 bg-background/75 shadow-sm" data-testid="mobile-select-currency">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="USD">USD</SelectItem>
+                        <SelectItem value="KES">KSH</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <div className="mt-3 flex items-center justify-between rounded-[1rem] border border-border/70 bg-background/75 px-4 py-3 shadow-sm">
+                      <div>
+                        <div className="text-sm font-medium text-foreground">Theme</div>
+                        <div className="text-xs text-muted-foreground">Light and dark mode</div>
+                      </div>
+                      <ThemeToggle testId="mobile-button-theme-toggle" />
+                    </div>
+                  </div>
+
+                  <div className="surface-panel rounded-[1.5rem] border p-4">
+                    <div className="mb-3 px-1 text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+                      Account
+                    </div>
+                    <div className="space-y-3">
+                      {!isLoading && isAdmin && (
+                        <Button
+                          variant="outline"
+                          className="h-12 justify-start rounded-[1rem] border-border/70 bg-background/75"
+                          asChild
+                          data-testid="mobile-button-admin"
+                          onClick={() => setOpen(false)}
+                        >
+                          <Link href="/admin/dashboard">
+                            <Shield className="h-4 w-4 mr-2" />
+                            Admin
+                          </Link>
+                        </Button>
+                      )}
+                      {!isLoading && isAuthenticated && (
+                        <Button
+                          variant="outline"
+                          className="h-12 justify-start rounded-[1rem] border-border/70 bg-background/75"
+                          asChild
+                          data-testid="mobile-button-inbox"
+                          onClick={() => setOpen(false)}
+                        >
+                          <Link href="/inbox">
+                            <Bell className="h-4 w-4 mr-2" />
+                            Inbox
+                            {unreadCount ? ` (${unreadCount > 99 ? "99+" : unreadCount})` : ""}
+                          </Link>
+                        </Button>
+                      )}
+                      {!isLoading && isProvider && !isAdmin && (
+                        <Button
+                          variant="outline"
+                          className="h-12 justify-start rounded-[1rem] border-border/70 bg-background/75"
+                          asChild
+                          data-testid="mobile-button-provider"
+                          onClick={() => setOpen(false)}
+                        >
+                          <Link href="/provider/dashboard">
+                            <BriefcaseBusiness className="h-4 w-4 mr-2" />
+                            Partner
+                          </Link>
+                        </Button>
+                      )}
+                      {!isLoading && !isAuthenticated && (
+                        <Button
+                          variant="default"
+                          className="h-12 justify-start rounded-[1rem]"
+                          asChild
+                          data-testid="mobile-button-login"
+                        >
+                          <Link href={`/auth?next=${encodeURIComponent(location)}`} onClick={() => setOpen(false)}>
+                            <LogIn className="h-4 w-4 mr-2" />
+                            Log In
+                          </Link>
+                        </Button>
+                      )}
+                      {!isLoading && isAuthenticated && (
+                        <Button
+                          variant="ghost"
+                          className="h-12 justify-start rounded-[1rem]"
+                          onClick={async () => {
+                            setOpen(false);
+                            await handleLogout();
+                          }}
+                          data-testid="mobile-button-logout"
+                        >
+                          <LogOut className="h-4 w-4 mr-2" />
+                          Log Out
+                        </Button>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </nav>
             </SheetContent>

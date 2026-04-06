@@ -19,9 +19,18 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { AdminMediaField } from "@/components/admin-media-field";
+import { ErrandAddonEditor } from "@/components/errand-addon-editor";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { insertErrandSchema, type Errand } from "@shared/schema";
+import { errandAddonSchema, insertErrandSchema, type Errand, type ErrandAddon, type ProviderAccountSummary } from "@shared/schema";
 
 const featureOptions = [
   "Same-Day Service",
@@ -38,6 +47,13 @@ const featureOptions = [
 
 const formSchema = insertErrandSchema.extend({
   basePrice: z.coerce.number().min(1, "Price must be at least $1"),
+  shoppingCommissionPercent: z.coerce.number().min(0).max(100),
+  houseCleaningEnabled: z.boolean().default(false),
+  laundryIncludedKg: z.coerce.number().min(0, "Included laundry kg cannot be negative"),
+  laundryPricePerKg: z.coerce.number().min(0, "Laundry price cannot be negative"),
+  laundryAddons: z.array(errandAddonSchema),
+  houseCleaningAddons: z.array(errandAddonSchema),
+  managerUserId: z.string().optional(),
 });
 
 type FormData = z.infer<typeof formSchema>;
@@ -51,6 +67,11 @@ export default function AdminErrandsEdit() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
+  const [laundryAddons, setLaundryAddons] = useState<ErrandAddon[]>([]);
+  const [houseCleaningAddons, setHouseCleaningAddons] = useState<ErrandAddon[]>([]);
+  const { data: providers = [] } = useQuery<ProviderAccountSummary[]>({
+    queryKey: ["/api/admin/provider-accounts"],
+  });
 
   const { data: errand, isLoading } = useQuery<ErrandType>({
     queryKey: ["/api/admin/errands", errandId],
@@ -61,8 +82,21 @@ export default function AdminErrandsEdit() {
     resolver: zodResolver(formSchema),
     defaultValues: {
       serviceName: "",
+      location: "",
       basePrice: 0,
+      shoppingEnabled: false,
+      shoppingCommissionPercent: 10,
+      laundryEnabled: false,
+      houseCleaningEnabled: false,
+      laundryIncludedKg: 0,
+      laundryPricePerKg: 0,
+      laundryAddons: [],
+      houseCleaningAddons: [],
+      managerUserId: "unassigned",
       imageUrl: "",
+      galleryUrls: [],
+      mediaType: "image",
+      isPublic: false,
       description: "",
       features: [],
     },
@@ -72,12 +106,27 @@ export default function AdminErrandsEdit() {
     if (errand) {
       form.reset({
         serviceName: errand.serviceName,
+        location: errand.location || "",
         basePrice: errand.basePrice,
+        shoppingEnabled: errand.shoppingEnabled,
+        shoppingCommissionPercent: errand.shoppingCommissionPercent,
+        laundryEnabled: errand.laundryEnabled,
+        houseCleaningEnabled: errand.houseCleaningEnabled,
+        laundryIncludedKg: errand.laundryIncludedKg,
+        laundryPricePerKg: errand.laundryPricePerKg,
+        laundryAddons: errand.laundryAddons || [],
+        houseCleaningAddons: errand.houseCleaningAddons || [],
+        managerUserId: errand.managerUserId ?? "unassigned",
         imageUrl: errand.imageUrl || "",
+        galleryUrls: errand.galleryUrls,
+        mediaType: errand.mediaType,
+        isPublic: errand.isPublic,
         description: errand.description,
         features: errand.features,
       });
       setSelectedFeatures(errand.features);
+      setLaundryAddons(errand.laundryAddons || []);
+      setHouseCleaningAddons(errand.houseCleaningAddons || []);
     }
   }, [errand, form]);
 
@@ -112,7 +161,13 @@ export default function AdminErrandsEdit() {
   };
 
   const onSubmit = async (data: FormData) => {
-    await updateMutation.mutateAsync({ ...data, features: selectedFeatures });
+    await updateMutation.mutateAsync({
+      ...data,
+      managerUserId: data.managerUserId === "unassigned" ? undefined : data.managerUserId,
+      features: selectedFeatures,
+      laundryAddons,
+      houseCleaningAddons,
+    });
   };
 
   if (isLoading) {
@@ -171,6 +226,47 @@ export default function AdminErrandsEdit() {
 
                 <FormField
                   control={form.control}
+                  name="location"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Location</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Mombasa Island, Nyali, Bamburi..." {...field} data-testid="input-errand-location" />
+                      </FormControl>
+                      <FormDescription>Where this errand package is offered or primarily served.</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="managerUserId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Assigned Provider</FormLabel>
+                      <Select value={field.value ?? "unassigned"} onValueChange={field.onChange}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Assign a provider" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="unassigned">Unassigned</SelectItem>
+                          {providers.map((provider) => (
+                            <SelectItem key={provider.id} value={provider.id}>
+                              {[provider.firstName, provider.lastName].filter(Boolean).join(" ") || provider.email}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
                   name="basePrice"
                   render={({ field }) => (
                     <FormItem>
@@ -190,22 +286,136 @@ export default function AdminErrandsEdit() {
                   )}
                 />
 
+                <div className="space-y-4 rounded-lg border p-5">
+                  <div>
+                    <FormLabel className="text-base">Optional Pricing Modes</FormLabel>
+                    <p className="text-sm text-muted-foreground">
+                      Add shopping and laundry pricing for errands that need more than the base service fee.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <FormField
+                      control={form.control}
+                      name="shoppingEnabled"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                          <div className="space-y-1">
+                            <FormLabel>Shopping Mode</FormLabel>
+                            <FormDescription>Charge shopping budget plus a commission.</FormDescription>
+                          </div>
+                          <FormControl>
+                            <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="laundryEnabled"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                          <div className="space-y-1">
+                            <FormLabel>Laundry Mode</FormLabel>
+                            <FormDescription>Base fee can include a set weight, then only extra kg is charged.</FormDescription>
+                          </div>
+                          <FormControl>
+                            <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="houseCleaningEnabled"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                          <div className="space-y-1">
+                            <FormLabel>House Cleaning</FormLabel>
+                            <FormDescription>Offer a base house cleaning package with optional extras.</FormDescription>
+                          </div>
+                          <FormControl>
+                            <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="shoppingCommissionPercent"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Shopping Commission %</FormLabel>
+                          <FormControl>
+                            <Input type="number" min="0" max="100" placeholder="10" {...field} />
+                          </FormControl>
+                          <FormDescription>Usually 10% of the customer shopping budget.</FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                  </div>
+
+                  <ErrandAddonEditor
+                    label="Laundry Add-Ons"
+                    description="Examples: duvet, large blanket, extra-heavy items."
+                    value={laundryAddons}
+                    onChange={(addons) => {
+                      setLaundryAddons(addons);
+                      form.setValue("laundryAddons", addons);
+                    }}
+                  />
+
+                  <ErrandAddonEditor
+                    label="House Cleaning Add-Ons"
+                    description="Examples: fridge cleaning, balcony, deep bathroom clean, sofa steaming."
+                    value={houseCleaningAddons}
+                    onChange={(addons) => {
+                      setHouseCleaningAddons(addons);
+                      form.setValue("houseCleaningAddons", addons);
+                    }}
+                  />
+                </div>
+
                 <FormField
                   control={form.control}
                   name="imageUrl"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Image URL (Optional)</FormLabel>
+                      <FormLabel>Media</FormLabel>
                       <FormControl>
-                        <Input
-                          type="url"
-                          placeholder="https://example.com/image.jpg"
-                          {...field}
-                          value={field.value || ""}
-                          data-testid="input-errand-image-url"
+                        <AdminMediaField
+                          value={field.value}
+                          galleryUrls={form.watch("galleryUrls")}
+                          mediaType={form.watch("mediaType")}
+                          onChange={({ mediaUrl, mediaType, galleryUrls }) => {
+                            form.setValue("imageUrl", mediaUrl);
+                            form.setValue("galleryUrls", galleryUrls);
+                            form.setValue("mediaType", mediaType);
+                          }}
                         />
                       </FormControl>
                       <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="isPublic"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                      <div className="space-y-1">
+                        <FormLabel>Public Listing</FormLabel>
+                        <FormDescription>Turn this on when the service should appear on the live site.</FormDescription>
+                      </div>
+                      <FormControl>
+                        <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                      </FormControl>
                     </FormItem>
                   )}
                 />

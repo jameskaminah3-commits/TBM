@@ -19,9 +19,30 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { AdminMediaField } from "@/components/admin-media-field";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { insertStaySchema, type Stay } from "@shared/schema";
+import { insertStaySchema, type Stay, type ProviderAccountSummary } from "@shared/schema";
+
+type StayAvailability = {
+  blockedRanges: Array<{
+    id: string;
+    source: "booking" | "manual";
+    startDate: string;
+    endDate: string;
+    checkoutDate: string;
+    status: string;
+    guestName: string;
+  }>;
+  availableFrom: string;
+};
 
 const featureOptions = [
   "WiFi",
@@ -40,6 +61,9 @@ const featureOptions = [
 
 const formSchema = insertStaySchema.extend({
   price: z.coerce.number().min(1, "Price must be at least $1"),
+  rating: z.coerce.number().min(1, "Rating must be at least 1").max(5, "Rating cannot exceed 5"),
+  reviewCount: z.coerce.number().min(0, "Review count cannot be negative"),
+  managerUserId: z.string().optional(),
   maxOccupancy: z.coerce.number().min(1, "At least 1 guest required"),
   bedrooms: z.coerce.number().min(1, "At least 1 bedroom required"),
   bathrooms: z.coerce.number().min(1, "At least 1 bathroom required"),
@@ -53,10 +77,29 @@ export default function AdminStaysEdit() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
+  const [blockStartDate, setBlockStartDate] = useState("");
+  const [blockEndDate, setBlockEndDate] = useState("");
+  const { data: providers = [] } = useQuery<ProviderAccountSummary[]>({
+    queryKey: ["/api/admin/provider-accounts"],
+  });
 
   const { data: stay, isLoading } = useQuery<Stay>({
     queryKey: ["/api/admin/stays", stayId],
     enabled: !!stayId,
+  });
+
+  const { data: availability } = useQuery<StayAvailability>({
+    queryKey: ["/api/admin/stays", stayId, "availability"],
+    enabled: !!stayId,
+    queryFn: async () => {
+      const response = await fetch(`/api/admin/stays/${stayId}/availability`, {
+        credentials: "include",
+      });
+      if (!response.ok) {
+        throw new Error("Failed to fetch stay availability");
+      }
+      return response.json();
+    },
   });
 
   const form = useForm<FormData>({
@@ -64,11 +107,17 @@ export default function AdminStaysEdit() {
     defaultValues: {
       title: "",
       price: 0,
+      rating: 5,
+      reviewCount: 0,
+      managerUserId: "unassigned",
       location: "",
       maxOccupancy: 2,
       bedrooms: 1,
       bathrooms: 1,
       imageUrl: "",
+      galleryUrls: [],
+      mediaType: "image",
+      isPublic: false,
       description: "",
       features: [],
     },
@@ -79,11 +128,17 @@ export default function AdminStaysEdit() {
       form.reset({
         title: stay.title,
         price: stay.price,
+        rating: stay.rating,
+        reviewCount: stay.reviewCount,
+        managerUserId: stay.managerUserId ?? "unassigned",
         location: stay.location,
         maxOccupancy: stay.maxOccupancy,
         bedrooms: stay.bedrooms,
         bathrooms: stay.bathrooms,
         imageUrl: stay.imageUrl || "",
+        galleryUrls: stay.galleryUrls,
+        mediaType: stay.mediaType,
+        isPublic: stay.isPublic,
         description: stay.description,
         features: stay.features,
       });
@@ -113,6 +168,53 @@ export default function AdminStaysEdit() {
     },
   });
 
+  const createBlockMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("POST", `/api/admin/stays/${stayId}/availability/blocks`, {
+        startDate: blockStartDate,
+        endDate: blockEndDate,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/stays", stayId, "availability"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stays", stayId, "availability"] });
+      toast({
+        title: "Availability updated",
+        description: "Blocked dates added successfully.",
+      });
+      setBlockStartDate("");
+      setBlockEndDate("");
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Could not block dates",
+        description: error.message.replace(/^\d+:\s*/, ""),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteBlockMutation = useMutation({
+    mutationFn: async (blockId: string) => {
+      return apiRequest("DELETE", `/api/admin/stays/${stayId}/availability/blocks/${blockId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/stays", stayId, "availability"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stays", stayId, "availability"] });
+      toast({
+        title: "Availability updated",
+        description: "Blocked dates removed successfully.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Could not remove block",
+        description: error.message.replace(/^\d+:\s*/, ""),
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleFeatureToggle = (feature: string) => {
     const updated = selectedFeatures.includes(feature)
       ? selectedFeatures.filter((f) => f !== feature)
@@ -122,7 +224,24 @@ export default function AdminStaysEdit() {
   };
 
   const onSubmit = async (data: FormData) => {
-    await updateMutation.mutateAsync({ ...data, features: selectedFeatures });
+    await updateMutation.mutateAsync({
+      ...data,
+      managerUserId: data.managerUserId === "unassigned" ? undefined : data.managerUserId,
+      features: selectedFeatures,
+    });
+  };
+
+  const handleCreateBlock = async () => {
+    if (!blockStartDate || !blockEndDate) {
+      toast({
+        title: "Dates required",
+        description: "Choose both a start date and an end date.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    await createBlockMutation.mutateAsync();
   };
 
   if (isLoading) {
@@ -163,6 +282,75 @@ export default function AdminStaysEdit() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {availability && (
+              <div className="mb-6 rounded-xl border bg-muted/30 p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="font-medium">Availability overview</div>
+                    <p className="text-sm text-muted-foreground">
+                      Next open date: {availability.availableFrom}
+                    </p>
+                  </div>
+                  <Button type="button" variant="outline" onClick={() => setLocation("/admin/bookings")}>
+                    Manage Bookings
+                  </Button>
+                </div>
+
+                <div className="mt-4 rounded-lg border bg-background p-4">
+                  <div className="font-medium mb-3">Block dates manually</div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <Input type="date" value={blockStartDate} onChange={(e) => setBlockStartDate(e.target.value)} />
+                    <Input type="date" value={blockEndDate} onChange={(e) => setBlockEndDate(e.target.value)} />
+                    <Button
+                      type="button"
+                      onClick={handleCreateBlock}
+                      disabled={createBlockMutation.isPending}
+                    >
+                      {createBlockMutation.isPending ? "Blocking..." : "Block Dates"}
+                    </Button>
+                  </div>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Use this for owner stays, maintenance, or partner-held dates.
+                  </p>
+                </div>
+
+                <div className="mt-4 space-y-2">
+                  {availability.blockedRanges.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No active blocked dates for this stay.</p>
+                  ) : (
+                    availability.blockedRanges.map((range) => (
+                      <div key={range.id} className="flex items-center justify-between rounded-lg border bg-background px-4 py-3 text-sm">
+                        <div>
+                          <div className="font-medium">{range.startDate} to {range.endDate}</div>
+                          <div className="text-muted-foreground">
+                            {range.source === "manual"
+                              ? "Manual availability block"
+                              : `${range.guestName}${range.checkoutDate !== range.startDate ? `, checkout ${range.checkoutDate}` : ""}`}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div className="text-muted-foreground capitalize">
+                            {range.source === "manual" ? "Blocked" : range.status}
+                          </div>
+                          {range.source === "manual" && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={deleteBlockMutation.isPending}
+                              onClick={() => deleteBlockMutation.mutate(range.id)}
+                            >
+                              Remove
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
                 <FormField
@@ -179,7 +367,37 @@ export default function AdminStaysEdit() {
                   )}
                 />
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <FormField
+                    control={form.control}
+                    name="rating"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Rating</FormLabel>
+                        <FormControl>
+                          <Input type="number" min="1" max="5" step="0.1" placeholder="4.8" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="reviewCount"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Review Count</FormLabel>
+                        <FormControl>
+                          <Input type="number" min="0" placeholder="24" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <FormField
                     control={form.control}
                     name="price"
@@ -223,7 +441,7 @@ export default function AdminStaysEdit() {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <FormField
                     control={form.control}
                     name="bedrooms"
@@ -267,6 +485,33 @@ export default function AdminStaysEdit() {
 
                 <FormField
                   control={form.control}
+                  name="managerUserId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Assigned Provider</FormLabel>
+                      <Select value={field.value ?? "unassigned"} onValueChange={field.onChange}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Assign a provider" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="unassigned">Unassigned</SelectItem>
+                          {providers.map((provider) => (
+                            <SelectItem key={provider.id} value={provider.id}>
+                              {[provider.firstName, provider.lastName].filter(Boolean).join(" ") || provider.email}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>Only the assigned provider will see this stay in their partner dashboard.</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
                   name="location"
                   render={({ field }) => (
                     <FormItem>
@@ -284,17 +529,36 @@ export default function AdminStaysEdit() {
                   name="imageUrl"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Image URL (Optional)</FormLabel>
+                      <FormLabel>Media</FormLabel>
                       <FormControl>
-                        <Input
-                          type="url"
-                          placeholder="https://example.com/image.jpg"
-                          {...field}
-                          value={field.value || ""}
-                          data-testid="input-stay-image-url"
+                        <AdminMediaField
+                          value={field.value}
+                          galleryUrls={form.watch("galleryUrls")}
+                          mediaType={form.watch("mediaType")}
+                          onChange={({ mediaUrl, mediaType, galleryUrls }) => {
+                            form.setValue("imageUrl", mediaUrl);
+                            form.setValue("galleryUrls", galleryUrls);
+                            form.setValue("mediaType", mediaType);
+                          }}
                         />
                       </FormControl>
                       <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="isPublic"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                      <div className="space-y-1">
+                        <FormLabel>Public Listing</FormLabel>
+                        <FormDescription>Turn this on when the stay should appear on the live site.</FormDescription>
+                      </div>
+                      <FormControl>
+                        <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                      </FormControl>
                     </FormItem>
                   )}
                 />

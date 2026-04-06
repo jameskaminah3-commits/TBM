@@ -11,6 +11,10 @@ import {
   ChefHat,
   Briefcase,
   Users,
+  Handshake,
+  Compass,
+  Wallet,
+  Megaphone,
 } from "lucide-react";
 import {
   Sidebar,
@@ -50,9 +54,24 @@ const menuItems = [
     icon: Users,
   },
   {
+    title: "Payments",
+    url: "/admin/payments",
+    icon: Wallet,
+  },
+  {
+    title: "Providers",
+    url: "/admin/providers",
+    icon: Handshake,
+  },
+  {
     title: "Listings",
     url: "/admin/listings",
     icon: List,
+  },
+  {
+    title: "Marketing",
+    url: "/admin/marketing",
+    icon: Megaphone,
   },
   {
     title: "Blog",
@@ -85,6 +104,12 @@ const addListingOptions = [
     url: "/admin/errands/new",
     icon: Briefcase,
     testId: "link-add-errand",
+  },
+  {
+    title: "Add Experience",
+    url: "/admin/experiences/new",
+    icon: Compass,
+    testId: "link-add-experience",
   },
 ];
 
@@ -165,14 +190,14 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 
   return (
     <SidebarProvider style={style as React.CSSProperties}>
-      <div className="flex h-screen w-full">
+      <div className="flex h-[calc(100svh-4.7rem)] min-h-[calc(100svh-4.7rem)] w-full overflow-hidden bg-background">
         <AdminSidebar />
-        <div className="flex flex-col flex-1">
-          <header className="flex items-center justify-between p-4 border-b">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className="flex items-center justify-between border-b px-3 py-3 sm:px-4">
             <SidebarTrigger data-testid="button-sidebar-toggle" />
             <ThemeToggle />
           </header>
-          <main className="flex-1 overflow-auto">
+          <main className="flex-1 overflow-auto overflow-x-hidden">
             {children}
           </main>
         </div>
