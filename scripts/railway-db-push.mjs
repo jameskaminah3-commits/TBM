@@ -1,6 +1,7 @@
 import "dotenv/config";
-import { Resolver, isIP } from "node:dns";
+import { Resolver } from "node:dns";
 import https from "node:https";
+import { isIP } from "node:net";
 import path from "node:path";
 import { spawn } from "node:child_process";
 

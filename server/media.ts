@@ -69,6 +69,14 @@ function getSupabaseMediaStorageConfig() {
   };
 }
 
+function sanitizeObjectPath(objectPath: string) {
+  return objectPath
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter((segment) => Boolean(segment) && segment !== "." && segment !== "..")
+    .join("/");
+}
+
 function getSupabaseStorageClient() {
   if (!supabaseStorageClient) {
     const { supabaseUrl, serviceRoleKey } = getSupabaseMediaStorageConfig();
@@ -85,6 +93,10 @@ function getSupabaseStorageClient() {
 
 export function usesLocalUploadStorage() {
   return getConfiguredMediaStorageBackend() === "local";
+}
+
+export function canUseSupabaseMediaStorage() {
+  return getConfiguredMediaStorageBackend() === "supabase";
 }
 
 export function ensureMediaStorageReady() {
@@ -177,7 +189,7 @@ async function saveLocalUpload(fileBuffer: Buffer, filename: string) {
 }
 
 async function saveSupabaseUpload(fileBuffer: Buffer, mimeType: string, filename: string) {
-  const { bucket, publicBaseUrl } = getSupabaseMediaStorageConfig();
+  const { bucket } = getSupabaseMediaStorageConfig();
   const objectPath = `${new Date().toISOString().slice(0, 10)}/${filename}`;
   const client = getSupabaseStorageClient();
   const { error } = await client.storage.from(bucket).upload(objectPath, fileBuffer, {
@@ -190,16 +202,37 @@ async function saveSupabaseUpload(fileBuffer: Buffer, mimeType: string, filename
     throw new Error(`Failed to upload media to Supabase Storage: ${error.message}`);
   }
 
-  if (publicBaseUrl) {
-    return `${publicBaseUrl.replace(/\/+$/, "")}/${objectPath}`;
+  return buildSupabaseMediaUrl(objectPath);
+}
+
+export function buildSupabaseMediaUrl(objectPath: string) {
+  const normalizedObjectPath = sanitizeObjectPath(objectPath);
+  if (!normalizedObjectPath) {
+    throw new Error("Supabase media object path is required.");
   }
 
-  const { data } = client.storage.from(bucket).getPublicUrl(objectPath);
+  const { bucket, publicBaseUrl } = getSupabaseMediaStorageConfig();
+  const client = getSupabaseStorageClient();
+
+  if (publicBaseUrl) {
+    return `${publicBaseUrl.replace(/\/+$/, "")}/${normalizedObjectPath}`;
+  }
+
+  const { data } = client.storage.from(bucket).getPublicUrl(normalizedObjectPath);
   if (!data.publicUrl) {
     throw new Error("Failed to resolve the uploaded media URL from Supabase Storage.");
   }
 
   return data.publicUrl;
+}
+
+export function buildLegacyUploadRedirectUrl(uploadPath: string) {
+  const normalizedUploadPath = sanitizeObjectPath(uploadPath.replace(/\\/g, "/"));
+  if (!normalizedUploadPath) {
+    throw new Error("Upload path is required.");
+  }
+
+  return buildSupabaseMediaUrl(`legacy/${normalizedUploadPath}`);
 }
 
 export async function saveBase64Upload(dataUrl: string, mimeType: string) {

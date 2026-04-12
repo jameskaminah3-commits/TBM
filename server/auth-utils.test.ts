@@ -4,7 +4,9 @@ import {
   generateOneTimeCode,
   hashOtp,
   hashPassword,
+  isLocalDevelopmentHostname,
   normalizePhone,
+  shouldBypassOtpVerificationForLocalTesting,
   splitName,
   verifyPassword,
 } from "./auth-utils.ts";
@@ -36,4 +38,38 @@ test("generateOneTimeCode returns a 6-digit numeric code", () => {
 test("hashOtp is deterministic", () => {
   assert.equal(hashOtp("123456"), hashOtp("123456"));
   assert.notEqual(hashOtp("123456"), hashOtp("654321"));
+});
+
+test("isLocalDevelopmentHostname matches localhost and private network hosts", () => {
+  assert.equal(isLocalDevelopmentHostname("localhost"), true);
+  assert.equal(isLocalDevelopmentHostname("app.localhost"), true);
+  assert.equal(isLocalDevelopmentHostname("127.0.0.1"), true);
+  assert.equal(isLocalDevelopmentHostname("::1"), true);
+  assert.equal(isLocalDevelopmentHostname("192.168.1.24"), true);
+  assert.equal(isLocalDevelopmentHostname("10.0.0.15"), true);
+  assert.equal(isLocalDevelopmentHostname("172.20.5.9"), true);
+  assert.equal(isLocalDevelopmentHostname("example.com"), false);
+});
+
+test("shouldBypassOtpVerificationForLocalTesting stays local unless explicitly forced", () => {
+  assert.equal(shouldBypassOtpVerificationForLocalTesting({
+    nodeEnv: "development",
+    hostname: "localhost",
+  }), true);
+
+  assert.equal(shouldBypassOtpVerificationForLocalTesting({
+    nodeEnv: "development",
+    hostname: "example.com",
+  }), false);
+
+  assert.equal(shouldBypassOtpVerificationForLocalTesting({
+    nodeEnv: "production",
+    hostname: "localhost",
+  }), false);
+
+  assert.equal(shouldBypassOtpVerificationForLocalTesting({
+    nodeEnv: "production",
+    hostname: "example.com",
+    localOtpBypass: "true",
+  }), true);
 });

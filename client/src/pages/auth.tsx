@@ -64,6 +64,16 @@ type ApiErrorPayload = {
   devOtp?: string;
 };
 
+type AuthSuccessPayload = {
+  message?: string;
+  email?: string | null;
+  devOtp?: string;
+  otpBypassed?: boolean;
+  user?: {
+    role?: string | null;
+  } | null;
+};
+
 function parseApiError(error: unknown): ApiErrorPayload | null {
   if (!(error instanceof Error)) {
     return null;
@@ -142,12 +152,31 @@ export default function AuthPage() {
   const [password, setPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [otp, setOtp] = useState("");
+  const [resetPasswordOtpBypassed, setResetPasswordOtpBypassed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const nextPath = getNextPath();
   const nextPathLabel = useMemo(() => formatNextPathLabel(nextPath), [nextPath]);
   const resolvedNextPath = useMemo(() => resolvePostAuthPath(nextPath, isAdmin), [isAdmin, nextPath]);
-  const currentMode = modeCopy[mode];
+  const currentMode = useMemo(() => {
+    if (mode === "reset-password" && resetPasswordOtpBypassed) {
+      return {
+        ...modeCopy[mode],
+        title: "Set a new password",
+        description: "OTP verification is skipped for local testing. Enter your email and choose a new password.",
+      };
+    }
+
+    return modeCopy[mode];
+  }, [mode, resetPasswordOtpBypassed]);
+
+  function openMode(nextMode: Mode) {
+    if (nextMode !== "reset-password") {
+      setResetPasswordOtpBypassed(false);
+    }
+
+    setMode(nextMode);
+  }
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
@@ -172,11 +201,22 @@ export default function AuthPage() {
         password,
       });
 
-      const data = await readApiJson(res);
+      const data = await readApiJson(res) as AuthSuccessPayload;
+      if (data?.otpBypassed && data.user) {
+        queryClient.setQueryData(["/api/auth/user"], data.user);
+        setPassword("");
+        toast({
+          title: "Account ready",
+          description: data.message ?? "OTP verification is skipped for local testing.",
+        });
+        await refreshAuthAndRedirect(data.user.role);
+        return;
+      }
+
       setEmail(data?.email ?? email.trim());
       setPassword("");
       setOtp("");
-      setMode("verify-email");
+      openMode("verify-email");
       toast({
         title: "Verify your email",
         description:
@@ -190,7 +230,7 @@ export default function AuthPage() {
         setEmail(payload.email ?? email.trim().toLowerCase());
         setPassword("");
         setOtp("");
-        setMode("verify-email");
+        openMode("verify-email");
         toast({
           title: "Verify your email",
           description: payload.message ?? "Enter the code we sent to finish setting up your account.",
@@ -224,6 +264,7 @@ export default function AuthPage() {
         title: "Signed in",
         description: "Welcome back.",
       });
+      setResetPasswordOtpBypassed(false);
       await refreshAuthAndRedirect(user?.role);
     } catch (error) {
       const payload = parseApiError(error);
@@ -232,7 +273,7 @@ export default function AuthPage() {
         setEmail(verificationEmail);
         setPassword("");
         setOtp("");
-        setMode("verify-email");
+        openMode("verify-email");
         toast({
           title: "Verify your email",
           description: payload.message ?? "Enter the code we sent to your email to continue.",
@@ -266,6 +307,7 @@ export default function AuthPage() {
         title: "Email verified",
         description: "Your account is ready.",
       });
+      setResetPasswordOtpBypassed(false);
       await refreshAuthAndRedirect(user?.role);
     } catch (error) {
       toast({
@@ -283,11 +325,13 @@ export default function AuthPage() {
 
     try {
       const res = await apiRequest("POST", "/api/auth/resend-verification", { email });
-      const data = await readApiJson(res);
+      const data = await readApiJson(res) as AuthSuccessPayload;
       toast({
-        title: "Code sent",
+        title: data?.otpBypassed ? "Local testing active" : "Code sent",
         description:
-          data?.devOtp && import.meta.env.DEV
+          data?.otpBypassed
+            ? (data.message ?? "OTP verification is skipped for local testing.")
+            : data?.devOtp && import.meta.env.DEV
             ? `Development code: ${data.devOtp}`
             : "Check your email for the new 6-digit verification code.",
       });
@@ -308,12 +352,16 @@ export default function AuthPage() {
 
     try {
       const res = await apiRequest("POST", "/api/auth/forgot-password", { email });
-      const data = await readApiJson(res);
+      const data = await readApiJson(res) as AuthSuccessPayload;
+      setResetPasswordOtpBypassed(Boolean(data?.otpBypassed));
+      setOtp("");
       setMode("reset-password");
       toast({
-        title: "OTP sent",
+        title: data?.otpBypassed ? "Set a new password" : "OTP sent",
         description:
-          data.devOtp && import.meta.env.DEV
+          data?.otpBypassed
+            ? (data.message ?? "OTP verification is skipped for local testing.")
+            : data.devOtp && import.meta.env.DEV
             ? `Development OTP: ${data.devOtp}`
             : "Check your email for the 6-digit OTP.",
       });
@@ -333,11 +381,10 @@ export default function AuthPage() {
     setSubmitting(true);
 
     try {
-      const res = await apiRequest("POST", "/api/auth/reset-password", {
-        email,
-        otp,
-        newPassword,
-      });
+      const payload = resetPasswordOtpBypassed
+        ? { email, newPassword }
+        : { email, otp, newPassword };
+      const res = await apiRequest("POST", "/api/auth/reset-password", payload);
 
       const user = await readApiJson(res);
       queryClient.setQueryData(["/api/auth/user"], user);
@@ -345,6 +392,7 @@ export default function AuthPage() {
         title: "Password updated",
         description: "You are now signed in.",
       });
+      setResetPasswordOtpBypassed(false);
       await refreshAuthAndRedirect(user?.role);
     } catch (error) {
       toast({
@@ -399,7 +447,7 @@ export default function AuthPage() {
                   type="button"
                   variant={mode === "sign-in" ? "default" : "ghost"}
                   className="min-h-11 rounded-[1rem] px-3 text-sm"
-                  onClick={() => setMode("sign-in")}
+                  onClick={() => openMode("sign-in")}
                 >
                   Sign In
                 </Button>
@@ -407,7 +455,7 @@ export default function AuthPage() {
                   type="button"
                   variant={mode === "sign-up" ? "default" : "ghost"}
                   className="min-h-11 rounded-[1rem] px-3 text-sm"
-                  onClick={() => setMode("sign-up")}
+                  onClick={() => openMode("sign-up")}
                 >
                   Sign Up
                 </Button>
@@ -452,7 +500,7 @@ export default function AuthPage() {
                     <button
                       type="button"
                       className="text-sm font-medium text-teal-700 underline-offset-4 hover:underline"
-                      onClick={() => setMode("forgot-password")}
+                      onClick={() => openMode("forgot-password")}
                     >
                       Forgot password?
                     </button>
@@ -467,7 +515,7 @@ export default function AuthPage() {
                   <button
                     type="button"
                     className="font-medium text-teal-700 underline-offset-4 hover:underline"
-                    onClick={() => setMode("sign-up")}
+                    onClick={() => openMode("sign-up")}
                   >
                     Create account
                   </button>
@@ -481,7 +529,7 @@ export default function AuthPage() {
                     onClick={() => {
                       setEmail(looksLikeEmail(identifier) ? identifier.trim().toLowerCase() : email);
                       setOtp("");
-                      setMode("verify-email");
+                      openMode("verify-email");
                     }}
                   >
                     Enter code
@@ -562,7 +610,7 @@ export default function AuthPage() {
                   <button
                     type="button"
                     className="font-medium text-teal-700 underline-offset-4 hover:underline"
-                    onClick={() => setMode("sign-in")}
+                    onClick={() => openMode("sign-in")}
                   >
                     Sign in
                   </button>
@@ -575,7 +623,7 @@ export default function AuthPage() {
                     className="font-medium text-teal-700 underline-offset-4 hover:underline"
                     onClick={() => {
                       setOtp("");
-                      setMode("verify-email");
+                      openMode("verify-email");
                     }}
                   >
                     Verify email
@@ -640,7 +688,7 @@ export default function AuthPage() {
                   <button
                     type="button"
                     className="font-medium text-teal-700 underline-offset-4 hover:underline"
-                    onClick={() => setMode("sign-in")}
+                    onClick={() => openMode("sign-in")}
                   >
                     Back to sign in
                   </button>
@@ -677,7 +725,7 @@ export default function AuthPage() {
                   <button
                     type="button"
                     className="font-medium text-teal-700 underline-offset-4 hover:underline"
-                    onClick={() => setMode("sign-in")}
+                    onClick={() => openMode("sign-in")}
                   >
                     Back to sign in
                   </button>
@@ -704,21 +752,27 @@ export default function AuthPage() {
                       required
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="otp">OTP</Label>
-                    <Input
-                      id="otp"
-                      className="h-12 rounded-2xl border-stone-200 px-4 text-base tracking-[0.18em]"
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                      maxLength={6}
-                      placeholder="6-digit code"
-                      value={otp}
-                      onChange={(event) => setOtp(event.target.value)}
-                      enterKeyHint="next"
-                      required
-                    />
-                  </div>
+                  {resetPasswordOtpBypassed ? (
+                    <div className="rounded-2xl border border-teal-200/80 bg-teal-50 px-4 py-3 text-sm leading-6 text-teal-900">
+                      Local testing mode is active on this device, so OTP verification is skipped here.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <Label htmlFor="otp">OTP</Label>
+                      <Input
+                        id="otp"
+                        className="h-12 rounded-2xl border-stone-200 px-4 text-base tracking-[0.18em]"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        maxLength={6}
+                        placeholder="6-digit code"
+                        value={otp}
+                        onChange={(event) => setOtp(event.target.value)}
+                        enterKeyHint="next"
+                        required
+                      />
+                    </div>
+                  )}
                   <div className="space-y-2">
                     <Label htmlFor="new-password">New password</Label>
                     <Input
@@ -744,7 +798,10 @@ export default function AuthPage() {
                   <button
                     type="button"
                     className="font-medium text-teal-700 underline-offset-4 hover:underline"
-                    onClick={() => setMode("forgot-password")}
+                    onClick={() => {
+                      setResetPasswordOtpBypassed(false);
+                      openMode("forgot-password");
+                    }}
                   >
                     Send again
                   </button>

@@ -43,3 +43,54 @@ export function hashOtp(otp: string) {
 export function generateOneTimeCode() {
   return crypto.randomInt(100000, 999999).toString();
 }
+
+export function isLocalDevelopmentHostname(hostname: string | null | undefined) {
+  const normalizedHostname = hostname?.trim().toLowerCase().replace(/^\[|\]$/g, "");
+  if (!normalizedHostname) {
+    return false;
+  }
+
+  if (
+    normalizedHostname === "localhost"
+    || normalizedHostname.endsWith(".localhost")
+    || normalizedHostname === "::1"
+    || normalizedHostname.endsWith(".local")
+    || /^127(?:\.\d{1,3}){3}$/.test(normalizedHostname)
+    || /^10(?:\.\d{1,3}){3}$/.test(normalizedHostname)
+    || /^192\.168(?:\.\d{1,3}){2}$/.test(normalizedHostname)
+  ) {
+    return true;
+  }
+
+  const privateRangeMatch = /^172\.(\d{1,3})(?:\.\d{1,3}){2}$/.exec(normalizedHostname);
+  if (!privateRangeMatch) {
+    return false;
+  }
+
+  const secondOctet = Number.parseInt(privateRangeMatch[1] ?? "", 10);
+  return Number.isInteger(secondOctet) && secondOctet >= 16 && secondOctet <= 31;
+}
+
+function isTruthyLocalFlag(value: string | null | undefined) {
+  if (!value) {
+    return false;
+  }
+
+  return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+}
+
+export function shouldBypassOtpVerificationForLocalTesting(args: {
+  nodeEnv?: string | null;
+  hostname?: string | null;
+  localOtpBypass?: string | null;
+}) {
+  if (isTruthyLocalFlag(args.localOtpBypass)) {
+    return true;
+  }
+
+  if (args.nodeEnv?.trim().toLowerCase() === "production") {
+    return false;
+  }
+
+  return isLocalDevelopmentHostname(args.hostname);
+}

@@ -20,6 +20,7 @@ import {
   hashOtp,
   hashPassword,
   normalizePhone,
+  shouldBypassOtpVerificationForLocalTesting,
   splitName,
   verifyPassword,
 } from "../auth-utils";
@@ -266,12 +267,22 @@ const resendVerificationRateLimit = createRateLimitMiddleware([
   },
 ]);
 
+const resetPasswordWithoutOtpSchema = resetPasswordSchema.omit({ otp: true });
+
 function isEmailVerified(user: { email: string | null; emailVerifiedAt: Date | null }) {
   return !user.email || Boolean(user.emailVerifiedAt);
 }
 
 function buildDevelopmentOtp(code: string) {
   return process.env.NODE_ENV === "development" ? code : undefined;
+}
+
+function shouldBypassOtpVerification(req: { hostname?: string | null | undefined }) {
+  return shouldBypassOtpVerificationForLocalTesting({
+    nodeEnv: process.env.NODE_ENV,
+    hostname: typeof req.hostname === "string" ? req.hostname : null,
+    localOtpBypass: process.env.LOCAL_OTP_BYPASS ?? null,
+  });
 }
 
 function formatAuthError(error: unknown) {
@@ -326,6 +337,46 @@ async function issueEmailVerificationCode(user: { id: string; email: string | nu
   };
 }
 
+async function markUserEmailVerified(userId: string, now = new Date()) {
+  const [updatedUser] = await db
+    .update(users)
+    .set({
+      emailVerifiedAt: now,
+      updatedAt: now,
+    })
+    .where(eq(users.id, userId))
+    .returning();
+
+  return updatedUser;
+}
+
+async function authenticateSessionUser(req: any, userId: string, notFoundMessage = "Unable to load account") {
+  const sessionUser = await getSessionUser(userId);
+  if (!sessionUser) {
+    return {
+      ok: false,
+      status: 404,
+      body: { message: notFoundMessage },
+    } as const;
+  }
+
+  if (sessionUser.isSuspended) {
+    return {
+      ok: false,
+      status: 403,
+      body: { message: "This provider account has been suspended. Please contact support." },
+    } as const;
+  }
+
+  setAuthenticatedSession(req, sessionUser.id, sessionUser.role as UserRole);
+  attachRequestUser(req, sessionUser);
+
+  return {
+    ok: true,
+    sessionUser,
+  } as const;
+}
+
 export function setupAuth(app: Express) {
   app.set("trust proxy", 1);
   const shouldUsePostgresSessionStore = process.env.NODE_ENV === "production" || process.env.USE_PG_SESSION_STORE === "true";
@@ -369,7 +420,9 @@ export function registerAuthRoutes(app: Express) {
 
   app.post("/api/auth/signup", signUpRateLimit, async (req, res) => {
     try {
-      if (!isTransactionalEmailConfigured()) {
+      const bypassOtpVerification = shouldBypassOtpVerification(req);
+
+      if (!bypassOtpVerification && !isTransactionalEmailConfigured()) {
         return res.status(503).json({
           message: "Email verification is not configured yet. Please set up the email provider first.",
         });
@@ -387,6 +440,12 @@ export function registerAuthRoutes(app: Express) {
 
       if (existingUser) {
         if (existingUser.email === normalizedEmail && !isEmailVerified(existingUser)) {
+          if (bypassOtpVerification) {
+            return res.status(409).json({
+              message: "This account already exists. Sign in to continue.",
+            });
+          }
+
           return res.status(409).json({
             message: "This account already exists but still needs email verification.",
             requiresEmailVerification: true,
@@ -407,9 +466,29 @@ export function registerAuthRoutes(app: Express) {
           lastName,
           passwordHash: hashPassword(input.password),
           role: adminEmails.has(normalizedEmail) ? "admin" : "customer",
-          emailVerifiedAt: null,
+          emailVerifiedAt: bypassOtpVerification ? new Date() : null,
         })
         .returning();
+
+      if (bypassOtpVerification) {
+        const authenticated = await authenticateSessionUser(req, createdUser.id);
+        if (!authenticated.ok) {
+          return res.status(authenticated.status).json(authenticated.body);
+        }
+
+        if (isTransactionalEmailConfigured()) {
+          queueNotificationTask(
+            `signup emails for ${createdUser.id}`,
+            sendSignupNotificationEmails(createdUser, req),
+          );
+        }
+
+        return res.status(201).json({
+          message: "Account created. OTP verification is skipped for local testing.",
+          otpBypassed: true,
+          user: authenticated.sessionUser,
+        });
+      }
 
       const verification = await issueEmailVerificationCode(createdUser);
       if (!verification.delivered) {
@@ -548,6 +627,7 @@ export function registerAuthRoutes(app: Express) {
   app.post("/api/auth/signin", signInRateLimit, async (req, res) => {
     try {
       const input = signInSchema.parse(req.body);
+      const bypassOtpVerification = shouldBypassOtpVerification(req);
       const identifier = input.identifier.trim();
       const normalizedEmail = identifier.toLowerCase();
       const normalizedPhone = normalizePhone(identifier);
@@ -562,7 +642,7 @@ export function registerAuthRoutes(app: Express) {
         return res.status(401).json({ message: "Invalid email/phone or password" });
       }
 
-      if (!isEmailVerified(user)) {
+      if (!isEmailVerified(user) && !bypassOtpVerification) {
         return res.status(403).json({
           message: "Please verify your email before signing in.",
           requiresEmailVerification: true,
@@ -570,19 +650,19 @@ export function registerAuthRoutes(app: Express) {
         });
       }
 
-      const sessionUser = await getSessionUser(user.id);
-      if (!sessionUser) {
-        return res.status(401).json({ message: "Unable to load account" });
+      if (!isEmailVerified(user) && bypassOtpVerification) {
+        const verifiedUser = await markUserEmailVerified(user.id);
+        if (!verifiedUser) {
+          return res.status(404).json({ message: "Account not found" });
+        }
       }
 
-      if (sessionUser.isSuspended) {
-        return res.status(403).json({ message: "This provider account has been suspended. Please contact support." });
+      const authenticated = await authenticateSessionUser(req, user.id, "Unable to load account");
+      if (!authenticated.ok) {
+        return res.status(authenticated.status).json(authenticated.body);
       }
 
-      setAuthenticatedSession(req, sessionUser.id, sessionUser.role as UserRole);
-      attachRequestUser(req, sessionUser);
-
-      return res.json(sessionUser);
+      return res.json(authenticated.sessionUser);
     } catch (error) {
       console.error("[AUTH] Signin failed:", formatAuthError(error));
       return res.status(400).json({
@@ -594,7 +674,9 @@ export function registerAuthRoutes(app: Express) {
   app.post("/api/auth/forgot-password", forgotPasswordRateLimit, async (req, res) => {
     try {
       const input = forgotPasswordSchema.parse(req.body);
-      if (!isTransactionalEmailConfigured()) {
+      const bypassOtpVerification = shouldBypassOtpVerification(req);
+
+      if (!bypassOtpVerification && !isTransactionalEmailConfigured()) {
         return res.status(503).json({
           message: "Password reset email is not configured yet. Please set up the email provider first.",
         });
@@ -604,7 +686,19 @@ export function registerAuthRoutes(app: Express) {
 
       const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
       if (!user) {
-        return res.json({ message: "If that account exists, an OTP has been sent." });
+        return res.json({
+          message: bypassOtpVerification
+            ? "If that account exists, you can set a new password locally without an OTP."
+            : "If that account exists, an OTP has been sent.",
+          otpBypassed: bypassOtpVerification || undefined,
+        });
+      }
+
+      if (bypassOtpVerification) {
+        return res.json({
+          message: "OTP verification is skipped for local testing. Enter your new password to continue.",
+          otpBypassed: true,
+        });
       }
 
       const otp = generateOneTimeCode();
@@ -644,31 +738,41 @@ export function registerAuthRoutes(app: Express) {
 
   app.post("/api/auth/reset-password", resetPasswordRateLimit, async (req, res) => {
     try {
-      const input = resetPasswordSchema.parse(req.body);
-      const email = input.email.trim().toLowerCase();
+      const bypassOtpVerification = shouldBypassOtpVerification(req);
+      const email = bypassOtpVerification
+        ? resetPasswordWithoutOtpSchema.parse(req.body).email.trim().toLowerCase()
+        : resetPasswordSchema.parse(req.body).email.trim().toLowerCase();
 
-      const [otpRecord] = await db
-        .select()
-        .from(passwordResetOtps)
-        .where(
-          and(
-            eq(passwordResetOtps.email, email),
-            eq(passwordResetOtps.otpHash, hashOtp(input.otp)),
-            gt(passwordResetOtps.expiresAt, new Date()),
-            isNull(passwordResetOtps.usedAt),
-          ),
-        )
-        .orderBy(desc(passwordResetOtps.createdAt))
-        .limit(1);
+      let otpRecord: { id: string } | undefined;
+      if (!bypassOtpVerification) {
+        const input = resetPasswordSchema.parse(req.body);
+        [otpRecord] = await db
+          .select({ id: passwordResetOtps.id })
+          .from(passwordResetOtps)
+          .where(
+            and(
+              eq(passwordResetOtps.email, email),
+              eq(passwordResetOtps.otpHash, hashOtp(input.otp)),
+              gt(passwordResetOtps.expiresAt, new Date()),
+              isNull(passwordResetOtps.usedAt),
+            ),
+          )
+          .orderBy(desc(passwordResetOtps.createdAt))
+          .limit(1);
 
-      if (!otpRecord) {
-        return res.status(400).json({ message: "Invalid or expired OTP" });
+        if (!otpRecord) {
+          return res.status(400).json({ message: "Invalid or expired OTP" });
+        }
       }
+
+      const parsedInput = bypassOtpVerification
+        ? resetPasswordWithoutOtpSchema.parse(req.body)
+        : resetPasswordSchema.parse(req.body);
 
       const [updatedUser] = await db
         .update(users)
         .set({
-          passwordHash: hashPassword(input.newPassword),
+          passwordHash: hashPassword(parsedInput.newPassword),
           emailVerifiedAt: new Date(),
           updatedAt: new Date(),
         })
@@ -679,20 +783,19 @@ export function registerAuthRoutes(app: Express) {
         return res.status(404).json({ message: "Account not found" });
       }
 
-      await db
-        .update(passwordResetOtps)
-        .set({ usedAt: new Date() })
-        .where(eq(passwordResetOtps.id, otpRecord.id));
-
-      const sessionUser = await getSessionUser(updatedUser.id);
-      if (!sessionUser) {
-        return res.status(404).json({ message: "Account not found" });
+      if (otpRecord) {
+        await db
+          .update(passwordResetOtps)
+          .set({ usedAt: new Date() })
+          .where(eq(passwordResetOtps.id, otpRecord.id));
       }
 
-      setAuthenticatedSession(req, sessionUser.id, sessionUser.role as UserRole);
-      attachRequestUser(req, sessionUser);
+      const authenticated = await authenticateSessionUser(req, updatedUser.id, "Account not found");
+      if (!authenticated.ok) {
+        return res.status(authenticated.status).json(authenticated.body);
+      }
 
-      return res.json(sessionUser);
+      return res.json(authenticated.sessionUser);
     } catch (error) {
       console.error("[AUTH] Reset password failed:", formatAuthError(error));
       return res.status(400).json({
