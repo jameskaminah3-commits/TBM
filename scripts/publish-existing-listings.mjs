@@ -18,7 +18,23 @@ function getDatabaseUrl() {
     throw new Error("DATABASE_URL must be set before publishing existing listings.");
   }
 
-  return new URL(raw);
+  if (
+    raw.includes("[project-ref]")
+    || raw.includes("[db-password]")
+    || raw.includes("[pooler-host]")
+  ) {
+    throw new Error(
+      "DATABASE_URL is still using the .env.example placeholder. Set Railway DATABASE_URL to your real Supabase session pooler connection string.",
+    );
+  }
+
+  try {
+    return new URL(raw);
+  } catch {
+    throw new Error(
+      "DATABASE_URL is not a valid Postgres connection string. Set Railway DATABASE_URL to your real Supabase session pooler URL.",
+    );
+  }
 }
 
 function isPrivateHostname(hostname) {
