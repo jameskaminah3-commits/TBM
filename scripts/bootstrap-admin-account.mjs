@@ -1,0 +1,130 @@
+import "dotenv/config";
+import crypto from "node:crypto";
+import pg from "pg";
+
+const { Pool } = pg;
+
+function normalizeEmail(value) {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+function splitName(name) {
+  const parts = (name || "").trim().split(/\s+/).filter(Boolean);
+  return {
+    firstName: parts[0] ?? "Admin",
+    lastName: parts.length > 1 ? parts.slice(1).join(" ") : null,
+  };
+}
+
+function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
+  const derived = crypto.scryptSync(password, salt, 64).toString("hex");
+  return `${salt}:${derived}`;
+}
+
+function getDatabaseUrl() {
+  const raw = process.env.DATABASE_URL;
+  if (!raw) {
+    throw new Error("DATABASE_URL must be set before bootstrapping an admin account.");
+  }
+
+  return new URL(raw);
+}
+
+function isPrivateHostname(hostname) {
+  return hostname === "localhost"
+    || hostname === "127.0.0.1"
+    || hostname === "::1"
+    || hostname.endsWith(".local");
+}
+
+function shouldUseDatabaseSsl(databaseUrl) {
+  const sslMode = databaseUrl.searchParams.get("sslmode")?.trim().toLowerCase();
+  if (sslMode === "disable") {
+    return false;
+  }
+
+  if (sslMode) {
+    return true;
+  }
+
+  return !isPrivateHostname(databaseUrl.hostname);
+}
+
+function resolveBootstrapAdminEmail() {
+  const explicitEmail = normalizeEmail(process.env.ADMIN_BOOTSTRAP_EMAIL);
+  if (explicitEmail) {
+    return explicitEmail;
+  }
+
+  const adminEmails = (process.env.ADMIN_EMAILS ?? "")
+    .split(",")
+    .map(normalizeEmail)
+    .filter(Boolean);
+
+  return adminEmails[0] ?? "";
+}
+
+async function main() {
+  const bootstrapPassword = process.env.ADMIN_BOOTSTRAP_PASSWORD?.trim() ?? "";
+  if (!bootstrapPassword) {
+    console.log("[bootstrap:admin] ADMIN_BOOTSTRAP_PASSWORD is not set. Skipping admin bootstrap.");
+    return;
+  }
+
+  const email = resolveBootstrapAdminEmail();
+  if (!email) {
+    console.log("[bootstrap:admin] No bootstrap admin email found. Set ADMIN_BOOTSTRAP_EMAIL or ADMIN_EMAILS.");
+    return;
+  }
+
+  const name = process.env.ADMIN_BOOTSTRAP_NAME?.trim() || "Tembea Admin";
+  const { firstName, lastName } = splitName(name);
+  const databaseUrl = getDatabaseUrl();
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 15000,
+    keepAlive: true,
+    ssl: shouldUseDatabaseSsl(databaseUrl)
+      ? {
+          rejectUnauthorized: false,
+        }
+      : undefined,
+  });
+
+  try {
+    const passwordHash = hashPassword(bootstrapPassword);
+    const result = await pool.query(`
+      INSERT INTO users (
+        email,
+        first_name,
+        last_name,
+        password_hash,
+        role,
+        email_verified_at,
+        updated_at
+      )
+      VALUES ($1, $2, $3, $4, 'admin', now(), now())
+      ON CONFLICT (email)
+      DO UPDATE SET
+        first_name = EXCLUDED.first_name,
+        last_name = EXCLUDED.last_name,
+        password_hash = EXCLUDED.password_hash,
+        role = 'admin',
+        email_verified_at = COALESCE(users.email_verified_at, now()),
+        is_suspended = false,
+        updated_at = now()
+      RETURNING id
+    `, [email, firstName, lastName, passwordHash]);
+
+    const userId = result.rows[0]?.id;
+    console.log(`[bootstrap:admin] Admin account is ready for ${email}${userId ? ` (user ${userId})` : ""}.`);
+  } finally {
+    await pool.end();
+  }
+}
+
+main().catch((error) => {
+  console.error("[bootstrap:admin] Failed to bootstrap admin account:", error);
+  process.exit(1);
+});

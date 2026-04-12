@@ -17,6 +17,7 @@
     "ci": "npm run lint && npm run test && npm run build",
     "db:push": "node ./scripts/railway-db-push.mjs",
     "deploy:prepare": "node ./scripts/railway-predeploy.mjs",
+    "admin:bootstrap": "node ./scripts/bootstrap-admin-account.mjs",
     "listings:publish-existing": "node ./scripts/publish-existing-listings.mjs"
   },
   "dependencies": {

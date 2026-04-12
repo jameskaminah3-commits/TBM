@@ -378,7 +378,9 @@ async function authenticateSessionUser(req: any, userId: string, notFoundMessage
 }
 
 export function setupAuth(app: Express) {
-  app.set("trust proxy", 1);
+  // Railway and similar hosts may add more than one proxy hop before the app.
+  // Trusting forwarded proto headers avoids silently dropping secure session cookies.
+  app.set("trust proxy", true);
   const shouldUsePostgresSessionStore = process.env.NODE_ENV === "production" || process.env.USE_PG_SESSION_STORE === "true";
   const store = shouldUsePostgresSessionStore
     ? new PgStore({
@@ -397,12 +399,13 @@ export function setupAuth(app: Express) {
     session({
       store,
       secret: resolveSessionSecret(),
+      proxy: process.env.NODE_ENV === "production",
       resave: false,
       saveUninitialized: false,
       cookie: {
         httpOnly: true,
         sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
+        secure: process.env.NODE_ENV === "production" ? "auto" : false,
         maxAge: sessionTtlMs,
       },
     }),
