@@ -5,7 +5,7 @@
     "buildCommand": "npm run build"
   },
   "deploy": {
-    "preDeployCommand": "npm run db:push",
+    "preDeployCommand": "npm run deploy:prepare",
     "startCommand": "npm run start",
     "healthcheckPath": "/api/health"
   }
