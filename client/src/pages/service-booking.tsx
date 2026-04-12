@@ -1046,7 +1046,7 @@ export default function ServiceBooking() {
     : undefined;
   const isCustomRequestMode = serviceMode === "cook-custom-menu" || serviceMode === "experience-custom-offer";
   const checkoutPreviewCopy = isCustomRequestMode ? customRequestCheckoutPreviewCopy : bookingCheckoutPreviewCopy;
-  const submitActionLabel = isCustomRequestMode ? "Submit request" : "Save booking";
+  const submitActionLabel = isCustomRequestMode ? "Submit request" : "Book";
   const experienceAddonTotal = serviceType === "experience" && service && "experienceType" in service
     ? getExperienceAddonTotal(service, serviceMode as ExperienceServiceMode | undefined, form.watch("serviceAddonSelections") || [])
     : 0;

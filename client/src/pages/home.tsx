@@ -312,7 +312,7 @@ export default function Home() {
           decoding="async"
           fetchPriority="high"
         />
-        <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/60 to-black/75" />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/52 via-black/40 to-black/58" />
 
         <div className="relative z-10 container mx-auto px-4 text-center md:px-8">
           <h1 className="mb-4 text-balance font-serif text-[2.35rem] font-medium leading-[1.02] text-white sm:mb-6 sm:text-5xl lg:text-7xl">
@@ -322,7 +322,38 @@ export default function Home() {
             Plan your Coast, without the chaos
           </p>
 
-          <form className="mb-6 lg:mb-0" onSubmit={handleAccommodationSearch}>
+          <div className="mx-auto mb-6 flex max-w-4xl flex-wrap items-center justify-center gap-x-3 gap-y-2 px-3 text-[0.74rem] font-medium tracking-[0.12em] text-[rgba(246,240,232,0.86)] [text-shadow:0_2px_10px_rgba(0,0,0,0.42)] sm:mb-8 sm:gap-x-4 sm:px-0 sm:text-[0.86rem]">
+            {heroServiceLabels.map((label, index) => (
+              <div key={label} className="flex items-center gap-3">
+                {index > 0 ? (
+                  <span className="h-1 w-1 rounded-full bg-[#f98b5b] shadow-[0_0_0_3px_rgba(249,139,91,0.14)]" aria-hidden="true" />
+                ) : null}
+                <span>{label}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="mb-6 flex flex-col items-center justify-center gap-3 sm:mb-8 sm:flex-row">
+            <Button
+              size="lg"
+              className={primaryCtaClassName}
+              onClick={scrollToServices}
+              data-testid="button-explore-services"
+            >
+              Browse All Services
+            </Button>
+            <Button
+              size="lg"
+              variant="ghost"
+              className="w-full rounded-xl border border-white/55 bg-white/8 px-6 py-5 text-base text-white shadow-lg backdrop-blur-sm hover:border-white/75 hover:bg-white/14 sm:w-auto sm:min-w-[16rem] sm:px-8 sm:py-6 sm:text-lg"
+              onClick={() => setLocation("/request-custom-service")}
+              data-testid="button-hero-custom-service"
+            >
+              Request a Custom Service
+            </Button>
+          </div>
+
+          <form onSubmit={handleAccommodationSearch}>
             <Card className="mx-auto max-w-4xl rounded-2xl border-none bg-card/95 p-4 shadow-2xl backdrop-blur-md sm:p-5 md:p-8 lg:order-last">
               <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-4">
                 <div className="md:col-span-1">
@@ -398,37 +429,6 @@ export default function Home() {
               </Button>
             </Card>
           </form>
-
-          <div className="mb-6 flex flex-col items-center justify-center gap-3 sm:flex-row lg:mb-16">
-            <Button
-              size="lg"
-              className={primaryCtaClassName}
-              onClick={scrollToServices}
-              data-testid="button-explore-services"
-            >
-              Browse All Services
-            </Button>
-            <Button
-              size="lg"
-              variant="ghost"
-              className="w-full rounded-xl border border-white/55 bg-white/8 px-6 py-5 text-base text-white shadow-lg backdrop-blur-sm hover:border-white/75 hover:bg-white/14 sm:w-auto sm:min-w-[16rem] sm:px-8 sm:py-6 sm:text-lg"
-              onClick={() => setLocation("/request-custom-service")}
-              data-testid="button-hero-custom-service"
-            >
-              Request a Custom Service
-            </Button>
-          </div>
-
-          <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-center gap-x-3 gap-y-2 px-3 text-[0.74rem] font-medium tracking-[0.12em] text-[rgba(246,240,232,0.86)] [text-shadow:0_2px_10px_rgba(0,0,0,0.42)] sm:gap-x-4 sm:px-0 sm:text-[0.86rem] lg:mb-8">
-            {heroServiceLabels.map((label, index) => (
-              <div key={label} className="flex items-center gap-3">
-                {index > 0 ? (
-                  <span className="h-1 w-1 rounded-full bg-[#f98b5b] shadow-[0_0_0_3px_rgba(249,139,91,0.14)]" aria-hidden="true" />
-                ) : null}
-                <span>{label}</span>
-              </div>
-            ))}
-          </div>
         </div>
       </section>
 

@@ -196,6 +196,37 @@ function getSupportedModes(service: ConciergeService): string[] {
   ];
 }
 
+function getServiceModeLabel(mode?: string | null) {
+  switch (mode) {
+    case "car-chauffeur-day":
+      return "Chauffeur day";
+    case "car-chauffeur-hourly":
+      return "Chauffeur per hour";
+    case "car-self-drive-day":
+      return "Self-drive day";
+    case "cook-service-fee":
+      return "Chef service fee";
+    case "cook-inclusive":
+      return "Chef inclusive";
+    case "errand-base":
+      return "Base support";
+    case "errand-shopping":
+      return "Shopping support";
+    case "errand-laundry":
+      return "Laundry support";
+    case "errand-house-cleaning":
+      return "House cleaning";
+    case "experience-private":
+      return "Private experience";
+    case "experience-shared":
+      return "Shared departure";
+    case "experience-custom-offer":
+      return "Tailored experience";
+    default:
+      return "Offer";
+  }
+}
+
 function getPreferredMode(service: ConciergeService, suggestedMode?: string) {
   const supportedModes = getSupportedModes(service);
   if (suggestedMode && supportedModes.includes(suggestedMode)) {
@@ -358,22 +389,9 @@ export default function Booking() {
     },
   });
 
-  const toggleService = (serviceId: string) => {
-    const service = availableConciergeServices.find((item) => item.id === serviceId);
-    const isCurrentlySelected = selectedServices.includes(serviceId);
-    setSelectedServices((prev) =>
-      prev.includes(serviceId)
-        ? prev.filter((currentId) => currentId !== serviceId)
-        : [...prev, serviceId],
-    );
-    if (!service) return;
-
-    if (isCurrentlySelected) {
-      setStayServiceSelections((prev) => prev.filter((selection) => selection.serviceId !== serviceId));
-      return;
-    }
-
-    setStayServiceSelections((prev) => upsertStaySelection(prev, buildDefaultStaySelection(service)));
+  const removeSelectedService = (serviceId: string) => {
+    setSelectedServices((current) => current.filter((currentId) => currentId !== serviceId));
+    setStayServiceSelections((current) => current.filter((selection) => selection.serviceId !== serviceId));
   };
 
   const getServicePrice = (service: AddonService): number => {
@@ -1396,9 +1414,6 @@ export default function Booking() {
                             <p className="mt-1 text-sm text-muted-foreground">
                               Optional: explore every ranked stay add-on beyond the tailored picks.
                             </p>
-                            <p className="mt-2 max-w-2xl text-xs leading-5 text-muted-foreground sm:text-sm">
-                              Only live partner-backed services show up here, so each add-on can route cleanly to its provider.
-                            </p>
                           </div>
                           <ChevronDown className={`h-5 w-5 text-muted-foreground transition-transform ${isBrowseAllAddonsOpen ? "rotate-180" : ""}`} />
                         </button>
@@ -1447,6 +1462,8 @@ export default function Booking() {
                                             ? ChefHat
                                             : ShoppingBag;
                                         const isSelected = selectedServices.includes(service.id);
+                                        const existingSelection = getExistingSelection(service.id);
+                                        const supportedModes = getSupportedModes(service);
 
                                         return (
                                           <div
@@ -1459,7 +1476,14 @@ export default function Booking() {
                                             <div className="flex items-start gap-4">
                                               <Checkbox
                                                 checked={isSelected}
-                                                onCheckedChange={() => toggleService(service.id)}
+                                                onCheckedChange={() => {
+                                                  if (isSelected) {
+                                                    removeSelectedService(service.id);
+                                                    return;
+                                                  }
+
+                                                  openSelectionDialog(service.id);
+                                                }}
                                                 data-testid={`checkbox-service-${service.id}`}
                                               />
                                               <div className="min-w-0 flex-1">
@@ -1499,6 +1523,50 @@ export default function Booking() {
                                                     ))}
                                                   </div>
                                                 ) : null}
+
+                                                <div className="mt-3 flex flex-wrap gap-2">
+                                                  {supportedModes.map((mode) => (
+                                                    <Badge
+                                                      key={`${service.id}-${mode}`}
+                                                      variant="outline"
+                                                      className={existingSelection?.serviceMode === mode ? "border-primary/40 bg-primary/10 text-primary" : "text-xs"}
+                                                    >
+                                                      {getServiceModeLabel(mode)}
+                                                    </Badge>
+                                                  ))}
+                                                </div>
+
+                                                {existingSelection ? (
+                                                  <div className="mt-3 rounded-xl border border-primary/20 bg-primary/10 px-3 py-2 text-sm text-foreground">
+                                                    Selected offer: {getServiceModeLabel(existingSelection.serviceMode)}
+                                                  </div>
+                                                ) : (
+                                                  <p className="mt-3 text-sm text-muted-foreground">
+                                                    Choose this add-on to pick the exact offer that fits this stay.
+                                                  </p>
+                                                )}
+
+                                                <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                                                  <Button
+                                                    type="button"
+                                                    className="sm:flex-1"
+                                                    onClick={() => openSelectionDialog(service.id)}
+                                                    data-testid={`button-service-offer-${service.id}`}
+                                                  >
+                                                    {isSelected ? "Edit selected offer" : "Choose offer"}
+                                                  </Button>
+                                                  {isSelected ? (
+                                                    <Button
+                                                      type="button"
+                                                      variant="outline"
+                                                      className="sm:w-auto"
+                                                      onClick={() => removeSelectedService(service.id)}
+                                                      data-testid={`button-remove-service-${service.id}`}
+                                                    >
+                                                      Remove
+                                                    </Button>
+                                                  ) : null}
+                                                </div>
                                               </div>
                                             </div>
                                           </div>
@@ -1569,7 +1637,7 @@ export default function Booking() {
                     disabled={createBookingMutation.isPending}
                     data-testid="button-complete-booking"
                   >
-                    Save booking
+                    Book
                   </Button>
                 </div>
 
@@ -1773,7 +1841,7 @@ export default function Booking() {
             className="min-h-11 shrink-0 px-5"
             disabled={createBookingMutation.isPending}
           >
-            Save booking
+            Book
           </Button>
         </div>
       </div>
@@ -1812,35 +1880,15 @@ export default function Booking() {
                     <SelectTrigger className="text-base sm:text-sm">
                       <SelectValue placeholder="Choose mode" />
                     </SelectTrigger>
-                    <SelectContent>
-                      {configuringService.category === "cars" ? (
-                        <>
-                          {configuringServiceModes.includes("car-chauffeur-day") ? <SelectItem value="car-chauffeur-day">Chauffeur day support</SelectItem> : null}
-                          {configuringServiceModes.includes("car-chauffeur-hourly") ? <SelectItem value="car-chauffeur-hourly">Hourly chauffeur</SelectItem> : null}
-                          {configuringServiceModes.includes("car-self-drive-day") ? <SelectItem value="car-self-drive-day">Self-drive day support</SelectItem> : null}
-                        </>
-                      ) : configuringService.category === "cooks" ? (
-                        <>
-                          {configuringServiceModes.includes("cook-service-fee") ? <SelectItem value="cook-service-fee">Chef service fee</SelectItem> : null}
-                          {configuringServiceModes.includes("cook-inclusive") ? <SelectItem value="cook-inclusive">Chef inclusive</SelectItem> : null}
-                        </>
-                      ) : configuringService.category === "errands" ? (
-                        <>
-                          {configuringServiceModes.includes("errand-base") ? <SelectItem value="errand-base">Base support</SelectItem> : null}
-                          {configuringServiceModes.includes("errand-shopping") ? <SelectItem value="errand-shopping">Shopping support</SelectItem> : null}
-                          {configuringServiceModes.includes("errand-laundry") ? <SelectItem value="errand-laundry">Laundry support</SelectItem> : null}
-                          {configuringServiceModes.includes("errand-house-cleaning") ? <SelectItem value="errand-house-cleaning">House cleaning</SelectItem> : null}
-                        </>
-                      ) : (
-                        <>
-                          {configuringServiceModes.includes("experience-private") ? <SelectItem value="experience-private">Private experience</SelectItem> : null}
-                          {configuringServiceModes.includes("experience-shared") ? <SelectItem value="experience-shared">Shared departure</SelectItem> : null}
-                          {configuringServiceModes.includes("experience-custom-offer") ? <SelectItem value="experience-custom-offer">Tailored experience</SelectItem> : null}
-                        </>
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
+                      <SelectContent>
+                        {configuringServiceModes.map((mode) => (
+                          <SelectItem key={mode} value={mode}>
+                            {getServiceModeLabel(mode)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
                 {(configuringService.category === "cars" || configuringService.category === "cooks" || configuringService.category === "errands") && draftSelection.serviceMode !== "car-chauffeur-hourly" ? (
                   <div className="space-y-2">
