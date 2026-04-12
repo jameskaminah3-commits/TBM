@@ -1468,6 +1468,193 @@ export class DatabaseStorage implements IStorage {
     return columns;
   }
 
+  private async selectCompatibleBlogPosts(whereClause?: string, params: unknown[] = []): Promise<BlogPost[]> {
+    await this.ensureMarketingTables();
+    const columns = await this.getTableColumns("blog_posts");
+    const selectParts = [
+      "id",
+      "title",
+      "slug",
+      "excerpt",
+      columns.has("content_markdown") ? 'content_markdown AS "contentMarkdown"' : "''::text AS \"contentMarkdown\"",
+      columns.has("featured_image") ? 'featured_image AS "featuredImage"' : 'NULL::text AS "featuredImage"',
+      columns.has("featured_image_alt") ? 'featured_image_alt AS "featuredImageAlt"' : 'NULL::text AS "featuredImageAlt"',
+      "author",
+      columns.has("seo_title") ? 'seo_title AS "seoTitle"' : 'NULL::text AS "seoTitle"',
+      columns.has("seo_description") ? 'seo_description AS "seoDescription"' : 'NULL::text AS "seoDescription"',
+      columns.has("seo_keywords") ? 'seo_keywords AS "seoKeywords"' : 'NULL::text AS "seoKeywords"',
+      columns.has("primary_cta_label") ? 'primary_cta_label AS "primaryCtaLabel"' : 'NULL::text AS "primaryCtaLabel"',
+      columns.has("primary_cta_href") ? 'primary_cta_href AS "primaryCtaHref"' : 'NULL::text AS "primaryCtaHref"',
+      columns.has("primary_promo_code") ? 'primary_promo_code AS "primaryPromoCode"' : 'NULL::varchar AS "primaryPromoCode"',
+      columns.has("published_at") ? 'published_at AS "publishedAt"' : 'NULL::text AS "publishedAt"',
+      columns.has("status") ? "status" : "'draft'::text AS status",
+      columns.has("created_at") ? 'created_at AS "createdAt"' : 'NULL::text AS "createdAt"',
+      columns.has("updated_at") ? 'updated_at AS "updatedAt"' : 'NULL::text AS "updatedAt"',
+    ];
+
+    const suffix = whereClause ? ` ${whereClause}` : "";
+    const result = await pool.query<BlogPost>(
+      `SELECT ${selectParts.join(", ")} FROM blog_posts${suffix}`,
+      params,
+    );
+    return result.rows;
+  }
+
+  private async selectCompatibleStays(whereClause?: string, params: unknown[] = []): Promise<Stay[]> {
+    const columns = await this.getTableColumns("stays");
+    const selectParts = [
+      "id",
+      "title",
+      columns.has("location") ? "location" : "''::text AS location",
+      "description",
+      columns.has("price") ? "price" : "0 AS price",
+      columns.has("rating") ? "rating" : "5 AS rating",
+      columns.has("review_count") ? 'review_count AS "reviewCount"' : '0 AS "reviewCount"',
+      columns.has("max_occupancy") ? 'max_occupancy AS "maxOccupancy"' : '1 AS "maxOccupancy"',
+      columns.has("bedrooms") ? "bedrooms" : "0 AS bedrooms",
+      columns.has("bathrooms") ? "bathrooms" : "0 AS bathrooms",
+      columns.has("image_url") ? 'image_url AS "imageUrl"' : 'NULL::text AS "imageUrl"',
+      columns.has("gallery_urls") ? 'gallery_urls AS "galleryUrls"' : '\'{}\'::text[] AS "galleryUrls"',
+      columns.has("media_type") ? 'media_type AS "mediaType"' : '\'image\'::varchar AS "mediaType"',
+      columns.has("is_public") ? 'is_public AS "isPublic"' : 'false AS "isPublic"',
+      columns.has("manager_user_id") ? 'manager_user_id AS "managerUserId"' : 'NULL::varchar AS "managerUserId"',
+      columns.has("features") ? "features" : '\'{}\'::text[] AS features',
+      columns.has("created_at") ? 'created_at AS "createdAt"' : 'NULL::text AS "createdAt"',
+      columns.has("updated_at") ? 'updated_at AS "updatedAt"' : 'NULL::text AS "updatedAt"',
+    ];
+
+    const suffix = whereClause ? ` ${whereClause}` : "";
+    const result = await pool.query<Stay>(
+      `SELECT ${selectParts.join(", ")} FROM stays${suffix}`,
+      params,
+    );
+    return result.rows.map((stay) => normalizeManagerScopedRecord(stay));
+  }
+
+  private async selectCompatibleCars(whereClause?: string, params: unknown[] = []): Promise<Car[]> {
+    const columns = await this.getTableColumns("cars");
+    const selectParts = [
+      "id",
+      "model",
+      columns.has("location") ? "location" : "''::text AS location",
+      columns.has("price_per_day") ? 'price_per_day AS "pricePerDay"' : 'NULL::integer AS "pricePerDay"',
+      columns.has("price_with_driver") ? 'price_with_driver AS "priceWithDriver"' : '0 AS "priceWithDriver"',
+      columns.has("price_with_driver_hourly") ? 'price_with_driver_hourly AS "priceWithDriverHourly"' : 'NULL::integer AS "priceWithDriverHourly"',
+      columns.has("chauffeur_zones") ? 'chauffeur_zones AS "chauffeurZones"' : '\'[]\'::jsonb AS "chauffeurZones"',
+      columns.has("self_drive_mileage_limit_km") ? 'self_drive_mileage_limit_km AS "selfDriveMileageLimitKm"' : 'NULL::integer AS "selfDriveMileageLimitKm"',
+      columns.has("self_drive_extra_km_rate") ? 'self_drive_extra_km_rate AS "selfDriveExtraKmRate"' : 'NULL::integer AS "selfDriveExtraKmRate"',
+      columns.has("seats") ? "seats" : "1 AS seats",
+      columns.has("transmission") ? "transmission" : "'automatic'::text AS transmission",
+      columns.has("description") ? "description" : "''::text AS description",
+      columns.has("rating") ? "rating" : "5 AS rating",
+      columns.has("review_count") ? 'review_count AS "reviewCount"' : '0 AS "reviewCount"',
+      columns.has("image_url") ? 'image_url AS "imageUrl"' : 'NULL::text AS "imageUrl"',
+      columns.has("gallery_urls") ? 'gallery_urls AS "galleryUrls"' : '\'{}\'::text[] AS "galleryUrls"',
+      columns.has("media_type") ? 'media_type AS "mediaType"' : '\'image\'::varchar AS "mediaType"',
+      columns.has("is_public") ? 'is_public AS "isPublic"' : 'false AS "isPublic"',
+      columns.has("manager_user_id") ? 'manager_user_id AS "managerUserId"' : 'NULL::varchar AS "managerUserId"',
+      columns.has("features") ? "features" : '\'{}\'::text[] AS features',
+      columns.has("created_at") ? 'created_at AS "createdAt"' : 'NULL::text AS "createdAt"',
+      columns.has("updated_at") ? 'updated_at AS "updatedAt"' : 'NULL::text AS "updatedAt"',
+    ];
+
+    const suffix = whereClause ? ` ${whereClause}` : "";
+    const result = await pool.query<Car>(
+      `SELECT ${selectParts.join(", ")} FROM cars${suffix}`,
+      params,
+    );
+    return result.rows.map((car) => normalizeManagerScopedRecord(car));
+  }
+
+  private async selectCompatibleCooks(whereClause?: string, params: unknown[] = []): Promise<Cook[]> {
+    const columns = await this.getTableColumns("cooks");
+    const selectParts = [
+      "id",
+      "title",
+      columns.has("location") ? "location" : "''::text AS location",
+      columns.has("service_type") ? 'service_type AS "serviceType"' : '\'Private chef experience\'::text AS "serviceType"',
+      columns.has("speciality") ? "speciality" : "''::text AS speciality",
+      columns.has("max_guests") ? 'max_guests AS "maxGuests"' : '2 AS "maxGuests"',
+      columns.has("minimum_guests") ? 'minimum_guests AS "minimumGuests"' : '2 AS "minimumGuests"',
+      columns.has("price_per_session") ? 'price_per_session AS "pricePerSession"' : '0 AS "pricePerSession"',
+      columns.has("service_fee") ? 'service_fee AS "serviceFee"' : '0 AS "serviceFee"',
+      columns.has("inclusive_price") ? 'inclusive_price AS "inclusivePrice"' : '0 AS "inclusivePrice"',
+      columns.has("extra_guest_service_fee") ? 'extra_guest_service_fee AS "extraGuestServiceFee"' : '0 AS "extraGuestServiceFee"',
+      columns.has("extra_guest_inclusive_price") ? 'extra_guest_inclusive_price AS "extraGuestInclusivePrice"' : '0 AS "extraGuestInclusivePrice"',
+      columns.has("ingredients_included") ? 'ingredients_included AS "ingredientsIncluded"' : 'true AS "ingredientsIncluded"',
+      columns.has("shopping_included") ? 'shopping_included AS "shoppingIncluded"' : 'true AS "shoppingIncluded"',
+      columns.has("custom_menu_enabled") ? 'custom_menu_enabled AS "customMenuEnabled"' : 'true AS "customMenuEnabled"',
+      columns.has("custom_menu_request_fee") ? 'custom_menu_request_fee AS "customMenuRequestFee"' : '0 AS "customMenuRequestFee"',
+      columns.has("custom_menu_request_fee_kes") ? 'custom_menu_request_fee_kes AS "customMenuRequestFeeKes"' : '0 AS "customMenuRequestFeeKes"',
+      columns.has("description") ? "description" : "''::text AS description",
+      columns.has("sample_menus") ? 'sample_menus AS "sampleMenus"' : '\'{}\'::text[] AS "sampleMenus"',
+      columns.has("rating") ? "rating" : "5 AS rating",
+      columns.has("review_count") ? 'review_count AS "reviewCount"' : '0 AS "reviewCount"',
+      columns.has("image_url") ? 'image_url AS "imageUrl"' : 'NULL::text AS "imageUrl"',
+      columns.has("gallery_urls") ? 'gallery_urls AS "galleryUrls"' : '\'{}\'::text[] AS "galleryUrls"',
+      columns.has("media_type") ? 'media_type AS "mediaType"' : '\'image\'::varchar AS "mediaType"',
+      columns.has("is_public") ? 'is_public AS "isPublic"' : 'false AS "isPublic"',
+      columns.has("manager_user_id") ? 'manager_user_id AS "managerUserId"' : 'NULL::varchar AS "managerUserId"',
+      columns.has("features") ? "features" : '\'{}\'::text[] AS features',
+      columns.has("created_at") ? 'created_at AS "createdAt"' : 'NULL::text AS "createdAt"',
+      columns.has("updated_at") ? 'updated_at AS "updatedAt"' : 'NULL::text AS "updatedAt"',
+    ];
+
+    const suffix = whereClause ? ` ${whereClause}` : "";
+    const result = await pool.query<Cook>(
+      `SELECT ${selectParts.join(", ")} FROM cooks${suffix}`,
+      params,
+    );
+    return result.rows.map((cook) => normalizeManagerScopedRecord(cook));
+  }
+
+  private async selectCompatibleExperiences(whereClause?: string, params: unknown[] = []): Promise<Experience[]> {
+    const columns = await this.getTableColumns("experiences");
+    const selectParts = [
+      "id",
+      "title",
+      columns.has("location") ? "location" : "''::text AS location",
+      columns.has("experience_location") ? 'experience_location AS "experienceLocation"' : "''::text AS \"experienceLocation\"",
+      columns.has("experience_type") ? 'experience_type AS "experienceType"' : '\'Curated experience\'::text AS "experienceType"',
+      columns.has("price") ? "price" : "0 AS price",
+      columns.has("duration_hours") ? 'duration_hours AS "durationHours"' : '3 AS "durationHours"',
+      columns.has("min_guests") ? 'min_guests AS "minGuests"' : '1 AS "minGuests"',
+      columns.has("max_guests") ? 'max_guests AS "maxGuests"' : '10 AS "maxGuests"',
+      columns.has("meeting_point") ? 'meeting_point AS "meetingPoint"' : 'NULL::text AS "meetingPoint"',
+      columns.has("inclusions") ? "inclusions" : '\'{}\'::text[] AS inclusions',
+      columns.has("exclusions") ? "exclusions" : '\'{}\'::text[] AS exclusions',
+      columns.has("custom_quote_enabled") ? 'custom_quote_enabled AS "customQuoteEnabled"' : 'false AS "customQuoteEnabled"',
+      columns.has("private_enabled") ? 'private_enabled AS "privateEnabled"' : 'true AS "privateEnabled"',
+      columns.has("shared_enabled") ? 'shared_enabled AS "sharedEnabled"' : 'false AS "sharedEnabled"',
+      columns.has("private_price_per_person") ? 'private_price_per_person AS "privatePricePerPerson"' : '0 AS "privatePricePerPerson"',
+      columns.has("private_minimum_guests") ? 'private_minimum_guests AS "privateMinimumGuests"' : '2 AS "privateMinimumGuests"',
+      columns.has("private_addons") ? 'private_addons AS "privateAddons"' : '\'[]\'::jsonb AS "privateAddons"',
+      columns.has("shared_price_per_person") ? 'shared_price_per_person AS "sharedPricePerPerson"' : '0 AS "sharedPricePerPerson"',
+      columns.has("shared_minimum_guests") ? 'shared_minimum_guests AS "sharedMinimumGuests"' : '4 AS "sharedMinimumGuests"',
+      columns.has("shared_max_capacity") ? 'shared_max_capacity AS "sharedMaxCapacity"' : '10 AS "sharedMaxCapacity"',
+      columns.has("shared_addons") ? 'shared_addons AS "sharedAddons"' : '\'[]\'::jsonb AS "sharedAddons"',
+      columns.has("shared_departures") ? 'shared_departures AS "sharedDepartures"' : '\'[]\'::jsonb AS "sharedDepartures"',
+      columns.has("description") ? "description" : "''::text AS description",
+      columns.has("rating") ? "rating" : "5 AS rating",
+      columns.has("review_count") ? 'review_count AS "reviewCount"' : '0 AS "reviewCount"',
+      columns.has("image_url") ? 'image_url AS "imageUrl"' : 'NULL::text AS "imageUrl"',
+      columns.has("gallery_urls") ? 'gallery_urls AS "galleryUrls"' : '\'{}\'::text[] AS "galleryUrls"',
+      columns.has("media_type") ? 'media_type AS "mediaType"' : '\'image\'::varchar AS "mediaType"',
+      columns.has("is_public") ? 'is_public AS "isPublic"' : 'false AS "isPublic"',
+      columns.has("manager_user_id") ? 'manager_user_id AS "managerUserId"' : 'NULL::varchar AS "managerUserId"',
+      columns.has("features") ? "features" : '\'{}\'::text[] AS features',
+      columns.has("created_at") ? 'created_at AS "createdAt"' : 'NULL::text AS "createdAt"',
+      columns.has("updated_at") ? 'updated_at AS "updatedAt"' : 'NULL::text AS "updatedAt"',
+    ];
+
+    const suffix = whereClause ? ` ${whereClause}` : "";
+    const result = await pool.query<Experience>(
+      `SELECT ${selectParts.join(", ")} FROM experiences${suffix}`,
+      params,
+    );
+    return result.rows.map((experience) => normalizeManagerScopedRecord(experience));
+  }
+
   private async ensureInboxTables() {
     if (this.inboxTablesEnsured) {
       return;
@@ -3129,28 +3316,23 @@ export class DatabaseStorage implements IStorage {
 
   // Blog Posts
   async getBlogPosts(): Promise<BlogPost[]> {
-    await this.ensureMarketingTables();
-    return await db.select().from(blogPosts).orderBy(desc(blogPosts.updatedAt));
+    return await this.selectCompatibleBlogPosts('ORDER BY "updatedAt" DESC NULLS LAST');
   }
 
   async getPublishedBlogPosts(): Promise<BlogPost[]> {
-    await this.ensureMarketingTables();
-    return await db
-      .select()
-      .from(blogPosts)
-      .where(eq(blogPosts.status, 'published'))
-      .orderBy(desc(blogPosts.publishedAt), desc(blogPosts.updatedAt));
+    return await this.selectCompatibleBlogPosts(
+      'WHERE status = $1 ORDER BY "publishedAt" DESC NULLS LAST, "updatedAt" DESC NULLS LAST',
+      ["published"],
+    );
   }
 
   async getBlogPost(id: string): Promise<BlogPost | undefined> {
-    await this.ensureMarketingTables();
-    const [blogPost] = await db.select().from(blogPosts).where(eq(blogPosts.id, id));
+    const [blogPost] = await this.selectCompatibleBlogPosts("WHERE id = $1 LIMIT 1", [id]);
     return blogPost;
   }
 
   async getBlogPostBySlug(slug: string): Promise<BlogPost | undefined> {
-    await this.ensureMarketingTables();
-    const [blogPost] = await db.select().from(blogPosts).where(eq(blogPosts.slug, slug));
+    const [blogPost] = await this.selectCompatibleBlogPosts("WHERE slug = $1 LIMIT 1", [slug]);
     return blogPost;
   }
 
@@ -3574,12 +3756,12 @@ export class DatabaseStorage implements IStorage {
 
   // Stays
   async getStays(): Promise<Stay[]> {
-    return (await db.select().from(stays)).map((stay) => normalizeManagerScopedRecord(stay));
+    return await this.selectCompatibleStays();
   }
 
   async getStay(id: string): Promise<Stay | undefined> {
-    const [stay] = await db.select().from(stays).where(eq(stays.id, id));
-    return stay ? normalizeManagerScopedRecord(stay) : undefined;
+    const [stay] = await this.selectCompatibleStays("WHERE id = $1 LIMIT 1", [id]);
+    return stay;
   }
 
   async getStaysByManagerUserId(managerUserId: string): Promise<Stay[]> {
@@ -3611,12 +3793,12 @@ export class DatabaseStorage implements IStorage {
 
   // Cars
   async getCars(): Promise<Car[]> {
-    return (await db.select().from(cars)).map((car) => normalizeManagerScopedRecord(car));
+    return await this.selectCompatibleCars();
   }
 
   async getCar(id: string): Promise<Car | undefined> {
-    const [car] = await db.select().from(cars).where(eq(cars.id, id));
-    return car ? normalizeManagerScopedRecord(car) : undefined;
+    const [car] = await this.selectCompatibleCars("WHERE id = $1 LIMIT 1", [id]);
+    return car;
   }
 
   async createCar(data: InsertCar): Promise<Car> {
@@ -3644,12 +3826,12 @@ export class DatabaseStorage implements IStorage {
 
   // Cooks
   async getCooks(): Promise<Cook[]> {
-    return (await db.select().from(cooks)).map((cook) => normalizeManagerScopedRecord(cook));
+    return await this.selectCompatibleCooks();
   }
 
   async getCook(id: string): Promise<Cook | undefined> {
-    const [cook] = await db.select().from(cooks).where(eq(cooks.id, id));
-    return cook ? normalizeManagerScopedRecord(cook) : undefined;
+    const [cook] = await this.selectCompatibleCooks("WHERE id = $1 LIMIT 1", [id]);
+    return cook;
   }
 
   async createCook(data: InsertCook): Promise<Cook> {
@@ -3765,12 +3947,12 @@ export class DatabaseStorage implements IStorage {
 
   // Experiences
   async getExperiences(): Promise<Experience[]> {
-    return (await db.select().from(experiences)).map((experience) => normalizeManagerScopedRecord(experience));
+    return await this.selectCompatibleExperiences();
   }
 
   async getExperience(id: string): Promise<Experience | undefined> {
-    const [experience] = await db.select().from(experiences).where(eq(experiences.id, id));
-    return experience ? normalizeManagerScopedRecord(experience) : undefined;
+    const [experience] = await this.selectCompatibleExperiences("WHERE id = $1 LIMIT 1", [id]);
+    return experience;
   }
 
   private normalizeExperienceWriteData(data: Partial<InsertExperience>) {
