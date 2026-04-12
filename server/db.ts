@@ -9,6 +9,12 @@ const { Pool } = pg;
 
 dotenv.config();
 
+try {
+  dns.setDefaultResultOrder("ipv4first");
+} catch {
+  // Older Node runtimes may not support this API; Railway uses Node 20+.
+}
+
 type DnsCacheEntry = {
   address: string;
   family: 4 | 6;
