@@ -1,9 +1,30 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
+async function getResponseErrorMessage(res: Response) {
+  const text = (await res.text()).trim();
+  if (!text) {
+    return res.statusText || "Request failed";
+  }
+
+  try {
+    const parsed = JSON.parse(text) as { error?: unknown; message?: unknown };
+    if (typeof parsed.error === "string" && parsed.error.trim()) {
+      return parsed.error;
+    }
+    if (typeof parsed.message === "string" && parsed.message.trim()) {
+      return parsed.message;
+    }
+  } catch {
+    // Fall back to the raw response body when the server did not return JSON.
+  }
+
+  return text;
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
-    const text = (await res.text()) || res.statusText;
-    throw new Error(`${res.status}: ${text}`);
+    const message = await getResponseErrorMessage(res);
+    throw new Error(message);
   }
 }
 

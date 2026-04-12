@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import type { Express } from "express";
+import type { Express, Response as ExpressResponse } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import {
@@ -163,6 +163,65 @@ function isBookablePublicListing(listing: { isPublic: boolean; managerUserId?: s
 
 function logPublicFetchFailure(resource: string, error: unknown) {
   console.error(`[API] Failed to fetch ${resource}:`, error);
+}
+
+function getErrorCode(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error && typeof (error as { code?: unknown }).code === "string"
+    ? ((error as { code: string }).code || "").toUpperCase()
+    : "";
+}
+
+function isTransientDatabaseError(error: unknown) {
+  const code = getErrorCode(error);
+  if (["ECONNREFUSED", "ECONNRESET", "ENOTFOUND", "ETIMEDOUT", "57P01", "57P02", "57P03"].includes(code)) {
+    return true;
+  }
+
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return [
+    "connection terminated unexpectedly",
+    "server closed the connection unexpectedly",
+    "timeout expired",
+    "getaddrinfo enotfound",
+    "could not connect",
+    "failed to fetch",
+  ].some((fragment) => message.includes(fragment));
+}
+
+function isDatabaseSetupError(error: unknown) {
+  const code = getErrorCode(error);
+  if (["3D000", "3F000", "42P01"].includes(code)) {
+    return true;
+  }
+
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return message.includes("does not exist") || message.includes("relation ");
+}
+
+function sendPublicCatalogFailure(resource: string, res: ExpressResponse, error: unknown) {
+  logPublicFetchFailure(resource, error);
+
+  if (isDatabaseSetupError(error)) {
+    return res.status(503).json({
+      error: "Service listings are still being prepared. Please try again in a few minutes.",
+    });
+  }
+
+  if (isTransientDatabaseError(error)) {
+    return res.status(503).json({
+      error: "Service listings are temporarily unavailable while we reconnect to the database. Please try again.",
+    });
+  }
+
+  return res.status(500).json({ error: `Failed to fetch ${resource}` });
 }
 
 function getUnavailableBookingMessage(name: string) {
@@ -1955,6 +2014,13 @@ function getReviewTargetsForBooking(booking: any) {
 export async function registerRoutes(app: Express): Promise<Server> {
   setupAuth(app);
   registerAuthRoutes(app);
+
+  app.get("/api/health", (_req, res) => {
+    res.json({
+      status: "ok",
+      timestamp: new Date().toISOString(),
+    });
+  });
 
   app.get("/api/currency/rates", async (_req, res) => {
     try {
@@ -6402,7 +6468,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const visibleStays = stays.filter((stay: any) => isBookablePublicListing(stay));
       res.json(visibleStays);
     } catch (error) {
-      res.status(500).json({ error: "Failed to fetch stays" });
+      sendPublicCatalogFailure("stays", res, error);
     }
   });
 
@@ -6436,8 +6502,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const cars = await storage.getCars();
       res.json(cars.filter((car: any) => isBookablePublicListing(car)));
     } catch (error) {
-      logPublicFetchFailure("cars", error);
-      res.status(500).json({ error: "Failed to fetch cars" });
+      sendPublicCatalogFailure("cars", res, error);
     }
   });
 
@@ -6519,8 +6584,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const cooks = await storage.getCooks();
       res.json(cooks.filter((cook: any) => isBookablePublicListing(cook)));
     } catch (error) {
-      logPublicFetchFailure("cooks", error);
-      res.status(500).json({ error: "Failed to fetch cooks" });
+      sendPublicCatalogFailure("cooks", res, error);
     }
   });
 
@@ -6529,8 +6593,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const errands = await storage.getErrands();
       res.json(errands.filter((errand: any) => isBookablePublicListing(errand)));
     } catch (error) {
-      logPublicFetchFailure("errands", error);
-      res.status(500).json({ error: "Failed to fetch errands" });
+      sendPublicCatalogFailure("errands", res, error);
     }
   });
 
@@ -6539,8 +6602,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const experiences = await storage.getExperiences();
       res.json(experiences.filter((experience: any) => isBookablePublicListing(experience)));
     } catch (error) {
-      logPublicFetchFailure("experiences", error);
-      res.status(500).json({ error: "Failed to fetch experiences" });
+      sendPublicCatalogFailure("experiences", res, error);
     }
   });
 

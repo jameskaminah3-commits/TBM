@@ -16,17 +16,48 @@ type DnsCacheEntry = {
 };
 
 const dohCache = new Map<string, DnsCacheEntry[]>();
+const databaseUrl = process.env.DATABASE_URL ?? "";
+const publicDnsServers = ["1.1.1.1", "1.0.0.1", "8.8.8.8", "8.8.4.4"] as const;
 
-function getDatabaseHostname() {
+function parseDatabaseUrl() {
   try {
-    return new URL(process.env.DATABASE_URL ?? "").hostname || null;
+    return new URL(databaseUrl);
   } catch {
     return null;
   }
 }
 
-function isSupabasePoolerHostname(hostname: string) {
-  return hostname.endsWith(".pooler.supabase.com");
+function getDatabaseHostname() {
+  return parseDatabaseUrl()?.hostname || null;
+}
+
+function isSupabaseDatabaseHostname(hostname: string) {
+  return hostname.endsWith(".pooler.supabase.com") || hostname.endsWith(".supabase.co");
+}
+
+function isPrivateDatabaseHostname(hostname: string) {
+  return hostname === "localhost"
+    || hostname === "127.0.0.1"
+    || hostname === "::1"
+    || hostname.endsWith(".local");
+}
+
+function shouldUseDatabaseSsl() {
+  const parsedUrl = parseDatabaseUrl();
+  if (!parsedUrl) {
+    return false;
+  }
+
+  const sslMode = parsedUrl.searchParams.get("sslmode")?.trim().toLowerCase();
+  if (sslMode === "disable") {
+    return false;
+  }
+
+  if (sslMode) {
+    return true;
+  }
+
+  return !isPrivateDatabaseHostname(parsedUrl.hostname);
 }
 
 function requestDnsJson(options: {
@@ -157,9 +188,75 @@ async function resolveHostnameViaHttpsDns(hostname: string, preferredFamily: num
   return resolved;
 }
 
-function installSupabaseDnsFallback() {
+async function resolveHostnameViaPublicDnsResolver(hostname: string, preferredFamily: number) {
+  const cacheKey = `resolver:${hostname}:${preferredFamily || 0}`;
+  const cached = dohCache.get(cacheKey)?.filter((entry) => entry.expiresAt > Date.now()) ?? [];
+  if (cached.length > 0) {
+    return cached;
+  }
+
+  const resolver = new dns.Resolver();
+  resolver.setServers([...publicDnsServers]);
+  const resolve4 = (targetHostname: string) => new Promise<string[]>((resolve, reject) => {
+    resolver.resolve4(targetHostname, (error, addresses) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      resolve(addresses);
+    });
+  });
+  const resolve6 = (targetHostname: string) => new Promise<string[]>((resolve, reject) => {
+    resolver.resolve6(targetHostname, (error, addresses) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      resolve(addresses);
+    });
+  });
+
+  const preferredFamilies: Array<4 | 6> = preferredFamily === 6
+    ? [6, 4]
+    : preferredFamily === 4
+      ? [4, 6]
+      : [4, 6];
+
+  const resolved: DnsCacheEntry[] = [];
+
+  for (const family of preferredFamilies) {
+    try {
+      const addresses = family === 6
+        ? await resolve6(hostname)
+        : await resolve4(hostname);
+      if (addresses.length > 0) {
+        resolved.push(
+          ...addresses.map((address) => ({
+            address,
+            family,
+            expiresAt: Date.now() + 60_000,
+          })),
+        );
+        break;
+      }
+    } catch {
+      // Fall through to the next family or HTTPS DNS fallback.
+    }
+  }
+
+  if (resolved.length === 0) {
+    throw new Error(`Could not resolve ${hostname} via public DNS resolver fallback`);
+  }
+
+  dohCache.set(cacheKey, resolved);
+  return resolved;
+}
+
+function installDatabaseDnsFallback() {
   const hostname = getDatabaseHostname();
-  if (!hostname || !isSupabasePoolerHostname(hostname)) {
+  if (!hostname || !isSupabaseDatabaseHostname(hostname)) {
     return;
   }
 
@@ -180,14 +277,15 @@ function installSupabaseDnsFallback() {
       : false;
 
     const handleLookup = (error: NodeJS.ErrnoException | null, address: string | dns.LookupAddress[], resolvedFamily?: number) => {
-      if (!error || error.code !== "ENOTFOUND" || !isSupabasePoolerHostname(targetHostname)) {
+      if (!error || error.code !== "ENOTFOUND" || !isSupabaseDatabaseHostname(targetHostname)) {
         callback(error, address, resolvedFamily);
         return;
       }
 
-      void resolveHostnameViaHttpsDns(targetHostname, family)
+      void resolveHostnameViaPublicDnsResolver(targetHostname, family)
+        .catch(() => resolveHostnameViaHttpsDns(targetHostname, family))
         .then((entries) => {
-          console.warn(`[DB] Resolved ${targetHostname} via HTTPS DNS fallback.`);
+          console.warn(`[DB] Resolved ${targetHostname} via DNS fallback.`);
           if (wantsAll) {
             callback(null, entries.map((entry) => ({ address: entry.address, family: entry.family })));
             return;
@@ -197,7 +295,7 @@ function installSupabaseDnsFallback() {
           callback(null, preferred.address, preferred.family);
         })
         .catch((fallbackError) => {
-          console.error(`[DB] HTTPS DNS fallback failed for ${targetHostname}:`, fallbackError);
+          console.error(`[DB] DNS fallback failed for ${targetHostname}:`, fallbackError);
           callback(error, address, resolvedFamily);
         });
     };
@@ -216,13 +314,18 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-installSupabaseDnsFallback();
+installDatabaseDnsFallback();
 
 const basePoolConfig = {
   connectionString: process.env.DATABASE_URL,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 15000,
   keepAlive: true,
+  ssl: shouldUseDatabaseSsl()
+    ? {
+        rejectUnauthorized: false,
+      }
+    : undefined,
 };
 
 function resolvePoolMax() {
