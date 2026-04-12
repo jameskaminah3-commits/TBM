@@ -1,8 +1,8 @@
 import "dotenv/config";
-import dns from "dns";
-import https from "https";
-import path from "path";
-import { spawn } from "child_process";
+import { Resolver, isIP } from "node:dns";
+import https from "node:https";
+import path from "node:path";
+import { spawn } from "node:child_process";
 
 const publicDnsServers = ["1.1.1.1", "1.0.0.1", "8.8.8.8", "8.8.4.4"];
 
@@ -63,7 +63,7 @@ function requestDnsJson(options) {
 }
 
 async function resolveIpv4ViaPublicDns(hostname) {
-  const resolver = new dns.Resolver();
+  const resolver = new Resolver();
   resolver.setServers(publicDnsServers);
 
   try {
@@ -129,7 +129,7 @@ async function main() {
     NODE_OPTIONS: mergeNodeOptions(process.env.NODE_OPTIONS, "--dns-result-order=ipv4first"),
   };
 
-  if (!isPrivateHostname(hostname) && dns.isIP(hostname) === 0) {
+  if (!isPrivateHostname(hostname) && isIP(hostname) === 0) {
     const ipv4Address = await resolveIpv4ViaPublicDns(hostname);
     env.DATABASE_HOST_OVERRIDE = ipv4Address;
     env.DATABASE_SSL_SERVERNAME = hostname;
