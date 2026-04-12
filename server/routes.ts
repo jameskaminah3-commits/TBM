@@ -161,6 +161,10 @@ function isBookablePublicListing(listing: { isPublic: boolean; managerUserId?: s
   return Boolean(listing?.isPublic && hasAssignedManagerUserId(listing.managerUserId));
 }
 
+function logPublicFetchFailure(resource: string, error: unknown) {
+  console.error(`[API] Failed to fetch ${resource}:`, error);
+}
+
 function getUnavailableBookingMessage(name: string) {
   return `"${name}" is not available to book right now.`;
 }
@@ -2187,6 +2191,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const services = await storage.getServices();
       res.json(services);
     } catch (error) {
+      logPublicFetchFailure("services", error);
       res.status(500).json({ error: "Failed to fetch services" });
     }
   });
@@ -3506,6 +3511,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const posts = await storage.getPublishedBlogPosts();
       res.json(posts);
     } catch (error) {
+      logPublicFetchFailure("blog posts", error);
       res.status(500).json({ error: "Failed to fetch blog posts" });
     }
   });
@@ -3518,6 +3524,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       res.json(post);
     } catch (error) {
+      logPublicFetchFailure(`blog post '${req.params.slug}'`, error);
       res.status(500).json({ error: "Failed to fetch blog post" });
     }
   });
@@ -6429,6 +6436,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const cars = await storage.getCars();
       res.json(cars.filter((car: any) => isBookablePublicListing(car)));
     } catch (error) {
+      logPublicFetchFailure("cars", error);
       res.status(500).json({ error: "Failed to fetch cars" });
     }
   });
@@ -6511,6 +6519,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const cooks = await storage.getCooks();
       res.json(cooks.filter((cook: any) => isBookablePublicListing(cook)));
     } catch (error) {
+      logPublicFetchFailure("cooks", error);
       res.status(500).json({ error: "Failed to fetch cooks" });
     }
   });
@@ -6520,6 +6529,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const errands = await storage.getErrands();
       res.json(errands.filter((errand: any) => isBookablePublicListing(errand)));
     } catch (error) {
+      logPublicFetchFailure("errands", error);
       res.status(500).json({ error: "Failed to fetch errands" });
     }
   });
@@ -6529,6 +6539,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const experiences = await storage.getExperiences();
       res.json(experiences.filter((experience: any) => isBookablePublicListing(experience)));
     } catch (error) {
+      logPublicFetchFailure("experiences", error);
       res.status(500).json({ error: "Failed to fetch experiences" });
     }
   });

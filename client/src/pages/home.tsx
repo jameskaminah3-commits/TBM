@@ -23,6 +23,8 @@ import heroImageLarge from "@assets/generated_images/home-hero-1408.jpg";
 import heroImageSmall from "@assets/generated_images/home-hero-768.jpg";
 import chefStoryImage from "@assets/generated_images/home-chef-960.jpg";
 import messyWhatsappImage from "@assets/generated_images/home-whatsapp-420.jpg";
+import trustStoryImage from "@assets/generated_images/Luxury_beachfront_villa_hero_b917e1ae.png";
+import tailoredTripImage from "@assets/generated_images/Mediterranean_villa_accommodation_649da59e.png";
 import type { Stay, Car as CarType, Cook, Errand, Experience } from "@shared/schema";
 
 type ShowcaseItem = {
@@ -166,7 +168,7 @@ export default function Home() {
       title: "Every detail is verified before it reaches your holiday.",
       description:
         "Every villa is personally inspected, every chef and driver is thoroughly vetted, and every experience is hand-picked. We only partner with people we would confidently recommend to our own families.",
-      image: "/uploads/1774855399992-0122d6b5c072.jpg",
+      image: trustStoryImage,
       position: "center",
       visual: "photo",
     },
@@ -198,7 +200,7 @@ export default function Home() {
       title: "Tailored for romance, family ease, or something worth celebrating.",
       description:
         "Whether you're a couple seeking romance, a family wanting convenience, or a group celebrating something special, we shape the details so your holiday feels personal and memorable.",
-      image: "/uploads/1774448207111-27ddce48058c.jpg",
+      image: tailoredTripImage,
       position: "center top",
       visual: "photo",
     },
