@@ -63,27 +63,55 @@ function requestDnsJson(options) {
   });
 }
 
-async function resolveIpv4ViaPublicDns(hostname) {
+async function resolveIpViaPublicDns(hostname) {
   const resolver = new Resolver();
   resolver.setServers(publicDnsServers);
 
-  try {
-    const addresses = await new Promise((resolve, reject) => {
-      resolver.resolve4(hostname, (error, records) => {
-        if (error) {
-          reject(error);
-          return;
-        }
+  const preferredFamilies = [
+    {
+      family: 4,
+      recordType: "A",
+      answerType: 1,
+      resolve: () => new Promise((resolve, reject) => {
+        resolver.resolve4(hostname, (error, records) => {
+          if (error) {
+            reject(error);
+            return;
+          }
 
-        resolve(records);
-      });
-    });
+          resolve(records);
+        });
+      }),
+    },
+    {
+      family: 6,
+      recordType: "AAAA",
+      answerType: 28,
+      resolve: () => new Promise((resolve, reject) => {
+        resolver.resolve6(hostname, (error, records) => {
+          if (error) {
+            reject(error);
+            return;
+          }
 
-    if (Array.isArray(addresses) && addresses.length > 0) {
-      return addresses[0];
+          resolve(records);
+        });
+      }),
+    },
+  ];
+
+  for (const candidate of preferredFamilies) {
+    try {
+      const addresses = await candidate.resolve();
+      if (Array.isArray(addresses) && addresses.length > 0) {
+        return {
+          address: addresses[0],
+          family: candidate.family,
+        };
+      }
+    } catch {
+      // Fall through to the next family or HTTPS DNS.
     }
-  } catch {
-    // Fall through to HTTPS DNS.
   }
 
   const providers = [
@@ -92,25 +120,32 @@ async function resolveIpv4ViaPublicDns(hostname) {
     { ip: "8.8.8.8", servername: "dns.google", hostHeader: "dns.google", pathPrefix: "/resolve" },
   ];
 
-  for (const provider of providers) {
-    try {
-      const payload = await requestDnsJson({
-        ip: provider.ip,
-        servername: provider.servername,
-        hostHeader: provider.hostHeader,
-        path: `${provider.pathPrefix}?name=${encodeURIComponent(hostname)}&type=A`,
-      });
-      const answers = Array.isArray(payload?.Answer) ? payload.Answer : [];
-      const record = answers.find((answer) => answer && typeof answer.data === "string");
-      if (record?.data) {
-        return record.data;
+  for (const candidate of preferredFamilies) {
+    for (const provider of providers) {
+      try {
+        const payload = await requestDnsJson({
+          ip: provider.ip,
+          servername: provider.servername,
+          hostHeader: provider.hostHeader,
+          path: `${provider.pathPrefix}?name=${encodeURIComponent(hostname)}&type=${candidate.recordType}`,
+        });
+        const answers = Array.isArray(payload?.Answer) ? payload.Answer : [];
+        const record = answers.find((answer) => answer
+          && typeof answer.data === "string"
+          && answer.type === candidate.answerType);
+        if (record?.data) {
+          return {
+            address: record.data,
+            family: candidate.family,
+          };
+        }
+      } catch {
+        // Try the next provider.
       }
-    } catch {
-      // Try the next provider.
     }
   }
 
-  throw new Error(`Could not resolve an IPv4 address for ${hostname}`);
+  throw new Error(`Could not resolve an IPv4 or IPv6 address for ${hostname}`);
 }
 
 function mergeNodeOptions(...values) {
@@ -131,10 +166,12 @@ async function main() {
   };
 
   if (!isPrivateHostname(hostname) && isIP(hostname) === 0) {
-    const ipv4Address = await resolveIpv4ViaPublicDns(hostname);
-    env.DATABASE_HOST_OVERRIDE = ipv4Address;
+    const resolvedAddress = await resolveIpViaPublicDns(hostname);
+    env.DATABASE_HOST_OVERRIDE = resolvedAddress.address;
     env.DATABASE_SSL_SERVERNAME = hostname;
-    console.log(`[db:push] Resolved ${hostname} to ${ipv4Address} for this deploy.`);
+    console.log(
+      `[db:push] Resolved ${hostname} to ${resolvedAddress.address} (IPv${resolvedAddress.family}) for this deploy.`,
+    );
   }
 
   const drizzleBin = path.resolve(process.cwd(), "node_modules", "drizzle-kit", "bin.cjs");
