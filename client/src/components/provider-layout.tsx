@@ -14,9 +14,9 @@ import {
   SidebarHeader,
 } from "@/components/ui/sidebar";
 import { InboxQuickPanel } from "@/components/inbox-quick-panel";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { useAuth } from "@/hooks/useAuth";
 import { useInbox } from "@/hooks/use-inbox";
+import { useEffect } from "react";
 
 function ProviderSidebar() {
   const [location] = useLocation();
@@ -90,6 +90,19 @@ export function ProviderLayout({ children }: { children: React.ReactNode }) {
     "--sidebar-width-icon": "3rem",
   };
 
+  useEffect(() => {
+    const root = document.documentElement;
+    const previousTheme = root.classList.contains("dark") ? "dark" : "light";
+
+    root.classList.remove("light", "dark");
+    root.classList.add("light");
+
+    return () => {
+      root.classList.remove("light", "dark");
+      root.classList.add(previousTheme);
+    };
+  }, []);
+
   return (
     <SidebarProvider style={style as React.CSSProperties}>
       <div className="flex h-screen w-full overflow-hidden bg-background">
@@ -99,7 +112,6 @@ export function ProviderLayout({ children }: { children: React.ReactNode }) {
             <SidebarTrigger />
             <div className="flex items-center gap-2">
               {user ? <InboxQuickPanel unreadCount={unreadCount} userRole={user.role} /> : null}
-              <ThemeToggle />
             </div>
           </header>
           <main className="flex-1 overflow-auto overflow-x-hidden">{children}</main>

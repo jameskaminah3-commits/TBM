@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, Link } from "wouter";
 import {
@@ -168,6 +168,8 @@ export default function Home() {
   const [checkIn, setCheckIn] = useState("");
   const [checkOut, setCheckOut] = useState("");
   const [guests, setGuests] = useState("2");
+  const [shouldLoadShowcases, setShouldLoadShowcases] = useState(false);
+  const servicesSectionRef = useRef<HTMLElement | null>(null);
   const heroServiceLabels = ["Stays", "Transport", "Private Chefs", "Experience", "Errands"];
   const heroImageSrcSet = `${heroImageSmall} 768w, ${heroImageLarge} 1408w`;
   const storyImageSizes = "(min-width: 1024px) 48vw, 100vw";
@@ -233,11 +235,37 @@ export default function Home() {
   ] as const;
 
   const scrollToServices = () => {
+    setShouldLoadShowcases(true);
     const servicesSection = document.getElementById("services-section");
     if (servicesSection) {
       servicesSection.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   };
+
+  useEffect(() => {
+    if (shouldLoadShowcases) {
+      return;
+    }
+
+    const section = servicesSectionRef.current;
+    if (!section || typeof IntersectionObserver === "undefined") {
+      const fallbackTimer = window.setTimeout(() => setShouldLoadShowcases(true), 1200);
+      return () => window.clearTimeout(fallbackTimer);
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setShouldLoadShowcases(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "320px 0px" },
+    );
+
+    observer.observe(section);
+    return () => observer.disconnect();
+  }, [shouldLoadShowcases]);
 
   const handleAccommodationSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -257,22 +285,37 @@ export default function Home() {
 
   const { data: stays = [] } = useQuery<Stay[]>({
     queryKey: ["/api/stays"],
+    enabled: shouldLoadShowcases,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
   });
 
   const { data: cars = [] } = useQuery<CarType[]>({
     queryKey: ["/api/cars"],
+    enabled: shouldLoadShowcases,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
   });
 
   const { data: cooks = [] } = useQuery<Cook[]>({
     queryKey: ["/api/cooks"],
+    enabled: shouldLoadShowcases,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
   });
 
   const { data: errands = [] } = useQuery<Errand[]>({
     queryKey: ["/api/errands"],
+    enabled: shouldLoadShowcases,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
   });
 
   const { data: experiences = [] } = useQuery<Experience[]>({
     queryKey: ["/api/experiences"],
+    enabled: shouldLoadShowcases,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
   });
 
   const serviceShowcases = useMemo(() => {
@@ -460,7 +503,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section id="services-section" className="bg-background py-20 md:py-24">
+      <section id="services-section" ref={servicesSectionRef} className="bg-background py-20 md:py-24">
         <div className="container mx-auto px-4 md:px-8">
           <div className="mb-16 text-center">
             <h2 className="mb-4 font-serif text-[2rem] font-medium leading-tight sm:text-4xl lg:text-5xl">Our Services</h2>

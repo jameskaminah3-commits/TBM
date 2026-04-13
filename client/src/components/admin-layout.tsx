@@ -35,7 +35,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { useEffect } from "react";
 
 const menuItems = [
   {
@@ -188,14 +188,26 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     "--sidebar-width-icon": "3rem",
   };
 
+  useEffect(() => {
+    const root = document.documentElement;
+    const previousTheme = root.classList.contains("dark") ? "dark" : "light";
+
+    root.classList.remove("light", "dark");
+    root.classList.add("light");
+
+    return () => {
+      root.classList.remove("light", "dark");
+      root.classList.add(previousTheme);
+    };
+  }, []);
+
   return (
     <SidebarProvider style={style as React.CSSProperties}>
       <div className="flex h-[calc(100svh-4.7rem)] min-h-[calc(100svh-4.7rem)] w-full overflow-hidden bg-background">
         <AdminSidebar />
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="flex items-center justify-between border-b px-3 py-3 sm:px-4">
+          <header className="flex items-center border-b px-3 py-3 sm:px-4">
             <SidebarTrigger data-testid="button-sidebar-toggle" />
-            <ThemeToggle />
           </header>
           <main className="flex-1 overflow-auto overflow-x-hidden">
             {children}
