@@ -128,6 +128,250 @@
   --destructive-border: hsl(from hsl(var(--destructive)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
 }
 
+@keyframes tembea-loader-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(1rem, -0.65rem, 0) scale(1.04);
+  }
+}
+
+@keyframes tembea-loader-float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -0.28rem, 0);
+  }
+}
+
+@keyframes tembea-loader-breathe {
+  0%,
+  100% {
+    transform: translate3d(-50%, 0, 0) scale(0.96);
+    opacity: 0.48;
+  }
+  50% {
+    transform: translate3d(-50%, 0, 0) scale(1.04);
+    opacity: 0.76;
+  }
+}
+
+@keyframes tembea-loader-trace {
+  0% {
+    opacity: 0;
+    stroke-dashoffset: 112;
+  }
+  18% {
+    opacity: 0.96;
+  }
+  100% {
+    opacity: 0.88;
+    stroke-dashoffset: -12;
+  }
+}
+
+@keyframes tembea-loader-dash {
+  0%,
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0.28;
+  }
+  50% {
+    stroke-dashoffset: -16;
+    opacity: 0.52;
+  }
+}
+
+@keyframes tembea-loader-ring {
+  0%,
+  15% {
+    transform: translate3d(-50%, -50%, 0);
+    opacity: 0;
+  }
+  42% {
+    opacity: 0.38;
+  }
+  100% {
+    transform: translate3d(-50%, -50%, 0) scale(1.28);
+    opacity: 0;
+  }
+}
+
+@layer utilities {
+  .tembea-loader-shell {
+    background-image:
+      radial-gradient(circle at 12% 14%, rgba(249, 139, 91, 0.14), transparent 30%),
+      radial-gradient(circle at 84% 18%, rgba(57, 200, 203, 0.14), transparent 24%),
+      linear-gradient(180deg, rgba(255, 250, 244, 0.98), rgba(247, 241, 231, 0.95) 56%, rgba(240, 233, 223, 0.92));
+  }
+
+  .tembea-loader-glow {
+    position: absolute;
+    width: min(30rem, 68vw);
+    aspect-ratio: 1;
+    border-radius: 9999px;
+    filter: blur(34px);
+    opacity: 0.72;
+    animation: tembea-loader-drift 15s ease-in-out infinite;
+  }
+
+  .tembea-loader-glow-left {
+    left: -12rem;
+    top: -12rem;
+    background: radial-gradient(circle, rgba(255, 173, 117, 0.36), rgba(255, 173, 117, 0));
+  }
+
+  .tembea-loader-glow-right {
+    right: -12rem;
+    bottom: -14rem;
+    background: radial-gradient(circle, rgba(57, 200, 203, 0.24), rgba(57, 200, 203, 0));
+    animation-delay: -6s;
+  }
+
+  .tembea-loader-minimal {
+    position: relative;
+    width: min(21rem, 82vw);
+    height: 12rem;
+  }
+
+  .tembea-loader-aura {
+    position: absolute;
+    left: 50%;
+    top: 0.9rem;
+    width: 9rem;
+    height: 9rem;
+    border-radius: 9999px;
+    background: radial-gradient(circle, rgba(255, 220, 170, 0.62), rgba(91, 206, 210, 0.14) 58%, rgba(255, 255, 255, 0));
+    filter: blur(22px);
+    transform: translateX(-50%);
+    animation: tembea-loader-breathe 5.8s ease-in-out infinite;
+  }
+
+  .tembea-loader-ring {
+    position: absolute;
+    left: 50%;
+    top: 6.65rem;
+    width: 8.5rem;
+    height: 2rem;
+    border: 1px solid rgba(57, 200, 203, 0.22);
+    border-radius: 9999px;
+    transform: translate3d(-50%, -50%, 0);
+    animation: tembea-loader-ring 4.6s ease-out infinite;
+  }
+
+  .tembea-loader-ring-two {
+    animation-delay: -2.3s;
+  }
+
+  .tembea-loader-brand-shell {
+    position: absolute;
+    left: 50%;
+    top: 1.9rem;
+    transform: translateX(-50%);
+  }
+
+  .tembea-loader-brand {
+    position: relative;
+    animation: tembea-loader-float 4.8s ease-in-out infinite;
+  }
+
+  .tembea-loader-tide {
+    position: absolute;
+    left: 50%;
+    bottom: 0.4rem;
+    width: min(19rem, 82vw);
+    height: auto;
+    transform: translateX(-50%);
+  }
+
+  .tembea-loader-tide-line {
+    vector-effect: non-scaling-stroke;
+    fill: none;
+    stroke-linecap: round;
+  }
+
+  .tembea-loader-tide-line-back {
+    stroke: rgba(33, 105, 111, 0.18);
+    stroke-width: 2.1;
+  }
+
+  .tembea-loader-tide-line-front {
+    stroke: rgba(255, 255, 255, 0.9);
+    stroke-width: 3;
+    stroke-dasharray: 18 82;
+    animation: tembea-loader-trace 5.4s linear infinite;
+  }
+
+  .tembea-loader-tide-line-soft {
+    stroke: rgba(255, 255, 255, 0.38);
+    stroke-width: 1.35;
+    stroke-dasharray: 4 10;
+    animation: tembea-loader-dash 8.5s linear infinite;
+  }
+
+  @media (max-width: 640px) {
+    .tembea-loader-glow-left {
+      left: -16rem;
+      top: -15rem;
+    }
+
+    .tembea-loader-glow-right {
+      right: -16rem;
+      bottom: -16rem;
+    }
+
+    .tembea-loader-minimal {
+      height: 10.75rem;
+      width: min(18rem, 88vw);
+    }
+
+    .tembea-loader-aura {
+      top: 1.15rem;
+      width: 7.5rem;
+      height: 7.5rem;
+    }
+
+    .tembea-loader-ring {
+      top: 6.05rem;
+      width: 7.25rem;
+      height: 1.7rem;
+    }
+
+    .tembea-loader-brand-shell {
+      top: 2.2rem;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tembea-loader-glow,
+    .tembea-loader-aura,
+    .tembea-loader-ring,
+    .tembea-loader-brand,
+    .tembea-loader-tide-line-front,
+    .tembea-loader-tide-line-soft {
+      animation: none !important;
+      transition: none !important;
+    }
+
+    .tembea-loader-ring {
+      opacity: 0.2;
+    }
+
+    .tembea-loader-tide-line-front {
+      opacity: 0.82;
+      stroke-dashoffset: 0;
+    }
+
+    .tembea-loader-tide-line-soft {
+      opacity: 0.3;
+    }
+  }
+}
+
 .dark {
   --button-outline: rgba(255,255,255, .10);
   --badge-outline: rgba(255,255,255, .05);

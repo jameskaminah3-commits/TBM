@@ -5,14 +5,342 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="csp-nonce" content="__CSP_NONCE__" />
     <link rel="icon" type="image/png" href="/favicon.png" />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        color-scheme: light;
+      }
+
+      body {
+        margin: 0;
+        background:
+          radial-gradient(circle at 12% 14%, rgba(249, 139, 91, 0.14), transparent 30%),
+          radial-gradient(circle at 84% 18%, rgba(57, 200, 203, 0.14), transparent 24%),
+          linear-gradient(180deg, #fffaf4, #f7f1e7 56%, #f0e9df);
+        font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      .boot-loader {
+        position: relative;
+        display: flex;
+        min-height: 100vh;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        padding: 24px;
+      }
+
+      .boot-loader__glow {
+        position: absolute;
+        width: min(30rem, 68vw);
+        aspect-ratio: 1;
+        border-radius: 999px;
+        filter: blur(34px);
+        opacity: 0.72;
+        animation: boot-loader-drift 15s ease-in-out infinite;
+      }
+
+      .boot-loader__glow--left {
+        left: -12rem;
+        top: -12rem;
+        background: radial-gradient(circle, rgba(255, 173, 117, 0.36), rgba(255, 173, 117, 0));
+      }
+
+      .boot-loader__glow--right {
+        right: -12rem;
+        bottom: -14rem;
+        background: radial-gradient(circle, rgba(57, 200, 203, 0.24), rgba(57, 200, 203, 0));
+        animation-delay: -6s;
+      }
+
+      .boot-loader__minimal {
+        position: relative;
+        width: min(21rem, 82vw);
+        height: 12rem;
+      }
+
+      .boot-loader__aura {
+        position: absolute;
+        left: 50%;
+        top: 14px;
+        width: 144px;
+        height: 144px;
+        border-radius: 999px;
+        background: radial-gradient(circle, rgba(255, 220, 170, 0.62), rgba(91, 206, 210, 0.14) 58%, rgba(255, 255, 255, 0));
+        filter: blur(22px);
+        transform: translateX(-50%);
+        animation: boot-loader-breathe 5.8s ease-in-out infinite;
+      }
+
+      .boot-loader__ring {
+        position: absolute;
+        left: 50%;
+        top: 106px;
+        width: 136px;
+        height: 32px;
+        border: 1px solid rgba(57, 200, 203, 0.22);
+        border-radius: 999px;
+        transform: translate(-50%, -50%);
+        animation: boot-loader-ring 4.6s ease-out infinite;
+      }
+
+      .boot-loader__ring--two {
+        animation-delay: -2.3s;
+      }
+
+      .boot-loader__brand-shell {
+        position: absolute;
+        left: 50%;
+        top: 30px;
+        transform: translateX(-50%);
+      }
+
+      .boot-loader__brand {
+        width: auto;
+        height: 64px;
+        animation: boot-loader-float 4.8s ease-in-out infinite;
+      }
+
+      .boot-loader__tide {
+        position: absolute;
+        left: 50%;
+        bottom: 6px;
+        width: min(19rem, 82vw);
+        height: auto;
+        transform: translateX(-50%);
+      }
+
+      .boot-loader__tide-line {
+        fill: none;
+        vector-effect: non-scaling-stroke;
+        stroke-linecap: round;
+      }
+
+      .boot-loader__tide-line--back {
+        stroke: rgba(33, 105, 111, 0.18);
+        stroke-width: 2.1;
+      }
+
+      .boot-loader__tide-line--front {
+        stroke: rgba(255, 255, 255, 0.9);
+        stroke-width: 3;
+        stroke-dasharray: 18 82;
+        animation: boot-loader-trace 5.4s linear infinite;
+      }
+
+      .boot-loader__tide-line--soft {
+        stroke: rgba(255, 255, 255, 0.38);
+        stroke-width: 1.35;
+        stroke-dasharray: 4 10;
+        animation: boot-loader-dash 8.5s linear infinite;
+      }
+
+      @keyframes boot-loader-drift {
+        0%,
+        100% {
+          transform: translate3d(0, 0, 0) scale(1);
+        }
+        50% {
+          transform: translate3d(1rem, -0.65rem, 0) scale(1.04);
+        }
+      }
+
+      @keyframes boot-loader-float {
+        0%,
+        100% {
+          transform: translate3d(0, 0, 0);
+        }
+        50% {
+          transform: translate3d(0, -0.28rem, 0);
+        }
+      }
+
+      @keyframes boot-loader-breathe {
+        0%,
+        100% {
+          transform: translate3d(-50%, 0, 0) scale(0.96);
+          opacity: 0.48;
+        }
+        50% {
+          transform: translate3d(-50%, 0, 0) scale(1.04);
+          opacity: 0.76;
+        }
+      }
+
+      @keyframes boot-loader-trace {
+        0% {
+          opacity: 0;
+          stroke-dashoffset: 112;
+        }
+        18% {
+          opacity: 0.96;
+        }
+        100% {
+          opacity: 0.88;
+          stroke-dashoffset: -12;
+        }
+      }
+
+      @keyframes boot-loader-dash {
+        0%,
+        100% {
+          stroke-dashoffset: 0;
+          opacity: 0.28;
+        }
+        50% {
+          stroke-dashoffset: -16;
+          opacity: 0.52;
+        }
+      }
+
+      @keyframes boot-loader-ring {
+        0%,
+        15% {
+          transform: translate(-50%, -50%) scale(1);
+          opacity: 0;
+        }
+        42% {
+          opacity: 0.38;
+        }
+        100% {
+          transform: translate(-50%, -50%) scale(1.28);
+          opacity: 0;
+        }
+      }
+
+      @media (max-width: 640px) {
+        .boot-loader {
+          padding: 18px;
+        }
+
+        .boot-loader__glow--left {
+          left: -16rem;
+          top: -15rem;
+        }
+
+        .boot-loader__glow--right {
+          right: -16rem;
+          bottom: -16rem;
+        }
+
+        .boot-loader__minimal {
+          width: min(18rem, 88vw);
+          height: 10.75rem;
+        }
+
+        .boot-loader__aura {
+          top: 18px;
+          width: 120px;
+          height: 120px;
+        }
+
+        .boot-loader__ring {
+          top: 96px;
+          width: 116px;
+          height: 27px;
+        }
+
+        .boot-loader__brand-shell {
+          top: 35px;
+        }
+
+        .boot-loader__brand {
+          height: 56px;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .boot-loader__glow,
+        .boot-loader__aura,
+        .boot-loader__ring,
+        .boot-loader__brand,
+        .boot-loader__tide-line--front,
+        .boot-loader__tide-line--soft {
+          animation: none !important;
+        }
+
+        .boot-loader__ring {
+          opacity: 0.2;
+        }
+
+        .boot-loader__tide-line--front {
+          opacity: 0.82;
+          stroke-dashoffset: 0;
+        }
+
+        .boot-loader__tide-line--soft {
+          opacity: 0.3;
+        }
+      }
+    </style>
     <title>Tembea Bila Matata - Travel Local, Stay Easy</title>
-    <meta name="description" content="Stay + Drive + Dine + Relax — All in One Place. Experience luxury accommodations with vetted local services. Travel Local. Stay Easy. Live Bila Matata.">
+    <meta
+      name="description"
+      content="Stay + Drive + Dine + Relax - All in One Place. Experience luxury accommodations with vetted local services. Travel Local. Stay Easy. Live Bila Matata."
+    />
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="boot-loader" aria-live="polite" aria-label="Loading Tembea Bila Matata">
+        <div class="boot-loader__glow boot-loader__glow--left"></div>
+        <div class="boot-loader__glow boot-loader__glow--right"></div>
+
+        <div class="boot-loader__minimal" aria-hidden="true">
+          <div class="boot-loader__aura"></div>
+          <div class="boot-loader__ring"></div>
+          <div class="boot-loader__ring boot-loader__ring--two"></div>
+
+          <div class="boot-loader__brand-shell">
+            <svg
+              class="boot-loader__brand"
+              viewBox="0 0 226 84"
+              xmlns="http://www.w3.org/2000/svg"
+              role="img"
+              aria-label="Tembea Bila Matata"
+              preserveAspectRatio="xMidYMid meet"
+            >
+              <defs>
+                <linearGradient id="boot-top-wave" x1="14" y1="54" x2="165" y2="14" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stop-color="#39c8cb" />
+                  <stop offset="56%" stop-color="#4fc7c3" />
+                  <stop offset="100%" stop-color="#60b8b1" />
+                </linearGradient>
+                <linearGradient id="boot-bottom-wave" x1="37" y1="66" x2="196" y2="35" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stop-color="#2f989d" />
+                  <stop offset="58%" stop-color="#3ea7a8" />
+                  <stop offset="100%" stop-color="#57afa8" />
+                </linearGradient>
+                <radialGradient id="boot-sun" cx="42%" cy="38%" r="68%">
+                  <stop offset="0%" stop-color="#ff8560" />
+                  <stop offset="100%" stop-color="#ff653d" />
+                </radialGradient>
+              </defs>
+
+              <path
+                d="M12 55C42 63 73 30 113 16C137 8 160 8 179 13C150 13 123 19 99 31C72 45 44 60 12 55Z"
+                fill="url(#boot-top-wave)"
+              />
+              <path
+                d="M38 66C71 68 100 48 129 35C151 25 174 23 200 36C177 30 153 32 129 43C101 56 74 67 38 66Z"
+                fill="url(#boot-bottom-wave)"
+              />
+              <circle cx="174" cy="15" r="8.5" fill="url(#boot-sun)" />
+            </svg>
+          </div>
+
+          <svg class="boot-loader__tide" viewBox="0 0 320 92" fill="none" preserveAspectRatio="none">
+            <path class="boot-loader__tide-line boot-loader__tide-line--back" d="M14 50C54 40 90 40 126 50C165 60 204 61 244 50C270 43 291 40 306 43" />
+            <path class="boot-loader__tide-line boot-loader__tide-line--front" pathLength="100" d="M14 50C54 40 90 40 126 50C165 60 204 61 244 50C270 43 291 40 306 43" />
+            <path class="boot-loader__tide-line boot-loader__tide-line--soft" d="M26 68C74 58 122 58 168 67C212 76 256 76 294 67" />
+          </svg>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

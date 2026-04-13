@@ -8,6 +8,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { Header } from "@/components/header";
 import { ConciergeSearchBar } from "@/components/concierge-search-bar";
 import { SiteFooter } from "@/components/site-footer";
+import { TembeaLoader } from "@/components/tembea-loader";
 import { CurrencyProvider } from "@/lib/currency";
 import { ConciergeSearchProvider, getSectionFromPath } from "@/lib/concierge-search";
 import Home from "@/pages/home";
@@ -67,37 +68,7 @@ function AppRoute({ path, element }: { path?: string; element: ReactNode }) {
 }
 
 function RouteFallback() {
-  return (
-    <div className="min-h-[52vh] bg-[linear-gradient(180deg,rgba(255,250,244,0.62),rgba(255,255,255,0.96),rgba(248,241,233,0.84))]">
-      <div className="container mx-auto px-4 py-8 md:px-8 md:py-10">
-        <div className="mx-auto max-w-6xl space-y-6">
-          <div className="h-4 w-40 animate-pulse rounded-full bg-muted/70" />
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,0.95fr)]">
-            <div className="space-y-4 rounded-[1.75rem] border border-border/60 bg-background/90 p-5 shadow-[0_20px_50px_-38px_rgba(15,23,42,0.35)]">
-              <div className="h-9 w-2/3 animate-pulse rounded-full bg-muted/70" />
-              <div className="h-4 w-11/12 animate-pulse rounded-full bg-muted/60" />
-              <div className="h-4 w-4/5 animate-pulse rounded-full bg-muted/55" />
-              <div className="grid gap-3 pt-3 sm:grid-cols-2">
-                {[1, 2, 3, 4].map((item) => (
-                  <div key={item} className="space-y-3 rounded-[1.25rem] border border-border/50 bg-muted/20 p-3">
-                    <div className="aspect-[4/3] animate-pulse rounded-[1rem] bg-muted/70" />
-                    <div className="h-4 w-3/4 animate-pulse rounded-full bg-muted/60" />
-                    <div className="h-4 w-1/2 animate-pulse rounded-full bg-muted/50" />
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="space-y-4 rounded-[1.75rem] border border-border/60 bg-background/90 p-5 shadow-[0_20px_50px_-38px_rgba(15,23,42,0.35)]">
-              <div className="h-6 w-1/2 animate-pulse rounded-full bg-muted/70" />
-              <div className="h-24 animate-pulse rounded-[1.25rem] bg-muted/60" />
-              <div className="h-24 animate-pulse rounded-[1.25rem] bg-muted/55" />
-              <div className="h-11 w-full animate-pulse rounded-full bg-muted/65" />
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+  return <TembeaLoader className="min-h-[52vh]" />;
 }
 
 function Router() {
