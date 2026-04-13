@@ -37,6 +37,10 @@ function isLockedBookingStatus(status: string) {
   return status === "pending" || status === "pending-payment" || status === "completed" || status === "cancelled";
 }
 
+function isFinalizedBooking(booking: Pick<Booking, "status">) {
+  return booking.status === "completed" || booking.status === "cancelled";
+}
+
 function hasOutstandingBookingPayment(booking: Booking) {
   return getBookingOutstandingAmount(booking) > 0
     && booking.status !== "completed"
@@ -48,6 +52,10 @@ function getShortBookingReference(id: string) {
 }
 
 function isPendingCustomRequestBooking(booking: Booking) {
+  if (isFinalizedBooking(booking)) {
+    return false;
+  }
+
   if (booking.serviceMode === "cook-custom-menu") {
     return booking.customMenuClientDecision !== "accepted";
   }
@@ -64,6 +72,10 @@ function isAdminManagedCustomServiceBooking(booking: Booking) {
 }
 
 function isApprovalQueueCustomRequest(booking: Booking) {
+  if (isFinalizedBooking(booking)) {
+    return false;
+  }
+
   if (booking.serviceMode === "cook-custom-menu") {
     return booking.customMenuProposalStatus === "pending-admin-approval";
   }
@@ -77,6 +89,10 @@ function isApprovalQueueCustomRequest(booking: Booking) {
 }
 
 function isPartnerQueueCustomRequest(booking: Booking) {
+  if (isFinalizedBooking(booking)) {
+    return false;
+  }
+
   if (booking.serviceMode === "cook-custom-menu") {
     return booking.customMenuProposalStatus === "pending";
   }
@@ -89,6 +105,10 @@ function isPartnerQueueCustomRequest(booking: Booking) {
 }
 
 function getCustomRequestQueueLabel(booking: Booking) {
+  if (isFinalizedBooking(booking)) {
+    return booking.status === "cancelled" ? "Cancelled" : "Completed";
+  }
+
   if (booking.serviceMode === "cook-custom-menu") {
     if (booking.customMenuProposalStatus === "pending-admin-approval") {
       return "Waiting Approval";
@@ -117,12 +137,20 @@ function getCustomRequestQueueLabel(booking: Booking) {
 }
 
 function isAwaitingClientCustomMenuDecision(booking: Booking) {
+  if (isFinalizedBooking(booking)) {
+    return false;
+  }
+
   return booking.serviceMode === "cook-custom-menu"
     && !!booking.customMenuReviewedAt
     && booking.customMenuClientDecision === "pending";
 }
 
 function isAwaitingClientExperienceDecision(booking: Booking) {
+  if (isFinalizedBooking(booking)) {
+    return false;
+  }
+
   return booking.serviceMode === "experience-custom-offer"
     && !!booking.experienceCustomOfferReviewedAt
     && booking.experienceCustomOfferClientDecision === "pending";
@@ -719,6 +747,12 @@ export default function AdminBookings() {
     return <Badge className="bg-blue-600">Partner Requested {getRequestedStatusLabel(status)}</Badge>;
   };
 
+  const getFinalizedWorkflowBadge = (booking: Pick<Booking, "status">) => (
+    booking.status === "cancelled"
+      ? <Badge variant="destructive">Cancelled</Badge>
+      : <Badge variant="secondary">Completed</Badge>
+  );
+
   const getProposalBadge = (proposalStatus: string) => {
     switch (proposalStatus) {
       case "pending-admin-approval":
@@ -736,7 +770,23 @@ export default function AdminBookings() {
     booking.serviceMode === "cook-custom-menu" &&
     booking.customMenuClientDecision === "accepted";
 
+  const getCustomMenuWorkflowBadge = (booking: Booking) => {
+    if (isFinalizedBooking(booking)) {
+      return getFinalizedWorkflowBadge(booking);
+    }
+
+    if (isClosedCustomMenu(booking)) {
+      return <Badge variant="secondary">Fulfilled</Badge>;
+    }
+
+    return getProposalBadge(booking.customMenuProposalStatus);
+  };
+
   const getExperienceOfferBadge = (booking: Booking) => {
+    if (isFinalizedBooking(booking)) {
+      return getFinalizedWorkflowBadge(booking);
+    }
+
     if (isAcceptedExperienceOfferAwaitingPayment(booking)) {
       return <Badge className="bg-amber-600">Accepted - Pending Payment</Badge>;
     }
@@ -766,6 +816,12 @@ export default function AdminBookings() {
     booking.paymentStatus !== "paid";
 
   const getExperienceOfferStatusText = (booking: Booking) => {
+    if (isFinalizedBooking(booking)) {
+      return booking.status === "cancelled"
+        ? "Booking cancelled by admin. Offer actions are locked."
+        : "Booking completed by admin. Offer actions are locked.";
+    }
+
     if (isClosedExperienceOffer(booking)) {
       return isAcceptedExperienceOfferAwaitingPayment(booking)
         ? "Accepted by client. Awaiting payment."
@@ -1266,7 +1322,7 @@ export default function AdminBookings() {
                           <div className="rounded-lg border p-3 space-y-3">
                             <div className="flex items-center justify-between gap-2">
                               <div className="text-sm font-medium">Custom Menu Review</div>
-                              {isClosedCustomMenu(booking) ? <Badge variant="secondary">Fulfilled</Badge> : getProposalBadge(booking.customMenuProposalStatus)}
+                              {getCustomMenuWorkflowBadge(booking)}
                             </div>
                             {getBudgetDisplay(booking, formatAmount) ? (
                               <div className="text-sm text-muted-foreground">
@@ -1307,19 +1363,25 @@ export default function AdminBookings() {
                                 Decline reason: {booking.customMenuDeclineReason}
                               </div>
                             ) : null}
-                            {isClosedCustomMenu(booking) ? (
+                            {isFinalizedBooking(booking) ? (
+                              <div className="text-sm text-muted-foreground rounded-md bg-muted/40 p-3">
+                                {booking.status === "cancelled"
+                                  ? "This booking was cancelled by admin. Custom menu actions are now locked."
+                                  : "This booking was marked completed by admin. Custom menu actions are now locked."}
+                              </div>
+                            ) : isClosedCustomMenu(booking) ? (
                               <div className="text-sm text-muted-foreground rounded-md bg-muted/40 p-3">
                                 This custom menu offer has been accepted by the customer and is now closed for editing.
                               </div>
                             ) : null}
-                            {!isClosedCustomMenu(booking) && !isAwaitingClientCustomMenuDecision(booking) ? <Input
+                            {!isFinalizedBooking(booking) && !isClosedCustomMenu(booking) && !isAwaitingClientCustomMenuDecision(booking) ? <Input
                               type="number"
                               min="1"
                               placeholder={`Quoted total (${selectedCurrency})`}
                               value={proposalAmounts[booking.id] ?? ""}
                               onChange={(e) => setProposalAmounts((current) => ({ ...current, [booking.id]: e.target.value }))}
                             /> : null}
-                            {!isClosedCustomMenu(booking) && !isAwaitingClientCustomMenuDecision(booking) ? <Textarea
+                            {!isFinalizedBooking(booking) && !isClosedCustomMenu(booking) && !isAwaitingClientCustomMenuDecision(booking) ? <Textarea
                               rows={3}
                               placeholder="Note or decline reason"
                               value={booking.customMenuDeclineReason
@@ -1335,7 +1397,7 @@ export default function AdminBookings() {
                                 setDeclineReasons((current) => ({ ...current, [booking.id]: value }));
                               }}
                             /> : null}
-                            {!isClosedCustomMenu(booking) && !isAwaitingClientCustomMenuDecision(booking) ? <div className="flex flex-col gap-2 sm:flex-row">
+                            {!isFinalizedBooking(booking) && !isClosedCustomMenu(booking) && !isAwaitingClientCustomMenuDecision(booking) ? <div className="flex flex-col gap-2 sm:flex-row">
                               <Button
                                 variant="outline"
                                 disabled={reviewCustomMenuMutation.isPending}
@@ -1446,21 +1508,27 @@ export default function AdminBookings() {
                                 Decline reason: {booking.experienceCustomOfferDeclineReason}
                               </div>
                             ) : null}
-                            {isClosedExperienceOffer(booking) ? (
+                            {isFinalizedBooking(booking) ? (
+                              <div className="text-sm text-muted-foreground rounded-md bg-muted/40 p-3">
+                                {booking.status === "cancelled"
+                                  ? "This booking was cancelled by admin. Offer actions are now locked."
+                                  : "This booking was marked completed by admin. Offer actions are now locked."}
+                              </div>
+                            ) : isClosedExperienceOffer(booking) ? (
                               <div className="text-sm text-muted-foreground rounded-md bg-muted/40 p-3">
                                 {isAcceptedExperienceOfferAwaitingPayment(booking)
                                   ? "Accepted by client. Payment is still pending, and the offer stays locked while checkout completes."
                                   : "Accepted by client and paid. Editing is now locked for delivery."}
                               </div>
                             ) : null}
-                            {!isClosedExperienceOffer(booking) && !isAwaitingClientExperienceDecision(booking) ? <Input
+                            {!isFinalizedBooking(booking) && !isClosedExperienceOffer(booking) && !isAwaitingClientExperienceDecision(booking) ? <Input
                               type="number"
                               min="1"
                               placeholder={`Offer total (${selectedCurrency})`}
                               value={proposalAmounts[booking.id] ?? ""}
                               onChange={(e) => setProposalAmounts((current) => ({ ...current, [booking.id]: e.target.value }))}
                             /> : null}
-                            {!isClosedExperienceOffer(booking) && !isAwaitingClientExperienceDecision(booking) ? <Textarea
+                            {!isFinalizedBooking(booking) && !isClosedExperienceOffer(booking) && !isAwaitingClientExperienceDecision(booking) ? <Textarea
                               rows={3}
                               placeholder="Offer note or decline reason"
                               value={booking.experienceCustomOfferDeclineReason
@@ -1476,7 +1544,7 @@ export default function AdminBookings() {
                                 setDeclineReasons((current) => ({ ...current, [booking.id]: value }));
                               }}
                             /> : null}
-                            {!isClosedExperienceOffer(booking) && !isAwaitingClientExperienceDecision(booking) ? <div className="flex flex-col gap-2 sm:flex-row">
+                            {!isFinalizedBooking(booking) && !isClosedExperienceOffer(booking) && !isAwaitingClientExperienceDecision(booking) ? <div className="flex flex-col gap-2 sm:flex-row">
                               <Button
                                 variant="outline"
                                 disabled={reviewExperienceOfferMutation.isPending}

@@ -77,7 +77,15 @@ function isArchivedBookingStatus(status: string) {
   return status === "completed" || status === "cancelled";
 }
 
+function isFinalizedAssignmentBooking(booking: ProviderBookingAssignmentView) {
+  return isArchivedBookingStatus(booking.booking.status);
+}
+
 function getDashboardAssignmentStatus(booking: ProviderBookingAssignmentView) {
+  if (isFinalizedAssignmentBooking(booking)) {
+    return booking.booking.status;
+  }
+
   const mode = getAssignmentServiceMode(booking);
 
   if (mode === "cook-custom-menu" && booking.booking.customMenuClientDecision !== "accepted") {
@@ -100,6 +108,10 @@ function isDashboardArchivedBooking(booking: ProviderBookingAssignmentView | und
 }
 
 function isPendingCustomRequestBooking(assignment: ProviderBookingAssignmentView) {
+  if (isFinalizedAssignmentBooking(assignment)) {
+    return false;
+  }
+
   if (isDashboardArchivedBooking(assignment)) {
     return false;
   }
@@ -231,6 +243,10 @@ function getNextProgressAction(status: string) {
 }
 
 function getCustomRequestQueueLabel(assignment: ProviderBookingAssignmentView) {
+  if (isFinalizedAssignmentBooking(assignment)) {
+    return assignment.booking.status === "cancelled" ? "Cancelled" : "Completed";
+  }
+
   const mode = getAssignmentServiceMode(assignment);
   if (mode === "cook-custom-menu") {
     if (assignment.booking.customMenuProposalStatus === "pending-admin-approval") {
@@ -976,6 +992,12 @@ export default function ProviderDashboard() {
     return "Chef service booking";
   };
 
+  const getFinalizedWorkflowBadge = (booking: ProviderBookingAssignmentView) => (
+    booking.booking.status === "cancelled"
+      ? <Badge variant="destructive">Cancelled</Badge>
+      : <Badge variant="secondary">Completed</Badge>
+  );
+
   const getProposalBadge = (proposalStatus: string) => {
     switch (proposalStatus) {
       case "pending-admin-approval":
@@ -992,6 +1014,18 @@ export default function ProviderDashboard() {
   const isClosedCustomMenu = (booking: ProviderBookingAssignmentView) =>
     getAssignmentServiceMode(booking) === "cook-custom-menu" &&
     booking.booking.customMenuClientDecision === "accepted";
+
+  const getCustomMenuWorkflowBadge = (booking: ProviderBookingAssignmentView) => {
+    if (isFinalizedAssignmentBooking(booking)) {
+      return getFinalizedWorkflowBadge(booking);
+    }
+
+    if (isClosedCustomMenu(booking)) {
+      return <Badge variant="secondary">Fulfilled</Badge>;
+    }
+
+    return getProposalBadge(booking.booking.customMenuProposalStatus);
+  };
 
   const getExperienceOfferBadge = (proposalStatus: string) => {
     switch (proposalStatus) {
@@ -1010,7 +1044,25 @@ export default function ProviderDashboard() {
     getAssignmentServiceMode(booking) === "experience-custom-offer" &&
     booking.booking.experienceCustomOfferClientDecision === "accepted";
 
+  const getExperienceWorkflowBadge = (booking: ProviderBookingAssignmentView) => {
+    if (isFinalizedAssignmentBooking(booking)) {
+      return getFinalizedWorkflowBadge(booking);
+    }
+
+    if (isClosedExperienceOffer(booking)) {
+      return <Badge variant="secondary">Fulfilled</Badge>;
+    }
+
+    return getExperienceOfferBadge(booking.booking.experienceCustomOfferStatus);
+  };
+
   const getExperienceOfferStatusText = (booking: ProviderBookingAssignmentView) => {
+    if (isFinalizedAssignmentBooking(booking)) {
+      return booking.booking.status === "cancelled"
+        ? "Booking cancelled by admin. Offer actions are locked."
+        : "Booking completed by admin. Offer actions are locked.";
+    }
+
     if (isClosedExperienceOffer(booking)) {
       return "Accepted by client.";
     }
@@ -1028,12 +1080,12 @@ export default function ProviderDashboard() {
   };
 
   const getPrimaryBookingStatusBadge = (booking: ProviderBookingAssignmentView) => {
-    if (getAssignmentServiceMode(booking) === "cook-custom-menu" && !isClosedCustomMenu(booking)) {
-      return getProposalBadge(booking.booking.customMenuProposalStatus);
+    if (getAssignmentServiceMode(booking) === "cook-custom-menu") {
+      return getCustomMenuWorkflowBadge(booking);
     }
 
-    if (getAssignmentServiceMode(booking) === "experience-custom-offer" && !isClosedExperienceOffer(booking)) {
-      return getExperienceOfferBadge(booking.booking.experienceCustomOfferStatus);
+    if (getAssignmentServiceMode(booking) === "experience-custom-offer") {
+      return getExperienceWorkflowBadge(booking);
     }
 
     return <Badge variant="outline">{getProgressStatusLabel(getDashboardAssignmentStatus(booking))}</Badge>;
@@ -1724,8 +1776,8 @@ export default function ProviderDashboard() {
                       <div className="flex flex-col items-start gap-2 md:items-end">
                         <Badge variant="secondary">{getCustomRequestQueueLabel(booking)}</Badge>
                         {getAssignmentServiceMode(booking) === "cook-custom-menu"
-                          ? getProposalBadge(booking.booking.customMenuProposalStatus)
-                          : getExperienceOfferBadge(booking.booking.experienceCustomOfferStatus)}
+                          ? getCustomMenuWorkflowBadge(booking)
+                          : getExperienceWorkflowBadge(booking)}
                         <Button
                           type="button"
                           variant="outline"
@@ -1812,8 +1864,8 @@ export default function ProviderDashboard() {
                       <div className="flex flex-col items-start gap-2 md:items-end">
                         <Badge variant="secondary">{getCustomRequestQueueLabel(booking)}</Badge>
                         {getAssignmentServiceMode(booking) === "cook-custom-menu"
-                          ? getProposalBadge(booking.booking.customMenuProposalStatus)
-                          : getExperienceOfferBadge(booking.booking.experienceCustomOfferStatus)}
+                          ? getCustomMenuWorkflowBadge(booking)
+                          : getExperienceWorkflowBadge(booking)}
                         <a href={destination} className="text-sm font-medium text-teal-700 underline-offset-4 hover:underline">
                           Open details
                         </a>
@@ -2016,7 +2068,7 @@ export default function ProviderDashboard() {
                         <div className="mt-3 rounded-lg border p-3 space-y-3">
                           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                             <div className="text-sm font-medium">Quote Review</div>
-                            {isClosedCustomMenu(booking) ? <Badge variant="secondary">Fulfilled</Badge> : getProposalBadge(booking.booking.customMenuProposalStatus)}
+                            {getCustomMenuWorkflowBadge(booking)}
                           </div>
                           {booking.booking.customMenuProposalStatus === "proposed" && booking.booking.customMenuProposedAmount ? (
                             <div className="text-sm text-muted-foreground">
@@ -2038,19 +2090,25 @@ export default function ProviderDashboard() {
                               Decline reason: {booking.booking.customMenuDeclineReason}
                             </div>
                           ) : null}
-                          {isClosedCustomMenu(booking) ? (
+                          {isFinalizedAssignmentBooking(booking) ? (
+                            <div className="text-sm text-muted-foreground rounded-md bg-muted/40 p-3">
+                              {booking.booking.status === "cancelled"
+                                ? "This booking was cancelled by admin. Custom menu actions are now locked."
+                                : "This booking was marked completed by admin. Custom menu actions are now locked."}
+                            </div>
+                          ) : isClosedCustomMenu(booking) ? (
                             <div className="text-sm text-muted-foreground rounded-md bg-muted/40 p-3">
                               This custom menu offer has been accepted by the customer and is now closed for editing.
                             </div>
                           ) : null}
-                          {!isClosedCustomMenu(booking) && booking.booking.customMenuProposalStatus === "pending" ? <Input
+                          {!isFinalizedAssignmentBooking(booking) && !isClosedCustomMenu(booking) && booking.booking.customMenuProposalStatus === "pending" ? <Input
                             type="number"
                             min="1"
                             placeholder={`Quoted total (${selectedCurrency})`}
                             value={proposalAmounts[booking.assignment.id] ?? ""}
                             onChange={(e) => setProposalAmounts((current) => ({ ...current, [booking.assignment.id]: e.target.value }))}
                           /> : null}
-                          {!isClosedCustomMenu(booking) && booking.booking.customMenuProposalStatus === "pending" ? <Textarea
+                          {!isFinalizedAssignmentBooking(booking) && !isClosedCustomMenu(booking) && booking.booking.customMenuProposalStatus === "pending" ? <Textarea
                             rows={3}
                             placeholder="Quote note or decline reason"
                             value={proposalMessages[booking.assignment.id] ?? booking.booking.customMenuProposalMessage ?? declineReasons[booking.assignment.id] ?? booking.booking.customMenuDeclineReason ?? ""}
@@ -2060,7 +2118,7 @@ export default function ProviderDashboard() {
                               setDeclineReasons((current) => ({ ...current, [booking.assignment.id]: value }));
                             }}
                           /> : null}
-                          {!isClosedCustomMenu(booking) && booking.booking.customMenuProposalStatus === "pending" ? <div className="flex flex-col gap-2 sm:flex-row">
+                          {!isFinalizedAssignmentBooking(booking) && !isClosedCustomMenu(booking) && booking.booking.customMenuProposalStatus === "pending" ? <div className="flex flex-col gap-2 sm:flex-row">
                             <Button
                               variant="outline"
                               className="w-full sm:w-auto"
@@ -2248,7 +2306,7 @@ export default function ProviderDashboard() {
                             <div className="text-sm font-medium">Offer Review</div>
                             <div className="text-xs text-muted-foreground">{getExperienceOfferStatusText(booking)}</div>
                           </div>
-                          {isClosedExperienceOffer(booking) ? <Badge variant="secondary">Fulfilled</Badge> : getExperienceOfferBadge(booking.booking.experienceCustomOfferStatus)}
+                          {getExperienceWorkflowBadge(booking)}
                         </div>
                         {booking.booking.experienceCustomOfferAmount ? (
                           <div className="rounded-md bg-muted/40 p-3">
@@ -2286,19 +2344,25 @@ export default function ProviderDashboard() {
                             Decline reason: {booking.booking.experienceCustomOfferDeclineReason}
                           </div>
                         ) : null}
-                        {isClosedExperienceOffer(booking) ? (
+                        {isFinalizedAssignmentBooking(booking) ? (
+                          <div className="text-sm text-muted-foreground rounded-md bg-muted/40 p-3">
+                            {booking.booking.status === "cancelled"
+                              ? "This booking was cancelled by admin. Offer actions are now locked."
+                              : "This booking was marked completed by admin. Offer actions are now locked."}
+                          </div>
+                        ) : isClosedExperienceOffer(booking) ? (
                           <div className="text-sm text-muted-foreground rounded-md bg-muted/40 p-3">
                             Accepted by client. Editing locked.
                           </div>
                         ) : null}
-                        {!isClosedExperienceOffer(booking) && booking.booking.experienceCustomOfferStatus === "pending" ? <Input
+                        {!isFinalizedAssignmentBooking(booking) && !isClosedExperienceOffer(booking) && booking.booking.experienceCustomOfferStatus === "pending" ? <Input
                           type="number"
                           min="1"
                           placeholder={`Offer total (${selectedCurrency})`}
                           value={proposalAmounts[booking.assignment.id] ?? ""}
                           onChange={(e) => setProposalAmounts((current) => ({ ...current, [booking.assignment.id]: e.target.value }))}
                         /> : null}
-                        {!isClosedExperienceOffer(booking) && booking.booking.experienceCustomOfferStatus === "pending" ? <Textarea
+                        {!isFinalizedAssignmentBooking(booking) && !isClosedExperienceOffer(booking) && booking.booking.experienceCustomOfferStatus === "pending" ? <Textarea
                           rows={3}
                           placeholder="Offer note or decline reason"
                           value={proposalMessages[booking.assignment.id] ?? booking.booking.experienceCustomOfferMessage ?? declineReasons[booking.assignment.id] ?? booking.booking.experienceCustomOfferDeclineReason ?? ""}
@@ -2308,7 +2372,7 @@ export default function ProviderDashboard() {
                             setDeclineReasons((current) => ({ ...current, [booking.assignment.id]: value }));
                           }}
                         /> : null}
-                        {!isClosedExperienceOffer(booking) && booking.booking.experienceCustomOfferStatus === "pending" ? <div className="flex flex-col gap-2 sm:flex-row">
+                        {!isFinalizedAssignmentBooking(booking) && !isClosedExperienceOffer(booking) && booking.booking.experienceCustomOfferStatus === "pending" ? <div className="flex flex-col gap-2 sm:flex-row">
                           <Button
                             variant="outline"
                             className="w-full sm:w-auto"

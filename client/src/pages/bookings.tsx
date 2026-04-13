@@ -91,6 +91,19 @@ const getBookingDueLabel = (booking: Booking) => {
   }
   return "Amount due";
 };
+const getBookingStatusLabel = (status: string) => status === "late"
+  ? "Needs attention"
+  : status === "in-progress"
+    ? "In progress"
+    : status === "pending-payment"
+      ? "Pending payment"
+      : status === "pending"
+        ? "Pending"
+        : status === "completed"
+          ? "Completed"
+          : status === "cancelled"
+            ? "Cancelled"
+            : "Upcoming";
 const getBookingScheduleSlots = (booking: Booking) => (booking.serviceScheduleSlots || []).filter((slot): slot is { date: string; note: string } => !!slot?.date).sort((a, b) => a.date.localeCompare(b.date));
 const getBookingThreadInitialLabel = (booking: Booking) => booking.serviceMode === "errand-shopping" ? "Shopping List" : "Request";
 const getReviewTone = (rating: number) => rating === 5 ? "Exceptional" : rating === 4 ? "Excellent" : rating === 3 ? "Good" : rating === 2 ? "Fair" : "Needs attention";
@@ -178,30 +191,38 @@ function BookingTimeline({ booking }: { booking: Booking }) {
   ];
 
   return (
-    <div className="overflow-hidden rounded-[26px] border border-stone-200/80 bg-[linear-gradient(135deg,rgba(255,252,247,0.96),rgba(250,246,240,0.9))] p-5 shadow-[0_24px_44px_-34px_rgba(28,25,23,0.3)]">
-      <div className="mb-5 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="overflow-hidden rounded-[24px] border border-border/60 bg-background/90 p-5 shadow-[0_18px_40px_-32px_rgba(15,23,42,0.28)]">
+      <div className="mb-4 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-stone-500">Timeline</div>
-          <div className="mt-1 text-xl font-semibold tracking-tight text-stone-900">Booking Progress</div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">Progress</div>
+          <div className="mt-1 text-lg font-semibold tracking-tight text-foreground">Where this booking stands</div>
         </div>
-        <div className="w-full rounded-full border border-white/70 bg-white/80 px-4 py-2 text-center text-sm font-medium text-stone-700 shadow-[0_10px_24px_-20px_rgba(28,25,23,0.35)] sm:w-auto">
-          Status
-        </div>
+        <Badge variant={booking.status === "completed" ? "secondary" : booking.status === "cancelled" ? "outline" : "default"} className="rounded-full">
+          {getBookingStatusLabel(booking.status)}
+        </Badge>
       </div>
 
-      <div className="relative grid gap-6 md:grid-cols-4 md:gap-4">
-        <div className="absolute left-[1.05rem] right-[1.05rem] top-4 hidden h-px bg-[linear-gradient(90deg,rgba(214,211,209,0.25),rgba(168,162,158,0.7),rgba(214,211,209,0.25))] md:block" />
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {items.map((item, index) => (
-          <div key={`${item.title}-${index}`} className="relative">
-            <div className="flex items-center gap-3 md:flex-col md:items-start">
-              <div className={`relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border ${item.active ? "border-stone-300 bg-stone-900 text-white shadow-[0_12px_24px_-18px_rgba(28,25,23,0.45)]" : "border-stone-300 bg-[rgba(255,255,255,0.72)] text-stone-400"}`}>
-                <span className="text-[11px] font-semibold">{index + 1}</span>
+          <div
+            key={`${item.title}-${index}`}
+            className={cn(
+              "rounded-[20px] border px-4 py-3",
+              item.active ? "border-border/70 bg-muted/35" : "border-dashed border-border/60 bg-background/70",
+            )}
+          >
+            <div className="flex items-start gap-3">
+              <div className={cn(
+                "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold",
+                item.active ? "border-primary/25 bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground",
+              )}>
+                <span>{index + 1}</span>
               </div>
               <div className="min-w-0">
-                <div className={`text-[11px] font-semibold uppercase tracking-[0.24em] ${item.active ? "text-stone-500" : "text-stone-400"}`}>
+                <div className={cn("text-[11px] font-semibold uppercase tracking-[0.2em]", item.active ? "text-muted-foreground" : "text-muted-foreground/70")}>
                   {item.title}
                 </div>
-                <div className={`mt-1 text-base leading-6 ${item.active ? "text-stone-800" : "text-stone-500"}`}>
+                <div className={cn("mt-1 text-sm leading-6", item.active ? "text-foreground" : "text-muted-foreground")}>
                   {item.detail}
                 </div>
               </div>
@@ -396,7 +417,7 @@ function readBookingsPageIntent(search: string) {
   const requestedTab = params.get("tab");
   const activeTab: "overview" | "active" | "history" | "profile" = requestedTab === "active" || requestedTab === "history" || requestedTab === "profile"
     ? requestedTab
-    : "overview";
+    : "active";
 
   return {
     activeTab,
@@ -568,9 +589,39 @@ export default function Bookings() {
     : booking.selectedServices.length === 0
       ? "Custom Service"
       : "Custom Experience";
-  const customMenuReady = (booking: Booking) => booking.serviceMode === "cook-custom-menu" && booking.customMenuProposalStatus === "proposed" && booking.customMenuClientDecision === "pending";
-  const experienceOfferReady = (booking: Booking) => booking.serviceMode === "experience-custom-offer" && booking.experienceCustomOfferStatus === "proposed" && booking.experienceCustomOfferClientDecision === "pending";
+  const getCustomMenuBadgeLabel = (booking: Booking) => {
+    if (isHistoryBookingStatus(booking.status)) return booking.status === "cancelled" ? "Cancelled" : "Completed";
+    if (booking.customMenuClientDecision === "accepted") return "Accepted";
+    if (booking.customMenuClientDecision === "declined" || booking.customMenuProposalStatus === "declined") return "Declined";
+    if (booking.customMenuProposalStatus === "proposed") return "Ready";
+    if (booking.customMenuProposalStatus === "pending-admin-approval") return "Review";
+    return "Pending";
+  };
+  const getCustomMenuStatusText = (booking: Booking) => {
+    if (isHistoryBookingStatus(booking.status)) {
+      return booking.status === "cancelled"
+        ? "Booking cancelled by admin. Quote actions are locked."
+        : "Booking completed by admin. Quote actions are locked.";
+    }
+    if (booking.customMenuClientDecision === "accepted") return "Quote accepted.";
+    if (booking.customMenuClientDecision === "declined") return "Quote declined.";
+    if (booking.customMenuProposalStatus === "declined") return "Request declined.";
+    if (booking.customMenuProposalStatus === "proposed") return "Ready for your approval.";
+    if (booking.customMenuProposalStatus === "pending-admin-approval") return "Under review.";
+    return "Waiting for quote.";
+  };
+  const customMenuReady = (booking: Booking) =>
+    !isHistoryBookingStatus(booking.status)
+    && booking.serviceMode === "cook-custom-menu"
+    && booking.customMenuProposalStatus === "proposed"
+    && booking.customMenuClientDecision === "pending";
+  const experienceOfferReady = (booking: Booking) =>
+    !isHistoryBookingStatus(booking.status)
+    && booking.serviceMode === "experience-custom-offer"
+    && booking.experienceCustomOfferStatus === "proposed"
+    && booking.experienceCustomOfferClientDecision === "pending";
   const getExperienceOfferBadgeLabel = (booking: Booking) => {
+    if (isHistoryBookingStatus(booking.status)) return booking.status === "cancelled" ? "Cancelled" : "Completed";
     if (booking.experienceCustomOfferClientDecision === "accepted") return "Accepted";
     if (booking.experienceCustomOfferClientDecision === "declined" || booking.experienceCustomOfferStatus === "declined") return "Declined";
     if (booking.experienceCustomOfferStatus === "proposed") return "Ready";
@@ -578,6 +629,11 @@ export default function Bookings() {
     return "Pending";
   };
   const getExperienceOfferStatusText = (booking: Booking) => {
+    if (isHistoryBookingStatus(booking.status)) {
+      return booking.status === "cancelled"
+        ? "Booking cancelled by admin. Offer actions are locked."
+        : "Booking completed by admin. Offer actions are locked.";
+    }
     if (booking.experienceCustomOfferClientDecision === "accepted") return "Offer accepted.";
     if (booking.experienceCustomOfferClientDecision === "declined") return "Offer declined.";
     if (booking.experienceCustomOfferStatus === "declined") return "Request declined.";
@@ -626,6 +682,15 @@ export default function Bookings() {
     });
     return targets;
   };
+  const attentionBookingsCount = useMemo(
+    () => sortedBookings.filter((booking) =>
+      booking.status === "late"
+      || canRetryBookingPayment(booking)
+      || customMenuReady(booking)
+      || experienceOfferReady(booking),
+    ).length,
+    [sortedBookings],
+  );
 
   const renderBookingCard = (booking: BookingWithMarketing) => {
     const stay = getStay(booking.accommodationId);
@@ -640,19 +705,7 @@ export default function Bookings() {
     const outstandingAmount = getBookingOutstandingAmount(booking);
     const fullPaymentOnlyBooking = isFullPaymentOnlyBooking(booking);
     const hasDepositRule = hasBookingDepositRequirement(booking);
-    const bookingStatusText = booking.status === "late"
-      ? "Needs attention"
-      : booking.status === "in-progress"
-        ? "In progress"
-        : booking.status === "pending-payment"
-          ? "Pending payment"
-          : booking.status === "pending"
-            ? "Pending"
-        : booking.status === "completed"
-          ? "Completed"
-          : booking.status === "cancelled"
-            ? "Cancelled"
-            : "Upcoming";
+    const bookingStatusText = getBookingStatusLabel(booking.status);
     const serviceLabels = booking.selectedServices
       .map((serviceId) => {
         const service = getServiceItem(serviceId);
@@ -660,6 +713,13 @@ export default function Bookings() {
         return "model" in service ? service.model : "title" in service ? service.title : service.serviceName;
       })
       .filter((label): label is string => !!label);
+    const isCustomFlow = booking.serviceMode === "cook-custom-menu" || booking.serviceMode === "experience-custom-offer";
+    const showStandaloneRequestBrief = Boolean(booking.serviceRequestDetails?.trim()) && !isCustomFlow;
+    const summaryLine = serviceLabels.length > 0
+      ? `${serviceLabels.slice(0, 2).join(" / ")}${serviceLabels.length > 2 ? ` / +${serviceLabels.length - 2} more` : ""}`
+      : stay
+        ? "Accommodation only"
+        : "Direct service booking";
     const renderHero = (className?: string) =>
       stay ? (
         <ListingMedia
@@ -687,9 +747,9 @@ export default function Bookings() {
         )}
         data-testid={`booking-${booking.id}`}
       >
-        <AccordionTrigger className="items-start gap-3 px-3 py-3 text-left hover:no-underline sm:gap-4 sm:px-5 sm:py-4 lg:px-6">
+        <AccordionTrigger className="items-start gap-3 px-4 py-4 text-left hover:no-underline sm:gap-4 sm:px-5 sm:py-4 lg:px-6">
           <div className="flex min-w-0 flex-1 flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+            <div className="flex min-w-0 items-start gap-3 sm:gap-4">
               <div className="relative h-20 w-24 shrink-0 overflow-hidden rounded-[20px] border border-black/5 bg-stone-950 shadow-[0_16px_30px_-24px_rgba(15,23,42,0.45)] sm:h-28 sm:w-36 sm:rounded-[22px]">
                 {renderHero()}
                 {stay ? <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(12,10,9,0.04),rgba(12,10,9,0.42))]" /> : null}
@@ -715,20 +775,7 @@ export default function Bookings() {
                   {bookingLocation ? <span className="flex items-center gap-1"><MapPin className="h-4 w-4" />{bookingLocation}</span> : null}
                   <span className="flex items-center gap-1"><Users className="h-4 w-4" />{booking.guests} guest{booking.guests === 1 ? "" : "s"}</span>
                 </div>
-                {serviceLabels.length > 0 ? (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {serviceLabels.slice(0, 3).map((label) => (
-                      <Badge key={label} variant="secondary" className="rounded-full">
-                        {label}
-                      </Badge>
-                    ))}
-                    {serviceLabels.length > 3 ? (
-                      <Badge variant="secondary" className="rounded-full">
-                        +{serviceLabels.length - 3} more
-                      </Badge>
-                    ) : null}
-                  </div>
-                ) : null}
+                <div className="mt-3 text-sm text-muted-foreground">{summaryLine}</div>
               </div>
             </div>
             <div className="flex w-full shrink-0 flex-col gap-3 rounded-[20px] border border-white/70 bg-white/75 px-4 py-3 text-left shadow-[0_16px_30px_-24px_rgba(15,23,42,0.34)] sm:rounded-[22px] lg:min-w-[190px] lg:w-auto lg:items-end lg:text-right">
@@ -757,43 +804,19 @@ export default function Bookings() {
                 <div className="font-medium text-foreground">{bookingStatusText}</div>
                 <div className="text-muted-foreground">{getBookingPaymentStatusLabel(booking)}</div>
                 <div className="text-muted-foreground">Booking ID {booking.id.slice(0, 8).toUpperCase()}</div>
-                <div className="text-xs text-muted-foreground">Tap to view details</div>
+                <div className="text-xs text-muted-foreground">Open details</div>
               </div>
             </div>
           </div>
         </AccordionTrigger>
         <AccordionContent className="px-4 pb-6 pt-0 sm:px-5 lg:px-6">
           <div className="border-t border-border/60 pt-6">
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.4fr_0.9fr]">
-              <div className="space-y-5">
-            <div className="relative overflow-hidden rounded-[28px] border border-black/5 bg-stone-950">
-              <div className="aspect-[16/8.4]">
-                {renderHero()}
-              </div>
-              <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(12,10,9,0.06),rgba(12,10,9,0.72))]" />
-              <div className="absolute inset-x-0 bottom-0 p-5 md:p-6">
-                <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-                  <div className="max-w-2xl text-white">
-                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-white/70">
-                      {stay ? "Stay booking" : "Service booking"}
-                    </div>
-                    <h3 className="text-2xl font-semibold tracking-tight md:text-3xl">{bookingTitle}</h3>
-                    <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-white/80">
-                      <span className="flex items-center gap-1"><Calendar className="h-4 w-4" />{formatDate(booking.checkIn)}{booking.checkOut !== booking.checkIn ? ` to ${formatDate(booking.checkOut)}` : ""}</span>
-                      {bookingLocation ? <span className="flex items-center gap-1"><MapPin className="h-4 w-4" />{bookingLocation}</span> : null}
-                      <span className="flex items-center gap-1"><Users className="h-4 w-4" />{booking.guests} guest{booking.guests === 1 ? "" : "s"}</span>
-                    </div>
-                  </div>
-                  <div className="self-start rounded-full border border-white/20 bg-white/10 px-4 py-2 backdrop-blur-md">
-                    <div className="text-sm font-medium text-white">{bookingStatusText}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+              <div className="space-y-4">
 
             <div className="grid gap-4 md:grid-cols-[1.1fr_0.9fr]">
               <div className="rounded-[24px] border border-border/60 bg-background/85 p-5 shadow-[0_16px_36px_-30px_rgba(15,23,42,0.3)]">
-                <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">Status</div>
+                <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">Overview</div>
                 <div className="flex flex-wrap gap-2">
                   {getStatusBadge(booking.status)}
                   <Badge variant={getStageState(booking, "booked") ? "default" : "outline"} className="rounded-full">Booked</Badge>
@@ -811,6 +834,18 @@ export default function Bookings() {
                     ))}
                   </div>
                 ) : null}
+                <div className="mt-4 grid gap-3 text-sm text-muted-foreground sm:grid-cols-2">
+                  <div className="flex items-center gap-2 rounded-2xl bg-muted/35 px-4 py-3">
+                    <Calendar className="h-4 w-4 text-primary" />
+                    <span>{bookingDates}</span>
+                  </div>
+                  {bookingLocation ? (
+                    <div className="flex items-center gap-2 rounded-2xl bg-muted/35 px-4 py-3">
+                      <MapPin className="h-4 w-4 text-primary" />
+                      <span>{bookingLocation}</span>
+                    </div>
+                  ) : null}
+                </div>
               </div>
 
               <div className="rounded-[24px] border border-border/60 bg-background/85 p-5 shadow-[0_16px_36px_-30px_rgba(15,23,42,0.3)]">
@@ -839,18 +874,10 @@ export default function Bookings() {
                 <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <div className="text-sm font-semibold text-amber-900">Chef quote</div>
-                    <div className="text-sm text-amber-800">
-                      {booking.customMenuProposalStatus === "pending-admin-approval"
-                        ? "Under review."
-                        : booking.customMenuProposalStatus === "proposed"
-                          ? "Ready for your approval."
-                          : booking.customMenuProposalStatus === "declined"
-                            ? "Request declined."
-                            : "Waiting for quote."}
-                    </div>
+                    <div className="text-sm text-amber-800">{getCustomMenuStatusText(booking)}</div>
                   </div>
                   <Badge variant="outline" className="rounded-full border-amber-300 bg-white text-amber-900">
-                    {booking.customMenuProposalStatus === "proposed" ? "Ready" : booking.customMenuProposalStatus === "pending-admin-approval" ? "Review" : booking.customMenuProposalStatus}
+                    {getCustomMenuBadgeLabel(booking)}
                   </Badge>
                 </div>
                 {booking.serviceRequestDetails ? (
@@ -947,12 +974,28 @@ export default function Bookings() {
                 ) : null}
               </div>
             ) : null}
+            {showStandaloneRequestBrief ? (
+              <RequestBriefAccordion
+                id={`guest-request-${booking.id}`}
+                title={`Booking request #${booking.id.slice(0, 8).toUpperCase()}`}
+                summary={getRequestPreview(booking.serviceRequestDetails)}
+                content={booking.serviceRequestDetails ?? ""}
+                accent="stone"
+                className="bg-background/85"
+              />
+            ) : null}
             <BookingTimeline booking={booking} />
-            <BookingServiceDetails booking={booking} getServiceById={(serviceId) => getServiceItem(serviceId) || null} formatAmount={formatAmount} formatTime={formatTime} />
+            <BookingServiceDetails
+              booking={booking}
+              getServiceById={(serviceId) => getServiceItem(serviceId) || null}
+              formatAmount={formatAmount}
+              formatTime={formatTime}
+              hideRequestDetails={showStandaloneRequestBrief || isCustomFlow}
+            />
             <BookingThread
               bookingId={booking.id}
               title="Messages"
-              initialMessage={booking.serviceRequestDetails}
+              initialMessage={showStandaloneRequestBrief || isCustomFlow ? null : booking.serviceRequestDetails}
               initialMessageLabel={getBookingThreadInitialLabel(booking)}
               composerPlaceholder="Send a message..."
               defaultOpen={pageIntent.openThread && pageIntent.bookingId === booking.id}
@@ -960,7 +1003,15 @@ export default function Bookings() {
           </div>
           <div className="space-y-4">
             <div className="rounded-[28px] border border-stone-200/80 bg-[linear-gradient(180deg,rgba(255,252,247,0.98),rgba(247,243,236,0.92))] p-5 shadow-[0_18px_40px_-30px_rgba(28,25,23,0.32)]">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-stone-500">Booking</div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-stone-500">Next step</div>
+                <div className="mt-2 text-sm font-medium text-stone-900">{bookingStatusText}</div>
+                <div className="mt-1 text-sm text-stone-600">
+                  {canRetryBookingPayment(booking)
+                    ? "Finish payment from here whenever you're ready."
+                    : isHistoryBookingStatus(booking.status)
+                      ? "This booking is closed, but the record and messages stay available."
+                      : "Everything tied to this booking stays organized here."}
+                </div>
                 <div className="mt-4">
                   <div className="mb-1 text-xs uppercase tracking-[0.16em] text-stone-500">{getBookingDueLabel(booking)}</div>
                   {booking.marketingAttribution ? (
@@ -1105,16 +1156,17 @@ export default function Bookings() {
   const renderBookingsList = (items: BookingWithMarketing[], emptyTitle: string, emptyDescription: string) => items.length ? (
     <div className="space-y-3">
       <div className="rounded-[22px] border border-border/60 bg-white/75 px-4 py-3 text-sm text-muted-foreground shadow-[0_16px_36px_-30px_rgba(15,23,42,0.24)]">
-        Tap a booking to view payment status, details, messages, and next steps.
+        Open one booking at a time to check payment, messages, and the next step without the page feeling crowded.
       </div>
       <Accordion
         key={`${pageIntent.bookingId ?? "default"}-${items[0]?.id ?? "empty"}`}
-        type="multiple"
+        type="single"
+        collapsible
         defaultValue={
           pageIntent.bookingId && items.some((booking) => booking.id === pageIntent.bookingId)
-            ? [pageIntent.bookingId]
+            ? pageIntent.bookingId
             : items[0]
-              ? [items[0].id]
+              ? items[0].id
               : undefined
         }
         className="space-y-4"
@@ -1143,12 +1195,13 @@ export default function Bookings() {
               <Badge variant="outline" className="rounded-full bg-background/85 px-3 py-1">Bookings</Badge>
               <div>
                 <h1 className="font-serif text-3xl font-semibold tracking-tight leading-tight sm:text-4xl md:text-5xl">{user?.firstName ? `${user.firstName}, your bookings` : "Your bookings"}</h1>
-                <p className="mt-3 max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">Track upcoming trips, past bookings, and account details in one place.</p>
+                <p className="mt-3 max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">See what needs attention, reopen any booking, and keep your trip details in one calmer place.</p>
               </div>
               <Button variant="outline" className="rounded-full bg-background/85" onClick={() => setLocation("/inbox")}>Open Inbox Center</Button>
             </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:min-w-[320px]">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:min-w-[460px] xl:grid-cols-3">
               <Card className="border-border/60 bg-background/85 shadow-[0_18px_36px_-30px_rgba(15,23,42,0.4)]"><CardContent className="p-4"><div className="text-sm text-muted-foreground">Open</div><div className="mt-1 text-2xl font-semibold">{activeBookings.length}</div></CardContent></Card>
+              <Card className="border-border/60 bg-background/85 shadow-[0_18px_36px_-30px_rgba(15,23,42,0.4)]"><CardContent className="p-4"><div className="text-sm text-muted-foreground">Needs action</div><div className="mt-1 text-2xl font-semibold">{attentionBookingsCount}</div></CardContent></Card>
               <Card className="border-border/60 bg-background/85 shadow-[0_18px_36px_-30px_rgba(15,23,42,0.4)]"><CardContent className="p-4"><div className="text-sm text-muted-foreground">Past</div><div className="mt-1 text-2xl font-semibold">{historyBookings.length}</div></CardContent></Card>
             </div>
           </div>
@@ -1156,11 +1209,14 @@ export default function Bookings() {
 
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "overview" | "active" | "history" | "profile")} className="space-y-6">
           <TabsList className="grid h-auto w-full grid-cols-2 rounded-[22px] border border-border/60 bg-background/85 p-1 shadow-[0_16px_36px_-28px_rgba(15,23,42,0.34)] sm:grid-cols-4">
-            <TabsTrigger value="overview" className="min-h-11">Overview</TabsTrigger>
             <TabsTrigger value="active" className="min-h-11">Open</TabsTrigger>
             <TabsTrigger value="history" className="min-h-11">Past</TabsTrigger>
+            <TabsTrigger value="overview" className="min-h-11">Overview</TabsTrigger>
             <TabsTrigger value="profile" className="min-h-11">Profile</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="active">{renderBookingsList(activeBookings, "No open bookings", "Upcoming and in-progress bookings appear here.")}</TabsContent>
+          <TabsContent value="history">{renderBookingsList(historyBookings, "No past bookings", "Completed and cancelled bookings appear here.")}</TabsContent>
 
           <TabsContent value="overview" className="space-y-6">
             <div className="grid gap-4 md:grid-cols-3">
@@ -1182,9 +1238,6 @@ export default function Bookings() {
             />
             {renderBookingsList(activeBookings.slice(0, 2), "No open bookings", "Upcoming and in-progress bookings appear here.")}
           </TabsContent>
-
-          <TabsContent value="active">{renderBookingsList(activeBookings, "No open bookings", "Upcoming and in-progress bookings appear here.")}</TabsContent>
-          <TabsContent value="history">{renderBookingsList(historyBookings, "No past bookings", "Completed and cancelled bookings appear here.")}</TabsContent>
 
           <TabsContent value="profile" className="space-y-6">
             <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
