@@ -61,7 +61,12 @@ import {
   getMarketingAttributionPayload,
   trackMarketingPageView,
 } from "@/lib/marketing-attribution";
-import { clearPendingBookingDraft, getCurrentBookingPath, loadPendingBookingDraft, savePendingBookingDraft } from "@/lib/pending-booking";
+import {
+  clearPendingBookingDraft,
+  loadPendingBookingDraft,
+  savePendingBookingDraft,
+  isPendingBookingPathMatch,
+} from "@/lib/pending-booking";
 import { readStaySearchState, toSearchSuffix } from "@/lib/stay-search";
 
 type StayAvailability = {
@@ -317,6 +322,8 @@ export default function Booking() {
       status: "upcoming",
     },
   });
+  const watchedBookingDraft = useWatch({ control: form.control });
+  const isBookingFormDirty = form.formState.isDirty;
 
   useEffect(() => {
     captureMarketingQueryParams();
@@ -680,6 +687,33 @@ export default function Booking() {
     errands: true,
   });
 
+  useEffect(() => {
+    if (authLoading || isAuthenticated) {
+      return;
+    }
+
+    if (!isBookingFormDirty && selectedServices.length === 0 && stayServiceSelections.length === 0 && !normalizedPromoCode) {
+      return;
+    }
+
+    savePendingBookingDraft({
+      kind: "stay",
+      path: bookingPath,
+      payload: buildBookingSubmission(form.getValues()),
+    });
+  }, [
+    authLoading,
+    bookingPath,
+    buildBookingSubmission,
+    form,
+    isAuthenticated,
+    isBookingFormDirty,
+    normalizedPromoCode,
+    selectedServices,
+    stayServiceSelections,
+    watchedBookingDraft,
+  ]);
+
   const rankedAddonServices = useMemo<RankedAddonService[]>(() => {
     if (!accommodation) return [];
 
@@ -1029,12 +1063,16 @@ export default function Booking() {
   };
 
   useEffect(() => {
+    setHasRestoredPendingDraft(false);
+  }, [bookingPath]);
+
+  useEffect(() => {
     if (authLoading || !isAuthenticated || hasRestoredPendingDraft) {
       return;
     }
 
     const pendingDraft = loadPendingBookingDraft();
-    if (!pendingDraft || pendingDraft.kind !== "stay" || pendingDraft.path !== getCurrentBookingPath()) {
+    if (!pendingDraft || pendingDraft.kind !== "stay" || !isPendingBookingPathMatch(pendingDraft.path, bookingPath)) {
       setHasRestoredPendingDraft(true);
       return;
     }
@@ -1072,7 +1110,7 @@ export default function Booking() {
       title: "Booking restored",
       description: "We brought back your saved booking details. Review them and submit when you're ready.",
     });
-  }, [authLoading, buildBookingSubmission, createBookingMutation, form, hasRestoredPendingDraft, id, isAuthenticated, toast]);
+  }, [authLoading, bookingPath, form, hasRestoredPendingDraft, id, isAuthenticated, toast]);
 
   if (!accommodation) {
     return (

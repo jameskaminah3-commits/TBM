@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useFieldArray, useForm } from "react-hook-form";
+import { useFieldArray, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Calendar, Users, CheckCircle2, Car, ChefHat, ShoppingBag, Compass, ArrowLeft, Clock, MapPin, Plus, Trash2 } from "lucide-react";
@@ -64,7 +64,13 @@ import {
   getMarketingAttributionPayload,
   trackMarketingPageView,
 } from "@/lib/marketing-attribution";
-import { clearPendingBookingDraft, getCurrentBookingPath, loadPendingBookingDraft, savePendingBookingDraft } from "@/lib/pending-booking";
+import {
+  clearPendingBookingDraft,
+  getCurrentBookingPath,
+  loadPendingBookingDraft,
+  savePendingBookingDraft,
+  isPendingBookingPathMatch,
+} from "@/lib/pending-booking";
 
 const serviceBookingFormSchema = insertBookingSchema.omit({
   accommodationId: true,
@@ -400,6 +406,7 @@ export default function ServiceBooking() {
   const [hasRestoredPendingDraft, setHasRestoredPendingDraft] = React.useState(false);
   const [promoCode, setPromoCode] = React.useState("");
   const [isDescriptionExpanded, setIsDescriptionExpanded] = React.useState(false);
+  const bookingPath = getCurrentBookingPath();
 
   const config = SERVICE_CONFIG[serviceType as keyof typeof SERVICE_CONFIG];
 
@@ -555,6 +562,8 @@ export default function ServiceBooking() {
       status: "upcoming",
     },
   });
+  const watchedServiceBookingDraft = useWatch({ control: form.control });
+  const isServiceBookingFormDirty = form.formState.isDirty;
 
   React.useEffect(() => {
     setIsDescriptionExpanded(false);
@@ -914,6 +923,41 @@ export default function ServiceBooking() {
     };
   };
 
+  const buildCurrentServiceBookingSubmission = (values: ServiceBookingFormValues) => buildServiceBookingSubmission({
+    ...values,
+    totalPrice: calculatePrice(),
+    serviceRequestFee: values.serviceMode === "cook-custom-menu"
+      ? cookCustomMenuFeeUsd
+      : values.serviceMode === "experience-custom-offer"
+        ? customServiceRequestFeeUsd
+        : undefined,
+  });
+
+  React.useEffect(() => {
+    if (authLoading || isAuthenticated) {
+      return;
+    }
+
+    if (!isServiceBookingFormDirty && !normalizedPromoCode) {
+      return;
+    }
+
+    savePendingBookingDraft({
+      kind: "service",
+      path: bookingPath,
+      payload: buildCurrentServiceBookingSubmission(form.getValues()),
+    });
+  }, [
+    authLoading,
+    bookingPath,
+    buildCurrentServiceBookingSubmission,
+    form,
+    isAuthenticated,
+    isServiceBookingFormDirty,
+    normalizedPromoCode,
+    watchedServiceBookingDraft,
+  ]);
+
   const createBookingMutation = useMutation({
     mutationFn: async (data: ServiceBookingSubmission) => {
       const response = await apiRequest("POST", "/api/bookings", {
@@ -949,18 +993,7 @@ export default function ServiceBooking() {
   });
 
   const continueAfterLogin = (data: ServiceBookingFormValues) => {
-    const totalPrice = calculatePrice();
-    const payload = buildServiceBookingSubmission({
-      ...data,
-      totalPrice,
-      serviceRequestFee: data.serviceMode === "cook-custom-menu"
-        ? cookCustomMenuFeeUsd
-        : data.serviceMode === "experience-custom-offer"
-          ? customServiceRequestFeeUsd
-          : undefined,
-    });
-
-    const bookingPath = getCurrentBookingPath();
+    const payload = buildCurrentServiceBookingSubmission(data);
     savePendingBookingDraft({
       kind: "service",
       path: bookingPath,
@@ -979,16 +1012,7 @@ export default function ServiceBooking() {
       return;
     }
 
-    const totalPrice = calculatePrice();
-    createBookingMutation.mutate(buildServiceBookingSubmission({
-      ...data,
-      totalPrice,
-      serviceRequestFee: data.serviceMode === "cook-custom-menu"
-        ? cookCustomMenuFeeUsd
-        : data.serviceMode === "experience-custom-offer"
-          ? customServiceRequestFeeUsd
-          : undefined,
-    }));
+    createBookingMutation.mutate(buildCurrentServiceBookingSubmission(data));
   };
 
   const handleInvalidServiceBooking = () => {
@@ -1000,12 +1024,16 @@ export default function ServiceBooking() {
   };
 
   React.useEffect(() => {
+    setHasRestoredPendingDraft(false);
+  }, [bookingPath]);
+
+  React.useEffect(() => {
     if (authLoading || !isAuthenticated || hasRestoredPendingDraft) {
       return;
     }
 
     const pendingDraft = loadPendingBookingDraft();
-    if (!pendingDraft || pendingDraft.kind !== "service" || pendingDraft.path !== getCurrentBookingPath()) {
+    if (!pendingDraft || pendingDraft.kind !== "service" || !isPendingBookingPathMatch(pendingDraft.path, bookingPath)) {
       setHasRestoredPendingDraft(true);
       return;
     }
@@ -1029,7 +1057,7 @@ export default function ServiceBooking() {
       title: "Booking restored",
       description: "We brought back your saved booking details. Review them and submit when you're ready.",
     });
-  }, [authLoading, buildServiceBookingSubmission, createBookingMutation, form, hasRestoredPendingDraft, isAuthenticated, toast]);
+  }, [authLoading, bookingPath, form, hasRestoredPendingDraft, isAuthenticated, toast]);
 
   const totalPrice = calculatePrice();
   const days = calculateDays(form.watch("checkIn"), form.watch("checkOut"));

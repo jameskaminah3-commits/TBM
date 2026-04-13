@@ -1,4 +1,12 @@
 import type { ReactNode } from "react";
+import {
+  CONTACT_EMAIL,
+  CONTACT_LOCATION,
+  CONTACT_PHONE,
+  CONTACT_PHONE_DISPLAY,
+  FACEBOOK_URL,
+  WHATSAPP_URL,
+} from "@/lib/contact-info";
 
 function PageShell({
   title,
@@ -52,9 +60,31 @@ export function ContactPage() {
     >
       <section className="space-y-3">
         <h2 className="font-serif text-2xl font-medium text-foreground">Support Channels</h2>
-        <p>Email: hello@tembeabilamatata.com</p>
-        <p>Phone / WhatsApp: +254 700 000 000</p>
-        <p>Location: Nairobi, Kenya</p>
+        <p>
+          Email:{" "}
+          <a href={`mailto:${CONTACT_EMAIL}`} className="text-primary underline-offset-4 hover:underline">
+            {CONTACT_EMAIL}
+          </a>
+        </p>
+        <p>
+          Phone:{" "}
+          <a href={`tel:${CONTACT_PHONE}`} className="text-primary underline-offset-4 hover:underline">
+            {CONTACT_PHONE_DISPLAY}
+          </a>
+        </p>
+        <p>
+          WhatsApp:{" "}
+          <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="text-primary underline-offset-4 hover:underline">
+            {CONTACT_PHONE_DISPLAY}
+          </a>
+        </p>
+        <p>Location: {CONTACT_LOCATION}</p>
+        <p>
+          Facebook:{" "}
+          <a href={FACEBOOK_URL} target="_blank" rel="noreferrer" className="text-primary underline-offset-4 hover:underline">
+            Visit our Facebook page
+          </a>
+        </p>
       </section>
       <section className="space-y-3">
         <h2 className="font-serif text-2xl font-medium text-foreground">Support Hours</h2>

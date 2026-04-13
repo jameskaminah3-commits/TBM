@@ -1,5 +1,13 @@
-import { Facebook, Instagram, Mail, MapPin, Phone, Twitter } from "lucide-react";
+import { Facebook, Mail, MapPin, MessageCircle, Phone } from "lucide-react";
 import { Link } from "wouter";
+import {
+  CONTACT_EMAIL,
+  CONTACT_LOCATION,
+  CONTACT_PHONE,
+  CONTACT_PHONE_DISPLAY,
+  FACEBOOK_URL,
+  WHATSAPP_URL,
+} from "@/lib/contact-info";
 
 const exploreLinks = [
   { href: "/accommodations", label: "Stays" },
@@ -58,29 +66,47 @@ export function SiteFooter() {
           <div>
             <h4 className="mb-4 text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-foreground/80">Contact</h4>
             <div className="space-y-3 text-sm text-muted-foreground">
-              <a href="tel:+254700000000" className="flex items-center gap-2 transition-colors hover:text-primary">
+              <a href={`tel:${CONTACT_PHONE}`} className="flex items-center gap-2 transition-colors hover:text-primary">
                 <Phone className="h-4 w-4" />
-                <span>+254 700 000 000</span>
+                <span>{CONTACT_PHONE_DISPLAY}</span>
               </a>
-              <a href="mailto:hello@tembeabilamatata.com" className="flex items-center gap-2 transition-colors hover:text-primary">
+              <a
+                href={WHATSAPP_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-2 transition-colors hover:text-primary"
+              >
+                <MessageCircle className="h-4 w-4" />
+                <span>WhatsApp: {CONTACT_PHONE_DISPLAY}</span>
+              </a>
+              <a href={`mailto:${CONTACT_EMAIL}`} className="flex items-center gap-2 transition-colors hover:text-primary">
                 <Mail className="h-4 w-4" />
-                <span>hello@tembeabilamatata.com</span>
+                <span>{CONTACT_EMAIL}</span>
               </a>
               <div className="flex items-start gap-2">
                 <MapPin className="mt-0.5 h-4 w-4" />
-                <span>Nairobi, Kenya</span>
+                <span>{CONTACT_LOCATION}</span>
               </div>
             </div>
 
             <div className="mt-5 flex items-center gap-3">
-              <a href="#" aria-label="Instagram" className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary transition-colors hover:bg-primary/20">
-                <Instagram className="h-5 w-5" />
+              <a
+                href={WHATSAPP_URL}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="WhatsApp"
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary transition-colors hover:bg-primary/20"
+              >
+                <MessageCircle className="h-5 w-5" />
               </a>
-              <a href="#" aria-label="Facebook" className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary transition-colors hover:bg-primary/20">
+              <a
+                href={FACEBOOK_URL}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Facebook"
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary transition-colors hover:bg-primary/20"
+              >
                 <Facebook className="h-5 w-5" />
-              </a>
-              <a href="#" aria-label="Twitter" className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary transition-colors hover:bg-primary/20">
-                <Twitter className="h-5 w-5" />
               </a>
             </div>
           </div>

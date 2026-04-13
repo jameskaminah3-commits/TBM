@@ -4,6 +4,7 @@ export type PendingBookingDraft = {
   kind: "stay" | "service";
   path: string;
   payload: Record<string, unknown>;
+  updatedAt?: number;
 };
 
 function canUseStorage() {
@@ -18,9 +19,43 @@ export function getCurrentBookingPath() {
   return `${window.location.pathname}${window.location.search}`;
 }
 
+function normalizeBookingPath(path: string) {
+  const trimmedPath = path.trim();
+  if (!trimmedPath) {
+    return "/";
+  }
+
+  const [pathnamePart, searchPart = ""] = trimmedPath.split("?");
+  const normalizedPathname = pathnamePart || "/";
+  const params = new URLSearchParams(searchPart);
+  const sortedParams = new URLSearchParams();
+
+  Array.from(params.entries())
+    .sort(([leftKey, leftValue], [rightKey, rightValue]) => {
+      if (leftKey === rightKey) {
+        return leftValue.localeCompare(rightValue);
+      }
+
+      return leftKey.localeCompare(rightKey);
+    })
+    .forEach(([key, value]) => {
+      sortedParams.append(key, value);
+    });
+
+  const normalizedSearch = sortedParams.toString();
+  return `${normalizedPathname}${normalizedSearch ? `?${normalizedSearch}` : ""}`;
+}
+
+export function isPendingBookingPathMatch(savedPath: string, currentPath: string) {
+  return normalizeBookingPath(savedPath) === normalizeBookingPath(currentPath);
+}
+
 export function savePendingBookingDraft(draft: PendingBookingDraft) {
   if (!canUseStorage()) return;
-  window.localStorage.setItem(PENDING_BOOKING_STORAGE_KEY, JSON.stringify(draft));
+  window.localStorage.setItem(PENDING_BOOKING_STORAGE_KEY, JSON.stringify({
+    ...draft,
+    updatedAt: Date.now(),
+  }));
 }
 
 export function loadPendingBookingDraft(): PendingBookingDraft | null {
