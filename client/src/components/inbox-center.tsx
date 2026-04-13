@@ -168,14 +168,20 @@ export function InboxCenter({
       );
     });
   }, [alertItems, mode, normalizedSearch, showImportantOnly, showUnreadOnly]);
-  const focusedAlertIds = useMemo(() => new Set(
-    alertItems
-      .filter((item) =>
-        (!focus?.bookingId || item.bookingId === focus.bookingId) &&
-        (!focus?.assignmentId || item.assignmentId === focus.assignmentId),
-      )
-      .map((item) => item.id),
-  ), [alertItems, focus?.assignmentId, focus?.bookingId]);
+  const focusedAlertIds = useMemo(() => {
+    if (!focus?.bookingId && !focus?.assignmentId) {
+      return new Set<string>();
+    }
+
+    return new Set(
+      alertItems
+        .filter((item) =>
+          (!focus?.bookingId || item.bookingId === focus.bookingId) &&
+          (!focus?.assignmentId || item.assignmentId === focus.assignmentId),
+        )
+        .map((item) => item.id),
+    );
+  }, [alertItems, focus?.assignmentId, focus?.bookingId]);
   const hasFilters = normalizedSearch.length > 0 || showUnreadOnly || showImportantOnly;
   const visibleUnreadThreadKeys = filteredThreads
     .filter((thread) => getThreadUnreadCount(thread) > 0)
@@ -410,7 +416,9 @@ export function InboxCenter({
                     key={item.id}
                     className={cn(
                       "rounded-[1.4rem] border p-4",
-                      isFocused ? "border-amber-300 bg-amber-50/70" : "border-border/60 bg-background/70",
+                      isFocused
+                        ? "border-amber-300 bg-amber-50/70 dark:border-amber-500/50 dark:bg-amber-500/10"
+                        : "border-border/60 bg-background/70",
                     )}
                   >
                     <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
