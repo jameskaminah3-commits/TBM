@@ -23,8 +23,10 @@ import heroImageLarge from "@assets/generated_images/home-hero-1408.jpg";
 import heroImageSmall from "@assets/generated_images/home-hero-768.jpg";
 import chefStoryImage from "@assets/generated_images/home-chef-960.jpg";
 import messyWhatsappImage from "@assets/generated_images/home-whatsapp-420.jpg";
-import trustStoryImage from "@assets/generated_images/Luxury_beachfront_villa_hero_b917e1ae.png";
-import tailoredTripImage from "@assets/generated_images/Mediterranean_villa_accommodation_649da59e.png";
+import trustStoryImageLarge from "@assets/generated_images/trust-story-1280.jpg";
+import trustStoryImageSmall from "@assets/generated_images/trust-story-768.jpg";
+import tailoredTripImageLarge from "@assets/generated_images/tailored-trip-1280.jpg";
+import tailoredTripImageSmall from "@assets/generated_images/tailored-trip-768.jpg";
 import type { Stay, Car as CarType, Cook, Errand, Experience } from "@shared/schema";
 
 type ShowcaseItem = {
@@ -34,6 +36,13 @@ type ShowcaseItem = {
   mediaType?: string | null;
   rating: number;
   reviewCount: number;
+};
+
+type StoryPhoto = {
+  src: string;
+  srcSet?: string;
+  width?: number;
+  height?: number;
 };
 
 function ServiceShowcaseCard({
@@ -111,6 +120,8 @@ function ServiceShowcaseCard({
                     alt={item.title}
                     mediaType={item.mediaType}
                     className="h-full w-full object-cover"
+                    loading={index === 0 ? "eager" : "lazy"}
+                    decoding="async"
                   />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center bg-primary/10">
@@ -159,6 +170,7 @@ export default function Home() {
   const [guests, setGuests] = useState("2");
   const heroServiceLabels = ["Stays", "Transport", "Private Chefs", "Experience", "Errands"];
   const heroImageSrcSet = `${heroImageSmall} 768w, ${heroImageLarge} 1408w`;
+  const storyImageSizes = "(min-width: 1024px) 48vw, 100vw";
   const primaryCtaClassName =
     "w-full rounded-xl border border-white/12 bg-[#f98b5b] px-6 py-5 text-base font-medium text-white shadow-[0_20px_44px_-24px_rgba(249,139,91,0.58),inset_0_1px_0_rgba(255,255,255,0.18)] transition-all duration-300 hover:-translate-y-0.5 hover:bg-[#f58756] hover:shadow-[0_24px_54px_-24px_rgba(249,139,91,0.66)] sm:w-auto sm:min-w-[16rem] sm:px-8 sm:py-6 sm:text-lg";
   const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
@@ -168,7 +180,12 @@ export default function Home() {
       title: "Every detail is verified before it reaches your holiday.",
       description:
         "Every villa is personally inspected, every chef and driver is thoroughly vetted, and every experience is hand-picked. We only partner with people we would confidently recommend to our own families.",
-      image: trustStoryImage,
+      image: {
+        src: trustStoryImageLarge,
+        srcSet: `${trustStoryImageSmall} 768w, ${trustStoryImageLarge} 1280w`,
+        width: 1280,
+        height: 698,
+      } satisfies StoryPhoto,
       position: "center",
       visual: "photo",
     },
@@ -177,7 +194,11 @@ export default function Home() {
       title: "Local knowledge that feels genuine, not packaged.",
       description:
         "Our chefs, drivers, and guides are locals who know the best markets, family recipes, hidden sunset spots, and genuine Swahili traditions - delivering experiences that feel authentic, not touristy.",
-      image: chefStoryImage,
+      image: {
+        src: chefStoryImage,
+        width: 960,
+        height: 720,
+      } satisfies StoryPhoto,
       position: "center",
       visual: "photo",
     },
@@ -200,7 +221,12 @@ export default function Home() {
       title: "Tailored for romance, family ease, or something worth celebrating.",
       description:
         "Whether you're a couple seeking romance, a family wanting convenience, or a group celebrating something special, we shape the details so your holiday feels personal and memorable.",
-      image: tailoredTripImage,
+      image: {
+        src: tailoredTripImageLarge,
+        srcSet: `${tailoredTripImageSmall} 768w, ${tailoredTripImageLarge} 1280w`,
+        width: 1280,
+        height: 896,
+      } satisfies StoryPhoto,
       position: "center top",
       visual: "photo",
     },
@@ -520,11 +546,15 @@ export default function Home() {
                       {story.visual === "photo" ? (
                         <div className="relative aspect-[4/3] md:aspect-[16/10]">
                           <img
-                            src={story.image}
+                            src={story.image.src}
+                            srcSet={story.image.srcSet}
+                            sizes={storyImageSizes}
                             alt={story.title}
+                            width={story.image.width}
+                            height={story.image.height}
                             className="absolute inset-0 h-full w-full scale-100 object-cover transition-transform duration-700 ease-out group-hover:scale-[1.03]"
                             style={{ objectPosition: story.position }}
-                            loading="lazy"
+                            loading="eager"
                             decoding="async"
                           />
                           <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(87,56,31,0.06)_0%,rgba(87,56,31,0.14)_36%,rgba(26,18,12,0.36)_100%)]" />
@@ -574,7 +604,7 @@ export default function Home() {
                                   height={568}
                                   className="w-full object-contain"
                                   style={{ aspectRatio: "728 / 1192" }}
-                                  loading="lazy"
+                                  loading="eager"
                                   decoding="async"
                                 />
                               </div>
