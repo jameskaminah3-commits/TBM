@@ -1,6 +1,6 @@
-import { Suspense, lazy, type ReactNode } from "react";
+import { Suspense, lazy, type ReactNode, useRef } from "react";
 import { Switch, Route, useLocation } from "wouter";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, useIsFetching } from "@tanstack/react-query";
 import { queryClient } from "./lib/queryClient";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -11,6 +11,7 @@ import { SiteFooter } from "@/components/site-footer";
 import { TembeaLoader } from "@/components/tembea-loader";
 import { CurrencyProvider } from "@/lib/currency";
 import { ConciergeSearchProvider, getSectionFromPath } from "@/lib/concierge-search";
+import { useRouteMediaReady } from "@/hooks/use-route-media-ready";
 import Home from "@/pages/home";
 
 const Accommodations = lazy(() => import("@/pages/accommodations"));
@@ -68,7 +69,7 @@ function AppRoute({ path, element }: { path?: string; element: ReactNode }) {
 }
 
 function RouteFallback() {
-  return <TembeaLoader className="min-h-[52vh]" />;
+  return <div data-route-fallback="true" aria-hidden="true" className="hidden" />;
 }
 
 function Router() {
@@ -132,8 +133,11 @@ function Router() {
   );
 }
 
-function App() {
+function AppShell() {
   const [location] = useLocation();
+  const routeContainerRef = useRef<HTMLDivElement | null>(null);
+  const blockingFetchCount = useIsFetching();
+  const isRouteMediaReady = useRouteMediaReady(location, routeContainerRef, blockingFetchCount);
   const currentSection = getSectionFromPath(location);
   const isAdminRoute = location.startsWith("/admin/");
   const isProviderRoute = location.startsWith("/provider/");
@@ -143,21 +147,38 @@ function App() {
   const shouldShowSiteChrome = !isAuthRoute && !isDashboardRoute;
 
   return (
+    <TooltipProvider>
+      <div className="min-h-screen flex flex-col">
+        {shouldShowHeader ? <Header /> : null}
+        {shouldShowSiteChrome && currentSection ? <ConciergeSearchBar currentSection={currentSection} /> : null}
+        <main className="relative flex-1">
+          <div ref={routeContainerRef}>
+            <Router />
+          </div>
+
+          {!isRouteMediaReady ? (
+            <div className="fixed inset-0 z-[140] bg-[rgba(255,250,244,0.94)] backdrop-blur-[2px]">
+              <TembeaLoader className="min-h-screen" />
+            </div>
+          ) : null}
+        </main>
+        {!isDashboardRoute && !isAuthRoute ? <SiteFooter /> : null}
+      </div>
+      <Toaster />
+    </TooltipProvider>
+  );
+}
+
+function App() {
+  const [location] = useLocation();
+  const isDashboardRoute = location.startsWith("/admin/") || location.startsWith("/provider/");
+
+  return (
     <QueryClientProvider client={queryClient}>
       <CurrencyProvider preferredCurrency={isDashboardRoute ? "KES" : undefined}>
         <ConciergeSearchProvider>
           <ThemeProvider defaultTheme="light">
-            <TooltipProvider>
-              <div className="min-h-screen flex flex-col">
-                {shouldShowHeader ? <Header /> : null}
-                {shouldShowSiteChrome && currentSection ? <ConciergeSearchBar currentSection={currentSection} /> : null}
-                <main className="flex-1">
-                  <Router />
-                </main>
-                {!isDashboardRoute && !isAuthRoute ? <SiteFooter /> : null}
-              </div>
-              <Toaster />
-            </TooltipProvider>
+            <AppShell />
           </ThemeProvider>
         </ConciergeSearchProvider>
       </CurrencyProvider>
