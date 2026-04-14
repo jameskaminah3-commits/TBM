@@ -14,7 +14,7 @@ function shouldRejectUnauthorizedDatabaseSsl(databaseUrl: URL) {
   }
 
   const sslMode = databaseUrl.searchParams.get("sslmode")?.trim().toLowerCase();
-  return sslMode !== "no-verify";
+  return sslMode === "verify-ca" || sslMode === "verify-full";
 }
 
 function buildPostgresCredentials() {

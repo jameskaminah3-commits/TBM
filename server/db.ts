@@ -76,7 +76,7 @@ function shouldRejectUnauthorizedDatabaseSsl(parsedUrl: URL | null) {
   }
 
   const sslMode = parsedUrl?.searchParams.get("sslmode")?.trim().toLowerCase();
-  return sslMode !== "no-verify";
+  return sslMode === "verify-ca" || sslMode === "verify-full";
 }
 
 function buildDatabaseSslConfig() {
