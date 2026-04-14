@@ -1293,15 +1293,15 @@ export interface IStorage {
   getBookingsBySelectedServiceId(serviceId: string): Promise<Booking[]>;
   getBooking(id: string): Promise<Booking | undefined>;
   createBooking(
-    booking: ServerBooking & Partial<Pick<Booking, "paymentStatus" | "paymentProvider" | "paymentReference" | "paymentSessionId" | "paymentCurrency" | "paymentAmount" | "paymentDepositAmount" | "paymentAmountPaid" | "paymentHoldExpiresAt" | "paidAt" | "paymentFailedAt">>,
+    booking: ServerBooking & Partial<Pick<Booking, "paymentStatus" | "paymentProvider" | "paymentReference" | "paymentSessionId" | "paymentCurrency" | "paymentAmount" | "paymentCheckoutAmount" | "paymentDepositAmount" | "paymentAmountPaid" | "paymentHoldExpiresAt" | "paidAt" | "paymentFailedAt">>,
   ): Promise<Booking>;
   updateBooking(
     id: string,
-    booking: Partial<InsertBooking> & Partial<Pick<Booking, "paymentStatus" | "paymentProvider" | "paymentReference" | "paymentSessionId" | "paymentCurrency" | "paymentAmount" | "paymentDepositAmount" | "paymentAmountPaid" | "paymentHoldExpiresAt" | "paidAt" | "paymentFailedAt">>,
+    booking: Partial<InsertBooking> & Partial<Pick<Booking, "paymentStatus" | "paymentProvider" | "paymentReference" | "paymentSessionId" | "paymentCurrency" | "paymentAmount" | "paymentCheckoutAmount" | "paymentDepositAmount" | "paymentAmountPaid" | "paymentHoldExpiresAt" | "paidAt" | "paymentFailedAt">>,
   ): Promise<Booking | undefined>;
   updateBookingPaymentState(
     id: string,
-    booking: Partial<Pick<Booking, "paymentStatus" | "paymentProvider" | "paymentReference" | "paymentSessionId" | "paymentCurrency" | "paymentAmount" | "paymentDepositAmount" | "paymentAmountPaid" | "paymentHoldExpiresAt" | "paidAt" | "paymentFailedAt">>,
+    booking: Partial<Pick<Booking, "paymentStatus" | "paymentProvider" | "paymentReference" | "paymentSessionId" | "paymentCurrency" | "paymentAmount" | "paymentCheckoutAmount" | "paymentDepositAmount" | "paymentAmountPaid" | "paymentHoldExpiresAt" | "paidAt" | "paymentFailedAt">>,
   ): Promise<Booking | undefined>;
   deleteBooking(id: string): Promise<boolean>;
   getBookingMessages(bookingId: string): Promise<BookingMessage[]>;
@@ -1842,6 +1842,7 @@ export class DatabaseStorage implements IStorage {
       ADD COLUMN IF NOT EXISTS payment_session_id text,
       ADD COLUMN IF NOT EXISTS payment_currency varchar NOT NULL DEFAULT 'USD',
       ADD COLUMN IF NOT EXISTS payment_amount integer,
+      ADD COLUMN IF NOT EXISTS payment_checkout_amount integer,
       ADD COLUMN IF NOT EXISTS payment_deposit_amount integer,
       ADD COLUMN IF NOT EXISTS payment_amount_paid integer NOT NULL DEFAULT 0,
       ADD COLUMN IF NOT EXISTS payment_hold_expires_at text,
@@ -2176,6 +2177,9 @@ export class DatabaseStorage implements IStorage {
     if (!columns.has("payment_amount")) {
       delete filtered.paymentAmount;
     }
+    if (!columns.has("payment_checkout_amount")) {
+      delete filtered.paymentCheckoutAmount;
+    }
     if (!columns.has("payment_deposit_amount")) {
       delete filtered.paymentDepositAmount;
     }
@@ -2196,7 +2200,6 @@ export class DatabaseStorage implements IStorage {
   }
 
   private async getBookingAnalyticsRows(): Promise<Booking[]> {
-    await this.ensurePaymentsTables();
     const columns = await this.getTableColumns("bookings");
     const result = await pool.query(`
       select
@@ -2258,6 +2261,7 @@ export class DatabaseStorage implements IStorage {
         ${columns.has("payment_session_id") ? 'payment_session_id as "paymentSessionId",' : 'NULL::text as "paymentSessionId",'}
         ${columns.has("payment_currency") ? 'payment_currency as "paymentCurrency",' : '\'USD\'::text as "paymentCurrency",'}
         ${columns.has("payment_amount") ? 'payment_amount as "paymentAmount",' : 'NULL::integer as "paymentAmount",'}
+        ${columns.has("payment_checkout_amount") ? 'payment_checkout_amount as "paymentCheckoutAmount",' : 'NULL::integer as "paymentCheckoutAmount",'}
         ${columns.has("payment_deposit_amount") ? 'payment_deposit_amount as "paymentDepositAmount",' : 'NULL::integer as "paymentDepositAmount",'}
         ${columns.has("payment_amount_paid") ? 'payment_amount_paid as "paymentAmountPaid",' : '0::integer as "paymentAmountPaid",'}
         ${columns.has("payment_hold_expires_at") ? 'payment_hold_expires_at as "paymentHoldExpiresAt",' : 'NULL::text as "paymentHoldExpiresAt",'}
@@ -2329,6 +2333,7 @@ export class DatabaseStorage implements IStorage {
       paymentSessionId: row.paymentSessionId ?? null,
       paymentCurrency: row.paymentCurrency ?? "USD",
       paymentAmount: row.paymentAmount == null ? null : Number(row.paymentAmount),
+      paymentCheckoutAmount: row.paymentCheckoutAmount == null ? null : Number(row.paymentCheckoutAmount),
       paymentDepositAmount: row.paymentDepositAmount == null ? null : Number(row.paymentDepositAmount),
       paymentAmountPaid: row.paymentAmountPaid == null ? 0 : Number(row.paymentAmountPaid),
       paymentHoldExpiresAt: row.paymentHoldExpiresAt ?? null,
@@ -2552,7 +2557,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createBooking(
-    data: ServerBooking & Partial<Pick<Booking, "paymentStatus" | "paymentProvider" | "paymentReference" | "paymentSessionId" | "paymentCurrency" | "paymentAmount" | "paymentDepositAmount" | "paymentAmountPaid" | "paymentHoldExpiresAt" | "paidAt" | "paymentFailedAt">>,
+    data: ServerBooking & Partial<Pick<Booking, "paymentStatus" | "paymentProvider" | "paymentReference" | "paymentSessionId" | "paymentCurrency" | "paymentAmount" | "paymentCheckoutAmount" | "paymentDepositAmount" | "paymentAmountPaid" | "paymentHoldExpiresAt" | "paidAt" | "paymentFailedAt">>,
   ): Promise<Booking> {
     await this.ensurePaymentsTables();
     const now = new Date().toISOString();
@@ -2571,7 +2576,7 @@ export class DatabaseStorage implements IStorage {
 
   async updateBooking(
     id: string,
-    data: Partial<InsertBooking> & Partial<Pick<Booking, "paymentStatus" | "paymentProvider" | "paymentReference" | "paymentSessionId" | "paymentCurrency" | "paymentAmount" | "paymentDepositAmount" | "paymentAmountPaid" | "paymentHoldExpiresAt" | "paidAt" | "paymentFailedAt">>,
+    data: Partial<InsertBooking> & Partial<Pick<Booking, "paymentStatus" | "paymentProvider" | "paymentReference" | "paymentSessionId" | "paymentCurrency" | "paymentAmount" | "paymentCheckoutAmount" | "paymentDepositAmount" | "paymentAmountPaid" | "paymentHoldExpiresAt" | "paidAt" | "paymentFailedAt">>,
   ): Promise<Booking | undefined> {
     await this.ensurePaymentsTables();
     const columns = await this.getTableColumns("bookings");
@@ -2591,7 +2596,7 @@ export class DatabaseStorage implements IStorage {
 
   async updateBookingPaymentState(
     id: string,
-    data: Partial<Pick<Booking, "paymentStatus" | "paymentProvider" | "paymentReference" | "paymentSessionId" | "paymentCurrency" | "paymentAmount" | "paymentDepositAmount" | "paymentAmountPaid" | "paymentHoldExpiresAt" | "paidAt" | "paymentFailedAt">>,
+    data: Partial<Pick<Booking, "paymentStatus" | "paymentProvider" | "paymentReference" | "paymentSessionId" | "paymentCurrency" | "paymentAmount" | "paymentCheckoutAmount" | "paymentDepositAmount" | "paymentAmountPaid" | "paymentHoldExpiresAt" | "paidAt" | "paymentFailedAt">>,
   ): Promise<Booking | undefined> {
     await this.ensurePaymentsTables();
     const columns = await this.getTableColumns("bookings");

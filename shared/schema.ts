@@ -346,6 +346,7 @@ export const bookings = pgTable("bookings", {
   paymentSessionId: text("payment_session_id"),
   paymentCurrency: varchar("payment_currency").notNull().default("USD"),
   paymentAmount: integer("payment_amount"),
+  paymentCheckoutAmount: integer("payment_checkout_amount"),
   paymentDepositAmount: integer("payment_deposit_amount"),
   paymentAmountPaid: integer("payment_amount_paid").notNull().default(0),
   paymentHoldExpiresAt: text("payment_hold_expires_at"),
@@ -378,6 +379,7 @@ export const insertBookingSchema = createInsertSchema(bookings).omit({
   paymentSessionId: true,
   paymentCurrency: true,
   paymentAmount: true,
+  paymentCheckoutAmount: true,
   paymentDepositAmount: true,
   paymentAmountPaid: true,
   paymentHoldExpiresAt: true,
@@ -393,6 +395,39 @@ export const insertBookingSchema = createInsertSchema(bookings).omit({
   stayServiceSelections: z.array(stayServiceSelectionSchema).optional(),
 });
 
+export const publicBookingRequestSchema = insertBookingSchema.omit({
+  bookingType: true,
+  status: true,
+  totalPrice: true,
+  serviceRequestFee: true,
+  serviceRequestFeeKes: true,
+  serviceResponseMessage: true,
+  customMenuProposalStatus: true,
+  customMenuProposedAmount: true,
+  customMenuProposalMessage: true,
+  customMenuDeclineReason: true,
+  customMenuClientDecision: true,
+  customMenuClientRespondedAt: true,
+  customMenuCreditCode: true,
+  customMenuCreditAmount: true,
+  customMenuReviewedByUserId: true,
+  customMenuReviewedAt: true,
+  experienceCustomOfferStatus: true,
+  experienceCustomOfferAmount: true,
+  experienceCustomOfferMessage: true,
+  experienceCustomOfferDeclineReason: true,
+  experienceCustomOfferClientDecision: true,
+  experienceCustomOfferClientRespondedAt: true,
+  experienceCustomOfferReviewedByUserId: true,
+  experienceCustomOfferReviewedAt: true,
+  providerStatusRequest: true,
+  providerStatusRequestNote: true,
+  providerStatusRequestedByUserId: true,
+  providerStatusRequestedAt: true,
+  providerStatusReviewedByUserId: true,
+  providerStatusReviewedAt: true,
+});
+
 // Server-side schema for validation after injecting session data
 export const serverBookingSchema = insertBookingSchema.extend({
   userId: z.string(),
@@ -400,6 +435,7 @@ export const serverBookingSchema = insertBookingSchema.extend({
 });
 
 export type InsertBooking = z.infer<typeof insertBookingSchema>;
+export type PublicBookingRequest = z.infer<typeof publicBookingRequestSchema>;
 export type ServerBooking = z.infer<typeof serverBookingSchema>;
 export type Booking = typeof bookings.$inferSelect;
 export const bookingPaymentSessionRequestSchema = z.object({

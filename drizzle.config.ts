@@ -4,6 +4,19 @@ if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL, ensure the database is provisioned");
 }
 
+function shouldRejectUnauthorizedDatabaseSsl(databaseUrl: URL) {
+  const explicit = process.env.DATABASE_SSL_REJECT_UNAUTHORIZED?.trim().toLowerCase();
+  if (explicit === "false" || explicit === "0" || explicit === "no") {
+    return false;
+  }
+  if (explicit === "true" || explicit === "1" || explicit === "yes") {
+    return true;
+  }
+
+  const sslMode = databaseUrl.searchParams.get("sslmode")?.trim().toLowerCase();
+  return sslMode !== "no-verify";
+}
+
 function buildPostgresCredentials() {
   const databaseUrl = new URL(process.env.DATABASE_URL!);
   const overrideHost = process.env.DATABASE_HOST_OVERRIDE?.trim();
@@ -17,7 +30,7 @@ function buildPostgresCredentials() {
   const ssl = sslMode === "disable"
     ? false
     : {
-        rejectUnauthorized: sslMode === "verify-full",
+        rejectUnauthorized: shouldRejectUnauthorizedDatabaseSsl(databaseUrl),
         servername: process.env.DATABASE_SSL_SERVERNAME?.trim() || databaseUrl.hostname,
       };
 

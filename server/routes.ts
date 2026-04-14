@@ -10,8 +10,8 @@ import {
   setupAuth,
 } from "./middleware/auth";
 import {
-  insertBookingSchema,
   insertBookingMessageSchema,
+  publicBookingRequestSchema,
   serverBookingSchema,
   insertAccommodationSchema,
   insertServiceSchema,
@@ -57,10 +57,10 @@ import {
   createHostedCheckoutSession,
   getApplicationBaseUrl,
   getBookingIdFromPaymentReference,
+  getVerifiedPaymentCheckoutAmount,
   verifyPaystackPayment,
   verifyPaystackWebhookSignature,
   verifyPesapalPayment,
-  type HostedCheckoutSession,
   type VerifiedHostedPayment,
 } from "./customer-payments";
 import {
@@ -87,6 +87,60 @@ function normalizeDateOnly(value: string) {
     throw new Error("Invalid booking date");
   }
   return date;
+}
+
+function buildServerManagedBookingInput(
+  bookingData: z.input<typeof publicBookingRequestSchema>,
+  userId: string,
+  guestEmail: string,
+) {
+  const accommodationId = typeof bookingData.accommodationId === "string" && bookingData.accommodationId.trim()
+    ? bookingData.accommodationId
+    : null;
+  const selectedServices = Array.isArray(bookingData.selectedServices)
+    ? bookingData.selectedServices
+        .filter((serviceId): serviceId is string => typeof serviceId === "string")
+        .map((serviceId) => serviceId.trim())
+        .filter(Boolean)
+    : [];
+
+  return serverBookingSchema.parse({
+    ...bookingData,
+    accommodationId,
+    selectedServices,
+    userId,
+    guestEmail,
+    bookingType: accommodationId ? "accommodation" : "service",
+    status: "upcoming",
+    totalPrice: 0,
+    serviceRequestFee: null,
+    serviceRequestFeeKes: null,
+    serviceResponseMessage: null,
+    customMenuProposalStatus: "pending",
+    customMenuProposedAmount: null,
+    customMenuProposalMessage: null,
+    customMenuDeclineReason: null,
+    customMenuClientDecision: "pending",
+    customMenuClientRespondedAt: null,
+    customMenuCreditCode: null,
+    customMenuCreditAmount: null,
+    customMenuReviewedByUserId: null,
+    customMenuReviewedAt: null,
+    experienceCustomOfferStatus: "pending",
+    experienceCustomOfferAmount: null,
+    experienceCustomOfferMessage: null,
+    experienceCustomOfferDeclineReason: null,
+    experienceCustomOfferClientDecision: "pending",
+    experienceCustomOfferClientRespondedAt: null,
+    experienceCustomOfferReviewedByUserId: null,
+    experienceCustomOfferReviewedAt: null,
+    providerStatusRequest: null,
+    providerStatusRequestNote: null,
+    providerStatusRequestedByUserId: null,
+    providerStatusRequestedAt: null,
+    providerStatusReviewedByUserId: null,
+    providerStatusReviewedAt: null,
+  });
 }
 
 function hashPassword(password: string, salt = crypto.randomBytes(16).toString("hex")) {
@@ -192,6 +246,24 @@ function isTransientDatabaseError(error: unknown) {
   ].some((fragment) => message.includes(fragment));
 }
 
+function isDatabaseTlsConfigurationError(error: unknown) {
+  const code = getErrorCode(error);
+  if (["SELF_SIGNED_CERT_IN_CHAIN", "DEPTH_ZERO_SELF_SIGNED_CERT", "UNABLE_TO_VERIFY_LEAF_SIGNATURE"].includes(code)) {
+    return true;
+  }
+
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return [
+    "self-signed certificate",
+    "certificate chain",
+    "unable to verify the first certificate",
+  ].some((fragment) => message.includes(fragment));
+}
+
 function isDatabaseSetupError(error: unknown) {
   const code = getErrorCode(error);
   if (["3D000", "3F000", "42P01"].includes(code)) {
@@ -208,6 +280,14 @@ function isDatabaseSetupError(error: unknown) {
 
 function sendPublicCatalogFailure(resource: string, res: ExpressResponse, error: unknown) {
   logPublicFetchFailure(resource, error);
+
+  if (isDatabaseTlsConfigurationError(error)) {
+    return res.status(503).json({
+      error: process.env.NODE_ENV === "production"
+        ? "Service listings are temporarily unavailable while the database TLS connection is being verified. Please try again."
+        : "Service listings could not reach the database because TLS certificate verification failed. For local-only testing, set DATABASE_SSL_REJECT_UNAUTHORIZED=false and restart the server.",
+    });
+  }
 
   if (isDatabaseSetupError(error)) {
     return res.status(503).json({
@@ -503,6 +583,7 @@ async function startHostedBookingPayment(
     paymentSessionId: payment.sessionId,
     paymentCurrency: payment.currency,
     paymentAmount: payment.amount,
+    paymentCheckoutAmount: amountUsd,
     paymentHoldExpiresAt: payment.holdExpiresAt,
     paidAt: getBookingAmountPaid(booking) > 0 ? booking.paidAt : null,
     paymentFailedAt: null,
@@ -519,9 +600,22 @@ async function startHostedBookingPayment(
 }
 
 async function applyVerifiedBookingPayment(bookingId: string, verifiedPayment: VerifiedHostedPayment) {
+  const verifiedBookingId = getBookingIdFromPaymentReference(verifiedPayment.reference);
+  if (!verifiedBookingId || verifiedBookingId !== bookingId) {
+    throw new Error("Verified payment reference does not match the target booking.");
+  }
+
   const booking = await storage.getBooking(bookingId);
   if (!booking) {
     return undefined;
+  }
+
+  if (!booking.paymentReference || booking.paymentReference !== verifiedPayment.reference) {
+    throw new Error("Verified payment reference does not match the active booking payment session.");
+  }
+
+  if (booking.paymentProvider && booking.paymentProvider !== verifiedPayment.provider) {
+    throw new Error("Verified payment provider does not match the active booking payment session.");
   }
   const previousPaymentStatus = booking.paymentStatus;
   const currentAmountPaid = getBookingAmountPaid(booking);
@@ -531,7 +625,11 @@ async function applyVerifiedBookingPayment(bookingId: string, verifiedPayment: V
       return booking;
     }
 
-    const chargedAmountUsd = Math.max(1, getBookingCheckoutAmount(booking));
+    const chargedAmountUsd = getVerifiedPaymentCheckoutAmount(booking, verifiedPayment);
+    if (chargedAmountUsd == null) {
+      throw new Error("Could not reconcile the verified payment amount safely.");
+    }
+
     const isDuplicatePaidReference = booking.paymentReference === verifiedPayment.reference
       && booking.paymentProvider === verifiedPayment.provider
       && !booking.paymentHoldExpiresAt
@@ -555,6 +653,7 @@ async function applyVerifiedBookingPayment(bookingId: string, verifiedPayment: V
       paymentSessionId: verifiedPayment.sessionId,
       paymentCurrency: verifiedPayment.currency,
       paymentAmount: verifiedPayment.amount ?? booking.paymentAmount,
+      paymentCheckoutAmount: booking.paymentCheckoutAmount ?? chargedAmountUsd,
       paymentAmountPaid: nextAmountPaid,
       paymentHoldExpiresAt: null,
       paidAt: verifiedPayment.paidAt ?? new Date().toISOString(),
@@ -586,6 +685,7 @@ async function applyVerifiedBookingPayment(bookingId: string, verifiedPayment: V
     paymentSessionId: verifiedPayment.sessionId,
     paymentCurrency: verifiedPayment.currency,
     paymentAmount: verifiedPayment.amount ?? booking.paymentAmount,
+    paymentCheckoutAmount: booking.paymentCheckoutAmount,
     paymentAmountPaid: currentAmountPaid,
     paymentHoldExpiresAt: verifiedPayment.status === "processing" ? booking.paymentHoldExpiresAt : null,
     paidAt: currentAmountPaid > 0 ? booking.paidAt : null,
@@ -2163,6 +2263,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ...bookingInput,
         paymentStatus: bookingInput.totalPrice > 0 ? "pending" : "paid",
         paymentCurrency: "USD",
+        paymentCheckoutAmount: null,
         paymentAmountPaid: 0,
       });
       queueNotificationTask(
@@ -2366,6 +2467,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           paymentSessionId: null,
           paymentCurrency: "USD",
           paymentAmount: remainingBalance > 0 ? remainingBalance : 0,
+          paymentCheckoutAmount: null,
           paymentAmountPaid: 0,
           paymentDepositAmount: null,
           paymentHoldExpiresAt: null,
@@ -2433,6 +2535,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           paymentSessionId: null,
           paymentCurrency: "USD",
           paymentAmount: remainingBalance > 0 ? remainingBalance : 0,
+          paymentCheckoutAmount: null,
           paymentAmountPaid: 0,
           paymentDepositAmount: null,
           paymentHoldExpiresAt: null,
@@ -2471,18 +2574,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "User email not found in session" });
       }
       
-      // Inject session data into the request body
-      const bookingData = {
-        ...req.body,
-        userId,
-        guestEmail,
-      };
-      
-      // Validate with server-side schema that includes injected fields
-      const validatedData = serverBookingSchema.parse(bookingData);
+      const publicBookingData = publicBookingRequestSchema.parse(req.body ?? {});
+      const validatedData = buildServerManagedBookingInput(publicBookingData, userId, guestEmail);
       const parsedAttribution = marketingAttributionPayloadSchema.safeParse(req.body?.marketingAttribution);
       const marketingAttribution = parsedAttribution.success ? parsedAttribution.data : null;
       const requestedPromoCode = typeof req.body?.promoCode === "string" ? req.body.promoCode : null;
+
+      if (validatedData.bookingType === "service" && validatedData.selectedServices.length === 0) {
+        return res.status(400).json({ error: "Choose a valid service before creating a booking." });
+      }
 
       if (validatedData.serviceMode?.startsWith("errand-")) {
         const sortedSlots = getSortedServiceScheduleSlots(validatedData.serviceScheduleSlots);
@@ -2953,6 +3053,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   validatedData.experienceCustomOfferReviewedAt = null;
                   validatedData.totalPrice = customServiceRequestFeeUsd;
                 }
+              } else {
+                return res.status(404).json({ error: "Service not found" });
               }
             }
           }
@@ -3009,6 +3111,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ...validatedData,
         paymentStatus: validatedData.totalPrice > 0 ? "pending" : "paid",
         paymentCurrency: "USD",
+        paymentCheckoutAmount: null,
         paymentDepositAmount: null,
         paymentAmountPaid: 0,
       });
@@ -3065,6 +3168,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           paymentStatus: "paid",
           paymentCurrency: booking.paymentCurrency || "USD",
           paymentAmount: 0,
+          paymentCheckoutAmount: 0,
           paymentAmountPaid: Math.max(getBookingAmountPaid(booking), booking.totalPrice),
           paymentHoldExpiresAt: null,
           paidAt: booking.paidAt ?? new Date().toISOString(),
@@ -3153,13 +3257,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const merchantReference = typeof req.query?.OrderMerchantReference === "string" ? req.query.OrderMerchantReference : "";
     const bookingId = getBookingIdFromPaymentReference(merchantReference);
 
-    if (!orderTrackingId || !merchantReference || !bookingId) {
+    if (!orderTrackingId) {
       return res.redirect("/bookings?payment=failed");
     }
 
     try {
-      const verifiedPayment = await verifyPesapalPayment(orderTrackingId, merchantReference);
-      await applyVerifiedBookingPayment(bookingId, verifiedPayment);
+      const verifiedPayment = await verifyPesapalPayment(orderTrackingId);
+      if (merchantReference && verifiedPayment.reference.trim() !== merchantReference.trim()) {
+        throw new Error("Pesapal verified a different merchant reference than the callback supplied.");
+      }
+
+      const verifiedBookingId = getBookingIdFromPaymentReference(verifiedPayment.reference);
+      if (!verifiedBookingId) {
+        throw new Error("Pesapal verified payment reference did not map to a booking.");
+      }
+
+      await applyVerifiedBookingPayment(verifiedBookingId, verifiedPayment);
       const redirectStatus = verifiedPayment.status === "paid"
         ? "success"
         : verifiedPayment.status === "cancelled"
@@ -3167,10 +3280,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           : verifiedPayment.status === "processing"
             ? "pending"
             : "failed";
-      return res.redirect(getPaymentResultRedirect(bookingId, redirectStatus));
+      return res.redirect(getPaymentResultRedirect(verifiedBookingId, redirectStatus));
     } catch (error) {
       console.error("[PAYMENTS] Pesapal callback verification failed:", error);
-      return res.redirect(getPaymentResultRedirect(bookingId, "failed"));
+      return bookingId
+        ? res.redirect(getPaymentResultRedirect(bookingId, "failed"))
+        : res.redirect("/bookings?payment=failed");
     }
   });
 
@@ -3185,15 +3300,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       : typeof req.body?.OrderMerchantReference === "string"
         ? req.body.OrderMerchantReference
         : "";
-    const bookingId = getBookingIdFromPaymentReference(merchantReference);
-
-    if (!orderTrackingId || !merchantReference || !bookingId) {
+    if (!orderTrackingId) {
       return res.status(200).send("OK");
     }
 
     try {
-      const verifiedPayment = await verifyPesapalPayment(orderTrackingId, merchantReference);
-      await applyVerifiedBookingPayment(bookingId, verifiedPayment);
+      const verifiedPayment = await verifyPesapalPayment(orderTrackingId);
+      if (merchantReference && verifiedPayment.reference.trim() !== merchantReference.trim()) {
+        throw new Error("Pesapal verified a different merchant reference than the webhook supplied.");
+      }
+
+      const verifiedBookingId = getBookingIdFromPaymentReference(verifiedPayment.reference);
+      if (!verifiedBookingId) {
+        throw new Error("Pesapal verified payment reference did not map to a booking.");
+      }
+
+      await applyVerifiedBookingPayment(verifiedBookingId, verifiedPayment);
       return res.status(200).send("OK");
     } catch (error) {
       console.error("[PAYMENTS] Pesapal IPN processing failed:", error);
@@ -4138,6 +4260,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updated = await storage.updateBooking(req.params.id, {
         paymentDepositAmount: requiredDepositAmount,
         paymentStatus: getBookingAmountPaid(booking) >= Math.max(0, booking.totalPrice) ? "paid" : "pending",
+        paymentCheckoutAmount: null,
         paymentHoldExpiresAt: null,
         paymentSessionId: null,
         paymentFailedAt: null,
@@ -4193,6 +4316,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           paymentSessionId: null,
           paymentCurrency: booking.paymentCurrency || "USD",
           paymentAmount: cashAmount,
+          paymentCheckoutAmount: cashAmount,
           paymentAmountPaid: nextAmountPaid,
           paymentHoldExpiresAt: null,
           paidAt,

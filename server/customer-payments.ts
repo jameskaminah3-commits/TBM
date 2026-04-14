@@ -92,6 +92,14 @@ export type VerifiedHostedPayment = {
   rawStatus: string | null;
 };
 
+function normalizePositiveMoney(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.round(value));
+}
+
 let pesapalTokenCache: { token: string; expiresAt: number } | null = null;
 let pesapalIpnCache: { baseUrl: string; ipnId: string } | null = null;
 
@@ -483,7 +491,42 @@ export async function verifyPaystackPayment(reference: string): Promise<Verified
   };
 }
 
-export async function verifyPesapalPayment(orderTrackingId: string, merchantReference: string): Promise<VerifiedHostedPayment> {
+export function getVerifiedPaymentCheckoutAmount(
+  booking: Pick<Booking, "paymentReference" | "paymentProvider" | "paymentCurrency" | "paymentAmount" | "paymentCheckoutAmount">,
+  verifiedPayment: Pick<VerifiedHostedPayment, "provider" | "reference" | "currency" | "amount">,
+) {
+  if (!booking.paymentReference || booking.paymentReference !== verifiedPayment.reference) {
+    return null;
+  }
+
+  if (booking.paymentProvider && booking.paymentProvider !== verifiedPayment.provider) {
+    return null;
+  }
+
+  const verifiedAmount = normalizePositiveMoney(verifiedPayment.amount);
+  if (verifiedAmount <= 0) {
+    return null;
+  }
+
+  if (verifiedPayment.currency === "USD") {
+    return verifiedAmount;
+  }
+
+  if (booking.paymentCurrency !== verifiedPayment.currency) {
+    return null;
+  }
+
+  const expectedProviderAmount = normalizePositiveMoney(booking.paymentAmount);
+  const expectedCheckoutAmount = normalizePositiveMoney(booking.paymentCheckoutAmount);
+  if (expectedProviderAmount <= 0 || expectedCheckoutAmount <= 0) {
+    return null;
+  }
+
+  const settledRatio = Math.min(1, verifiedAmount / expectedProviderAmount);
+  return Math.max(0, Math.round(expectedCheckoutAmount * settledRatio));
+}
+
+export async function verifyPesapalPayment(orderTrackingId: string): Promise<VerifiedHostedPayment> {
   const token = await getPesapalBearerToken();
   const url = `${PESAPAL_API_BASE_URL}/Transactions/GetTransactionStatus?orderTrackingId=${encodeURIComponent(orderTrackingId)}`;
   const response = await fetch(url, {
@@ -500,7 +543,7 @@ export async function verifyPesapalPayment(orderTrackingId: string, merchantRefe
 
   return {
     provider: "pesapal",
-    reference: payload.merchant_reference || merchantReference,
+    reference: payload.merchant_reference,
     sessionId: orderTrackingId,
     status: mapPesapalStatus(payload.payment_status_description),
     currency: payload.currency ?? "KES",

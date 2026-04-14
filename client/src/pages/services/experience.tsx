@@ -205,7 +205,7 @@ function ExperienceCard({
 export default function ExperiencePage() {
   const [, setLocation] = useLocation();
   const { query, clearQuery } = useConciergeSearch();
-  const { data: experiences = [], isLoading } = useQuery<Experience[]>({
+  const { data: experiences = [], isLoading, isError, error, refetch } = useQuery<Experience[]>({
     queryKey: ["/api/experiences"],
   });
   const filteredExperiences = query ? filterExperiences(experiences, query) : experiences;
@@ -216,6 +216,24 @@ export default function ExperiencePage() {
         <div className="container mx-auto px-4 md:px-8">
           <div className="py-20 text-center">
             <p className="text-lg text-muted-foreground">Loading experiences...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="min-h-screen py-12">
+        <div className="container mx-auto px-4 md:px-8">
+          <div className="rounded-[1.75rem] border border-destructive/20 bg-destructive/5 p-6 text-center shadow-sm">
+            <h1 className="font-serif text-2xl text-foreground">Experiences are not available right now</h1>
+            <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
+              {error instanceof Error ? error.message : "We could not load the latest experiences."}
+            </p>
+            <Button className="mt-5 rounded-full px-5" onClick={() => refetch()}>
+              Try Again
+            </Button>
           </div>
         </div>
       </div>

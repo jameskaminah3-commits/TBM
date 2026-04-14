@@ -29,7 +29,12 @@ async function runScript(scriptPath) {
 async function main() {
   await runScript("./scripts/railway-db-push.mjs");
   await runScript("./scripts/bootstrap-admin-account.mjs");
-  await runScript("./scripts/publish-existing-listings.mjs");
+
+  if (process.env.PUBLISH_EXISTING_LISTINGS_ON_DEPLOY?.trim().toLowerCase() === "true") {
+    await runScript("./scripts/publish-existing-listings.mjs");
+  } else {
+    console.log("[predeploy] Skipping publish-existing-listings. Set PUBLISH_EXISTING_LISTINGS_ON_DEPLOY=true to run it explicitly.");
+  }
 }
 
 main().catch((error) => {

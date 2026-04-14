@@ -590,7 +590,7 @@ export default function Home() {
                         <div className="relative aspect-[4/3] md:aspect-[16/10]">
                           <img
                             src={story.image.src}
-                            srcSet={story.image.srcSet}
+                            srcSet={"srcSet" in story.image ? story.image.srcSet : undefined}
                             sizes={storyImageSizes}
                             alt={story.title}
                             width={story.image.width}

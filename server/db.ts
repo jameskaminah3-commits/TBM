@@ -66,6 +66,31 @@ function shouldUseDatabaseSsl() {
   return !isPrivateDatabaseHostname(parsedUrl.hostname);
 }
 
+function shouldRejectUnauthorizedDatabaseSsl(parsedUrl: URL | null) {
+  const explicit = process.env.DATABASE_SSL_REJECT_UNAUTHORIZED?.trim().toLowerCase();
+  if (explicit === "false" || explicit === "0" || explicit === "no") {
+    return false;
+  }
+  if (explicit === "true" || explicit === "1" || explicit === "yes") {
+    return true;
+  }
+
+  const sslMode = parsedUrl?.searchParams.get("sslmode")?.trim().toLowerCase();
+  return sslMode !== "no-verify";
+}
+
+function buildDatabaseSslConfig() {
+  const parsedUrl = parseDatabaseUrl();
+  if (!shouldUseDatabaseSsl()) {
+    return undefined;
+  }
+
+  return {
+    rejectUnauthorized: shouldRejectUnauthorizedDatabaseSsl(parsedUrl),
+    servername: process.env.DATABASE_SSL_SERVERNAME?.trim() || parsedUrl?.hostname,
+  };
+}
+
 function requestDnsJson(options: {
   ip: string;
   servername: string;
@@ -327,11 +352,7 @@ const basePoolConfig = {
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 15000,
   keepAlive: true,
-  ssl: shouldUseDatabaseSsl()
-    ? {
-        rejectUnauthorized: false,
-      }
-    : undefined,
+  ssl: buildDatabaseSslConfig(),
 };
 
 function resolvePoolMax() {

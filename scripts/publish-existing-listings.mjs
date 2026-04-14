@@ -57,6 +57,30 @@ function shouldUseDatabaseSsl(databaseUrl) {
   return !isPrivateHostname(databaseUrl.hostname);
 }
 
+function shouldRejectUnauthorizedDatabaseSsl(databaseUrl) {
+  const explicit = process.env.DATABASE_SSL_REJECT_UNAUTHORIZED?.trim().toLowerCase();
+  if (explicit === "false" || explicit === "0" || explicit === "no") {
+    return false;
+  }
+  if (explicit === "true" || explicit === "1" || explicit === "yes") {
+    return true;
+  }
+
+  const sslMode = databaseUrl.searchParams.get("sslmode")?.trim().toLowerCase();
+  return sslMode !== "no-verify";
+}
+
+function buildDatabaseSslConfig(databaseUrl) {
+  if (!shouldUseDatabaseSsl(databaseUrl)) {
+    return undefined;
+  }
+
+  return {
+    rejectUnauthorized: shouldRejectUnauthorizedDatabaseSsl(databaseUrl),
+    servername: process.env.DATABASE_SSL_SERVERNAME?.trim() || databaseUrl.hostname,
+  };
+}
+
 async function main() {
   const databaseUrl = getDatabaseUrl();
   const pool = new Pool({
@@ -64,11 +88,7 @@ async function main() {
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 15000,
     keepAlive: true,
-    ssl: shouldUseDatabaseSsl(databaseUrl)
-      ? {
-          rejectUnauthorized: false,
-        }
-      : undefined,
+    ssl: buildDatabaseSslConfig(databaseUrl),
   });
 
   const client = await pool.connect();
