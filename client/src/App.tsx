@@ -1,4 +1,4 @@
-import { Suspense, lazy, type ReactNode, useRef } from "react";
+import { Suspense, lazy, type ReactNode, useEffect, useRef } from "react";
 import { Switch, Route, useLocation } from "wouter";
 import { QueryClientProvider, useIsFetching } from "@tanstack/react-query";
 import { queryClient } from "./lib/queryClient";
@@ -145,6 +145,14 @@ function AppShell() {
   const isAuthRoute = location.startsWith("/auth");
   const shouldShowHeader = !isAuthRoute && !isProviderRoute;
   const shouldShowSiteChrome = !isAuthRoute && !isDashboardRoute;
+
+  useEffect(() => {
+    if (typeof window === "undefined" || location.includes("#")) {
+      return;
+    }
+
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [location]);
 
   return (
     <TooltipProvider>

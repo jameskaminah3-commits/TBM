@@ -122,7 +122,7 @@ export function Header() {
         </nav>
 
         <div className="flex flex-1 items-center justify-end gap-2 xl:flex-none xl:shrink-0">
-          <div className="hidden items-center rounded-full border border-border/70 bg-gradient-to-b from-background via-background to-muted/60 p-1 shadow-[0_10px_30px_-18px_rgba(15,23,42,0.9)] 2xl:flex">
+          <div className="hidden items-center rounded-full border border-border/70 bg-gradient-to-b from-background via-background to-muted/60 p-1 shadow-[0_10px_30px_-18px_rgba(15,23,42,0.9)] xl:flex">
             {currencyOptions.map((option) => {
               const isSelected = selectedCurrency === option.value;
               return (
