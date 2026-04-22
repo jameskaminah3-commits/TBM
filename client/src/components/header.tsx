@@ -64,7 +64,7 @@ export function Header() {
     { href: "/services/relax", label: "Relax", description: "Errands, laundry, and support", icon: Sparkles, testId: "link-nav-relax" },
     { href: "/services/experience", label: "Experience", description: "Curated outings and moments", icon: Compass, testId: "link-nav-experience" },
     ...(isAuthenticated
-      ? [{ href: "/bookings", label: "My Bookings", description: "Trips, updates, and status", icon: CalendarDays, testId: "link-nav-bookings" }]
+      ? [{ href: "/bookings", label: "My Bookings", shortLabel: "Bookings", description: "Trips, updates, and status", icon: CalendarDays, testId: "link-nav-bookings" }]
       : []),
   ];
 
@@ -83,19 +83,22 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/60 bg-background/94 shadow-[0_16px_40px_-32px_rgba(15,23,42,0.28)] backdrop-blur-xl supports-[backdrop-filter]:bg-background/84">
-      <div className="container mx-auto flex h-[4.7rem] min-w-0 items-center gap-2 px-4 md:gap-3 md:px-6 xl:px-8">
-        <div className="flex min-w-0 flex-1 items-center xl:flex-none">
+      <div className="container mx-auto flex h-[4.7rem] min-w-0 items-center gap-2 px-4 md:gap-3 md:px-6 xl:gap-4 xl:px-8">
+        <div className="flex min-w-0 flex-1 items-center xl:min-w-[18rem] xl:flex-none xl:pr-2 2xl:min-w-[20rem]">
           <Link
             href="/"
-            className="flex min-w-0 flex-1 items-center gap-3 sm:gap-3 xl:flex-none"
+            className="group flex min-w-0 flex-1 items-center gap-3 xl:flex-none xl:gap-3.5 xl:rounded-[1.4rem] xl:border xl:border-border/70 xl:bg-[linear-gradient(180deg,hsl(var(--background)/0.98),hsl(var(--muted)/0.45))] xl:px-3.5 xl:py-2 xl:shadow-[0_18px_34px_-30px_rgba(15,23,42,0.45)]"
             data-testid="link-home"
           >
-            <BrandMark className="h-7 shrink-0 sm:h-9" />
-            <div className="min-w-0 flex-1">
-              <div className="max-w-[13.25rem] text-balance font-serif text-[1.08rem] font-semibold leading-[0.88] tracking-[0.045em] text-foreground sm:max-w-none sm:text-[1.02rem] sm:font-medium sm:leading-[0.92] xl:text-[1.1rem]">
+            <div className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-[1rem] bg-[radial-gradient(circle_at_top,hsl(var(--primary)/0.18),hsl(var(--card)/0.95)_72%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] xl:flex">
+              <BrandMark className="h-8" />
+            </div>
+            <BrandMark className="h-7 shrink-0 sm:h-9 xl:hidden" />
+            <div className="min-w-0 flex-1 xl:flex-none xl:pr-1">
+              <div className="max-w-[13.25rem] font-serif text-[1.08rem] font-semibold leading-[0.88] tracking-[0.045em] text-foreground sm:max-w-none sm:text-[1.02rem] sm:font-medium sm:leading-[0.92] xl:whitespace-nowrap xl:text-[1rem] xl:font-semibold xl:leading-none xl:tracking-[0.035em] 2xl:text-[1.08rem]">
                 Tembea Bila Matata
               </div>
-              <div className="hidden text-[0.62rem] uppercase tracking-[0.2em] text-muted-foreground/75 2xl:block">
+              <div className="hidden text-[0.62rem] uppercase tracking-[0.2em] text-muted-foreground/75 xl:block">
                 Travel without worries
               </div>
             </div>
@@ -103,26 +106,33 @@ export function Header() {
         </div>
 
         {/* Desktop Navigation */}
-        <nav className="hidden min-w-0 flex-1 items-center justify-center gap-1 px-4 2xl:px-6 xl:flex">
+        <nav className="hidden min-w-0 flex-1 items-center justify-center gap-0.5 px-2 xl:flex 2xl:gap-1 2xl:px-5">
           {navLinks.map((link) => (
             <Link
               key={link.href}
               href={link.href}
               className={cn(
-                "inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors",
+                "inline-flex items-center justify-center whitespace-nowrap rounded-full px-2.5 py-2 text-[0.9rem] font-medium transition-colors 2xl:px-3.5 2xl:text-[0.96rem]",
                 isActive(link.href)
                   ? "bg-primary/10 text-foreground"
                   : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
               )}
               data-testid={link.testId}
             >
-              {link.label}
+              {"shortLabel" in link ? (
+                <>
+                  <span className="2xl:hidden">{link.shortLabel}</span>
+                  <span className="hidden 2xl:inline">{link.label}</span>
+                </>
+              ) : (
+                link.label
+              )}
             </Link>
           ))}
         </nav>
 
-        <div className="flex flex-1 items-center justify-end gap-2 xl:flex-none xl:shrink-0">
-          <div className="hidden items-center rounded-full border border-border/70 bg-gradient-to-b from-background via-background to-muted/60 p-1 shadow-[0_10px_30px_-18px_rgba(15,23,42,0.9)] xl:flex">
+        <div className="flex flex-1 items-center justify-end gap-2 xl:flex-none xl:gap-1.5 xl:shrink-0">
+          <div className="hidden items-center rounded-full border border-border/70 bg-gradient-to-b from-background via-background to-muted/60 p-[3px] shadow-[0_10px_30px_-18px_rgba(15,23,42,0.9)] xl:flex">
             {currencyOptions.map((option) => {
               const isSelected = selectedCurrency === option.value;
               return (
@@ -131,7 +141,7 @@ export function Header() {
                   type="button"
                   onClick={() => setSelectedCurrency(option.value)}
                   className={cn(
-                    "min-w-[72px] rounded-full px-4 py-2 text-xs font-semibold tracking-[0.18em] transition-all duration-200",
+                    "min-w-[68px] rounded-full px-3.5 py-2 text-[0.68rem] font-semibold tracking-[0.18em] transition-all duration-200",
                     isSelected
                       ? "bg-foreground text-background shadow-sm"
                       : "text-muted-foreground hover:text-foreground",
@@ -150,12 +160,13 @@ export function Header() {
           ) : null}
 
           {/* Auth Buttons - Desktop */}
-          <div className="hidden items-center gap-2 xl:flex">
+          <div className="hidden items-center gap-1.5 xl:flex">
             {!isLoading && isAdmin && (
               <Button
                 variant="ghost"
                 size="sm"
                 asChild
+                className="min-h-10 rounded-full px-3 text-[0.9rem] text-muted-foreground hover:bg-muted/70 hover:text-foreground"
                 data-testid="button-admin"
               >
                 <Link href="/admin/dashboard">
@@ -169,6 +180,7 @@ export function Header() {
                 variant="ghost"
                 size="sm"
                 asChild
+                className="min-h-10 rounded-full px-3 text-[0.9rem] text-muted-foreground hover:bg-muted/70 hover:text-foreground"
                 data-testid="button-provider"
               >
                 <Link href="/provider/dashboard">
@@ -182,6 +194,7 @@ export function Header() {
                 variant="default"
                 size="sm"
                 asChild
+                className="min-h-10 rounded-full px-4 text-[0.9rem] shadow-[0_14px_30px_-20px_rgba(15,23,42,0.55)]"
                 data-testid="button-login"
               >
                 <Link href={`/auth?next=${encodeURIComponent(location)}`}>
@@ -194,6 +207,7 @@ export function Header() {
               <Button
                 variant="ghost"
                 size="sm"
+                className="min-h-10 rounded-full px-3 text-[0.9rem] text-muted-foreground hover:bg-muted/70 hover:text-foreground"
                 onClick={handleLogout}
                 data-testid="button-logout"
               >
