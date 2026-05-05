@@ -1,4 +1,4 @@
-export const CONTACT_EMAIL = "hello@tembeabilamatata.com";
+export const CONTACT_EMAIL = "contact@tembeabilamatata.com";
 export const CONTACT_PHONE = "+254718475264";
 export const CONTACT_PHONE_DISPLAY = "+254 718 475 264";
 export const CONTACT_LOCATION = "Mombasa, Kenya";

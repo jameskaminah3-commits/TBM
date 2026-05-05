@@ -623,7 +623,7 @@ export default function AdminBookings() {
   });
 
   const paymentActionMutation = useMutation({
-    mutationFn: async ({ id, payload }: { id: string; payload: { action: "payment-received-cash" | "send-reminder" | "cancel-booking"; note?: string } }) => {
+    mutationFn: async ({ id, payload }: { id: string; payload: { action: "payment-received-cash" | "payment-received-mpesa" | "send-reminder" | "cancel-booking"; note?: string } }) => {
       const response = await apiRequest("PATCH", `/api/admin/bookings/${id}/payment-action`, payload);
       return await response.json() as Booking;
     },
@@ -633,12 +633,14 @@ export default function AdminBookings() {
       setPaymentActionNotes((current) => ({ ...current, [variables.id]: "" }));
       const hasRemainingBalance = getBookingOutstandingAmount(updatedBooking) > 0;
       toast({
-        title: variables.payload.action === "payment-received-cash"
-          ? hasRemainingBalance ? "Cash deposit recorded" : "Cash payment recorded"
+        title: variables.payload.action === "payment-received-cash" || variables.payload.action === "payment-received-mpesa"
+          ? variables.payload.action === "payment-received-mpesa"
+            ? hasRemainingBalance ? "M-Pesa deposit recorded" : "M-Pesa payment recorded"
+            : hasRemainingBalance ? "Cash deposit recorded" : "Cash payment recorded"
           : variables.payload.action === "send-reminder"
             ? "Reminder sent"
             : "Booking cancelled",
-        description: variables.payload.action === "payment-received-cash"
+        description: variables.payload.action === "payment-received-cash" || variables.payload.action === "payment-received-mpesa"
           ? hasRemainingBalance
             ? "The deposit was recorded and the dates remain locked while the balance stays pending."
             : "The booking is now fully paid and ready for the active workflow."
@@ -1112,11 +1114,17 @@ export default function AdminBookings() {
                 && booking.paymentDepositAmount < booking.totalPrice;
               const isFiftyPercentDepositRule = hasConfiguredDepositRule && booking.paymentDepositAmount === requiredDepositAmount;
               const isDepositCashCollection = amountPaid === 0 && cashCollectionAmount > 0 && cashCollectionAmount < outstandingAmount;
+              const isTemporaryMpesaReview = booking.paymentProvider === "mpesa-manual" && booking.paymentStatus === "processing";
               const cashActionLabel = isDepositCashCollection
                 ? "Deposit Received Cash"
                 : amountPaid > 0
                   ? "Balance Received Cash"
                   : "Full Payment Received Cash";
+              const manualMpesaActionLabel = isDepositCashCollection
+                ? "Confirm M-Pesa Deposit"
+                : amountPaid > 0
+                  ? "Confirm M-Pesa Balance"
+                  : "Confirm Full M-Pesa";
 
               return (
                 <AccordionItem key={booking.id} value={booking.id} className="border-none" id={`admin-booking-${booking.id}`}>
@@ -1743,6 +1751,22 @@ export default function AdminBookings() {
                               >
                                 {cashActionLabel}
                               </Button>
+                              {isTemporaryMpesaReview ? (
+                                <Button
+                                  variant="outline"
+                                  className="w-full sm:w-auto"
+                                  disabled={paymentActionMutation.isPending || requireDepositMutation.isPending}
+                                  onClick={() => paymentActionMutation.mutate({
+                                    id: booking.id,
+                                    payload: {
+                                      action: "payment-received-mpesa",
+                                      note: paymentActionNotes[booking.id] ?? "",
+                                    },
+                                  })}
+                                >
+                                  {manualMpesaActionLabel}
+                                </Button>
+                              ) : null}
                               <Button
                                 variant="secondary"
                                 className="w-full sm:w-auto"

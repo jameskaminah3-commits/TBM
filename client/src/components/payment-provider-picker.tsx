@@ -56,7 +56,7 @@ export const customRequestCheckoutPreviewCopy = {
 } as const;
 
 export function getPaymentChoiceForProvider(provider: CustomerPaymentProvider | string | null | undefined): CustomerPaymentChoice {
-  return provider === "pesapal" ? "mpesa" : "card";
+  return provider === "pesapal" || provider === "mpesa-manual" ? "mpesa" : "card";
 }
 
 export function getPaymentChoiceLabelForProvider(provider: CustomerPaymentProvider | string | null | undefined) {

@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useSearch } from "wouter";
-import { Calendar, MapPin, Users, Car, ChefHat, ShoppingBag, Compass, CheckCircle2, UserRound, Clock3, ShieldCheck, Phone, Mail, Star } from "lucide-react";
+import { Calendar, MapPin, Users, Car, ChefHat, ShoppingBag, Compass, CheckCircle2, UserRound, Clock3, ShieldCheck, Phone, Mail, Star, Download, Smartphone } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +21,7 @@ import { BookingServiceDetails } from "@/components/booking-service-details";
 import { RequestBriefAccordion } from "@/components/request-brief-accordion";
 import { CheckoutPaymentPreview, CheckoutPaymentSheet, getPaymentChoiceForProvider } from "@/components/payment-provider-picker";
 import { useAuth } from "@/hooks/useAuth";
+import { CONTACT_EMAIL, CONTACT_PHONE_DISPLAY } from "@/lib/contact-info";
 import { cn } from "@/lib/utils";
 import {
   getBookingAmountPaid,
@@ -35,6 +36,8 @@ import { customServiceRequestFeeUsd } from "@shared/custom-service";
 import type { Booking, BookingWithMarketing, Stay, Car as CarType, Cook, Errand, Experience, Review, CustomerPaymentMethod } from "@shared/schema";
 
 type ReviewTarget = { targetType: "stay" | "car" | "cook" | "errand" | "experience"; targetId: string; label: string };
+
+const TEMP_MPESA_SEND_MONEY_NUMBER = "0718475264";
 
 const getBookingPromoLabel = (booking: BookingWithMarketing) =>
   booking.marketingAttribution?.promoName
@@ -51,6 +54,10 @@ const canRetryBookingPayment = (booking: Booking) =>
   && booking.status !== "cancelled"
   && booking.status !== "completed";
 const getBookingPaymentStatusLabel = (booking: Booking) => {
+  if (booking.paymentProvider === "mpesa-manual" && booking.paymentStatus === "processing") {
+    return hasLockedInBookingDeposit(booking) ? "Manual M-Pesa submitted - balance review" : "Manual M-Pesa submitted";
+  }
+
   if (hasLockedInBookingDeposit(booking)) {
     if (booking.paymentStatus === "failed") {
       return "Balance payment failed";
@@ -90,6 +97,22 @@ const getBookingDueLabel = (booking: Booking) => {
     return "Deposit due now";
   }
   return "Amount due";
+};
+
+const formatReceiptTimestamp = (value?: string | null) => {
+  if (!value) {
+    return "Pending confirmation";
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.valueOf())) {
+    return value;
+  }
+
+  return parsed.toLocaleString("en-KE", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
 };
 const getBookingStatusLabel = (status: string) => status === "late"
   ? "Needs attention"
@@ -437,6 +460,10 @@ export default function Bookings() {
   const [activeTab, setActiveTab] = useState<"overview" | "active" | "history" | "profile">(pageIntent.activeTab);
   const [retryCheckoutBooking, setRetryCheckoutBooking] = useState<Booking | null>(null);
   const [retryPaymentMethod, setRetryPaymentMethod] = useState<CustomerPaymentMethod>("card");
+  const [manualMpesaBookingId, setManualMpesaBookingId] = useState<string | null>(null);
+  const [manualMpesaCode, setManualMpesaCode] = useState("");
+  const [manualMpesaSenderPhone, setManualMpesaSenderPhone] = useState("");
+  const [manualMpesaNote, setManualMpesaNote] = useState("");
 
   useEffect(() => {
     setProfileForm({ firstName: user?.firstName ?? "", lastName: user?.lastName ?? "", phone: user?.phone ?? "" });
@@ -488,6 +515,48 @@ export default function Bookings() {
     }),
   });
 
+  const manualMpesaMutation = useMutation({
+    mutationFn: async ({
+      bookingId,
+      transactionCode,
+      senderPhone,
+      note,
+    }: {
+      bookingId: string;
+      transactionCode: string;
+      senderPhone?: string;
+      note?: string;
+    }) => {
+      const response = await apiRequest("POST", `/api/bookings/${bookingId}/payments/manual-mpesa`, {
+        transactionCode,
+        senderPhone,
+        note,
+      });
+      return {
+        bookingId,
+        booking: await response.json() as Booking,
+      };
+    },
+    onSuccess: ({ bookingId }) => {
+      setManualMpesaBookingId(null);
+      setManualMpesaCode("");
+      setManualMpesaSenderPhone("");
+      setManualMpesaNote("");
+      toast({
+        title: "M-Pesa payment submitted",
+        description: "We have received the transaction code and will confirm this payment shortly.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bookings", bookingId, "messages"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/inbox"] });
+    },
+    onError: (error: Error) => toast({
+      title: "Could not submit M-Pesa payment",
+      description: error.message.replace(/^\d+:\s*/, ""),
+      variant: "destructive",
+    }),
+  });
+
   const sortedBookings = useMemo(() => [...(bookings ?? [])].sort((a, b) => a.checkIn.localeCompare(b.checkIn)), [bookings]);
   const activeBookings = useMemo(() => sortedBookings.filter((booking) => !isHistoryBookingStatus(booking.status)), [sortedBookings]);
   const historyBookings = useMemo(
@@ -498,6 +567,83 @@ export default function Bookings() {
   const openRetryCheckout = (booking: Booking) => {
     setRetryCheckoutBooking(booking);
     setRetryPaymentMethod(getPaymentChoiceForProvider(booking.paymentProvider));
+  };
+
+  const openManualMpesaForm = (booking: Booking) => {
+    setManualMpesaBookingId(booking.id);
+    setManualMpesaCode("");
+    setManualMpesaSenderPhone(user?.phone ?? "");
+    setManualMpesaNote("");
+  };
+
+  const downloadReceipt = (booking: BookingWithMarketing) => {
+    const amountPaid = getBookingAmountPaid(booking);
+    if (amountPaid <= 0 || typeof window === "undefined") {
+      toast({
+        title: "Receipt not ready",
+        description: "A downloadable receipt appears after a payment has been recorded.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const bookingReference = booking.id.slice(0, 8).toUpperCase();
+    const outstandingAmount = getBookingOutstandingAmount(booking);
+    const receiptHtml = [
+      "<!doctype html>",
+      "<html lang=\"en\">",
+      "<head>",
+      "<meta charset=\"utf-8\" />",
+      `<title>Receipt ${bookingReference}</title>`,
+      "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />",
+      "<style>",
+      "body{font-family:Arial,sans-serif;background:#f6f8fb;color:#0f172a;margin:0;padding:32px;}",
+      ".sheet{max-width:760px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:24px;padding:32px;box-shadow:0 24px 60px -40px rgba(15,23,42,.35);}",
+      ".eyebrow{font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:#64748b;font-weight:700;}",
+      "h1{font-size:28px;margin:8px 0 4px;}",
+      "p{line-height:1.6;color:#475569;}",
+      ".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:24px 0;}",
+      ".card{border:1px solid #e2e8f0;border-radius:18px;padding:16px;background:#f8fafc;}",
+      ".label{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#64748b;font-weight:700;}",
+      ".value{margin-top:8px;font-size:18px;font-weight:700;color:#0f172a;}",
+      "ul{padding-left:18px;line-height:1.8;color:#334155;}",
+      ".footer{margin-top:24px;padding-top:20px;border-top:1px solid #e2e8f0;font-size:14px;color:#475569;}",
+      "</style>",
+      "</head>",
+      "<body>",
+      "<div class=\"sheet\">",
+      "<div class=\"eyebrow\">Tembea Bila Matata</div>",
+      `<h1>Payment Receipt</h1>`,
+      `<p>Booking reference ${bookingReference}</p>`,
+      "<div class=\"grid\">",
+      `<div class=\"card\"><div class=\"label\">Guest</div><div class=\"value\">${booking.guestName || booking.guestEmail}</div></div>`,
+      `<div class=\"card\"><div class=\"label\">Receipt amount</div><div class=\"value\">${formatAmount(amountPaid)}</div></div>`,
+      `<div class=\"card\"><div class=\"label\">Payment status</div><div class=\"value\">${getBookingPaymentStatusLabel(booking)}</div></div>`,
+      `<div class=\"card\"><div class=\"label\">Paid at</div><div class=\"value\">${formatReceiptTimestamp(booking.paidAt)}</div></div>`,
+      "</div>",
+      "<ul>",
+      `<li>Booking dates: ${formatDate(booking.checkIn)}${booking.checkOut !== booking.checkIn ? ` to ${formatDate(booking.checkOut)}` : ""}</li>`,
+      `<li>Total booking value: ${formatAmount(booking.totalPrice)}</li>`,
+      `<li>Total paid so far: ${formatAmount(amountPaid)}</li>`,
+      `${outstandingAmount > 0 ? `<li>Balance remaining: ${formatAmount(outstandingAmount)}</li>` : "<li>Balance remaining: Fully settled</li>"}`,
+      `<li>Payment provider: ${booking.paymentProvider === "mpesa-manual" ? "Temporary M-Pesa" : booking.paymentProvider || "Not specified"}</li>`,
+      `<li>Payment reference: ${booking.paymentReference || "Pending confirmation"}</li>`,
+      "</ul>",
+      `<div class=\"footer\">Need help? Contact ${CONTACT_EMAIL} or ${CONTACT_PHONE_DISPLAY}.</div>`,
+      "</div>",
+      "</body>",
+      "</html>",
+    ].join("");
+
+    const blob = new Blob([receiptHtml], { type: "text/html;charset=utf-8" });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `tembea-bila-matata-receipt-${bookingReference}.html`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
   };
 
   useEffect(() => {
@@ -720,6 +866,7 @@ export default function Bookings() {
       : stay
         ? "Accommodation only"
         : "Direct service booking";
+    const manualMpesaPending = booking.paymentProvider === "mpesa-manual" && booking.paymentStatus === "processing";
     const renderHero = (className?: string) =>
       stay ? (
         <ListingMedia
@@ -1078,7 +1225,9 @@ export default function Bookings() {
               <div className="rounded-[24px] border border-amber-200/70 bg-[linear-gradient(180deg,rgba(255,251,235,0.96),rgba(255,255,255,0.95))] p-4 shadow-[0_16px_36px_-30px_rgba(146,64,14,0.24)]">
                 <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.24em] text-amber-700">Payment</div>
                 <div className="text-sm leading-6 text-stone-700">
-                  {hasLockedInBookingDeposit(booking)
+                  {manualMpesaPending
+                    ? "We have your temporary M-Pesa submission and are confirming it now. If you need to, you can still reopen secure checkout below."
+                    : hasLockedInBookingDeposit(booking)
                     ? booking.paymentStatus === "failed"
                       ? "Your deposit is safe, but the remaining balance payment did not complete. Reopen checkout to finish it."
                       : booking.paymentStatus === "cancelled"
@@ -1102,7 +1251,9 @@ export default function Bookings() {
                 </div>
                 <CheckoutPaymentPreview
                   className="mt-4 bg-white/90 shadow-none"
-                  title={hasLockedInBookingDeposit(booking)
+                  title={manualMpesaPending
+                    ? "Manual M-Pesa under review"
+                    : hasLockedInBookingDeposit(booking)
                     ? "Pay the remaining balance"
                     : fullPaymentOnlyBooking
                       ? amountPaid > 0
@@ -1111,7 +1262,9 @@ export default function Bookings() {
                       : hasDepositRule
                       ? "Pay deposit to lock dates"
                       : "Open payment when you're ready"}
-                  description={hasLockedInBookingDeposit(booking)
+                  description={manualMpesaPending
+                    ? "Your temporary send-money payment has been submitted. Secure checkout is still available if you need it."
+                    : hasLockedInBookingDeposit(booking)
                     ? "Choose your payment method and finish the outstanding balance."
                     : fullPaymentOnlyBooking
                       ? amountPaid > 0
@@ -1126,7 +1279,9 @@ export default function Bookings() {
                   disabled={startPaymentMutation.isPending}
                   onClick={() => openRetryCheckout(booking)}
                 >
-                  {hasLockedInBookingDeposit(booking)
+                  {manualMpesaPending
+                    ? "Open secure payment options"
+                    : hasLockedInBookingDeposit(booking)
                     ? "Pay remaining balance"
                     : fullPaymentOnlyBooking
                       ? amountPaid > 0
@@ -1136,12 +1291,87 @@ export default function Bookings() {
                       ? "Pay deposit"
                       : "Open payment options"}
                 </Button>
+                <Button
+                  variant="outline"
+                  className="mt-3 w-full"
+                  disabled={manualMpesaMutation.isPending}
+                  onClick={() => manualMpesaBookingId === booking.id ? setManualMpesaBookingId(null) : openManualMpesaForm(booking)}
+                >
+                  <Smartphone className="mr-2 h-4 w-4" />
+                  {manualMpesaBookingId === booking.id ? "Hide temporary M-Pesa" : "Temporary M-Pesa send money"}
+                </Button>
+                {manualMpesaBookingId === booking.id ? (
+                  <div className="mt-4 rounded-[22px] border border-emerald-200 bg-emerald-50/80 p-4">
+                    <div className="text-sm font-semibold text-emerald-950">Temporary M-Pesa instructions</div>
+                    <div className="mt-2 text-sm leading-6 text-emerald-900">
+                      Send <span className="font-semibold">{formatAmount(checkoutAmountDue)}</span> to <span className="font-semibold">{TEMP_MPESA_SEND_MONEY_NUMBER}</span>, then submit the M-Pesa code below for confirmation.
+                    </div>
+                    <div className="mt-4 space-y-3">
+                      <div className="space-y-2">
+                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-800">M-Pesa code</div>
+                        <Input
+                          value={manualMpesaCode}
+                          onChange={(event) => setManualMpesaCode(event.target.value.toUpperCase())}
+                          placeholder="e.g. QJD7X8Y9Z"
+                          className="bg-white"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-800">Sender phone</div>
+                        <Input
+                          value={manualMpesaSenderPhone}
+                          onChange={(event) => setManualMpesaSenderPhone(event.target.value)}
+                          placeholder="e.g. 0718475264"
+                          className="bg-white"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-800">Note</div>
+                        <Textarea
+                          rows={3}
+                          value={manualMpesaNote}
+                          onChange={(event) => setManualMpesaNote(event.target.value)}
+                          placeholder="Optional note for the team"
+                          className="bg-white"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <Button
+                          className="w-full sm:flex-1"
+                          disabled={manualMpesaMutation.isPending}
+                          onClick={() => manualMpesaMutation.mutate({
+                            bookingId: booking.id,
+                            transactionCode: manualMpesaCode.trim(),
+                            senderPhone: manualMpesaSenderPhone.trim(),
+                            note: manualMpesaNote.trim(),
+                          })}
+                        >
+                          {manualMpesaMutation.isPending ? "Submitting..." : "I've sent the money"}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          className="w-full sm:w-auto"
+                          disabled={manualMpesaMutation.isPending}
+                          onClick={() => setManualMpesaBookingId(null)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ) : null}
             <div className="rounded-[24px] border border-border/60 bg-background/85 p-4 shadow-[0_16px_36px_-30px_rgba(15,23,42,0.3)]">
               <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">Links</div>
               <div className="space-y-3">
                 {booking.accommodationId ? <Button variant="outline" className="w-full rounded-full" onClick={() => setLocation(`/accommodation/${booking.accommodationId}`)}>View stay</Button> : null}
+                {amountPaid > 0 ? (
+                  <Button variant="outline" className="w-full rounded-full" onClick={() => downloadReceipt(booking)}>
+                    <Download className="mr-2 h-4 w-4" />
+                    Download receipt
+                  </Button>
+                ) : null}
               </div>
             </div>
             </div>

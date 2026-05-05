@@ -1,5 +1,10 @@
-import type { Booking, BookingPaymentStatus, User } from "@shared/schema";
-import { buildVerificationEmail, type VerificationPurpose } from "./verification-email";
+import {
+  getBookingAmountPaid,
+  getBookingOutstandingAmount,
+  hasLockedInBookingDeposit,
+} from "../shared/booking-payments.ts";
+import type { Booking, BookingPaymentStatus, User } from "../shared/schema.ts";
+import { buildVerificationEmail, type VerificationPurpose } from "./verification-email.ts";
 
 type RequestOriginLike = {
   protocol?: string;
@@ -13,6 +18,18 @@ type SendEmailArgs = {
   subject: string;
   html: string;
   text: string;
+};
+
+type PaymentNotificationContext = {
+  previousStatus?: string | null;
+  previousAmountPaid?: number | null;
+};
+
+type BookingPaymentNotificationContent = {
+  customerSubject: string;
+  adminSubject: string;
+  body: string;
+  sharedLines: string[];
 };
 
 const noteworthyPaymentStatuses = new Set<BookingPaymentStatus>(["paid", "processing", "failed", "cancelled", "refunded"]);
@@ -62,6 +79,46 @@ function formatUsd(value: number | null | undefined) {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(amount);
+}
+
+function normalizeMoney(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.round(value));
+}
+
+function formatMoney(value: number | null | undefined, currency: string | null | undefined) {
+  const amount = normalizeMoney(value);
+  const normalizedCurrency = currency?.trim().toUpperCase() || "USD";
+
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: normalizedCurrency,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    return `${normalizedCurrency} ${amount.toLocaleString("en-US")}`;
+  }
+}
+
+function formatTimestamp(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.valueOf())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("en-KE", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(parsed);
 }
 
 function getPrimaryGuestLabel(booking: Booking) {
@@ -370,13 +427,77 @@ function getPaymentStatusMessaging(status: BookingPaymentStatus) {
   }
 }
 
-export async function sendBookingPaymentNotificationEmails(
+export function buildBookingPaymentNotificationContent(
   booking: Booking,
-  previousStatus?: string | null,
-  requestLike?: RequestOriginLike,
+  context: PaymentNotificationContext = {},
 ) {
   const normalizedStatus = (booking.paymentStatus ?? "pending") as BookingPaymentStatus;
-  if (!noteworthyPaymentStatuses.has(normalizedStatus) || normalizedStatus === previousStatus) {
+  const previousStatus = context.previousStatus ?? null;
+  const currentAmountPaid = getBookingAmountPaid(booking);
+  const previousAmountPaid = normalizeMoney(context.previousAmountPaid);
+  const latestPaymentAmount = Math.max(0, currentAmountPaid - previousAmountPaid);
+  const outstandingAmount = getBookingOutstandingAmount(booking);
+  const shouldSendReceipt = latestPaymentAmount > 0;
+  const shouldSendStatusUpdate = noteworthyPaymentStatuses.has(normalizedStatus) && normalizedStatus !== previousStatus;
+
+  if (!shouldSendReceipt && !shouldSendStatusUpdate) {
+    return null;
+  }
+
+  const paymentCopy = shouldSendReceipt
+    ? {
+      customerSubject: "Payment receipt",
+      adminSubject: hasLockedInBookingDeposit(booking) ? "Deposit received" : "Payment received",
+      body: outstandingAmount > 0
+        ? hasLockedInBookingDeposit(booking)
+          ? `We have received your deposit payment of ${formatUsd(latestPaymentAmount)}. Your dates remain held while the remaining balance is settled.`
+          : `We have received your payment of ${formatUsd(latestPaymentAmount)}. There is still a balance remaining on this booking.`
+        : `We have received your payment of ${formatUsd(latestPaymentAmount)}. This booking is now fully paid.`,
+    }
+    : normalizedStatus === "processing" && booking.paymentProvider === "mpesa-manual"
+      ? {
+        customerSubject: "M-Pesa payment submitted",
+        adminSubject: "Manual M-Pesa submitted",
+        body: "We have received your temporary M-Pesa payment submission and are confirming it now.",
+      }
+    : getPaymentStatusMessaging(normalizedStatus);
+
+  const providerChargeLine = booking.paymentCurrency
+    && booking.paymentCurrency.trim().toUpperCase() !== "USD"
+    && normalizeMoney(booking.paymentAmount) > 0
+    ? `Provider charge: ${formatMoney(booking.paymentAmount, booking.paymentCurrency)}`
+    : null;
+  const paidAtLine = formatTimestamp(booking.paidAt);
+  const providerLabel = booking.paymentProvider === "mpesa-manual"
+    ? "Temporary M-Pesa"
+    : booking.paymentProvider ? humanizeToken(booking.paymentProvider, booking.paymentProvider) : null;
+  const sharedLines = [
+    `Booking reference: ${getShortBookingReference(booking.id)}`,
+    `Guest: ${getPrimaryGuestLabel(booking)}`,
+    `Booking type: ${getBookingCategoryLabel(booking)}`,
+    shouldSendReceipt ? `Receipt amount: ${formatUsd(latestPaymentAmount)}` : null,
+    currentAmountPaid > 0 ? `Total paid: ${formatUsd(currentAmountPaid)}` : null,
+    outstandingAmount > 0 ? `Balance remaining: ${formatUsd(outstandingAmount)}` : null,
+    `Payment status: ${normalizedStatus}`,
+    providerLabel ? `Provider: ${providerLabel}` : null,
+    booking.paymentReference ? `Reference: ${booking.paymentReference}` : null,
+    providerChargeLine,
+    paidAtLine ? `Paid at: ${paidAtLine}` : null,
+  ].filter(Boolean) as string[];
+
+  return {
+    ...paymentCopy,
+    sharedLines,
+  } satisfies BookingPaymentNotificationContent;
+}
+
+export async function sendBookingPaymentNotificationEmails(
+  booking: Booking,
+  context: PaymentNotificationContext = {},
+  requestLike?: RequestOriginLike,
+) {
+  const paymentContent = buildBookingPaymentNotificationContent(booking, context);
+  if (!paymentContent) {
     return false;
   }
 
@@ -384,32 +505,23 @@ export async function sendBookingPaymentNotificationEmails(
   const adminRecipients = getNotificationRecipientEmails();
   const customerUrl = buildApplicationUrl(`/bookings?bookingId=${booking.id}`, requestLike);
   const adminUrl = buildApplicationUrl(`/admin/bookings?bookingId=${booking.id}`, requestLike);
-  const paymentCopy = getPaymentStatusMessaging(normalizedStatus);
-  const sharedLines = [
-    `Booking reference: ${getShortBookingReference(booking.id)}`,
-    `Guest: ${getPrimaryGuestLabel(booking)}`,
-    `Booking type: ${getBookingCategoryLabel(booking)}`,
-    `Payment status: ${normalizedStatus}`,
-    booking.paymentProvider ? `Provider: ${booking.paymentProvider}` : null,
-    booking.paymentReference ? `Reference: ${booking.paymentReference}` : null,
-  ].filter(Boolean) as string[];
 
   tasks.push(sendEmailMessage({
     to: [booking.guestEmail],
-    subject: `${paymentCopy.customerSubject} for booking ${getShortBookingReference(booking.id)}`,
+    subject: `${paymentContent.customerSubject} for booking ${getShortBookingReference(booking.id)}`,
     text: [
       `Hi ${getPrimaryGuestLabel(booking)},`,
       "",
-      paymentCopy.body,
-      ...sharedLines,
+      paymentContent.body,
+      ...paymentContent.sharedLines,
       customerUrl ? `View booking: ${customerUrl}` : "",
     ].filter(Boolean).join("\n"),
     html: [
       "<div style=\"font-family:Arial,sans-serif;line-height:1.6;color:#0f172a;\">",
       `<p>Hi ${escapeHtml(getPrimaryGuestLabel(booking))},</p>`,
-      `<p>${escapeHtml(paymentCopy.body)}</p>`,
+      `<p>${escapeHtml(paymentContent.body)}</p>`,
       "<ul>",
-      ...sharedLines.map((line) => `<li>${escapeHtml(line)}</li>`),
+      ...paymentContent.sharedLines.map((line) => `<li>${escapeHtml(line)}</li>`),
       "</ul>",
       customerUrl ? `<p><a href="${escapeHtml(customerUrl)}">View booking</a></p>` : "",
       "</div>",
@@ -419,17 +531,17 @@ export async function sendBookingPaymentNotificationEmails(
   if (adminRecipients.length > 0) {
     tasks.push(sendEmailMessage({
       to: adminRecipients,
-      subject: `${paymentCopy.adminSubject}: ${getShortBookingReference(booking.id)}`,
+      subject: `${paymentContent.adminSubject}: ${getShortBookingReference(booking.id)}`,
       text: [
-        paymentCopy.body,
-        ...sharedLines,
+        paymentContent.body,
+        ...paymentContent.sharedLines,
         adminUrl ? `Open admin booking view: ${adminUrl}` : "",
       ].filter(Boolean).join("\n"),
       html: [
         "<div style=\"font-family:Arial,sans-serif;line-height:1.6;color:#0f172a;\">",
-        `<p>${escapeHtml(paymentCopy.body)}</p>`,
+        `<p>${escapeHtml(paymentContent.body)}</p>`,
         "<ul>",
-        ...sharedLines.map((line) => `<li>${escapeHtml(line)}</li>`),
+        ...paymentContent.sharedLines.map((line) => `<li>${escapeHtml(line)}</li>`),
         "</ul>",
         adminUrl ? `<p><a href="${escapeHtml(adminUrl)}">Open admin booking view</a></p>` : "",
         "</div>",

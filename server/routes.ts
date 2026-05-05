@@ -425,7 +425,7 @@ const customServiceRequestSchema = z.object({
   attachmentUrl: z.string().optional(),
 });
 const adminBookingPaymentActionSchema = z.object({
-  action: z.enum(["payment-received-cash", "send-reminder", "cancel-booking"]),
+  action: z.enum(["payment-received-cash", "payment-received-mpesa", "send-reminder", "cancel-booking"]),
   note: z.preprocess(
     (value) => typeof value === "string" ? value.trim() : "",
     z.string().max(500),
@@ -438,6 +438,21 @@ const adminBookingPaymentActionSchema = z.object({
       message: "Please add a short reminder note before sending it.",
     });
   }
+});
+
+const manualMpesaPaymentSchema = z.object({
+  transactionCode: z.preprocess(
+    (value) => typeof value === "string" ? value.trim().toUpperCase() : "",
+    z.string().min(6, "Enter the M-Pesa transaction code.").max(30, "Transaction code is too long."),
+  ),
+  senderPhone: z.preprocess(
+    (value) => typeof value === "string" ? value.trim() : "",
+    z.string().max(30, "Sender phone is too long."),
+  ).optional().default(""),
+  note: z.preprocess(
+    (value) => typeof value === "string" ? value.trim() : "",
+    z.string().max(500, "Note is too long."),
+  ).optional().default(""),
 });
 
 const CURRENCY_RATE_TTL_MS = 30 * 60 * 1000;
@@ -660,13 +675,19 @@ async function applyVerifiedBookingPayment(bookingId: string, verifiedPayment: V
       paymentFailedAt: null,
     });
 
+    if (updatedBooking && nextAmountPaid > currentAmountPaid) {
+      queueNotificationTask(
+        `payment emails for booking ${updatedBooking.id}`,
+        sendBookingPaymentNotificationEmails(updatedBooking, {
+          previousStatus: previousPaymentStatus,
+          previousAmountPaid: currentAmountPaid,
+        }),
+      );
+    }
+
     if (updatedBooking && isFullySettled) {
       await storage.syncBookingServiceAssignments({ bookingIds: [updatedBooking.id], notifyProviders: true });
       await storage.syncBookingPayouts({ bookingIds: [updatedBooking.id] });
-      queueNotificationTask(
-        `payment emails for booking ${updatedBooking.id}`,
-        sendBookingPaymentNotificationEmails(updatedBooking, previousPaymentStatus),
-      );
     }
 
     return updatedBooking;
@@ -695,7 +716,10 @@ async function applyVerifiedBookingPayment(bookingId: string, verifiedPayment: V
   if (updatedBooking && currentAmountPaid === 0) {
     queueNotificationTask(
       `payment emails for booking ${updatedBooking.id}`,
-      sendBookingPaymentNotificationEmails(updatedBooking, previousPaymentStatus),
+      sendBookingPaymentNotificationEmails(updatedBooking, {
+        previousStatus: previousPaymentStatus,
+        previousAmountPaid: currentAmountPaid,
+      }),
     );
   }
 
@@ -3177,7 +3201,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (updatedBooking) {
           queueNotificationTask(
             `payment emails for booking ${updatedBooking.id}`,
-            sendBookingPaymentNotificationEmails(updatedBooking, booking.paymentStatus, req),
+            sendBookingPaymentNotificationEmails(updatedBooking, {
+              previousStatus: booking.paymentStatus,
+              previousAmountPaid: getBookingAmountPaid(booking),
+            }, req),
           );
         }
         return res.json({
@@ -3198,6 +3225,79 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: error.message });
       }
       return res.status(500).json({ error: "Failed to create payment session" });
+    }
+  });
+
+  app.post("/api/bookings/:id/payments/manual-mpesa", isAuthenticated, async (req: any, res) => {
+    try {
+      const access = await assertCanAccessBookingThread(req, req.params.id);
+      if ("error" in access) {
+        return res.status(access.error!.status).json(access.error!.body);
+      }
+
+      const booking = access.booking;
+      const currentUserId = req.user.claims.sub;
+      const currentUserRole = req.user.claims.role;
+      if (currentUserRole !== "admin" && booking.userId !== currentUserId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      if (booking.status === "cancelled" || booking.status === "completed") {
+        return res.status(400).json({ error: "This booking is closed and cannot accept manual payment submissions." });
+      }
+
+      const checkoutAmountDue = getBookingCheckoutAmount(booking);
+      if (checkoutAmountDue <= 0 || isBookingFullyPaid(booking)) {
+        return res.status(400).json({ error: "This booking no longer has an outstanding balance." });
+      }
+
+      const payload = manualMpesaPaymentSchema.parse(req.body ?? {});
+      const previousPaymentStatus = booking.paymentStatus;
+      const currentAmountPaid = getBookingAmountPaid(booking);
+
+      const updatedBooking = await storage.updateBookingPaymentState(booking.id, {
+        paymentStatus: "processing",
+        paymentProvider: "mpesa-manual",
+        paymentReference: payload.transactionCode,
+        paymentSessionId: null,
+        paymentCheckoutAmount: checkoutAmountDue,
+        paymentHoldExpiresAt: null,
+        paymentFailedAt: null,
+      });
+
+      if (!updatedBooking) {
+        return res.status(404).json({ error: "Booking not found" });
+      }
+
+      await storage.createBookingMessage({
+        bookingId: updatedBooking.id,
+        userId: currentUserId,
+        senderRole: currentUserRole ?? "customer",
+        message: [
+          "Customer submitted a temporary manual M-Pesa payment for review.",
+          `Expected amount: ${formatBookingUsdAmount(checkoutAmountDue)}`,
+          "Send money number: 0718475264",
+          `M-Pesa code: ${payload.transactionCode}`,
+          payload.senderPhone ? `Sender phone: ${payload.senderPhone}` : null,
+          payload.note ? `Note: ${payload.note}` : null,
+        ].filter(Boolean).join("\n"),
+      });
+
+      queueNotificationTask(
+        `payment emails for booking ${updatedBooking.id}`,
+        sendBookingPaymentNotificationEmails(updatedBooking, {
+          previousStatus: previousPaymentStatus,
+          previousAmountPaid: currentAmountPaid,
+        }, req),
+      );
+
+      return res.json(decorateBookingWithOperationalStatus(updatedBooking));
+    } catch (error) {
+      console.error("[PAYMENTS] Failed to submit manual M-Pesa payment:", error);
+      if (error instanceof Error) {
+        return res.status(400).json({ error: error.message });
+      }
+      return res.status(500).json({ error: "Failed to submit manual M-Pesa payment" });
     }
   });
 
@@ -4290,9 +4390,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const reviewerId = req.user?.claims?.sub ?? null;
       const outstandingAmount = getBookingOutstandingAmount(booking);
 
-      if (action === "payment-received-cash") {
+      if (action === "payment-received-cash" || action === "payment-received-mpesa") {
         if (booking.status === "cancelled" || booking.status === "completed") {
-          return res.status(400).json({ error: "Closed bookings cannot receive cash payments." });
+          return res.status(400).json({ error: "Closed bookings cannot receive payment confirmations." });
         }
 
         if (outstandingAmount <= 0) {
@@ -4309,10 +4409,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const isFullySettled = nextAmountPaid >= Math.max(0, booking.totalPrice);
         const isDepositCollection = currentAmountPaid === 0 && nextAmountPaid < Math.max(0, booking.totalPrice);
         const paidAt = new Date().toISOString();
+        const isManualMpesa = action === "payment-received-mpesa";
         const updated = await storage.updateBookingPaymentState(req.params.id, {
           paymentStatus: isFullySettled ? "paid" : "pending",
-          paymentProvider: "cash",
-          paymentReference: `ADMIN-CASH-${Date.now().toString(36).toUpperCase()}`,
+          paymentProvider: isManualMpesa ? "mpesa-manual" : "cash",
+          paymentReference: isManualMpesa
+            ? (booking.paymentReference?.trim() || `M-PESA-MANUAL-${Date.now().toString(36).toUpperCase()}`)
+            : `ADMIN-CASH-${Date.now().toString(36).toUpperCase()}`,
           paymentSessionId: null,
           paymentCurrency: booking.paymentCurrency || "USD",
           paymentAmount: cashAmount,
@@ -4327,19 +4430,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(404).json({ error: "Booking not found" });
         }
 
+        if (nextAmountPaid > currentAmountPaid) {
+          queueNotificationTask(
+            `payment emails for booking ${updated.id}`,
+            sendBookingPaymentNotificationEmails(updated, {
+              previousStatus: previousPaymentStatus,
+              previousAmountPaid: currentAmountPaid,
+            }, req),
+          );
+        }
+
         if (isFullySettled) {
           await storage.syncBookingServiceAssignments({ bookingIds: [updated.id], notifyProviders: true });
           await storage.syncBookingPayouts({ bookingIds: [updated.id] });
-          queueNotificationTask(
-            `payment emails for booking ${updated.id}`,
-            sendBookingPaymentNotificationEmails(updated, previousPaymentStatus, req),
-          );
         }
 
         if (note.trim().length > 0) {
           await storage.createBookingMessage({
             bookingId: updated.id,
-            message: `${isDepositCollection ? "Admin note: cash deposit received." : "Admin note: cash payment received."}\n\n${note.trim()}`,
+            message: `${isDepositCollection
+              ? isManualMpesa ? "Admin note: temporary M-Pesa deposit confirmed." : "Admin note: cash deposit received."
+              : isManualMpesa ? "Admin note: temporary M-Pesa payment confirmed." : "Admin note: cash payment received."}\n\n${note.trim()}`,
             userId: reviewerId ?? "admin",
             senderRole: "admin",
           });
