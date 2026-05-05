@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
-import { ListingMedia } from "@/components/listing-media";
+import { StayMediaCarousel } from "@/components/stay-media-carousel";
 import { CurrencyAmount } from "@/components/currency-amount";
 import { PublicReviewPreview } from "@/components/public-review-preview";
 import {
@@ -110,24 +110,13 @@ export default function AccommodationDetail() {
   return (
     <div className="min-h-screen py-12">
       <div className="container mx-auto max-w-6xl px-4 sm:px-6 md:px-8">
-        {/* Hero Image */}
-        <div className="relative aspect-[16/9] rounded-xl overflow-hidden mb-8">
-          <ListingMedia
-            src={accommodation.imageUrl || "https://images.unsplash.com/photo-1564501049412-61c2a3083791?w=800"}
-            alt={accommodation.title}
-            mediaType={accommodation.mediaType}
-            className="w-full h-full object-cover"
+        <div className="mb-10">
+          <StayMediaCarousel
+            stay={accommodation}
+            aspectClassName="aspect-[16/9]"
+            thumbnailPlacement="below"
           />
         </div>
-        {accommodation.galleryUrls.length > 1 && (
-          <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-            {accommodation.galleryUrls.slice(1).map((url) => (
-              <div key={url} className="aspect-[4/3] overflow-hidden rounded-lg">
-                <img src={url} alt={`${accommodation.title} gallery`} className="h-full w-full object-cover" loading="lazy" />
-              </div>
-            ))}
-          </div>
-        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Main Content */}

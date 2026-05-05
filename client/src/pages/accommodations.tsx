@@ -6,7 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ListingMedia } from "@/components/listing-media";
+import { StayMediaCarousel } from "@/components/stay-media-carousel";
 import { CurrencyAmount } from "@/components/currency-amount";
 import { CustomServiceCta } from "@/components/custom-service-cta";
 import { filterStays } from "@/lib/concierge-search";
@@ -158,12 +158,11 @@ export default function Accommodations() {
               className="group overflow-hidden border-border/60 bg-gradient-to-b from-background via-background to-muted/20 shadow-[0_18px_50px_-30px_rgba(15,23,42,0.5)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_70px_-32px_rgba(15,23,42,0.65)]"
               data-testid={`card-accommodation-${accommodation.id}`}
             >
-              <div className="relative aspect-[4/3] overflow-hidden">
-                <ListingMedia
-                  src={accommodation.imageUrl || "https://images.unsplash.com/photo-1564501049412-61c2a3083791?w=800"}
-                  alt={accommodation.title}
-                  mediaType={accommodation.mediaType}
-                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+              <div className="p-3 pb-0">
+                <StayMediaCarousel
+                  stay={accommodation}
+                  aspectClassName="aspect-[16/10]"
+                  imageClassName="transition-transform duration-500 group-hover:scale-[1.03]"
                 />
               </div>
               
