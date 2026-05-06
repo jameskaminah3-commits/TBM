@@ -6,8 +6,16 @@ export type StaySearchState = {
   checkIn: string;
   checkOut: string;
   guests: number | null;
+  bedrooms: number | null;
+  bathrooms: number | null;
+  maxPrice: number | null;
+  minRating: number | null;
+  features: string[];
+  sort: StaySearchSort;
   query: string;
 };
+
+export type StaySearchSort = "recommended" | "price-low" | "price-high" | "rating" | "capacity";
 
 function normalizeSearch(search: string) {
   return search.startsWith("?") ? search.slice(1) : search;
@@ -32,10 +40,7 @@ export function buildStaySearchQuery(state: Partial<StaySearchState>) {
     return explicitQuery;
   }
 
-  return [
-    state.destination?.trim() || "",
-    state.guests && state.guests > 0 ? `${state.guests} guests` : "",
-  ].filter(Boolean).join(" ");
+  return "";
 }
 
 export function readStaySearchState(search: string): StaySearchState {
@@ -44,11 +49,26 @@ export function readStaySearchState(search: string): StaySearchState {
   const checkIn = readTrimmedParam(params, "checkIn");
   const checkOut = readTrimmedParam(params, "checkOut");
   const guests = parsePositiveInteger(readTrimmedParam(params, "guests"));
+  const bedrooms = parsePositiveInteger(readTrimmedParam(params, "bedrooms"));
+  const bathrooms = parsePositiveInteger(readTrimmedParam(params, "bathrooms"));
+  const maxPrice = parsePositiveInteger(readTrimmedParam(params, "maxPrice"));
+  const minRating = parsePositiveInteger(readTrimmedParam(params, "minRating"));
+  const features = params.getAll("feature").map((feature) => feature.trim()).filter(Boolean);
+  const sortParam = readTrimmedParam(params, "sort") as StaySearchSort;
+  const sort: StaySearchSort = ["recommended", "price-low", "price-high", "rating", "capacity"].includes(sortParam)
+    ? sortParam
+    : "recommended";
   const query = buildStaySearchQuery({
     destination,
     checkIn,
     checkOut,
     guests,
+    bedrooms,
+    bathrooms,
+    maxPrice,
+    minRating,
+    features,
+    sort,
     query: readTrimmedParam(params, "query"),
   });
 
@@ -57,6 +77,12 @@ export function readStaySearchState(search: string): StaySearchState {
     checkIn,
     checkOut,
     guests,
+    bedrooms,
+    bathrooms,
+    maxPrice,
+    minRating,
+    features,
+    sort,
     query,
   };
 }
@@ -67,6 +93,7 @@ export function buildStaySearchParams(state: Partial<StaySearchState>) {
   const checkIn = state.checkIn?.trim();
   const checkOut = state.checkOut?.trim();
   const query = buildStaySearchQuery(state);
+  const sort = state.sort || "recommended";
 
   if (destination) {
     params.set("destination", destination);
@@ -84,6 +111,33 @@ export function buildStaySearchParams(state: Partial<StaySearchState>) {
     params.set("guests", String(state.guests));
   }
 
+  if (state.bedrooms && state.bedrooms > 0) {
+    params.set("bedrooms", String(state.bedrooms));
+  }
+
+  if (state.bathrooms && state.bathrooms > 0) {
+    params.set("bathrooms", String(state.bathrooms));
+  }
+
+  if (state.maxPrice && state.maxPrice > 0) {
+    params.set("maxPrice", String(state.maxPrice));
+  }
+
+  if (state.minRating && state.minRating > 0) {
+    params.set("minRating", String(state.minRating));
+  }
+
+  state.features?.forEach((feature) => {
+    const normalizedFeature = feature.trim();
+    if (normalizedFeature) {
+      params.append("feature", normalizedFeature);
+    }
+  });
+
+  if (sort !== "recommended") {
+    params.set("sort", sort);
+  }
+
   if (query) {
     params.set("query", query);
   }
@@ -92,7 +146,18 @@ export function buildStaySearchParams(state: Partial<StaySearchState>) {
 }
 
 export function hasStructuredStayFilters(state: StaySearchState) {
-  return Boolean(state.destination || state.checkIn || state.checkOut || state.guests);
+  return Boolean(
+    state.destination ||
+      state.checkIn ||
+      state.checkOut ||
+      state.guests ||
+      state.bedrooms ||
+      state.bathrooms ||
+      state.maxPrice ||
+      state.minRating ||
+      state.features.length ||
+      state.sort !== "recommended",
+  );
 }
 
 export function formatStaySearchDate(value: string) {

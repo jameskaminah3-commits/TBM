@@ -54,12 +54,15 @@ const tokenSynonyms: Record<string, string[]> = {
   cultural: ["culture", "heritage", "historic"],
   sunset: ["sundowner", "evening"],
   beach: ["coast", "coastal", "ocean", "sea"],
+  beachfront: ["beachfront", "oceanfront"],
   chauffeur: ["driver", "driven", "pickup", "transfer"],
   pickup: ["pick", "airport", "transfer", "chauffeur"],
   chef: ["cook", "private chef", "dining"],
   laundry: ["washing", "wash", "cleaning"],
   grocery: ["groceries", "shopping", "fridge", "stocking"],
 };
+
+const genericStayTokens = new Set(["accommodation", "apartment", "home", "house", "room", "stay", "suite", "villa"]);
 
 export function ConciergeSearchProvider({ children }: { children: React.ReactNode }) {
   const [query, setQuery] = useState("");
@@ -188,13 +191,58 @@ function matchesFreeText(fields: Array<string | number | null | undefined>, quer
   return tokens.every((token) => getTokenVariants(token).some((variant) => haystack.includes(variant)));
 }
 
+function parseStayCountIntent(normalizedQuery: string, unitPattern: string) {
+  const explicitMinimum =
+    normalizedQuery.match(new RegExp(`\\b(?:at least|min(?:imum)?|minimum of)\\s+(\\d+)\\s*${unitPattern}s?\\b`)) ??
+    normalizedQuery.match(new RegExp(`\\b(\\d+)\\s*\\+\\s*${unitPattern}s?\\b`));
+  const exact = normalizedQuery.match(new RegExp(`\\b(\\d+)\\s*${unitPattern}s?\\b`));
+  const match = explicitMinimum ?? exact;
+
+  if (!match) {
+    return null;
+  }
+
+  const count = Number.parseInt(match[1], 10);
+  if (Number.isNaN(count)) {
+    return null;
+  }
+
+  return {
+    count,
+    mode: explicitMinimum ? "minimum" : "exact",
+  } as const;
+}
+
+function matchesStayCount(actualCount: number, intent: ReturnType<typeof parseStayCountIntent>) {
+  if (!intent) {
+    return true;
+  }
+
+  return intent.mode === "minimum" ? actualCount >= intent.count : actualCount === intent.count;
+}
+
+function getStayTextTokens(query: string) {
+  const tokens = getMeaningfulTokens(query);
+  const descriptiveTokens = tokens.filter((token) => !genericStayTokens.has(token));
+  return descriptiveTokens.length > 0 ? descriptiveTokens : tokens;
+}
+
+function matchesStayFreeText(fields: Array<string | number | null | undefined>, query: string) {
+  const tokens = getStayTextTokens(query);
+
+  if (tokens.length === 0) {
+    return true;
+  }
+
+  const haystack = normalizeConciergeQuery(fields.filter(Boolean).join(" "));
+  return tokens.every((token) => getTokenVariants(token).some((variant) => haystack.includes(variant)));
+}
+
 export function filterStays(stays: Stay[], query: string) {
   const normalizedQuery = normalizeConciergeQuery(query);
   const guestCount = extractGuestCount(query);
-  const bedroomMatch = normalizedQuery.match(/\b(\d+)\s*bed(?:room)?s?\b/);
-  const bathroomMatch = normalizedQuery.match(/\b(\d+)\s*bath(?:room)?s?\b/);
-  const bedroomCount = bedroomMatch ? Number.parseInt(bedroomMatch[1], 10) : null;
-  const bathroomCount = bathroomMatch ? Number.parseInt(bathroomMatch[1], 10) : null;
+  const bedroomIntent = parseStayCountIntent(normalizedQuery, "bed(?:room)?");
+  const bathroomIntent = parseStayCountIntent(normalizedQuery, "bath(?:room)?");
 
   return stays.filter((stay) => {
     const structuredTerms = [
@@ -204,18 +252,16 @@ export function filterStays(stays: Stay[], query: string) {
       `${stay.bathrooms} bathrooms`,
       `${stay.maxOccupancy} guests`,
       `${stay.maxOccupancy} people`,
-      "stay accommodation villa house suite room",
     ];
-    const matchesText = matchesFreeText(
+    const matchesText = matchesStayFreeText(
       [stay.title, stay.location, stay.description, ...stay.features, ...structuredTerms],
       query,
     );
     const matchesGuests = guestCount === null || stay.maxOccupancy >= guestCount;
-    const matchesBedrooms = bedroomCount === null || stay.bedrooms >= bedroomCount;
-    const matchesBathrooms = bathroomCount === null || stay.bathrooms >= bathroomCount;
-    const isStayIntent = /stay|villa|room|suite|accommodation|house/.test(normalizedQuery);
+    const matchesBedrooms = matchesStayCount(stay.bedrooms, bedroomIntent);
+    const matchesBathrooms = matchesStayCount(stay.bathrooms, bathroomIntent);
 
-    return matchesGuests && matchesBedrooms && matchesBathrooms && (matchesText || isStayIntent);
+    return matchesGuests && matchesBedrooms && matchesBathrooms && matchesText;
   });
 }
 

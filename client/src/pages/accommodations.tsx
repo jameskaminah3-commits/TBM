@@ -1,15 +1,17 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
-import { CalendarDays, ConciergeBell, MapPin, Search, Star, Users } from "lucide-react";
+import { ArrowUpDown, Bath, BedDouble, CalendarDays, ConciergeBell, MapPin, Search, SlidersHorizontal, Star, Users, WalletCards } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StayMediaCarousel } from "@/components/stay-media-carousel";
 import { CurrencyAmount } from "@/components/currency-amount";
 import { CustomServiceCta } from "@/components/custom-service-cta";
-import { filterStays } from "@/lib/concierge-search";
+import { filterStays, getMeaningfulTokens, normalizeConciergeQuery } from "@/lib/concierge-search";
 import {
   buildStaySearchParams,
   formatStaySearchDate,
@@ -17,8 +19,61 @@ import {
   hasStructuredStayFilters,
   matchesStayDestination,
   readStaySearchState,
+  type StaySearchSort,
 } from "@/lib/stay-search";
 import type { Stay } from "@shared/schema";
+
+const featureSuggestions = [
+  "Pool",
+  "Beachfront",
+  "Ocean view",
+  "WiFi",
+  "Kitchen",
+  "Air conditioning",
+  "Parking",
+  "Pet friendly",
+  "Wheelchair accessible",
+];
+
+function matchesStayFeature(stay: Stay, feature: string) {
+  const normalizedFeature = normalizeConciergeQuery(feature);
+  const searchableFeatures = normalizeConciergeQuery(
+    [stay.title, stay.location, stay.description, ...stay.features].join(" "),
+  );
+  return searchableFeatures.includes(normalizedFeature);
+}
+
+function scoreStayRelevance(stay: Stay, query: string) {
+  const tokens = getMeaningfulTokens(query);
+  if (!tokens.length) {
+    return 0;
+  }
+
+  const title = normalizeConciergeQuery(stay.title);
+  const location = normalizeConciergeQuery(stay.location);
+  const features = normalizeConciergeQuery(stay.features.join(" "));
+  const description = normalizeConciergeQuery(stay.description);
+
+  return tokens.reduce((score, token) => {
+    if (title.includes(token)) return score + 8;
+    if (location.includes(token)) return score + 6;
+    if (features.includes(token)) return score + 4;
+    if (description.includes(token)) return score + 2;
+    return score;
+  }, 0);
+}
+
+function sortStays(stays: Stay[], sort: StaySearchSort, query: string) {
+  return [...stays].sort((left, right) => {
+    if (sort === "price-low") return left.price - right.price;
+    if (sort === "price-high") return right.price - left.price;
+    if (sort === "rating") return right.rating - left.rating || right.reviewCount - left.reviewCount;
+    if (sort === "capacity") return right.maxOccupancy - left.maxOccupancy || left.price - right.price;
+
+    const relevanceDelta = scoreStayRelevance(right, query) - scoreStayRelevance(left, query);
+    return relevanceDelta || right.rating - left.rating || right.reviewCount - left.reviewCount || left.price - right.price;
+  });
+}
 
 export default function Accommodations() {
   const [, setLocation] = useLocation();
@@ -42,13 +97,50 @@ export default function Accommodations() {
   );
 
   const filteredAccommodations = useMemo(
-    () => textMatchedAccommodations.filter((stay) => {
+    () => {
+      const nextStays = textMatchedAccommodations.filter((stay) => {
       const matchesDestination = !staySearch.destination || matchesStayDestination(stay.location, staySearch.destination);
       const matchesGuests = staySearch.guests === null || stay.maxOccupancy >= staySearch.guests;
-      return matchesDestination && matchesGuests;
-    }),
-    [staySearch.destination, staySearch.guests, textMatchedAccommodations],
+      const matchesBedrooms = staySearch.bedrooms === null || stay.bedrooms >= staySearch.bedrooms;
+      const matchesBathrooms = staySearch.bathrooms === null || stay.bathrooms >= staySearch.bathrooms;
+      const matchesPrice = staySearch.maxPrice === null || stay.price <= staySearch.maxPrice;
+      const matchesRating = staySearch.minRating === null || stay.rating >= staySearch.minRating;
+      const matchesFeatures = staySearch.features.every((feature) => matchesStayFeature(stay, feature));
+
+      return matchesDestination && matchesGuests && matchesBedrooms && matchesBathrooms && matchesPrice && matchesRating && matchesFeatures;
+    });
+
+      return sortStays(nextStays, staySearch.sort, activeQuery);
+    },
+    [activeQuery, staySearch.bathrooms, staySearch.bedrooms, staySearch.destination, staySearch.features, staySearch.guests, staySearch.maxPrice, staySearch.minRating, staySearch.sort, textMatchedAccommodations],
   );
+
+  const availableFeatureSuggestions = useMemo(() => {
+    const matchedSuggestions = featureSuggestions.filter((feature) => {
+      return (accommodations || []).some((stay) => matchesStayFeature(stay, feature));
+    });
+
+    return matchedSuggestions.length ? matchedSuggestions : featureSuggestions;
+  }, [accommodations]);
+
+  const updateStaySearch = (updates: Partial<typeof staySearch>) => {
+    const nextSearch = buildStaySearchParams({ ...staySearch, ...updates });
+    setLocation(nextSearch ? `/accommodations?${nextSearch}` : "/accommodations");
+  };
+
+  const updateNumberFilter = (key: "guests" | "bedrooms" | "bathrooms" | "maxPrice" | "minRating", value: string) => {
+    const parsed = Number.parseInt(value, 10);
+    updateStaySearch({ [key]: Number.isNaN(parsed) || parsed < 1 ? null : parsed });
+  };
+
+  const toggleFeature = (feature: string) => {
+    const isActive = staySearch.features.includes(feature);
+    updateStaySearch({
+      features: isActive
+        ? staySearch.features.filter((activeFeature) => activeFeature !== feature)
+        : [...staySearch.features, feature],
+    });
+  };
 
   const searchChips = useMemo(() => {
     const chips: string[] = [];
@@ -70,8 +162,26 @@ export default function Accommodations() {
       chips.push(`${staySearch.guests} guest${staySearch.guests === 1 ? "" : "s"}`);
     }
 
+    if (staySearch.bedrooms) {
+      chips.push(`${staySearch.bedrooms}+ bedroom${staySearch.bedrooms === 1 ? "" : "s"}`);
+    }
+
+    if (staySearch.bathrooms) {
+      chips.push(`${staySearch.bathrooms}+ bathroom${staySearch.bathrooms === 1 ? "" : "s"}`);
+    }
+
+    if (staySearch.maxPrice) {
+      chips.push(`Up to $${staySearch.maxPrice}/day`);
+    }
+
+    if (staySearch.minRating) {
+      chips.push(`${staySearch.minRating}+ rating`);
+    }
+
+    staySearch.features.forEach((feature) => chips.push(feature));
+
     return chips;
-  }, [stayNights, staySearch.checkIn, staySearch.checkOut, staySearch.destination, staySearch.guests]);
+  }, [stayNights, staySearch.bathrooms, staySearch.bedrooms, staySearch.checkIn, staySearch.checkOut, staySearch.destination, staySearch.features, staySearch.guests, staySearch.maxPrice, staySearch.minRating]);
 
   const clearAllFilters = () => {
     setLocation("/accommodations");
@@ -149,6 +259,144 @@ export default function Accommodations() {
               Clear search
             </Button>
           </div>
+        ) : null}
+
+        {accommodations && accommodations.length > 0 ? (
+          <details
+            className="mb-5 rounded-xl border border-border/60 bg-background/95 p-3 shadow-[0_16px_42px_-36px_rgba(15,23,42,0.34)]"
+            open={hasTripFilters}
+          >
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold leading-6 [&::-webkit-details-marker]:hidden">
+              <span className="flex items-center gap-2">
+                <SlidersHorizontal className="h-4 w-4 text-primary" />
+                Filters
+              </span>
+              <span className="text-xs font-medium text-muted-foreground">Show options</span>
+            </summary>
+
+            <div className="mt-3 flex flex-col gap-3">
+              <div className="w-full md:w-52">
+                <Select value={staySearch.sort} onValueChange={(value) => updateStaySearch({ sort: value as StaySearchSort })}>
+                  <SelectTrigger className="h-9 rounded-full" aria-label="Sort stays">
+                    <ArrowUpDown className="mr-2 h-4 w-4 text-muted-foreground" />
+                    <SelectValue placeholder="Sort stays" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="recommended">Recommended</SelectItem>
+                    <SelectItem value="price-low">Lowest price</SelectItem>
+                    <SelectItem value="price-high">Highest price</SelectItem>
+                    <SelectItem value="rating">Top rated</SelectItem>
+                    <SelectItem value="capacity">Largest capacity</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+                <label className="space-y-1">
+                  <span className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    <Users className="h-3.5 w-3.5" />
+                    Guests
+                  </span>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={staySearch.guests ?? ""}
+                    onChange={(event) => updateNumberFilter("guests", event.target.value)}
+                    placeholder="Any"
+                    className="h-9 rounded-full"
+                    data-testid="input-stay-filter-guests"
+                  />
+                </label>
+
+                <label className="space-y-1">
+                  <span className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    <BedDouble className="h-3.5 w-3.5" />
+                    Bedrooms
+                  </span>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={staySearch.bedrooms ?? ""}
+                    onChange={(event) => updateNumberFilter("bedrooms", event.target.value)}
+                    placeholder="Any"
+                    className="h-9 rounded-full"
+                    data-testid="input-stay-filter-bedrooms"
+                  />
+                </label>
+
+                <label className="space-y-1">
+                  <span className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    <Bath className="h-3.5 w-3.5" />
+                    Bathrooms
+                  </span>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={staySearch.bathrooms ?? ""}
+                    onChange={(event) => updateNumberFilter("bathrooms", event.target.value)}
+                    placeholder="Any"
+                    className="h-9 rounded-full"
+                    data-testid="input-stay-filter-bathrooms"
+                  />
+                </label>
+
+                <label className="space-y-1">
+                  <span className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    <WalletCards className="h-3.5 w-3.5" />
+                    Max price
+                  </span>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={staySearch.maxPrice ?? ""}
+                    onChange={(event) => updateNumberFilter("maxPrice", event.target.value)}
+                    placeholder="USD / day"
+                    className="h-9 rounded-full"
+                    data-testid="input-stay-filter-max-price"
+                  />
+                </label>
+
+                <label className="space-y-1">
+                  <span className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    <Star className="h-3.5 w-3.5" />
+                    Minimum rating
+                  </span>
+                  <Select value={staySearch.minRating ? String(staySearch.minRating) : "any"} onValueChange={(value) => updateNumberFilter("minRating", value === "any" ? "" : value)}>
+                    <SelectTrigger className="h-9 rounded-full" data-testid="select-stay-filter-rating">
+                      <SelectValue placeholder="Any rating" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="any">Any rating</SelectItem>
+                      <SelectItem value="3">3+</SelectItem>
+                      <SelectItem value="4">4+</SelectItem>
+                      <SelectItem value="5">5</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </label>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5">
+                {availableFeatureSuggestions.map((feature) => {
+                  const isActive = staySearch.features.includes(feature);
+                  return (
+                    <button
+                      key={feature}
+                      type="button"
+                      onClick={() => toggleFeature(feature)}
+                      className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+                        isActive
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border/70 bg-muted/30 text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                      }`}
+                      data-testid={`button-stay-feature-${feature.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
+                    >
+                      {feature}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </details>
         ) : null}
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">

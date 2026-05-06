@@ -12,8 +12,8 @@ const searchBarContent: Record<
 > = {
   stays: {
     label: "Find the right stay for this trip",
-    placeholder: "2 bedroom in Nyali, beachfront villa in Watamu, family stay with pool...",
-    chips: ["2 Bedroom Nyali", "Beachfront Villa", "Family Stay", "Pool Villa", "Watamu Getaway"],
+    placeholder: "2 bedroom in Nyali, beachfront stay, family stay with pool...",
+    chips: ["2 Bedroom Nyali", "Beachfront Stay", "Family Stay", "Pool Stay", "Watamu Getaway"],
   },
   drive: {
     label: "What drive service do you need today?",
