@@ -72,6 +72,21 @@ import {
   isPendingBookingPathMatch,
 } from "@/lib/pending-booking";
 
+function getDateInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function isDateInputValue(value: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function isBeforeToday(value: string) {
+  return isDateInputValue(value) && value < getDateInputValue(new Date());
+}
+
 const serviceBookingFormSchema = insertBookingSchema.omit({
   accommodationId: true,
 }).extend({
@@ -120,6 +135,22 @@ const serviceBookingFormSchema = insertBookingSchema.omit({
         message: "End date is required",
       });
     }
+  }
+
+  if (value.checkIn?.trim() && isBeforeToday(value.checkIn)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["checkIn"],
+      message: "Start date cannot be in the past",
+    });
+  }
+
+  if (value.checkOut?.trim() && isBeforeToday(value.checkOut)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["checkOut"],
+      message: "End date cannot be in the past",
+    });
   }
 
   if (value.serviceMode?.startsWith("car-")) {
@@ -221,6 +252,16 @@ const serviceBookingFormSchema = insertBookingSchema.omit({
         message: "Add at least one errand package date",
       });
     }
+
+    value.serviceScheduleSlots?.forEach((slot, index) => {
+      if (slot.date && isBeforeToday(slot.date)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["serviceScheduleSlots", index, "date"],
+          message: "Package date cannot be in the past",
+        });
+      }
+    });
   }
 
   if (value.serviceMode === "experience-shared" && !value.serviceDepartureId?.trim()) {
@@ -421,6 +462,7 @@ export default function ServiceBooking() {
   const visibleDescription = hasLongDescription && !isDescriptionExpanded
     ? getDescriptionPreview(serviceDescription)
     : serviceDescription;
+  const todayDateInputValue = useMemo(() => getDateInputValue(new Date()), []);
   const bookingPrefill = useMemo(() => {
     if (typeof window === "undefined") {
       return {
@@ -1741,7 +1783,13 @@ export default function ServiceBooking() {
                                           <FormControl>
                                             <div className="relative">
                                               <Calendar className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                                              <Input type="date" className="pl-10" {...field} data-testid={`input-errand-package-date-${index}`} />
+                                              <Input
+                                                type="date"
+                                                min={todayDateInputValue}
+                                                className="pl-10"
+                                                {...field}
+                                                data-testid={`input-errand-package-date-${index}`}
+                                              />
                                             </div>
                                           </FormControl>
                                           <FormMessage />
@@ -1787,7 +1835,13 @@ export default function ServiceBooking() {
                               <FormControl>
                                 <div className="relative">
                                   <Calendar className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                                  <Input type="date" className="pl-10" data-testid="input-start-date" {...field} />
+                                  <Input
+                                    type="date"
+                                    min={todayDateInputValue}
+                                    className="pl-10"
+                                    data-testid="input-start-date"
+                                    {...field}
+                                  />
                                 </div>
                               </FormControl>
                               <FormMessage />
@@ -1805,7 +1859,13 @@ export default function ServiceBooking() {
                                 <FormControl>
                                   <div className="relative">
                                     <Calendar className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                                    <Input type="date" className="pl-10" data-testid="input-end-date" {...field} />
+                                    <Input
+                                      type="date"
+                                      min={todayDateInputValue}
+                                      className="pl-10"
+                                      data-testid="input-end-date"
+                                      {...field}
+                                    />
                                   </div>
                                 </FormControl>
                                 <FormMessage />

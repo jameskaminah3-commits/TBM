@@ -89,6 +89,46 @@ function normalizeDateOnly(value: string) {
   return date;
 }
 
+function getTodayDateString(timeZone = "Africa/Nairobi") {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function assertBookingDatesAreBookable(params: {
+  checkIn: string;
+  checkOut: string;
+  serviceScheduleSlots?: Array<{ date: string; note?: string }> | null;
+}) {
+  const today = getTodayDateString();
+  const checkIn = toIsoDate(normalizeDateOnly(params.checkIn));
+  const checkOut = toIsoDate(normalizeDateOnly(params.checkOut));
+
+  if (checkIn < today) {
+    throw new Error("Start date cannot be in the past.");
+  }
+
+  if (checkOut < today) {
+    throw new Error("End date cannot be in the past.");
+  }
+
+  if (checkOut < checkIn) {
+    throw new Error("End date cannot be before start date.");
+  }
+
+  for (const slot of params.serviceScheduleSlots || []) {
+    const slotDate = toIsoDate(normalizeDateOnly(slot.date));
+    if (slotDate < today) {
+      throw new Error("Package date cannot be in the past.");
+    }
+  }
+}
+
 function buildServerManagedBookingInput(
   bookingData: z.input<typeof publicBookingRequestSchema>,
   userId: string,
@@ -2620,6 +2660,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         validatedData.guests = 1;
       }
 
+      assertBookingDatesAreBookable({
+        checkIn: validatedData.checkIn,
+        checkOut: validatedData.checkOut,
+        serviceScheduleSlots: validatedData.serviceScheduleSlots,
+      });
+
       if (validatedData.bookingType !== "service" && validatedData.accommodationId) {
         const stay = await storage.getStay(validatedData.accommodationId);
         if (!stay || !stay.isPublic) {
@@ -3084,6 +3130,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
       }
+
+      assertBookingDatesAreBookable({
+        checkIn: validatedData.checkIn,
+        checkOut: validatedData.checkOut,
+        serviceScheduleSlots: validatedData.serviceScheduleSlots,
+      });
 
       const promoCategorySet = new Set<ProviderCategory>();
       if (validatedData.bookingType !== "service" && validatedData.accommodationId) {
