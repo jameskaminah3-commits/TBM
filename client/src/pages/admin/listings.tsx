@@ -4,14 +4,17 @@ import { useLocation } from "wouter";
 import {
   Briefcase,
   CarFront,
+  Copy,
   CookingPot,
   Edit,
+  ExternalLink,
   Eye,
   EyeOff,
   Home,
   MapPin,
   Plus,
   Search,
+  Share2,
   Sparkles,
   Trash2,
   type LucideIcon,
@@ -183,6 +186,30 @@ function getDescriptionPreview(value: string | null | undefined) {
   }
 
   return value.length > 160 ? `${value.slice(0, 157)}...` : value;
+}
+
+function getPublicListingPath(category: ServiceCategory, id: string) {
+  switch (category) {
+    case "stays":
+      return `/accommodation/${id}`;
+    case "cars":
+      return `/book/car/${id}`;
+    case "cooks":
+      return `/book/cook/${id}`;
+    case "errands":
+      return `/book/errand/${id}`;
+    case "experiences":
+      return `/book/experience/${id}`;
+  }
+}
+
+function getPublicListingUrl(category: ServiceCategory, id: string) {
+  const path = getPublicListingPath(category, id);
+  if (typeof window === "undefined") {
+    return path;
+  }
+
+  return new URL(path, window.location.origin).toString();
 }
 
 export default function AdminListings() {
@@ -385,6 +412,92 @@ export default function AdminListings() {
     }
   };
 
+  const handlePreviewListing = (category: ServiceCategory, id: string, isPublic: boolean) => {
+    if (!isPublic) {
+      toast({
+        title: "Listing is private",
+        description: "Make it public before previewing the client-facing link.",
+      });
+      return;
+    }
+
+    window.open(getPublicListingUrl(category, id), "_blank", "noopener,noreferrer");
+  };
+
+  const handleShareListing = async (category: ServiceCategory, id: string, title: string, isPublic: boolean) => {
+    if (!isPublic) {
+      toast({
+        title: "Listing is private",
+        description: "Make it public before sharing the client-facing link.",
+      });
+      return;
+    }
+
+    const url = getPublicListingUrl(category, id);
+    const webNavigator = navigator as Navigator & {
+      share?: (data: ShareData) => Promise<void>;
+      clipboard?: Clipboard;
+    };
+    try {
+      if (typeof webNavigator.share === "function") {
+        await webNavigator.share({ title, url });
+        return;
+      }
+
+      if (!webNavigator.clipboard) {
+        throw new Error("Clipboard is unavailable");
+      }
+
+      await webNavigator.clipboard.writeText(url);
+      toast({ title: "Link copied", description: "The listing link is ready to paste." });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return;
+      }
+
+      try {
+        if (!webNavigator.clipboard) {
+          throw new Error("Clipboard is unavailable");
+        }
+
+        await webNavigator.clipboard.writeText(url);
+        toast({ title: "Link copied", description: "The listing link is ready to paste." });
+      } catch {
+        toast({ title: "Could not share link", description: url, variant: "destructive" });
+      }
+    }
+  };
+
+  const renderListingShareActions = (
+    category: ServiceCategory,
+    id: string,
+    title: string,
+    isPublic: boolean,
+  ) => (
+    <>
+      <Button
+        variant="outline"
+        className="w-full sm:w-auto"
+        onClick={() => handlePreviewListing(category, id, isPublic)}
+      >
+        <ExternalLink className="mr-2 h-4 w-4" />
+        Preview
+      </Button>
+      <Button
+        variant="outline"
+        className="w-full sm:w-auto"
+        onClick={() => handleShareListing(category, id, title, isPublic)}
+      >
+        {typeof navigator !== "undefined" && typeof (navigator as Navigator & { share?: (data: ShareData) => Promise<void> }).share === "function" ? (
+          <Share2 className="mr-2 h-4 w-4" />
+        ) : (
+          <Copy className="mr-2 h-4 w-4" />
+        )}
+        Share
+      </Button>
+    </>
+  );
+
   return (
     <AdminLayout>
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-4 sm:px-6 sm:py-6 lg:gap-6 lg:px-8">
@@ -537,7 +650,8 @@ export default function AdminListings() {
 
                           <p className="text-sm leading-6 text-muted-foreground">{getDescriptionPreview(stay.description)}</p>
 
-                          <div className="flex flex-col gap-2 sm:flex-row">
+                          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                            {renderListingShareActions("stays", stay.id, stay.title, stay.isPublic)}
                             <Button
                               variant="outline"
                               className="w-full sm:w-auto"
@@ -663,7 +777,8 @@ export default function AdminListings() {
 
                           <p className="text-sm leading-6 text-muted-foreground">{getDescriptionPreview(car.description)}</p>
 
-                          <div className="flex flex-col gap-2 sm:flex-row">
+                          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                            {renderListingShareActions("cars", car.id, car.model, car.isPublic)}
                             <Button
                               variant="outline"
                               className="w-full sm:w-auto"
@@ -790,7 +905,8 @@ export default function AdminListings() {
                             Extra inclusive guest: {formatAmount(getCookExtraGuestInclusivePrice(cook))}
                           </div>
 
-                          <div className="flex flex-col gap-2 sm:flex-row">
+                          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                            {renderListingShareActions("cooks", cook.id, cook.title, cook.isPublic)}
                             <Button
                               variant="outline"
                               className="w-full sm:w-auto"
@@ -918,7 +1034,8 @@ export default function AdminListings() {
 
                           <p className="text-sm leading-6 text-muted-foreground">{getDescriptionPreview(errand.description)}</p>
 
-                          <div className="flex flex-col gap-2 sm:flex-row">
+                          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                            {renderListingShareActions("errands", errand.id, errand.serviceName, errand.isPublic)}
                             <Button
                               variant="outline"
                               className="w-full sm:w-auto"
@@ -1017,19 +1134,21 @@ export default function AdminListings() {
                           </div>
 
                           <div className="grid gap-3 sm:grid-cols-3">
-                            <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                            <div className="min-w-0 rounded-2xl border border-stone-200 bg-white p-4">
                               <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Private</div>
-                              <div className="mt-2 text-lg font-semibold text-foreground">
-                                {experience.privateEnabled ? `${formatAmount(experience.privatePricePerPerson)}/person` : "Disabled"}
+                              <div className="mt-2 break-words text-base font-semibold leading-snug text-foreground">
+                                {experience.privateEnabled ? formatAmount(experience.privatePricePerPerson) : "Disabled"}
                               </div>
+                              {experience.privateEnabled ? <div className="text-xs text-muted-foreground">per person</div> : null}
                             </div>
-                            <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                            <div className="min-w-0 rounded-2xl border border-stone-200 bg-white p-4">
                               <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Shared</div>
-                              <div className="mt-2 text-lg font-semibold text-foreground">
-                                {experience.sharedEnabled ? `${formatAmount(experience.sharedPricePerPerson)}/person` : "Disabled"}
+                              <div className="mt-2 break-words text-base font-semibold leading-snug text-foreground">
+                                {experience.sharedEnabled ? formatAmount(experience.sharedPricePerPerson) : "Disabled"}
                               </div>
+                              {experience.sharedEnabled ? <div className="text-xs text-muted-foreground">per person</div> : null}
                             </div>
-                            <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                            <div className="min-w-0 rounded-2xl border border-stone-200 bg-white p-4">
                               <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Guests & time</div>
                               <div className="mt-2 text-lg font-semibold text-foreground">{experience.durationHours}h</div>
                               <div className="text-sm text-muted-foreground">{experience.minGuests} to {experience.maxGuests} guests</div>
@@ -1055,7 +1174,8 @@ export default function AdminListings() {
 
                           <p className="text-sm leading-6 text-muted-foreground">{getDescriptionPreview(experience.description)}</p>
 
-                          <div className="flex flex-col gap-2 sm:flex-row">
+                          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                            {renderListingShareActions("experiences", experience.id, experience.title, experience.isPublic)}
                             <Button variant="outline" className="w-full sm:w-auto" onClick={() => setLocation(`/admin/experiences/${experience.id}/edit`)}>
                               <Edit className="mr-2 h-4 w-4" />
                               Edit experience

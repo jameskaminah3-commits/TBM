@@ -182,18 +182,18 @@ function ExperienceCard({
 
         <PublicReviewPreview targetType="experience" targetId={experience.id} />
 
-        <div className="flex items-end justify-between border-t border-border/60 pt-3">
-          <div>
+        <div className="flex flex-col gap-3 border-t border-border/60 pt-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
               From
             </p>
             <CurrencyAmount
               amountUsd={lowestPrice}
-              primaryClassName="mt-1 text-lg font-semibold tracking-tight"
+              primaryClassName="mt-1 break-words text-lg font-semibold tracking-tight"
             />
             <p className="text-sm text-muted-foreground">per person</p>
           </div>
-          <Button className="rounded-full px-5" onClick={onOpen}>
+          <Button className="w-full rounded-full px-5 sm:w-auto" onClick={onOpen}>
             See More
           </Button>
         </div>
