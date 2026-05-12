@@ -6,6 +6,7 @@ import { type Server } from "http";
 import viteConfig from "../vite.config";
 import { nanoid } from "nanoid";
 import { injectHtmlSecurityContext } from "./security";
+import { injectShareMetadata, resolveShareMetadata } from "./share-metadata";
 
 const viteLogger = createLogger();
 
@@ -60,6 +61,7 @@ export async function setupVite(app: Express, server: Server) {
         `src="/src/main.tsx?v=${nanoid()}"`,
       );
       template = injectHtmlSecurityContext(template, String(res.locals.cspNonce ?? ""));
+      template = injectShareMetadata(template, await resolveShareMetadata(req));
       const page = await vite.transformIndexHtml(url, template);
       res.status(200).set({ "Content-Type": "text/html" }).end(page);
     } catch (e) {
@@ -81,11 +83,14 @@ export function serveStatic(app: Express) {
 
   const indexTemplate = fs.readFileSync(indexPath, "utf-8");
 
-  const renderIndex = (_req: express.Request, res: express.Response) => {
+  const renderIndex = async (req: express.Request, res: express.Response) => {
+    const securedTemplate = injectHtmlSecurityContext(indexTemplate, String(res.locals.cspNonce ?? ""));
+    const page = injectShareMetadata(securedTemplate, await resolveShareMetadata(req));
+
     res
       .status(200)
       .set({ "Content-Type": "text/html" })
-      .send(injectHtmlSecurityContext(indexTemplate, String(res.locals.cspNonce ?? "")));
+      .send(page);
   };
 
   app.get("/", renderIndex);
