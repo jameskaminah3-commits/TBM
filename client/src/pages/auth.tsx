@@ -1,5 +1,8 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { ArrowLeft } from "lucide-react";
+import { FaApple } from "react-icons/fa";
+import { FcGoogle } from "react-icons/fc";
+import type { IconType } from "react-icons";
 import { Link, useLocation } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,6 +12,7 @@ import { BrandMark } from "@/components/brand-mark";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/lib/supabase";
 
 type Mode = "sign-in" | "sign-up" | "verify-email" | "forgot-password" | "reset-password";
 
@@ -73,6 +77,29 @@ type AuthSuccessPayload = {
     role?: string | null;
   } | null;
 };
+
+type SocialProvider = "google" | "apple";
+
+const socialProviderCopy: Record<SocialProvider, { label: string; Icon: IconType }> = {
+  google: {
+    label: "Google",
+    Icon: FcGoogle,
+  },
+  apple: {
+    label: "Apple",
+    Icon: FaApple,
+  },
+};
+
+function getEnabledSocialProviders(): SocialProvider[] {
+  const configuredProviderValue = String(import.meta.env.VITE_SOCIAL_LOGIN_PROVIDERS ?? "google");
+  const configuredProviders = configuredProviderValue
+    .split(",")
+    .map((provider: string) => provider.trim().toLowerCase())
+    .filter((provider: string): provider is SocialProvider => provider === "google" || provider === "apple");
+
+  return Array.from(new Set(configuredProviders));
+}
 
 function parseApiError(error: unknown): ApiErrorPayload | null {
   if (!(error instanceof Error)) {
@@ -154,8 +181,11 @@ export default function AuthPage() {
   const [otp, setOtp] = useState("");
   const [resetPasswordOtpBypassed, setResetPasswordOtpBypassed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [socialSubmitting, setSocialSubmitting] = useState<SocialProvider | null>(null);
+  const [isCompletingSocialLogin, setIsCompletingSocialLogin] = useState(false);
 
   const nextPath = getNextPath();
+  const socialProviders = useMemo(() => getEnabledSocialProviders(), []);
   const nextPathLabel = useMemo(() => formatNextPathLabel(nextPath), [nextPath]);
   const resolvedNextPath = useMemo(() => resolvePostAuthPath(nextPath, isAdmin), [isAdmin, nextPath]);
   const currentMode = useMemo(() => {
@@ -184,9 +214,100 @@ export default function AuthPage() {
     }
   }, [isAuthenticated, isLoading, resolvedNextPath, setLocation]);
 
+  useEffect(() => {
+    const supabaseClient = supabase;
+    if (!supabaseClient || isAuthenticated || isCompletingSocialLogin) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function completeSocialLogin(authClient: NonNullable<typeof supabase>) {
+      const { data, error } = await authClient.auth.getSession();
+      const accessToken = data.session?.access_token;
+      if (error || !accessToken) {
+        return;
+      }
+
+      setIsCompletingSocialLogin(true);
+      try {
+        const res = await apiRequest("POST", "/api/auth/social-session", { accessToken });
+        const user = await readApiJson(res);
+        if (cancelled) {
+          return;
+        }
+
+        queryClient.setQueryData(["/api/auth/user"], user);
+        await authClient.auth.signOut();
+        toast({
+          title: "Signed in",
+          description: "Welcome back.",
+        });
+        await refreshAuthAndRedirect(user?.role);
+      } catch (error) {
+        if (!cancelled) {
+          toast({
+            title: "Social login failed",
+            description: getApiErrorMessage(error),
+            variant: "destructive",
+          });
+        }
+      } finally {
+        if (!cancelled) {
+          setIsCompletingSocialLogin(false);
+        }
+      }
+    }
+
+    void completeSocialLogin(supabaseClient);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, isCompletingSocialLogin, toast]);
+
   async function refreshAuthAndRedirect(userRole?: string | null) {
     await queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
     setLocation(resolvePostAuthPath(nextPath, userRole === "admin"));
+  }
+
+  async function handleSocialSignIn(provider: SocialProvider) {
+    if (!supabase) {
+      toast({
+        title: "Social login unavailable",
+        description: "Supabase is not configured for this environment yet.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSocialSubmitting(provider);
+    try {
+      const redirectTo = `${window.location.origin}/auth?next=${encodeURIComponent(nextPath)}`;
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo,
+          queryParams: provider === "google"
+            ? {
+                access_type: "offline",
+                prompt: "select_account",
+              }
+            : undefined,
+        },
+      });
+
+      if (error) {
+        throw error;
+      }
+    } catch (error) {
+      toast({
+        title: "Social login failed",
+        description: getApiErrorMessage(error),
+        variant: "destructive",
+      });
+      setSocialSubmitting(null);
+    }
   }
 
   async function handleSignUp(event: FormEvent) {
@@ -466,6 +587,34 @@ export default function AuthPage() {
           <CardContent className="space-y-5 px-5 pb-6 pt-5 sm:px-6">
             {mode === "sign-in" ? (
               <>
+                {socialProviders.length > 0 ? (
+                  <div className="space-y-3">
+                    {socialProviders.map((provider) => {
+                      const { Icon, label } = socialProviderCopy[provider];
+                      const busy = socialSubmitting === provider || isCompletingSocialLogin;
+
+                      return (
+                        <Button
+                          key={provider}
+                          type="button"
+                          variant="outline"
+                          className="min-h-12 w-full rounded-2xl border-stone-200 bg-white text-base text-stone-900 hover:bg-stone-50"
+                          onClick={() => void handleSocialSignIn(provider)}
+                          disabled={submitting || Boolean(socialSubmitting) || isCompletingSocialLogin}
+                        >
+                          <Icon className="mr-2 h-5 w-5" />
+                          {busy ? `Connecting ${label}...` : `Continue with ${label}`}
+                        </Button>
+                      );
+                    })}
+                    <div className="flex items-center gap-3 text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                      <span className="h-px flex-1 bg-stone-200" />
+                      or
+                      <span className="h-px flex-1 bg-stone-200" />
+                    </div>
+                  </div>
+                ) : null}
+
                 <form className="space-y-4" onSubmit={handleSignIn}>
                   <div className="space-y-2">
                     <Label htmlFor="identifier">Email or phone</Label>
@@ -540,6 +689,34 @@ export default function AuthPage() {
 
             {mode === "sign-up" ? (
               <>
+                {socialProviders.length > 0 ? (
+                  <div className="space-y-3">
+                    {socialProviders.map((provider) => {
+                      const { Icon, label } = socialProviderCopy[provider];
+                      const busy = socialSubmitting === provider || isCompletingSocialLogin;
+
+                      return (
+                        <Button
+                          key={provider}
+                          type="button"
+                          variant="outline"
+                          className="min-h-12 w-full rounded-2xl border-stone-200 bg-white text-base text-stone-900 hover:bg-stone-50"
+                          onClick={() => void handleSocialSignIn(provider)}
+                          disabled={submitting || Boolean(socialSubmitting) || isCompletingSocialLogin}
+                        >
+                          <Icon className="mr-2 h-5 w-5" />
+                          {busy ? `Connecting ${label}...` : `Continue with ${label}`}
+                        </Button>
+                      );
+                    })}
+                    <div className="flex items-center gap-3 text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                      <span className="h-px flex-1 bg-stone-200" />
+                      or
+                      <span className="h-px flex-1 bg-stone-200" />
+                    </div>
+                  </div>
+                ) : null}
+
                 <form className="space-y-4" onSubmit={handleSignUp}>
                   <div className="space-y-2">
                     <Label htmlFor="name">Full name</Label>

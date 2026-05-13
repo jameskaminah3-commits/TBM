@@ -2,6 +2,7 @@ import type { Express, RequestHandler } from "express";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import { and, desc, eq, gt, isNull, or } from "drizzle-orm";
+import { z } from "zod";
 import {
   emailVerificationOtps,
   forgotPasswordSchema,
@@ -31,6 +32,7 @@ import {
   sendSignupNotificationEmails,
   sendVerificationCode,
 } from "../notifications";
+import supabase from "../supabase";
 import { storage } from "../storage";
 import { createRateLimitMiddleware, getRequestIp } from "./rate-limit";
 
@@ -268,6 +270,9 @@ const resendVerificationRateLimit = createRateLimitMiddleware([
 ]);
 
 const resetPasswordWithoutOtpSchema = resetPasswordSchema.omit({ otp: true });
+const socialSessionSchema = z.object({
+  accessToken: z.string().min(1, "Supabase access token is required"),
+});
 
 function isEmailVerified(user: { email: string | null; emailVerifiedAt: Date | null }) {
   return !user.email || Boolean(user.emailVerifiedAt);
@@ -375,6 +380,64 @@ async function authenticateSessionUser(req: any, userId: string, notFoundMessage
     ok: true,
     sessionUser,
   } as const;
+}
+
+function getSupabaseUserName(metadata: Record<string, unknown>) {
+  const fullName = [metadata.full_name, metadata.name]
+    .find((value): value is string => typeof value === "string" && value.trim().length > 0)
+    ?.trim();
+
+  if (!fullName) {
+    return { firstName: null, lastName: null };
+  }
+
+  return splitName(fullName);
+}
+
+async function upsertSocialUser(supabaseUser: {
+  id: string;
+  email?: string | null;
+  user_metadata?: Record<string, unknown>;
+}) {
+  const email = supabaseUser.email?.trim().toLowerCase();
+  if (!email) {
+    throw new Error("Your social account did not return an email address.");
+  }
+
+  const metadata = supabaseUser.user_metadata ?? {};
+  const { firstName, lastName } = getSupabaseUserName(metadata);
+  const profileImageUrl = [metadata.avatar_url, metadata.picture]
+    .find((value): value is string => typeof value === "string" && value.trim().length > 0)
+    ?.trim() ?? null;
+  const now = new Date();
+  const existingUser = await storage.getUserByEmail(email);
+
+  if (existingUser) {
+    const updatedUser = await storage.updateUser(existingUser.id, {
+      email,
+      emailVerifiedAt: existingUser.emailVerifiedAt ?? now,
+      firstName: existingUser.firstName ?? firstName,
+      lastName: existingUser.lastName ?? lastName,
+      profileImageUrl: existingUser.profileImageUrl ?? profileImageUrl,
+    });
+
+    return updatedUser ?? existingUser;
+  }
+
+  const [createdUser] = await db
+    .insert(users)
+    .values({
+      id: supabaseUser.id,
+      email,
+      emailVerifiedAt: now,
+      firstName,
+      lastName,
+      profileImageUrl,
+      role: adminEmails.has(email) ? "admin" : "customer",
+    })
+    .returning();
+
+  return createdUser;
 }
 
 export function setupAuth(app: Express) {
@@ -670,6 +733,35 @@ export function registerAuthRoutes(app: Express) {
       console.error("[AUTH] Signin failed:", formatAuthError(error));
       return res.status(400).json({
         message: error instanceof Error ? error.message : "Failed to sign in",
+      });
+    }
+  });
+
+  app.post("/api/auth/social-session", async (req, res) => {
+    try {
+      if (!supabase) {
+        return res.status(503).json({
+          message: "Social login is not configured. Set SUPABASE_URL and SUPABASE_ANON_KEY on the server.",
+        });
+      }
+
+      const input = socialSessionSchema.parse(req.body);
+      const { data, error } = await supabase.auth.getUser(input.accessToken);
+      if (error || !data.user) {
+        return res.status(401).json({ message: "Social login session could not be verified." });
+      }
+
+      const user = await upsertSocialUser(data.user);
+      const authenticated = await authenticateSessionUser(req, user.id, "Unable to load account");
+      if (!authenticated.ok) {
+        return res.status(authenticated.status).json(authenticated.body);
+      }
+
+      return res.json(authenticated.sessionUser);
+    } catch (error) {
+      console.error("[AUTH] Social login failed:", formatAuthError(error));
+      return res.status(400).json({
+        message: error instanceof Error ? error.message : "Failed to complete social login",
       });
     }
   });
