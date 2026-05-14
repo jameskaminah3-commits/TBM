@@ -8,6 +8,7 @@ import {
   Mail,
   Phone,
   Search,
+  Share2,
   Star,
   UserRound,
   Wallet,
@@ -32,6 +33,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useCurrency } from "@/lib/currency";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { getShortShareUrl, type ShareServiceType } from "@/lib/share-links";
 import { getCookExtraGuestInclusivePrice, getCookExtraGuestServiceFee, getCookMinimumGuests } from "@shared/cook-pricing";
 
 type ProviderAssignments = {
@@ -41,6 +43,73 @@ type ProviderAssignments = {
   errands: Errand[];
   experiences: Experience[];
 };
+
+function ShareListingButton({
+  serviceType,
+  id,
+  title,
+  isPublic,
+  className,
+}: {
+  serviceType: ShareServiceType;
+  id: string;
+  title: string;
+  isPublic: boolean;
+  className?: string;
+}) {
+  const { toast } = useToast();
+
+  const handleShare = async () => {
+    if (!isPublic) {
+      toast({
+        title: "Listing is not public yet",
+        description: "Share links start working after admin approval.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const url = getShortShareUrl(serviceType, id);
+
+    try {
+      if (navigator.share) {
+        await navigator.share({ title, url });
+        return;
+      }
+
+      await navigator.clipboard.writeText(url);
+      toast({
+        title: "Short link copied",
+        description: url,
+      });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return;
+      }
+
+      toast({
+        title: "Could not share link",
+        description: "Please try copying it again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className={cn("rounded-full bg-white/80", className)}
+      onClick={handleShare}
+      disabled={!isPublic}
+      title={isPublic ? "Share short booking link" : "Available after admin approval"}
+    >
+      <Share2 className="mr-2 h-4 w-4" />
+      Share
+    </Button>
+  );
+}
 
 function mergeUpdatedAssignment(
   currentAssignments: ProviderBookingAssignmentView[] | undefined,
@@ -1469,6 +1538,7 @@ export default function ProviderDashboard() {
                     <Button asChild variant="outline" size="sm" className="rounded-full bg-white/80">
                       <a href={`/provider/stays/${stay.id}/availability#media`}>Update photo</a>
                     </Button>
+                    <ShareListingButton serviceType="stay" id={stay.id} title={stay.title} isPublic={stay.isPublic} />
                   </div>
                 </div>
                 <Button asChild className="w-full rounded-full md:min-w-48 md:w-auto">
@@ -1515,6 +1585,7 @@ export default function ProviderDashboard() {
                       <Button asChild variant="outline" size="sm" className="rounded-full bg-white/80">
                         <a href={`/provider/cars/${car.id}/availability#media`}>Update photos</a>
                       </Button>
+                      <ShareListingButton serviceType="car" id={car.id} title={car.model} isPublic={car.isPublic} />
                     </div>
                   </div>
                   <Button asChild variant="outline" size="sm" className="w-full rounded-full sm:w-auto">
@@ -1561,6 +1632,7 @@ export default function ProviderDashboard() {
                       <Button asChild variant="outline" size="sm" className="rounded-full bg-white/80">
                         <a href={`/provider/cooks/${cook.id}/edit#media`}>Update photos</a>
                       </Button>
+                      <ShareListingButton serviceType="cook" id={cook.id} title={`${cook.serviceType} by ${cook.title}`} isPublic={cook.isPublic} />
                     </div>
                   </div>
                   <Button asChild variant="outline" size="sm" className="w-full rounded-full sm:w-auto">
@@ -1607,6 +1679,7 @@ export default function ProviderDashboard() {
                       <Button asChild variant="outline" size="sm" className="rounded-full bg-white/80">
                         <Link href={`/provider/errands/${errand.id}/edit`}>Adjust add-ons</Link>
                       </Button>
+                      <ShareListingButton serviceType="errand" id={errand.id} title={errand.serviceName} isPublic={errand.isPublic} />
                     </div>
                   </div>
                   <Button asChild variant="outline" size="sm" className="w-full rounded-full sm:w-auto">
@@ -1652,6 +1725,7 @@ export default function ProviderDashboard() {
                       <Button asChild variant="outline" size="sm" className="rounded-full bg-white/80">
                         <Link href={`/provider/experiences/${experience.id}/edit`}>Adjust guest settings</Link>
                       </Button>
+                      <ShareListingButton serviceType="experience" id={experience.id} title={experience.title} isPublic={experience.isPublic} />
                     </div>
                   </div>
                   <Button asChild variant="outline" size="sm" className="w-full rounded-full sm:w-auto">

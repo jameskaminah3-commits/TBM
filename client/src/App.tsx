@@ -18,6 +18,7 @@ const Accommodations = lazy(() => import("@/pages/accommodations"));
 const AccommodationDetail = lazy(() => import("@/pages/accommodation-detail"));
 const Booking = lazy(() => import("@/pages/booking"));
 const ServiceBooking = lazy(() => import("@/pages/service-booking"));
+const ShortBookingLink = lazy(() => import("@/pages/short-booking-link"));
 const Bookings = lazy(() => import("@/pages/bookings"));
 const DrivePage = lazy(() => import("@/pages/services/drive"));
 const DinePage = lazy(() => import("@/pages/services/dine"));
@@ -81,6 +82,7 @@ function Router() {
         <AppRoute path="/accommodation/:id" element={<AccommodationDetail />} />
         <AppRoute path="/book/:id" element={<Booking />} />
         <AppRoute path="/book/:serviceType/:id" element={<ServiceBooking />} />
+        <AppRoute path="/b/:shortType/:code" element={<ShortBookingLink />} />
         <AppRoute path="/bookings" element={<Bookings />} />
         <AppRoute path="/inbox" element={<InboxPage />} />
         <AppRoute path="/request-custom-service" element={<CustomServiceRequestPage />} />

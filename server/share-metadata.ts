@@ -3,6 +3,7 @@ import type { Car, Cook, Errand, Experience, Stay } from "@shared/schema";
 import { storage } from "./storage";
 
 type ListingKind = "stay" | "car" | "cook" | "errand" | "experience";
+type ParsedListingRoute = { kind: ListingKind; id: string; isShortLink?: boolean };
 
 type ShareMetadata = {
   title: string;
@@ -179,7 +180,24 @@ function buildExperienceMetadata(experience: Experience, baseUrl: string, canoni
   };
 }
 
-function parseListingRoute(pathname: string): { kind: ListingKind; id: string } | null {
+function parseListingRoute(pathname: string): ParsedListingRoute | null {
+  const shortMatch = /^\/b\/([sckrx])\/([^/?#]+)\/?$/.exec(pathname);
+  if (shortMatch) {
+    const shortKindMap: Record<string, ListingKind> = {
+      s: "stay",
+      c: "car",
+      k: "cook",
+      r: "errand",
+      x: "experience",
+    };
+
+    return {
+      kind: shortKindMap[shortMatch[1]],
+      id: decodeURIComponent(shortMatch[2]),
+      isShortLink: true,
+    };
+  }
+
   const stayMatch = /^\/accommodation\/([^/?#]+)\/?$/.exec(pathname);
   if (stayMatch) {
     return { kind: "stay", id: decodeURIComponent(stayMatch[1]) };
@@ -199,6 +217,43 @@ function parseListingRoute(pathname: string): { kind: ListingKind; id: string } 
     kind: serviceMatch[1] as ListingKind,
     id: decodeURIComponent(serviceMatch[2]),
   };
+}
+
+async function resolveListing(route: ParsedListingRoute) {
+  const normalizedId = route.id.toLowerCase();
+
+  if (route.kind === "stay") {
+    if (!route.isShortLink) {
+      return storage.getStay(route.id);
+    }
+    return (await storage.getStays()).find((stay) => stay.id.toLowerCase().startsWith(normalizedId));
+  }
+
+  if (route.kind === "car") {
+    if (!route.isShortLink) {
+      return storage.getCar(route.id);
+    }
+    return (await storage.getCars()).find((car) => car.id.toLowerCase().startsWith(normalizedId));
+  }
+
+  if (route.kind === "cook") {
+    if (!route.isShortLink) {
+      return storage.getCook(route.id);
+    }
+    return (await storage.getCooks()).find((cook) => cook.id.toLowerCase().startsWith(normalizedId));
+  }
+
+  if (route.kind === "errand") {
+    if (!route.isShortLink) {
+      return storage.getErrand(route.id);
+    }
+    return (await storage.getErrands()).find((errand) => errand.id.toLowerCase().startsWith(normalizedId));
+  }
+
+  if (!route.isShortLink) {
+    return storage.getExperience(route.id);
+  }
+  return (await storage.getExperiences()).find((experience) => experience.id.toLowerCase().startsWith(normalizedId));
 }
 
 function defaultMetadata(req: Request): ShareMetadata {
@@ -224,7 +279,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
 
   try {
     if (route.kind === "stay") {
-      const stay = await storage.getStay(route.id);
+      const stay = await resolveListing(route) as Stay | undefined;
       if (!isPublicListing(stay)) {
         return fallback;
       }
@@ -232,7 +287,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
     }
 
     if (route.kind === "car") {
-      const car = await storage.getCar(route.id);
+      const car = await resolveListing(route) as Car | undefined;
       if (!isPublicListing(car)) {
         return fallback;
       }
@@ -240,7 +295,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
     }
 
     if (route.kind === "cook") {
-      const cook = await storage.getCook(route.id);
+      const cook = await resolveListing(route) as Cook | undefined;
       if (!isPublicListing(cook)) {
         return fallback;
       }
@@ -248,14 +303,14 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
     }
 
     if (route.kind === "errand") {
-      const errand = await storage.getErrand(route.id);
+      const errand = await resolveListing(route) as Errand | undefined;
       if (!isPublicListing(errand)) {
         return fallback;
       }
       return buildErrandMetadata(errand, baseUrl, canonicalUrl);
     }
 
-    const experience = await storage.getExperience(route.id);
+    const experience = await resolveListing(route) as Experience | undefined;
     if (!isPublicListing(experience)) {
       return fallback;
     }
