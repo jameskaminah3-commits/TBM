@@ -47,11 +47,20 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrency } from "@/lib/currency";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { getShortShareUrl, type ShareServiceType } from "@/lib/share-links";
 import { getCookCustomMenuRequestFee, getCookExtraGuestInclusivePrice, getCookExtraGuestServiceFee, getCookInclusivePrice, getCookMinimumGuests, getCookServiceFee } from "@shared/cook-pricing";
 import type { Stay, Car as CarType, Cook as CookType, Errand as ErrandType, Experience as ExperienceType } from "@shared/schema";
 
 type ServiceCategory = "stays" | "cars" | "cooks" | "errands" | "experiences";
 type VisibilityFilter = "all" | "public" | "private";
+
+const shareServiceTypeByCategory: Record<ServiceCategory, ShareServiceType> = {
+  stays: "stay",
+  cars: "car",
+  cooks: "cook",
+  errands: "errand",
+  experiences: "experience",
+};
 
 const serviceMeta: Record<ServiceCategory, {
   label: string;
@@ -210,6 +219,14 @@ function getPublicListingUrl(category: ServiceCategory, id: string) {
   }
 
   return new URL(path, window.location.origin).toString();
+}
+
+function getPublicShareUrl(category: ServiceCategory, id: string) {
+  return getShortShareUrl(
+    shareServiceTypeByCategory[category],
+    id,
+    typeof window === "undefined" ? undefined : window.location.origin,
+  );
 }
 
 export default function AdminListings() {
@@ -433,7 +450,7 @@ export default function AdminListings() {
       return;
     }
 
-    const url = getPublicListingUrl(category, id);
+    const url = getPublicShareUrl(category, id);
     const webNavigator = navigator as Navigator & {
       share?: (data: ShareData) => Promise<void>;
       clipboard?: Clipboard;
