@@ -23,6 +23,7 @@ type StayMediaCarouselProps = {
   aspectClassName?: string;
   imageClassName?: string;
   thumbnailPlacement?: "overlay" | "below";
+  eagerFirstImage?: boolean;
 };
 
 function getStayGalleryImages(stay: StayMediaCarouselProps["stay"]) {
@@ -39,6 +40,7 @@ export function StayMediaCarousel({
   aspectClassName = "aspect-[16/10]",
   imageClassName,
   thumbnailPlacement = "overlay",
+  eagerFirstImage = true,
 }: StayMediaCarouselProps) {
   const galleryImages = React.useMemo(() => getStayGalleryImages(stay), [stay]);
   const [carouselApi, setCarouselApi] = React.useState<CarouselApi>();
@@ -80,7 +82,7 @@ export function StayMediaCarousel({
                     alt={`${stay.title} photo ${index + 1}`}
                     mediaType={stay.mediaType}
                     className={cn("h-full w-full object-cover", imageClassName)}
-                    loading={index === 0 ? "eager" : "lazy"}
+                    loading={eagerFirstImage && index === 0 ? "eager" : "lazy"}
                   />
                 </div>
               </CarouselItem>

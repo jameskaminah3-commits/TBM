@@ -247,6 +247,15 @@ export default function Home() {
       return;
     }
 
+    const preloadTimer = window.setTimeout(() => setShouldLoadShowcases(true), 700);
+    return () => window.clearTimeout(preloadTimer);
+  }, [shouldLoadShowcases]);
+
+  useEffect(() => {
+    if (shouldLoadShowcases) {
+      return;
+    }
+
     const section = servicesSectionRef.current;
     if (!section || typeof IntersectionObserver === "undefined") {
       const fallbackTimer = window.setTimeout(() => setShouldLoadShowcases(true), 1200);

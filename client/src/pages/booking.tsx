@@ -1025,7 +1025,7 @@ export default function Booking() {
     if (hasBookingOverlap(data)) {
       toast({
         title: "Stay unavailable",
-        description: "Those dates are already booked. Please choose different dates.",
+        description: "Those dates are reserved. Please choose different dates.",
         variant: "destructive",
       });
       return false;

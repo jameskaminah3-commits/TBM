@@ -57,10 +57,10 @@ export function AvailabilityCalendar({
         <div>
           <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
             <CalendarIcon className="h-3.5 w-3.5 text-primary" />
-            <span>Booked Days</span>
+            <span>Reserved Days</span>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            Scroll for more dates. Red days are already booked.
+            Scroll for more dates. Red days are reserved.
           </p>
         </div>
         {availableFrom ? (
@@ -156,7 +156,7 @@ export function AvailabilityCalendar({
       <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
         <span className="inline-flex items-center gap-2">
           <span className="h-3 w-3 rounded-sm bg-red-100" />
-          Booked days
+          Reserved days
         </span>
         <span className="inline-flex items-center gap-2">
           <span className="h-3 w-3 rounded-sm bg-primary/20" />

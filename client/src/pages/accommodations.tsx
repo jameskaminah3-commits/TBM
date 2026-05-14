@@ -89,6 +89,10 @@ export default function Accommodations() {
   
   const { data: accommodations, isLoading } = useQuery<Stay[]>({
     queryKey: ["/api/stays"],
+    staleTime: 5 * 60_000,
+    gcTime: 30 * 60_000,
+    refetchOnWindowFocus: false,
+    placeholderData: (previousData) => previousData,
   });
 
   const textMatchedAccommodations = useMemo(
@@ -400,7 +404,7 @@ export default function Accommodations() {
         ) : null}
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {filteredAccommodations.map((accommodation) => (
+          {filteredAccommodations.map((accommodation, index) => (
             <Card
               key={accommodation.id}
               className="group overflow-hidden border-border/60 bg-gradient-to-b from-background via-background to-muted/20 shadow-[0_18px_50px_-30px_rgba(15,23,42,0.5)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_70px_-32px_rgba(15,23,42,0.65)]"
@@ -411,6 +415,7 @@ export default function Accommodations() {
                   stay={accommodation}
                   aspectClassName="aspect-[16/10]"
                   imageClassName="transition-transform duration-500 group-hover:scale-[1.03]"
+                  eagerFirstImage={index < 4}
                 />
               </div>
               

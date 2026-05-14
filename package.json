@@ -15,6 +15,11 @@
     "test": "node ./scripts/run-tests.mjs",
     "media:sync": "node ./scripts/sync-legacy-uploads-to-supabase.mjs",
     "ci": "npm run lint && npm run test && npm run build",
+    "mobile:sync": "npm run build && cap sync android",
+    "mobile:sync:local:android": "cross-env CAPACITOR_SERVER_URL=http://10.0.2.2:5000 cap sync android",
+    "mobile:open:android": "cap open android",
+    "mobile:run:local:android": "npm run mobile:sync:local:android && cap run android",
+    "mobile:run:android": "npm run mobile:sync && cap run android",
     "db:push": "node ./scripts/railway-db-push.mjs",
     "deploy:prepare": "node ./scripts/railway-predeploy.mjs",
     "admin:bootstrap": "node ./scripts/bootstrap-admin-account.mjs",
@@ -95,6 +100,9 @@
     "zod-validation-error": "^3.4.0"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.3.2",
+    "@capacitor/cli": "^8.3.2",
+    "@capacitor/core": "^8.3.2",
     "@replit/vite-plugin-cartographer": "^0.4.1",
     "@replit/vite-plugin-dev-banner": "^0.1.1",
     "@replit/vite-plugin-runtime-error-modal": "^0.0.3",

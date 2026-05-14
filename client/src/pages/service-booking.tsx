@@ -1335,7 +1335,7 @@ export default function ServiceBooking() {
                         <div className="space-y-1 text-sm text-muted-foreground">
                           {carAvailability.blockedRanges.slice(0, 3).map((range) => (
                             <div key={range.id}>
-                              {range.startDate} to {range.endDate} • {range.source === "manual" ? "blocked" : "booked"}
+                              {range.startDate} to {range.endDate} • reserved
                             </div>
                           ))}
                         </div>
@@ -1359,7 +1359,7 @@ export default function ServiceBooking() {
                         <div className="space-y-1 text-sm text-muted-foreground">
                           {cookAvailability.blockedRanges.slice(0, 3).map((range) => (
                             <div key={range.id}>
-                              {range.startDate} to {range.endDate} • {range.source === "manual" ? "not available" : "booked"}
+                              {range.startDate} to {range.endDate} • reserved
                             </div>
                           ))}
                         </div>

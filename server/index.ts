@@ -13,6 +13,7 @@ import {
   ensureUploadDir,
   usesLocalUploadStorage,
 } from "./media";
+import { getCanonicalRedirectUrl } from "./canonical-host";
 import { registerRoutes } from "./routes";
 import { applySecurityHeaders } from "./security";
 import { log, serveStatic, setupVite } from "./vite";
@@ -20,6 +21,14 @@ import { log, serveStatic, setupVite } from "./vite";
 const app = express();
 const jsonBodyLimit = process.env.JSON_BODY_LIMIT ?? "24mb";
 const urlencodedBodyLimit = process.env.URLENCODED_BODY_LIMIT ?? "1mb";
+const canonicalBaseUrl = (process.env.APP_BASE_URL?.trim() || "https://tembeabilamatata.com").replace(/\/+$/, "");
+const canonicalRedirectHosts = (
+  process.env.CANONICAL_REDIRECT_HOSTS
+  ?? "tembeabilamatata.co.ke,www.tembeabilamatata.co.ke"
+)
+  .split(",")
+  .map((host) => host.trim())
+  .filter(Boolean);
 
 declare module "http" {
   interface IncomingMessage {
@@ -74,6 +83,23 @@ async function listenOnAvailablePort(server: Server, requestedPort: number, allo
 }
 
 app.disable("x-powered-by");
+app.set("trust proxy", true);
+
+app.use((req, res, next) => {
+  const redirectUrl = getCanonicalRedirectUrl({
+    canonicalBaseUrl,
+    redirectHosts: canonicalRedirectHosts,
+    requestHost: req.hostname,
+    requestPath: req.originalUrl ?? req.url,
+  });
+
+  if (redirectUrl) {
+    return res.redirect(301, redirectUrl);
+  }
+
+  next();
+});
+
 app.use(applySecurityHeaders);
 
 app.use(express.json({

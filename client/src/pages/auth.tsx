@@ -283,6 +283,7 @@ export default function AuthPage() {
 
     setSocialSubmitting(provider);
     try {
+      await supabase.auth.signOut({ scope: "local" });
       const redirectTo = `${window.location.origin}/auth?next=${encodeURIComponent(nextPath)}`;
       const { error } = await supabase.auth.signInWithOAuth({
         provider,

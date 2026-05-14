@@ -198,6 +198,11 @@ function toIsoDate(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
+function formatShortDate(dateString: string) {
+  const date = normalizeDateOnly(dateString);
+  return `${date.getUTCDate()}/${date.getUTCMonth() + 1}/${String(date.getUTCFullYear()).slice(-2)}`;
+}
+
 function getOccupiedEndDate(checkIn: string, checkOut: string) {
   const startDate = normalizeDateOnly(checkIn);
   const endDate = normalizeDateOnly(checkOut);
@@ -806,6 +811,69 @@ function datesOverlapDateRange(
     normalizeDateOnly(endA) >= normalizeDateOnly(startB);
 }
 
+function getReservedConflictWindow(
+  blockedRanges: Array<{ startDate: string; endDate: string }>,
+  requestedStartDate: string,
+  requestedEndDate: string,
+) {
+  const overlappingRanges = blockedRanges.filter((range) =>
+    datesOverlapDateRange(requestedStartDate, requestedEndDate, range.startDate, range.endDate),
+  );
+
+  if (overlappingRanges.length === 0) {
+    return null;
+  }
+
+  let reservedStart = overlappingRanges.reduce((earliest, range) =>
+    normalizeDateOnly(range.startDate).getTime() < normalizeDateOnly(earliest).getTime()
+      ? range.startDate
+      : earliest,
+  overlappingRanges[0].startDate);
+
+  let reservedEnd = overlappingRanges.reduce((latest, range) =>
+    normalizeDateOnly(range.endDate).getTime() > normalizeDateOnly(latest).getTime()
+      ? range.endDate
+      : latest,
+  overlappingRanges[0].endDate);
+
+  let expanded = true;
+  while (expanded) {
+    expanded = false;
+    for (const range of blockedRanges) {
+      const rangeStart = normalizeDateOnly(range.startDate);
+      const rangeEnd = normalizeDateOnly(range.endDate);
+      const currentStart = normalizeDateOnly(reservedStart);
+      const currentEnd = normalizeDateOnly(reservedEnd);
+      const touchesWindow =
+        rangeStart.getTime() <= addDays(currentEnd, 1).getTime() &&
+        rangeEnd.getTime() >= addDays(currentStart, -1).getTime();
+
+      if (!touchesWindow) {
+        continue;
+      }
+
+      if (rangeStart.getTime() < currentStart.getTime()) {
+        reservedStart = range.startDate;
+        expanded = true;
+      }
+
+      if (rangeEnd.getTime() > currentEnd.getTime()) {
+        reservedEnd = range.endDate;
+        expanded = true;
+      }
+    }
+  }
+
+  return {
+    reservedEnd,
+    availableFrom: toIsoDate(addDays(normalizeDateOnly(reservedEnd), 1)),
+  };
+}
+
+function buildReservedConflictMessage(subject: string, conflictWindow: { reservedEnd: string; availableFrom: string }) {
+  return `${subject} is booked up to ${formatShortDate(conflictWindow.reservedEnd)}. Available from ${formatShortDate(conflictWindow.availableFrom)}.`;
+}
+
 async function validateAccommodationAddonSelections(params: {
   selectedServiceIds: string[];
   stayServiceSelections?: Array<{
@@ -1335,7 +1403,11 @@ function getPromoServiceCount(selectedServiceIds: string[], accommodationId?: st
 }
 
 function getTodayIsoDate() {
-  return new Date().toISOString().slice(0, 10);
+  return getTodayDateString();
+}
+
+function isAvailabilityRangeCurrentOrFuture(range: { endDate: string }) {
+  return range.endDate >= getTodayIsoDate();
 }
 
 function getCurrentUtcMinutes() {
@@ -1792,25 +1864,31 @@ async function getStayAvailabilitySummary(stayId: string) {
     .filter((booking) => shouldBookingBlockAvailability(booking))
     .sort((a, b) => normalizeDateOnly(a.checkIn).getTime() - normalizeDateOnly(b.checkIn).getTime());
 
-  const bookingRanges = activeBookings.map((booking) => ({
-    id: booking.id,
-    source: "booking" as const,
-    startDate: booking.checkIn,
-    endDate: toIsoDate(getOccupiedEndDate(booking.checkIn, booking.checkOut)),
-    checkoutDate: booking.checkOut,
-    status: booking.status,
-    guestName: booking.guestName,
-  }));
+  const bookingRanges = activeBookings
+    .map((booking) => ({
+      id: booking.id,
+      source: "booking" as const,
+      startDate: booking.checkIn,
+      endDate: toIsoDate(getOccupiedEndDate(booking.checkIn, booking.checkOut)),
+      checkoutDate: booking.checkOut,
+      status: booking.status,
+      guestName: booking.guestName,
+    }))
+    .filter(isAvailabilityRangeCurrentOrFuture);
 
   const manualRanges = manualReservations
     .filter((reservation) => reservation.status === "blocked")
-    .filter((reservation) => reservation.endDate >= getTodayIsoDate())
-    .sort((a, b) => normalizeDateOnly(a.startDate).getTime() - normalizeDateOnly(b.startDate).getTime())
     .map((reservation) => ({
+      reservation,
+      occupiedEndDate: toIsoDate(getOccupiedEndDate(reservation.startDate, reservation.endDate)),
+    }))
+    .filter(({ occupiedEndDate }) => occupiedEndDate >= getTodayIsoDate())
+    .sort((a, b) => normalizeDateOnly(a.reservation.startDate).getTime() - normalizeDateOnly(b.reservation.startDate).getTime())
+    .map(({ reservation, occupiedEndDate }) => ({
       id: reservation.id,
       source: "manual" as const,
       startDate: reservation.startDate,
-      endDate: reservation.endDate,
+      endDate: occupiedEndDate,
       checkoutDate: reservation.endDate,
       status: reservation.status,
       guestName: "Manual block",
@@ -1840,7 +1918,7 @@ async function getStayAvailabilitySummary(stayId: string) {
     return ranges;
   }, []);
 
-  const today = normalizeDateOnly(new Date().toISOString().slice(0, 10));
+  const today = normalizeDateOnly(getTodayIsoDate());
   let availableFrom = toIsoDate(today);
 
   for (const range of mergedRanges) {
@@ -1870,32 +1948,38 @@ async function getCarAvailabilitySummary(carId: string) {
     .filter((booking) => shouldBookingBlockAvailability(booking))
     .sort((a, b) => normalizeDateOnly(a.checkIn).getTime() - normalizeDateOnly(b.checkIn).getTime());
 
-  const bookingRanges = activeBookings.map((booking) => {
-    const occupiedEndDate = booking.serviceMode === "car-chauffeur-hourly"
-      ? booking.checkIn
-      : toIsoDate(getOccupiedEndDate(booking.checkIn, booking.checkOut));
+  const bookingRanges = activeBookings
+    .map((booking) => {
+      const occupiedEndDate = booking.serviceMode === "car-chauffeur-hourly"
+        ? booking.checkIn
+        : toIsoDate(getOccupiedEndDate(booking.checkIn, booking.checkOut));
 
-    return {
-      id: booking.id,
-      source: "booking" as const,
-      startDate: booking.checkIn,
-      endDate: occupiedEndDate,
-      checkoutDate: booking.checkOut,
-      status: booking.status,
-      guestName: booking.guestName,
-      serviceMode: booking.serviceMode,
-    };
-  });
+      return {
+        id: booking.id,
+        source: "booking" as const,
+        startDate: booking.checkIn,
+        endDate: occupiedEndDate,
+        checkoutDate: booking.checkOut,
+        status: booking.status,
+        guestName: booking.guestName,
+        serviceMode: booking.serviceMode,
+      };
+    })
+    .filter(isAvailabilityRangeCurrentOrFuture);
 
   const manualRanges = manualReservations
     .filter((reservation) => reservation.status === "blocked")
-    .filter((reservation) => reservation.endDate >= getTodayIsoDate())
-    .sort((a, b) => normalizeDateOnly(a.startDate).getTime() - normalizeDateOnly(b.startDate).getTime())
     .map((reservation) => ({
+      reservation,
+      occupiedEndDate: toIsoDate(getOccupiedEndDate(reservation.startDate, reservation.endDate)),
+    }))
+    .filter(({ occupiedEndDate }) => occupiedEndDate >= getTodayIsoDate())
+    .sort((a, b) => normalizeDateOnly(a.reservation.startDate).getTime() - normalizeDateOnly(b.reservation.startDate).getTime())
+    .map(({ reservation, occupiedEndDate }) => ({
       id: reservation.id,
       source: "manual" as const,
       startDate: reservation.startDate,
-      endDate: reservation.endDate,
+      endDate: occupiedEndDate,
       checkoutDate: reservation.endDate,
       status: reservation.status,
       guestName: "Manual block",
@@ -1926,7 +2010,7 @@ async function getCarAvailabilitySummary(carId: string) {
     return ranges;
   }, []);
 
-  const today = normalizeDateOnly(new Date().toISOString().slice(0, 10));
+  const today = normalizeDateOnly(getTodayIsoDate());
   let availableFrom = toIsoDate(today);
 
   for (const range of mergedRanges) {
@@ -1956,26 +2040,32 @@ async function getCookAvailabilitySummary(cookId: string) {
     .filter((booking) => shouldBookingBlockAvailability(booking))
     .sort((a, b) => normalizeDateOnly(a.checkIn).getTime() - normalizeDateOnly(b.checkIn).getTime());
 
-  const bookingRanges = activeBookings.map((booking) => ({
-    id: booking.id,
-    source: "booking" as const,
-    startDate: booking.checkIn,
-    endDate: toIsoDate(getOccupiedEndDate(booking.checkIn, booking.checkOut)),
-    checkoutDate: booking.checkOut,
-    status: booking.status,
-    guestName: booking.guestName,
-    serviceMode: booking.serviceMode,
-  }));
+  const bookingRanges = activeBookings
+    .map((booking) => ({
+      id: booking.id,
+      source: "booking" as const,
+      startDate: booking.checkIn,
+      endDate: toIsoDate(getOccupiedEndDate(booking.checkIn, booking.checkOut)),
+      checkoutDate: booking.checkOut,
+      status: booking.status,
+      guestName: booking.guestName,
+      serviceMode: booking.serviceMode,
+    }))
+    .filter(isAvailabilityRangeCurrentOrFuture);
 
   const manualRanges = manualReservations
     .filter((reservation) => reservation.status === "blocked")
-    .filter((reservation) => reservation.endDate >= getTodayIsoDate())
-    .sort((a, b) => normalizeDateOnly(a.startDate).getTime() - normalizeDateOnly(b.startDate).getTime())
     .map((reservation) => ({
+      reservation,
+      occupiedEndDate: toIsoDate(getOccupiedEndDate(reservation.startDate, reservation.endDate)),
+    }))
+    .filter(({ occupiedEndDate }) => occupiedEndDate >= getTodayIsoDate())
+    .sort((a, b) => normalizeDateOnly(a.reservation.startDate).getTime() - normalizeDateOnly(b.reservation.startDate).getTime())
+    .map(({ reservation, occupiedEndDate }) => ({
       id: reservation.id,
       source: "manual" as const,
       startDate: reservation.startDate,
-      endDate: reservation.endDate,
+      endDate: occupiedEndDate,
       checkoutDate: reservation.endDate,
       status: reservation.status,
       guestName: "Manual block",
@@ -2006,7 +2096,7 @@ async function getCookAvailabilitySummary(cookId: string) {
     return ranges;
   }, []);
 
-  const today = normalizeDateOnly(new Date().toISOString().slice(0, 10));
+  const today = normalizeDateOnly(getTodayIsoDate());
   let availableFrom = toIsoDate(today);
 
   for (const range of mergedRanges) {
@@ -2685,29 +2775,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const manualReservations = await storage.getStayReservations(validatedData.accommodationId);
         const bookingEndDate = toIsoDate(getOccupiedEndDate(validatedData.checkIn, validatedData.checkOut));
 
-        const hasBookingOverlap = activeBookings.some((booking) =>
-          shouldBookingBlockAvailability(booking) &&
-          datesOverlapDateRange(
-            validatedData.checkIn,
-            bookingEndDate,
-            booking.checkIn,
-            toIsoDate(getOccupiedEndDate(booking.checkIn, booking.checkOut)),
-          ),
+        const bookingOverlapRanges = activeBookings
+          .filter((booking) =>
+            shouldBookingBlockAvailability(booking) &&
+            datesOverlapDateRange(
+              validatedData.checkIn,
+              bookingEndDate,
+              booking.checkIn,
+              toIsoDate(getOccupiedEndDate(booking.checkIn, booking.checkOut)),
+            ),
+          )
+          .map((booking) => ({
+            startDate: booking.checkIn,
+            endDate: toIsoDate(getOccupiedEndDate(booking.checkIn, booking.checkOut)),
+          }));
+
+        const manualBlockOverlapRanges = manualReservations
+          .filter((reservation) =>
+            reservation.status === "blocked" &&
+            datesOverlapDateRange(
+              validatedData.checkIn,
+              bookingEndDate,
+              reservation.startDate,
+              reservation.endDate,
+            ),
+          )
+          .map((reservation) => ({
+            startDate: reservation.startDate,
+            endDate: reservation.endDate,
+          }));
+
+        const stayConflictWindow = getReservedConflictWindow(
+          [
+            ...activeBookings
+              .filter((booking) => shouldBookingBlockAvailability(booking))
+              .map((booking) => ({
+                startDate: booking.checkIn,
+                endDate: toIsoDate(getOccupiedEndDate(booking.checkIn, booking.checkOut)),
+              })),
+            ...manualReservations
+              .filter((reservation) => reservation.status === "blocked")
+              .map((reservation) => ({
+                startDate: reservation.startDate,
+                endDate: reservation.endDate,
+              })),
+          ],
+          validatedData.checkIn,
+          bookingEndDate,
         );
 
-        const hasManualBlockOverlap = manualReservations.some((reservation) =>
-          reservation.status === "blocked" &&
-          datesOverlapDateRange(
-            validatedData.checkIn,
-            bookingEndDate,
-            reservation.startDate,
-            reservation.endDate,
-          ),
-        );
+        const hasBookingOverlap = bookingOverlapRanges.length > 0;
+        const hasManualBlockOverlap = manualBlockOverlapRanges.length > 0;
 
         if (hasBookingOverlap || hasManualBlockOverlap) {
           return res.status(409).json({
-            error: "Those dates are already booked. Please choose different dates.",
+            error: stayConflictWindow
+              ? buildReservedConflictMessage("This stay", stayConflictWindow)
+              : "Those dates are reserved. Please choose different dates.",
           });
         }
 
@@ -2832,18 +2956,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
             ? validatedData.checkIn
             : toIsoDate(getOccupiedEndDate(validatedData.checkIn, validatedData.checkOut));
 
-          const hasCarOverlap = carAvailability.blockedRanges.some((range) =>
-            datesOverlapDateRange(
-              validatedData.checkIn,
-              requestedEndDate,
-              range.startDate,
-              range.endDate,
-            ),
+          const carConflictWindow = getReservedConflictWindow(
+            carAvailability.blockedRanges,
+            validatedData.checkIn,
+            requestedEndDate,
           );
 
-          if (hasCarOverlap) {
+          if (carConflictWindow) {
             return res.status(409).json({
-              error: `This car is already booked for those dates. Next available date is ${carAvailability.availableFrom}.`,
+              error: buildReservedConflictMessage("This car", carConflictWindow),
             });
           }
 
