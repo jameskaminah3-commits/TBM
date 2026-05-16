@@ -31,6 +31,16 @@ import {
   getCookServiceFee,
 } from "@shared/cook-pricing";
 import {
+  calculateHelpMamaPackagePrice,
+  getHelpMamaAgeBandId,
+  getHelpMamaRateId,
+  getHelpMamaRateOptions,
+  getHelpMamaStartingPrice,
+  hasHelpMamaPricing,
+  isHelpMamaHourlyRate,
+  normalizeHelpMamaPricing,
+} from "@shared/errand-pricing";
+import {
   Form,
   FormControl,
   FormDescription,
@@ -98,7 +108,7 @@ const serviceBookingFormSchema = insertBookingSchema.omit({
   serviceMode: z.string().optional(),
   serviceHours: z.preprocess(
     (val) => (val === "" || val == null ? undefined : val),
-    z.coerce.number().min(3, "Hourly chauffeur booking requires at least 3 hours").optional(),
+    z.coerce.number().min(1, "Hours must be at least 1").optional(),
   ),
   serviceLocation: z.string().optional(),
   servicePickupLocation: z.string().optional(),
@@ -236,6 +246,25 @@ const serviceBookingFormSchema = insertBookingSchema.omit({
     });
   }
 
+  if (value.serviceMode === "errand-childcare" && (!value.serviceRequestDetails?.trim() || value.serviceRequestDetails.trim().length < 20)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["serviceRequestDetails"],
+      message: "Share the child ages, care needs, timing, and any safety notes",
+    });
+  }
+
+  if (value.serviceMode === "errand-childcare") {
+    const selectedRateId = getHelpMamaRateId(value.serviceAddonSelections);
+    if (selectedRateId && isHelpMamaHourlyRate(selectedRateId) && (!value.serviceHours || value.serviceHours < 1)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["serviceHours"],
+        message: "Add the number of Help Mama hours needed",
+      });
+    }
+  }
+
   if (value.serviceMode?.startsWith("errand-")) {
     if (!value.serviceLocation?.trim()) {
       ctx.addIssue({
@@ -296,7 +325,7 @@ type BookingCheckoutResponse = {
 type ServiceItem = CarType | CookType | ErrandType | ExperienceType;
 type CarServiceMode = "car-chauffeur-day" | "car-chauffeur-hourly" | "car-self-drive-day";
 type CookServiceMode = typeof cookBookingModes[number];
-type ErrandServiceMode = "errand-base" | "errand-shopping" | "errand-laundry" | "errand-house-cleaning";
+type ErrandServiceMode = "errand-base" | "errand-shopping" | "errand-laundry" | "errand-house-cleaning" | "errand-childcare";
 type ExperienceServiceMode = "experience-private" | "experience-shared" | "experience-custom-offer";
 type ServiceBookingMode = CarServiceMode | CookServiceMode | ErrandServiceMode | ExperienceServiceMode;
 
@@ -387,6 +416,7 @@ function getErrandPackagePrice(
   serviceMode: ErrandServiceMode | undefined,
   budgetAmount: number,
   addonSelections: string[],
+  serviceHours?: number | null,
 ): number {
   if (serviceMode === "errand-shopping") {
     return service.basePrice + budgetAmount + Math.ceil((budgetAmount * (service.shoppingCommissionPercent || 10)) / 100);
@@ -402,7 +432,21 @@ function getErrandPackagePrice(
     return service.basePrice + selectedAddons.reduce((sum, addon) => sum + addon.price, 0);
   }
 
+  if (serviceMode === "errand-childcare" && hasHelpMamaPricing(service)) {
+    return calculateHelpMamaPackagePrice(service, addonSelections, serviceHours);
+  }
+
   return service.basePrice;
+}
+
+function supportsChildcareErrand(service: ErrandType): boolean {
+  const text = [
+    service.serviceName,
+    service.description,
+    ...(service.features || []),
+  ].join(" ").toLowerCase();
+
+  return hasHelpMamaPricing(service) || /\b(childcare|child care|children|kids|baby|babies|infant|mama|mother|family|clinic|supervision|nanny|carer)\b/.test(text);
 }
 
 function getExperienceAddonTotal(
@@ -492,6 +536,7 @@ export default function ServiceBooking() {
         mode === "errand-shopping" ||
         mode === "errand-laundry" ||
         mode === "errand-house-cleaning" ||
+        mode === "errand-childcare" ||
         mode === "experience-private" ||
         mode === "experience-shared" ||
         mode === "experience-custom-offer"
@@ -578,7 +623,7 @@ export default function ServiceBooking() {
               ? bookingPrefill.requestedMode
               : "cook-service-fee")
           : serviceType === "errand"
-            ? (bookingPrefill.requestedMode === "errand-base" || bookingPrefill.requestedMode === "errand-shopping" || bookingPrefill.requestedMode === "errand-laundry" || bookingPrefill.requestedMode === "errand-house-cleaning"
+            ? (bookingPrefill.requestedMode === "errand-base" || bookingPrefill.requestedMode === "errand-shopping" || bookingPrefill.requestedMode === "errand-laundry" || bookingPrefill.requestedMode === "errand-house-cleaning" || bookingPrefill.requestedMode === "errand-childcare"
                 ? bookingPrefill.requestedMode
                 : "errand-base")
             : serviceType === "experience"
@@ -670,6 +715,29 @@ export default function ServiceBooking() {
       });
     }
   }, [form, serviceType]);
+
+  React.useEffect(() => {
+    if (serviceType !== "errand" || !service || !("basePrice" in service)) {
+      return;
+    }
+
+    const requestedMode = bookingPrefill.requestedMode;
+    if (requestedMode === "errand-shopping" && service.shoppingEnabled) return;
+    if (requestedMode === "errand-laundry" && service.laundryEnabled) return;
+    if (requestedMode === "errand-house-cleaning" && service.houseCleaningEnabled) return;
+    if (requestedMode === "errand-childcare" && supportsChildcareErrand(service)) return;
+
+    const currentMode = form.getValues("serviceMode");
+    if (currentMode !== "errand-base" || !hasHelpMamaPricing(service)) {
+      return;
+    }
+
+    form.setValue("serviceMode", "errand-childcare", {
+      shouldDirty: false,
+      shouldTouch: false,
+      shouldValidate: false,
+    });
+  }, [bookingPrefill.requestedMode, form, service, serviceType]);
 
   React.useEffect(() => {
     if (serviceType !== "experience" || !service || !("experienceType" in service)) {
@@ -777,9 +845,14 @@ export default function ServiceBooking() {
     }
 
     if (serviceType === "errand") {
-      if (serviceMode !== "errand-shopping") {
+      if (serviceMode !== "errand-shopping" && serviceMode !== "errand-childcare") {
         form.setValue("serviceBudgetAmount", undefined);
         form.setValue("serviceRequestDetails", "");
+      }
+
+      const selectedHelpMamaRateId = getHelpMamaRateId(form.getValues("serviceAddonSelections"));
+      if (serviceMode !== "errand-childcare" || !isHelpMamaHourlyRate(selectedHelpMamaRateId)) {
+        form.setValue("serviceHours", undefined);
       }
 
       if (serviceMode !== "errand-laundry") {
@@ -870,6 +943,7 @@ export default function ServiceBooking() {
         serviceMode as ErrandServiceMode | undefined,
         form.watch("serviceBudgetAmount") || 0,
         form.watch("serviceAddonSelections") || [],
+        form.watch("serviceHours") || null,
       );
       const packageCount = Math.max(1, (form.watch("serviceScheduleSlots") || []).filter((slot) => slot?.date).length);
       return packagePrice * packageCount;
@@ -1109,7 +1183,7 @@ export default function ServiceBooking() {
     ? (watchedErrandSlots || []).filter((slot) => slot?.date).length
     : 0;
   const errandPackagePrice = serviceType === "errand" && service && "basePrice" in service
-    ? getErrandPackagePrice(service, serviceMode as ErrandServiceMode | undefined, form.watch("serviceBudgetAmount") || 0, form.watch("serviceAddonSelections") || [])
+    ? getErrandPackagePrice(service, serviceMode as ErrandServiceMode | undefined, form.watch("serviceBudgetAmount") || 0, form.watch("serviceAddonSelections") || [], form.watch("serviceHours") || null)
     : 0;
   const selectedExperienceDeparture = serviceType === "experience"
     ? experienceSharedDepartures.find((departure) => departure.id === watchedServiceDepartureId)
@@ -1553,15 +1627,17 @@ export default function ServiceBooking() {
                                 onValueChange={field.onChange}
                                 className="space-y-3"
                               >
-                                <label className="flex items-start gap-3 rounded-lg border p-4 cursor-pointer">
-                                  <RadioGroupItem value="errand-base" className="mt-1" />
-                                  <div>
-                                    <div className="font-medium">Base service fee</div>
-                                    <div className="text-sm text-muted-foreground">
-                                      Starting at {formatAmount(service.basePrice)}
+                                {!hasHelpMamaPricing(service) ? (
+                                  <label className="flex items-start gap-3 rounded-lg border p-4 cursor-pointer">
+                                    <RadioGroupItem value="errand-base" className="mt-1" />
+                                    <div>
+                                      <div className="font-medium">Base service fee</div>
+                                      <div className="text-sm text-muted-foreground">
+                                        Starting at {formatAmount(service.basePrice)}
+                                      </div>
                                     </div>
-                                  </div>
-                                </label>
+                                  </label>
+                                ) : null}
 
                                 {service.shoppingEnabled && (
                                   <label className="flex items-start gap-3 rounded-lg border p-4 cursor-pointer">
@@ -1594,6 +1670,20 @@ export default function ServiceBooking() {
                                       <div className="font-medium">House Cleaning</div>
                                       <div className="text-sm text-muted-foreground">
                                         Base cleaning package plus optional cleaning add-ons
+                                      </div>
+                                    </div>
+                                  </label>
+                                )}
+
+                                {supportsChildcareErrand(service) && (
+                                  <label className="flex items-start gap-3 rounded-lg border p-4 cursor-pointer">
+                                    <RadioGroupItem value="errand-childcare" className="mt-1" />
+                                    <div>
+                                      <div className="font-medium">Help Mama family support</div>
+                                      <div className="text-sm text-muted-foreground">
+                                        {hasHelpMamaPricing(service)
+                                          ? `Starting at ${formatAmount(getHelpMamaStartingPrice(service.helpMamaPricing))}`
+                                          : "Childcare, clinic visit support, feeding, diaper changing, or gentle supervision"}
                                       </div>
                                     </div>
                                   </label>
@@ -2080,6 +2170,104 @@ export default function ServiceBooking() {
                       </>
                     )}
 
+                    {serviceType === "errand" && serviceMode === "errand-childcare" && (
+                      <>
+                        {"basePrice" in service && hasHelpMamaPricing(service) ? (
+                          <FormField
+                            control={form.control}
+                            name="serviceAddonSelections"
+                            render={({ field }) => {
+                              const ageBands = normalizeHelpMamaPricing(service.helpMamaPricing).ageBands;
+                              const currentSelections = field.value || [];
+                              const selectedRateId = getHelpMamaRateId(currentSelections);
+                              const selectedAgeBandId = getHelpMamaAgeBandId(currentSelections, service.helpMamaPricing);
+                              const rateOptions = getHelpMamaRateOptions(service.helpMamaPricing, selectedAgeBandId);
+                              return (
+                                <FormItem className="space-y-4">
+                                  <FormLabel>Help Mama Pricing</FormLabel>
+                                  <div className="space-y-2">
+                                    <Label>Age band</Label>
+                                    {ageBands.map((band) => {
+                                      const checked = currentSelections.includes(band.id);
+                                      return (
+                                        <label key={band.id} className="flex items-center justify-between rounded-lg border px-3 py-2">
+                                          <div className="font-medium">{band.label}</div>
+                                          <Checkbox
+                                            checked={checked}
+                                            onCheckedChange={() => {
+                                              const rateSelections = currentSelections.filter((selection) => selection === selectedRateId);
+                                              field.onChange([...rateSelections, band.id]);
+                                            }}
+                                          />
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                  <div className="grid gap-3 sm:grid-cols-2">
+                                    {rateOptions.map((rate) => (
+                                      <label key={rate.id} className="flex items-start gap-3 rounded-lg border p-4">
+                                        <Checkbox
+                                          checked={selectedRateId === rate.id}
+                                          onCheckedChange={() => {
+                                            const ageSelections = currentSelections.filter((selection) => selection === selectedAgeBandId);
+                                            field.onChange([...ageSelections, rate.id]);
+                                          }}
+                                          className="mt-1"
+                                        />
+                                        <div>
+                                          <div className="font-medium">{rate.label}</div>
+                                          <div className="text-sm text-muted-foreground">{formatAmount(rate.price)}/{rate.unit}</div>
+                                        </div>
+                                      </label>
+                                    ))}
+                                  </div>
+                                  {isHelpMamaHourlyRate(selectedRateId) ? (
+                                    <FormField
+                                      control={form.control}
+                                      name="serviceHours"
+                                      render={({ field: hoursField }) => (
+                                        <FormItem>
+                                          <FormLabel>Hours needed</FormLabel>
+                                          <FormControl>
+                                            <Input type="number" min="1" value={hoursField.value || ""} onChange={(event) => hoursField.onChange(Math.max(1, Number(event.target.value) || 1))} />
+                                          </FormControl>
+                                          <FormMessage />
+                                        </FormItem>
+                                      )}
+                                    />
+                                  ) : null}
+                                  <FormDescription>Select the time package and the child age band for accurate pricing.</FormDescription>
+                                  <FormMessage />
+                                </FormItem>
+                              );
+                            }}
+                          />
+                        ) : null}
+
+                        <FormField
+                          control={form.control}
+                          name="serviceRequestDetails"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Family Care Notes</FormLabel>
+                              <FormControl>
+                                <Textarea
+                                  rows={4}
+                                  placeholder="Share child ages, feeding or diaper needs, clinic visit details, supervision times, allergies, and any safety notes."
+                                  data-testid="input-errand-childcare-notes"
+                                  {...field}
+                                />
+                              </FormControl>
+                              <FormDescription>
+                                This helps the carer prepare safely and gently for the family.
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </>
+                    )}
+
                     {serviceType === "errand" && "basePrice" in service && (serviceMode === "errand-laundry" || serviceMode === "errand-house-cleaning") && (
                       <FormField
                         control={form.control}
@@ -2405,7 +2593,9 @@ export default function ServiceBooking() {
                                 ? "Inclusive package / day"
                                 : "Service fee package / day"
                           : serviceType === "errand"
-                            ? "Price per package"
+                            ? serviceMode === "errand-childcare"
+                              ? "Help Mama package"
+                              : "Price per package"
                             : "experienceType" in service
                               ? serviceMode === "experience-shared"
                                 ? "Shared price per person"
@@ -2475,6 +2665,12 @@ export default function ServiceBooking() {
                   {"basePrice" in service && serviceMode === "errand-house-cleaning" && (
                     <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
                       Each cleaning package = base package + the cleaning add-ons you select.
+                    </div>
+                  )}
+
+                  {"basePrice" in service && serviceMode === "errand-childcare" && hasHelpMamaPricing(service) && (
+                    <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
+                      Each Help Mama package uses the time rate and age band you select. No base service fee is added.
                     </div>
                   )}
 

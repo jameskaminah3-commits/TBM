@@ -128,7 +128,11 @@ const getBookingStatusLabel = (status: string) => status === "late"
             ? "Cancelled"
             : "Upcoming";
 const getBookingScheduleSlots = (booking: Booking) => (booking.serviceScheduleSlots || []).filter((slot): slot is { date: string; note: string } => !!slot?.date).sort((a, b) => a.date.localeCompare(b.date));
-const getBookingThreadInitialLabel = (booking: Booking) => booking.serviceMode === "errand-shopping" ? "Shopping List" : "Request";
+const getBookingThreadInitialLabel = (booking: Booking) => {
+  if (booking.serviceMode === "errand-shopping") return "Shopping List";
+  if (booking.serviceMode === "errand-childcare") return "Family Care Notes";
+  return "Request";
+};
 const getReviewTone = (rating: number) => rating === 5 ? "Exceptional" : rating === 4 ? "Excellent" : rating === 3 ? "Good" : rating === 2 ? "Fair" : "Needs attention";
 const formatTimelineLabel = (value?: string | null) => value ? new Date(value).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : null;
 const getRequestPreview = (details?: string | null) => {

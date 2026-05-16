@@ -28,9 +28,11 @@ import {
 } from "@/components/ui/select";
 import { AdminMediaField } from "@/components/admin-media-field";
 import { ErrandAddonEditor } from "@/components/errand-addon-editor";
+import { HelpMamaPricingEditor } from "@/components/help-mama-pricing-editor";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { errandAddonSchema, insertErrandSchema, type Errand, type ErrandAddon, type ProviderAccountSummary } from "@shared/schema";
+import { errandAddonSchema, helpMamaPricingSchema, insertErrandSchema, type Errand, type ErrandAddon, type HelpMamaPricing, type ProviderAccountSummary } from "@shared/schema";
+import { normalizeHelpMamaPricing } from "@shared/errand-pricing";
 
 const featureOptions = [
   "Same-Day Service",
@@ -41,18 +43,24 @@ const featureOptions = [
   "Evening Service",
   "24/7 Emergency",
   "Multiple Locations",
+  "Childcare Support",
+  "Infant Care",
+  "Clinic Visit Support",
+  "Family Travel Support",
+  "Gentle Supervision",
   "Package Delivery",
   "Document Pickup",
 ];
 
 const formSchema = insertErrandSchema.extend({
-  basePrice: z.coerce.number().min(1, "Price must be at least $1"),
+  basePrice: z.coerce.number().min(0, "Price cannot be negative"),
   shoppingCommissionPercent: z.coerce.number().min(0).max(100),
   houseCleaningEnabled: z.boolean().default(false),
   laundryIncludedKg: z.coerce.number().min(0, "Included laundry kg cannot be negative"),
   laundryPricePerKg: z.coerce.number().min(0, "Laundry price cannot be negative"),
   laundryAddons: z.array(errandAddonSchema),
   houseCleaningAddons: z.array(errandAddonSchema),
+  helpMamaPricing: helpMamaPricingSchema,
   managerUserId: z.string().optional(),
 });
 
@@ -69,6 +77,7 @@ export default function AdminErrandsEdit() {
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
   const [laundryAddons, setLaundryAddons] = useState<ErrandAddon[]>([]);
   const [houseCleaningAddons, setHouseCleaningAddons] = useState<ErrandAddon[]>([]);
+  const [helpMamaPricing, setHelpMamaPricing] = useState<HelpMamaPricing>(normalizeHelpMamaPricing({ enabled: false, ageBands: [] }));
   const { data: providers = [] } = useQuery<ProviderAccountSummary[]>({
     queryKey: ["/api/admin/provider-accounts"],
   });
@@ -92,6 +101,7 @@ export default function AdminErrandsEdit() {
       laundryPricePerKg: 0,
       laundryAddons: [],
       houseCleaningAddons: [],
+      helpMamaPricing,
       managerUserId: "unassigned",
       imageUrl: "",
       galleryUrls: [],
@@ -116,6 +126,7 @@ export default function AdminErrandsEdit() {
         laundryPricePerKg: errand.laundryPricePerKg,
         laundryAddons: errand.laundryAddons || [],
         houseCleaningAddons: errand.houseCleaningAddons || [],
+        helpMamaPricing: normalizeHelpMamaPricing(errand.helpMamaPricing),
         managerUserId: errand.managerUserId ?? "unassigned",
         imageUrl: errand.imageUrl || "",
         galleryUrls: errand.galleryUrls,
@@ -127,6 +138,7 @@ export default function AdminErrandsEdit() {
       setSelectedFeatures(errand.features);
       setLaundryAddons(errand.laundryAddons || []);
       setHouseCleaningAddons(errand.houseCleaningAddons || []);
+      setHelpMamaPricing(normalizeHelpMamaPricing(errand.helpMamaPricing));
     }
   }, [errand, form]);
 
@@ -167,6 +179,7 @@ export default function AdminErrandsEdit() {
       features: selectedFeatures,
       laundryAddons,
       houseCleaningAddons,
+      helpMamaPricing,
     });
   };
 
@@ -217,7 +230,7 @@ export default function AdminErrandsEdit() {
                     <FormItem>
                       <FormLabel>Service Name</FormLabel>
                       <FormControl>
-                        <Input placeholder="Grocery Shopping & Delivery" {...field} data-testid="input-errand-service-name" />
+                        <Input placeholder="Help Mama Family Care" {...field} data-testid="input-errand-service-name" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -274,13 +287,13 @@ export default function AdminErrandsEdit() {
                       <FormControl>
                         <Input
                           type="number"
-                          min="1"
-                          placeholder="50"
+                          min="0"
+                          placeholder="0"
                           {...field}
                           data-testid="input-errand-base-price"
                         />
                       </FormControl>
-                      <FormDescription>Starting price in USD</FormDescription>
+                      <FormDescription>Use 0 for Help Mama errands that rely on Help Mama pricing below.</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -290,7 +303,7 @@ export default function AdminErrandsEdit() {
                   <div>
                     <FormLabel className="text-base">Optional Pricing Modes</FormLabel>
                     <p className="text-sm text-muted-foreground">
-                      Add shopping and laundry pricing for errands that need more than the base service fee.
+                      Add shopping, laundry, and cleaning pricing where this errand needs more than the base service fee. Family care errands can use Help Mama pricing below instead of a base fee.
                     </p>
                   </div>
 
@@ -379,6 +392,14 @@ export default function AdminErrandsEdit() {
                       form.setValue("houseCleaningAddons", addons);
                     }}
                   />
+
+                  <HelpMamaPricingEditor
+                    value={helpMamaPricing}
+                    onChange={(pricing) => {
+                      setHelpMamaPricing(pricing);
+                      form.setValue("helpMamaPricing", pricing);
+                    }}
+                  />
                 </div>
 
                 <FormField
@@ -428,7 +449,7 @@ export default function AdminErrandsEdit() {
                       <FormLabel>Description</FormLabel>
                       <FormControl>
                         <Textarea
-                          placeholder="Describe the errand service..."
+                          placeholder="Describe the errand service, who it helps, and what is included..."
                           rows={4}
                           {...field}
                           data-testid="input-errand-description"

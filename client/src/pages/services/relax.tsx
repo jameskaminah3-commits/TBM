@@ -9,6 +9,7 @@ import { CustomServiceCta } from "@/components/custom-service-cta";
 import { PublicReviewPreview } from "@/components/public-review-preview";
 import { MapPin, ShoppingBag, Star } from "lucide-react";
 import { filterErrands, useConciergeSearch } from "@/lib/concierge-search";
+import { getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
 import type { Errand } from "@shared/schema";
 
 export default function RelaxPage() {
@@ -58,7 +59,7 @@ export default function RelaxPage() {
             Relax Services
           </h1>
           <p className="max-w-3xl text-base leading-7 text-muted-foreground sm:text-lg">
-            Let us handle the errands. Shopping, fridge stocking, and personal assistance services.
+            Let us handle the errands. Help Mama family care, shopping, fridge stocking, laundry, and personal assistance services.
           </p>
         </div>
 
@@ -74,12 +75,15 @@ export default function RelaxPage() {
         ) : null}
 
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
-          {errandListings.map((errand) => (
-            <Card
-              key={errand.id}
-              className="group cursor-pointer overflow-hidden border-border/60 bg-gradient-to-b from-background via-background to-muted/10 shadow-[0_14px_34px_-24px_rgba(15,23,42,0.42)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_22px_44px_-28px_rgba(15,23,42,0.55)]"
-              data-testid={`card-service-${errand.id}`}
-            >
+          {errandListings.map((errand) => {
+            const usesHelpMamaPricing = hasHelpMamaPricing(errand);
+            const displayPrice = usesHelpMamaPricing ? getHelpMamaStartingPrice(errand.helpMamaPricing) : errand.basePrice;
+            return (
+              <Card
+                key={errand.id}
+                className="group cursor-pointer overflow-hidden border-border/60 bg-gradient-to-b from-background via-background to-muted/10 shadow-[0_14px_34px_-24px_rgba(15,23,42,0.42)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_22px_44px_-28px_rgba(15,23,42,0.55)]"
+                data-testid={`card-service-${errand.id}`}
+              >
               {errand.imageUrl && (
                 <div className="aspect-[16/10] overflow-hidden bg-muted">
                   <ListingMedia
@@ -134,10 +138,12 @@ export default function RelaxPage() {
                 <div className="flex items-center justify-between border-t border-border/60 pt-3">
                   <div>
                     <CurrencyAmount
-                      amountUsd={errand.basePrice}
+                      amountUsd={displayPrice}
                       primaryClassName="text-lg font-semibold tracking-tight"
                     />
-                    <p className="text-sm text-muted-foreground">base service fee</p>
+                    <p className="text-sm text-muted-foreground">
+                      {usesHelpMamaPricing ? "starting Help Mama rate" : "base service fee"}
+                    </p>
                     <div className="mt-2 space-y-1 text-xs text-muted-foreground">
                       {errand.shoppingEnabled ? (
                         <div>Shopping: budget + {errand.shoppingCommissionPercent}% service charge</div>
@@ -153,8 +159,9 @@ export default function RelaxPage() {
                   </Button>
                 </div>
               </div>
-            </Card>
-          ))}
+              </Card>
+            );
+          })}
         </div>
 
         {errandListings.length === 0 && (

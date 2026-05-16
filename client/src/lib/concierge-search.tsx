@@ -324,13 +324,17 @@ export function filterErrands(errands: Errand[], query: string) {
   const laundryIntent = /laundry|wash|clean clothes/.test(normalizedQuery);
   const shoppingIntent = /shopping|grocery|groceries|fridge|stocking/.test(normalizedQuery);
   const cleaningIntent = /cleaning|house cleaning|housekeeping/.test(normalizedQuery);
+  const childcareIntent = /childcare|child care|kids|children|baby|infant|mama|mother|family|clinic|nanny|carer|supervision/.test(normalizedQuery);
   const setupIntent = /birthday|setup|decor|surprise/.test(normalizedQuery);
 
   return errands.filter((errand) => {
+    const childcareText = [errand.serviceName, errand.description, ...(errand.features ?? [])].join(" ").toLowerCase();
+    const childcareEnabled = /\b(childcare|child care|children|kids|baby|babies|infant|mama|mother|family|clinic|supervision|nanny|carer)\b/.test(childcareText);
     const structuredTerms = [
       errand.shoppingEnabled ? "grocery shopping fridge stocking shopping delivery market run" : "",
       errand.laundryEnabled ? `laundry mama fua washing pickup ${errand.laundryIncludedKg} kg ${errand.laundryPricePerKg} per kg` : "",
       errand.houseCleaningEnabled ? "house cleaning housekeeping villa cleaning" : "",
+      childcareEnabled ? "childcare child care kids children baby infant help mama family support clinic visit nanny carer supervision feeding diaper" : "",
       ...(errand.laundryAddons ?? []).map((addon) => addon.name),
       ...(errand.houseCleaningAddons ?? []).map((addon) => addon.name),
     ];
@@ -341,8 +345,9 @@ export function filterErrands(errands: Errand[], query: string) {
     const matchesLaundry = !laundryIntent || errand.laundryEnabled;
     const matchesShopping = !shoppingIntent || errand.shoppingEnabled;
     const matchesCleaning = !cleaningIntent || errand.houseCleaningEnabled;
+    const matchesChildcare = !childcareIntent || childcareEnabled;
 
-    return matchesLaundry && matchesShopping && matchesCleaning && (matchesText || setupIntent);
+    return matchesLaundry && matchesShopping && matchesCleaning && matchesChildcare && (matchesText || setupIntent);
   });
 }
 

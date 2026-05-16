@@ -43,7 +43,7 @@ export const experienceCustomOfferDecisionStatuses = ["pending", "accepted", "de
 export type ExperienceCustomOfferDecisionStatus = typeof experienceCustomOfferDecisionStatuses[number];
 export const cookBookingModes = ["cook-service-fee", "cook-inclusive", "cook-custom-menu"] as const;
 export type CookBookingMode = typeof cookBookingModes[number];
-export const errandBookingModes = ["errand-base", "errand-shopping", "errand-laundry", "errand-house-cleaning"] as const;
+export const errandBookingModes = ["errand-base", "errand-shopping", "errand-laundry", "errand-house-cleaning", "errand-childcare"] as const;
 export type ErrandBookingMode = typeof errandBookingModes[number];
 export const experienceBookingModes = ["experience-private", "experience-shared", "experience-custom-offer"] as const;
 export type ExperienceBookingMode = typeof experienceBookingModes[number];
@@ -59,6 +59,25 @@ export const errandAddonSchema = z.object({
   price: z.number().int().min(0, "Add-on price cannot be negative"),
 });
 export type ErrandAddon = z.infer<typeof errandAddonSchema>;
+export const helpMamaAgeBandSchema = z.object({
+  id: z.string(),
+  label: z.string().min(1, "Age band label is required"),
+  price: z.number().int().min(0, "Age band price cannot be negative"),
+  hourlyDaytimePrice: z.number().int().min(0).optional().default(0),
+  hourlyEveningPrice: z.number().int().min(0).optional().default(0),
+  overnightPrice: z.number().int().min(0).optional().default(0),
+  fullDayPrice: z.number().int().min(0).optional().default(0),
+});
+export type HelpMamaAgeBand = z.infer<typeof helpMamaAgeBandSchema>;
+export const helpMamaPricingSchema = z.object({
+  enabled: z.boolean().default(false),
+  hourlyDaytimePrice: z.number().int().min(0).optional().default(0),
+  hourlyEveningPrice: z.number().int().min(0).optional().default(0),
+  overnightPrice: z.number().int().min(0).optional().default(0),
+  fullDayPrice: z.number().int().min(0).optional().default(0),
+  ageBands: z.array(helpMamaAgeBandSchema).default([]),
+});
+export type HelpMamaPricing = z.infer<typeof helpMamaPricingSchema>;
 export const experienceAddonSchema = z.object({
   id: z.string(),
   name: z.string().min(1, "Add-on name is required"),
@@ -1247,6 +1266,7 @@ export const errands = pgTable("errands", {
   laundryPricePerKg: integer("laundry_price_per_kg").notNull().default(0),
   laundryAddons: jsonb("laundry_addons").$type<ErrandAddon[]>().notNull().default(sql`'[]'::jsonb`),
   houseCleaningAddons: jsonb("house_cleaning_addons").$type<ErrandAddon[]>().notNull().default(sql`'[]'::jsonb`),
+  helpMamaPricing: jsonb("help_mama_pricing").$type<HelpMamaPricing>().notNull().default(sql`'{"enabled":false,"hourlyDaytimePrice":0,"hourlyEveningPrice":0,"overnightPrice":0,"fullDayPrice":0,"ageBands":[]}'::jsonb`),
   description: text("description").notNull(),
   rating: integer("rating").notNull().default(5),
   reviewCount: integer("review_count").notNull().default(0),
@@ -1265,6 +1285,8 @@ export const insertErrandSchema = createInsertSchema(errands).omit({
   createdAt: true,
   updatedAt: true,
 }).extend({
+  basePrice: z.coerce.number().int().min(0),
+  helpMamaPricing: helpMamaPricingSchema.optional(),
   managerUserId: optionalManagerUserId,
 });
 

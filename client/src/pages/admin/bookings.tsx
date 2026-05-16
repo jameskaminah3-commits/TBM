@@ -231,7 +231,9 @@ function getBookingScheduleSlots(booking: Booking) {
 }
 
 function getBookingThreadInitialLabel(booking: Booking) {
-  return booking.serviceMode === "errand-shopping" ? "Shopping List" : "Request";
+  if (booking.serviceMode === "errand-shopping") return "Shopping List";
+  if (booking.serviceMode === "errand-childcare") return "Family Care Notes";
+  return "Request";
 }
 
 function getVisibleServiceRequestDetails(booking: Booking) {

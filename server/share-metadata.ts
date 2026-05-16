@@ -1,5 +1,6 @@
 import type { Request } from "express";
 import type { Car, Cook, Errand, Experience, Stay } from "@shared/schema";
+import { getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
 import { storage } from "./storage";
 
 type ListingKind = "stay" | "car" | "cook" | "errand" | "experience";
@@ -152,7 +153,13 @@ function buildErrandMetadata(errand: Errand, baseUrl: string, canonicalUrl: stri
     errand.laundryEnabled ? "laundry" : null,
     errand.houseCleaningEnabled ? "house cleaning" : null,
   ];
-  const details = joinDetails([errand.location, formatUsd(errand.basePrice, " base fee"), ...services]);
+  const details = joinDetails([
+    errand.location,
+    hasHelpMamaPricing(errand)
+      ? formatUsd(getHelpMamaStartingPrice(errand.helpMamaPricing), " starting Help Mama rate")
+      : formatUsd(errand.basePrice, " base fee"),
+    ...services,
+  ]);
 
   return {
     title: `${errand.serviceName} | Relax with ${siteName}`,

@@ -53,6 +53,7 @@ import { db } from "./db";
 import { users } from "@shared/schema";
 import { calculateCookInclusiveTotal, calculateCookServiceTotal, getCookMinimumGuests } from "@shared/cook-pricing";
 import { customServiceRequestFeeUsd } from "@shared/custom-service";
+import { calculateHelpMamaPackagePrice, getHelpMamaAgeBandId, getHelpMamaRateId, hasHelpMamaPricing, isHelpMamaHourlyRate } from "@shared/errand-pricing";
 import {
   createHostedCheckoutSession,
   getApplicationBaseUrl,
@@ -1067,6 +1068,24 @@ async function validateAccommodationAddonSelections(params: {
             .filter((addon) => selectedAddons.includes(addon.id))
             .reduce((sum, addon) => sum + addon.price, 0);
           selection.serviceAddonSelections = selectedAddons;
+        } else if (mode === "errand-childcare") {
+          if (!selection.serviceRequestDetails?.trim() || selection.serviceRequestDetails.trim().length < 20) {
+            throw new Error(`Add child ages, care needs, timing, and safety notes for "${errand.serviceName}".`);
+          }
+          if (hasHelpMamaPricing(errand)) {
+            const selectedRateId = getHelpMamaRateId(selection.serviceAddonSelections);
+            const selectedAgeBandId = getHelpMamaAgeBandId(selection.serviceAddonSelections, errand.helpMamaPricing);
+            if (!selectedAgeBandId) {
+              throw new Error(`Choose a Help Mama age band for "${errand.serviceName}".`);
+            }
+            if (!selectedRateId) {
+              throw new Error(`Choose a Help Mama time rate for "${errand.serviceName}".`);
+            }
+            if (isHelpMamaHourlyRate(selectedRateId) && (!selection.serviceHours || selection.serviceHours < 1)) {
+              throw new Error(`Add the Help Mama hours needed for "${errand.serviceName}".`);
+            }
+            packagePrice = calculateHelpMamaPackagePrice(errand, selection.serviceAddonSelections, selection.serviceHours);
+          }
         }
 
         addonTotal += packagePrice * packageCount;
@@ -3089,7 +3108,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               }
 
               const serviceMode = validatedData.serviceMode;
-              if (!["errand-base", "errand-shopping", "errand-laundry", "errand-house-cleaning"].includes(serviceMode ?? "")) {
+              if (!["errand-base", "errand-shopping", "errand-laundry", "errand-house-cleaning", "errand-childcare"].includes(serviceMode ?? "")) {
                 return res.status(400).json({ error: "Choose a valid errand booking option." });
               }
 
@@ -3135,6 +3154,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   .reduce((sum, addon) => sum + addon.price, 0);
                 validatedData.serviceAddonSelections = selectedAddons;
                 packagePrice = errand.basePrice + addonTotal;
+              } else if (serviceMode === "errand-childcare") {
+                if (!validatedData.serviceRequestDetails?.trim() || validatedData.serviceRequestDetails.trim().length < 20) {
+                  return res.status(400).json({ error: "Share the child ages, care needs, timing, and any safety notes." });
+                }
+                if (hasHelpMamaPricing(errand)) {
+                  const selectedRateId = getHelpMamaRateId(validatedData.serviceAddonSelections);
+                  const selectedAgeBandId = getHelpMamaAgeBandId(validatedData.serviceAddonSelections, errand.helpMamaPricing);
+                  if (!selectedAgeBandId) {
+                    return res.status(400).json({ error: "Choose a Help Mama age band." });
+                  }
+                  if (!selectedRateId) {
+                    return res.status(400).json({ error: "Choose a Help Mama time rate." });
+                  }
+                  if (isHelpMamaHourlyRate(selectedRateId) && (!validatedData.serviceHours || validatedData.serviceHours < 1)) {
+                    return res.status(400).json({ error: "Add the number of Help Mama hours needed." });
+                  }
+                  packagePrice = calculateHelpMamaPackagePrice(errand, validatedData.serviceAddonSelections, validatedData.serviceHours);
+                }
+                validatedData.serviceRequestDetails = validatedData.serviceRequestDetails.trim();
               }
 
               validatedData.totalPrice = packagePrice * packageCount;

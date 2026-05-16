@@ -35,6 +35,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { getShortShareUrl, type ShareServiceType } from "@/lib/share-links";
 import { getCookExtraGuestInclusivePrice, getCookExtraGuestServiceFee, getCookMinimumGuests } from "@shared/cook-pricing";
+import { getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
 
 type ProviderAssignments = {
   stays: Stay[];
@@ -135,7 +136,10 @@ function getAssignmentScheduleSlots(assignment: ProviderBookingAssignmentView) {
 }
 
 function getBookingThreadInitialLabel(assignment: ProviderBookingAssignmentView) {
-  return getAssignmentServiceMode(assignment) === "errand-shopping" ? "Shopping List" : "Request";
+  const mode = getAssignmentServiceMode(assignment);
+  if (mode === "errand-shopping") return "Shopping List";
+  if (mode === "errand-childcare") return "Family Care Notes";
+  return "Request";
 }
 
 function getShortBookingReference(id: string) {
@@ -1662,7 +1666,11 @@ export default function ProviderDashboard() {
                     {errand.isPublic ? "Public" : "Private / Pending review"}
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Badge variant="outline">{formatAmount(errand.basePrice)} base</Badge>
+                    <Badge variant="outline">
+                      {hasHelpMamaPricing(errand)
+                        ? `From ${formatAmount(getHelpMamaStartingPrice(errand.helpMamaPricing))}`
+                        : `${formatAmount(errand.basePrice)} base`}
+                    </Badge>
                     {errand.shoppingEnabled ? <Badge variant="outline">shopping + {errand.shoppingCommissionPercent}%</Badge> : null}
                     {errand.laundryEnabled ? <Badge variant="outline">laundry + {(errand.laundryAddons || []).length} add-ons</Badge> : null}
                     {errand.houseCleaningEnabled ? <Badge variant="outline">cleaning + {(errand.houseCleaningAddons || []).length} add-ons</Badge> : null}

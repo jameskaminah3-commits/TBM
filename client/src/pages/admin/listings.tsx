@@ -49,6 +49,7 @@ import { useCurrency } from "@/lib/currency";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { getShortShareUrl, type ShareServiceType } from "@/lib/share-links";
 import { getCookCustomMenuRequestFee, getCookExtraGuestInclusivePrice, getCookExtraGuestServiceFee, getCookInclusivePrice, getCookMinimumGuests, getCookServiceFee } from "@shared/cook-pricing";
+import { getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
 import type { Stay, Car as CarType, Cook as CookType, Errand as ErrandType, Experience as ExperienceType } from "@shared/schema";
 
 type ServiceCategory = "stays" | "cars" | "cooks" | "errands" | "experiences";
@@ -1029,7 +1030,11 @@ export default function AdminListings() {
                           <div className="grid gap-3 sm:grid-cols-3">
                             <div className="rounded-2xl border border-stone-200 bg-white p-4">
                               <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Base fee</div>
-                              <div className="mt-2 text-lg font-semibold text-foreground">{formatAmount(errand.basePrice)}</div>
+                              <div className="mt-2 text-lg font-semibold text-foreground">
+                                {hasHelpMamaPricing(errand)
+                                  ? `From ${formatAmount(getHelpMamaStartingPrice(errand.helpMamaPricing))}`
+                                  : formatAmount(errand.basePrice)}
+                              </div>
                             </div>
                             <div className="rounded-2xl border border-stone-200 bg-white p-4">
                               <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Enabled</div>

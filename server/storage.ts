@@ -113,6 +113,7 @@ import {
 } from "@shared/schema";
 import { hasLockedInBookingDeposit } from "@shared/booking-payments";
 import { calculateCookInclusiveTotal, calculateCookServiceTotal } from "@shared/cook-pricing";
+import { calculateHelpMamaPackagePrice } from "@shared/errand-pricing";
 import { buildAppInboxActionUrl, buildInboxWorkspaceUrl } from "@shared/inbox";
 import { getWebPushPublicConfig, sendWebPushNotification } from "./push";
 import { db, pool } from "./db";
@@ -640,6 +641,7 @@ function getErrandPackagePrice(
   serviceMode: string | null | undefined,
   budgetAmount: number | null | undefined,
   addonSelections: string[] | null | undefined,
+  serviceHours?: number | null,
 ) {
   const mode = serviceMode || "errand-base";
   let packagePrice = errand.basePrice;
@@ -647,6 +649,10 @@ function getErrandPackagePrice(
   if (mode === "errand-shopping") {
     packagePrice += Math.max(0, budgetAmount || 0) + getErrandShoppingCommission(budgetAmount, errand.shoppingCommissionPercent);
     return packagePrice;
+  }
+
+  if (mode === "errand-childcare" && errand.helpMamaPricing?.enabled) {
+    return calculateHelpMamaPackagePrice(errand, addonSelections, serviceHours);
   }
 
   const selectedAddons = new Set(addonSelections || []);
@@ -755,7 +761,7 @@ function getStaySelectionAllocation(
     const errand = catalog.errandsById.get(selection.serviceId);
     const packages = Math.max(1, selection.units || 1);
     const packagePrice = errand
-      ? getErrandPackagePrice(errand, selection.serviceMode, selection.serviceBudgetAmount, selection.serviceAddonSelections)
+      ? getErrandPackagePrice(errand, selection.serviceMode, selection.serviceBudgetAmount, selection.serviceAddonSelections, selection.serviceHours)
       : 0;
 
     return {
@@ -2118,6 +2124,9 @@ export class DatabaseStorage implements IStorage {
     }
     if (!columns.has("house_cleaning_addons")) {
       delete filtered.houseCleaningAddons;
+    }
+    if (!columns.has("help_mama_pricing")) {
+      delete filtered.helpMamaPricing;
     }
     if (!columns.has("gallery_urls")) {
       delete filtered.galleryUrls;
@@ -3878,6 +3887,7 @@ export class DatabaseStorage implements IStorage {
       columns.has("laundry_price_per_kg") ? "laundry_price_per_kg AS \"laundryPricePerKg\"" : "0 AS \"laundryPricePerKg\"",
       columns.has("laundry_addons") ? "laundry_addons AS \"laundryAddons\"" : "'[]'::jsonb AS \"laundryAddons\"",
       columns.has("house_cleaning_addons") ? "house_cleaning_addons AS \"houseCleaningAddons\"" : "'[]'::jsonb AS \"houseCleaningAddons\"",
+      columns.has("help_mama_pricing") ? "help_mama_pricing AS \"helpMamaPricing\"" : `'{"enabled":false,"hourlyDaytimePrice":0,"hourlyEveningPrice":0,"overnightPrice":0,"fullDayPrice":0,"ageBands":[]}'::jsonb AS "helpMamaPricing"`,
       "description",
       columns.has("rating") ? "rating" : "5 AS rating",
       columns.has("review_count") ? "review_count AS \"reviewCount\"" : "0 AS \"reviewCount\"",
@@ -3910,6 +3920,7 @@ export class DatabaseStorage implements IStorage {
       columns.has("laundry_price_per_kg") ? "laundry_price_per_kg AS \"laundryPricePerKg\"" : "0 AS \"laundryPricePerKg\"",
       columns.has("laundry_addons") ? "laundry_addons AS \"laundryAddons\"" : "'[]'::jsonb AS \"laundryAddons\"",
       columns.has("house_cleaning_addons") ? "house_cleaning_addons AS \"houseCleaningAddons\"" : "'[]'::jsonb AS \"houseCleaningAddons\"",
+      columns.has("help_mama_pricing") ? "help_mama_pricing AS \"helpMamaPricing\"" : `'{"enabled":false,"hourlyDaytimePrice":0,"hourlyEveningPrice":0,"overnightPrice":0,"fullDayPrice":0,"ageBands":[]}'::jsonb AS "helpMamaPricing"`,
       "description",
       columns.has("rating") ? "rating" : "5 AS rating",
       columns.has("review_count") ? "review_count AS \"reviewCount\"" : "0 AS \"reviewCount\"",

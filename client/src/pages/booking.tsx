@@ -43,6 +43,16 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { calculateCookServiceTotal, getCookMinimumGuests, getCookServiceFee } from "@shared/cook-pricing";
+import {
+  calculateHelpMamaPackagePrice,
+  getHelpMamaAgeBandId,
+  getHelpMamaRateId,
+  getHelpMamaRateOptions,
+  getHelpMamaStartingPrice,
+  hasHelpMamaPricing,
+  isHelpMamaHourlyRate,
+  normalizeHelpMamaPricing,
+} from "@shared/errand-pricing";
 import type {
   Stay,
   Car as CarType,
@@ -187,10 +197,11 @@ function getSupportedModes(service: ConciergeService): string[] {
 
   if (service.category === "errands") {
     return [
-      "errand-base",
+      ...(hasHelpMamaPricing(service) ? [] : ["errand-base"]),
       ...(service.shoppingEnabled ? ["errand-shopping"] : []),
       ...(service.laundryEnabled ? ["errand-laundry"] : []),
       ...(service.houseCleaningEnabled ? ["errand-house-cleaning"] : []),
+      ...(supportsChildcareErrand(service) ? ["errand-childcare"] : []),
     ];
   }
 
@@ -199,6 +210,18 @@ function getSupportedModes(service: ConciergeService): string[] {
     ...(service.sharedEnabled ? ["experience-shared"] : []),
     ...(service.customQuoteEnabled ? ["experience-custom-offer"] : []),
   ];
+}
+
+function supportsChildcareErrand(service: ConciergeService): boolean {
+  if (service.category !== "errands") return false;
+
+  const text = [
+    service.serviceName,
+    service.description,
+    ...(service.features || []),
+  ].join(" ").toLowerCase();
+
+  return hasHelpMamaPricing(service) || /\b(childcare|child care|children|kids|baby|babies|infant|mama|mother|family|clinic|supervision|nanny|carer)\b/.test(text);
 }
 
 function getServiceModeLabel(mode?: string | null) {
@@ -221,6 +244,8 @@ function getServiceModeLabel(mode?: string | null) {
       return "Laundry support";
     case "errand-house-cleaning":
       return "House cleaning";
+    case "errand-childcare":
+      return "Help Mama support";
     case "experience-private":
       return "Private experience";
     case "experience-shared":
@@ -503,6 +528,7 @@ export default function Booking() {
     const price = getServicePrice(service);
     if (service.category === "cars") return `${formatAmount(price)}/day`;
     if (service.category === "cooks") return `${formatAmount(price)}/day chef fee`;
+    if (hasHelpMamaPricing(service)) return `From ${formatAmount(getHelpMamaStartingPrice(service.helpMamaPricing))}`;
     return `${formatAmount(price)} base`;
   };
 
@@ -524,6 +550,10 @@ export default function Booking() {
     if (configured?.serviceMode === "errand-shopping") {
       const budgetAmount = configured.serviceBudgetAmount || 0;
       return service.basePrice + budgetAmount + Math.ceil((budgetAmount * (service.shoppingCommissionPercent || 10)) / 100);
+    }
+
+    if (configured?.serviceMode === "errand-childcare" && hasHelpMamaPricing(service)) {
+      return calculateHelpMamaPackagePrice(service, configured.serviceAddonSelections || [], configured.serviceHours) * (configured.units || 1);
     }
 
     const selectedAddons = configured?.serviceAddonSelections || [];
@@ -912,6 +942,27 @@ export default function Booking() {
             ],
             actionLabel: selectedServices.includes(service.id) ? "Edit grocery support" : "Add grocery support",
             suggestedMode: "errand-shopping",
+          });
+        }
+
+        if (supportsChildcareErrand(service) && isFamilyTrip) {
+          recommendations.push({
+            key: `${service.id}-childcare`,
+            serviceId: service.id,
+            category: service.category,
+            title: `${service.serviceName} family support`,
+            summary: "Useful when parents need gentle supervision, feeding help, clinic visit support, or quiet coverage during work plans.",
+            priceLabel: hasHelpMamaPricing(service)
+              ? `From ${formatAmount(getHelpMamaStartingPrice(service.helpMamaPricing))}`
+              : `${formatAmount(service.basePrice)} base`,
+            score: 49 + locationScore + 12,
+            stage: "Stay",
+            reasons: [
+              "Designed for travelling families",
+              "Helpful when parents need conference, work, or rest time",
+            ],
+            actionLabel: selectedServices.includes(service.id) ? "Edit family support" : "Add family support",
+            suggestedMode: "errand-childcare",
           });
         }
 
@@ -1913,6 +1964,7 @@ export default function Booking() {
                       units: value === "car-chauffeur-hourly" ? (current.serviceHours || current.units || 3) : Math.max(1, current.units || 1),
                       serviceStartTime: value === "car-chauffeur-hourly" ? (current.serviceStartTime || "09:00") : current.serviceStartTime,
                       serviceDepartureId: value === "experience-shared" ? current.serviceDepartureId || "" : "",
+                      serviceAddonSelections: value === "errand-childcare" ? current.serviceAddonSelections || [] : current.serviceAddonSelections,
                     } : current)}
                   >
                     <SelectTrigger className="text-base sm:text-sm">
@@ -2119,6 +2171,85 @@ export default function Booking() {
                 </div>
               ) : null}
 
+              {configuringService.category === "errands" && draftSelection.serviceMode === "errand-childcare" && hasHelpMamaPricing(configuringService) ? (
+                <div className="space-y-4">
+                  <Label>Help Mama pricing</Label>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {(() => {
+                      const selectedAgeBandId = getHelpMamaAgeBandId(draftSelection.serviceAddonSelections, configuringService.helpMamaPricing);
+                      return getHelpMamaRateOptions(configuringService.helpMamaPricing, selectedAgeBandId).map((rate) => {
+                        const selectedRateId = getHelpMamaRateId(draftSelection.serviceAddonSelections);
+                      return (
+                        <label key={rate.id} className="flex items-start gap-3 rounded-2xl border px-4 py-3">
+                          <Checkbox
+                            checked={selectedRateId === rate.id}
+                            onCheckedChange={() => setDraftSelection((current) => {
+                              if (!current) return current;
+                              const ageBands = normalizeHelpMamaPricing(configuringService.helpMamaPricing).ageBands;
+                              const ageSelections = (current.serviceAddonSelections || []).filter((selection) => ageBands.some((band) => band.id === selection));
+                              return {
+                                ...current,
+                                serviceAddonSelections: [...ageSelections, rate.id],
+                                serviceHours: isHelpMamaHourlyRate(rate.id) ? current.serviceHours || 1 : null,
+                              };
+                            })}
+                          />
+                          <div>
+                            <div className="font-medium text-foreground">{rate.label}</div>
+                            <div className="text-sm text-muted-foreground">{formatAmount(rate.price)}/{rate.unit}</div>
+                          </div>
+                        </label>
+                      );
+                      });
+                    })()}
+                  </div>
+
+                  {isHelpMamaHourlyRate(getHelpMamaRateId(draftSelection.serviceAddonSelections)) ? (
+                    <div className="space-y-2">
+                      <Label>Hours needed</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={draftSelection.serviceHours || 1}
+                        className="text-base sm:text-sm"
+                        onChange={(e) => setDraftSelection((current) => current ? {
+                          ...current,
+                          serviceHours: Math.max(1, Number(e.target.value) || 1),
+                        } : current)}
+                      />
+                    </div>
+                  ) : null}
+
+                  <div className="space-y-2">
+                    <Label>Age band</Label>
+                    {normalizeHelpMamaPricing(configuringService.helpMamaPricing).ageBands.map((band) => {
+                      const selectedAddons = draftSelection.serviceAddonSelections || [];
+                      const checked = selectedAddons.includes(band.id);
+                      return (
+                        <label key={band.id} className="flex items-center justify-between rounded-2xl border px-4 py-3">
+                          <div>
+                            <div className="font-medium text-foreground">{band.label}</div>
+                          </div>
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={(nextChecked) => setDraftSelection((current) => {
+                              if (!current) return current;
+                              const addonSelections = current.serviceAddonSelections || [];
+                              return {
+                                ...current,
+                                serviceAddonSelections: nextChecked
+                                  ? [...addonSelections, band.id]
+                                  : addonSelections.filter((item) => item !== band.id),
+                              };
+                            })}
+                          />
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+
               <div className="space-y-2">
                 <Label>Notes</Label>
                 <Textarea
@@ -2131,6 +2262,8 @@ export default function Booking() {
                         : configuringService.category === "errands"
                           ? (draftSelection.serviceMode === "errand-shopping"
                               ? "List the shopping items, quantities, brands, and delivery notes."
+                              : draftSelection.serviceMode === "errand-childcare"
+                                ? "Share child ages, feeding or diaper needs, clinic visit details, supervision times, allergies, and safety notes."
                               : "Add laundry, cleaning, pickup, or delivery instructions here.")
                           : "Add timing, preferences, celebration details, or special requests here."
                   }

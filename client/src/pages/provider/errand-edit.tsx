@@ -13,15 +13,22 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { AdminMediaField } from "@/components/admin-media-field";
 import { ErrandAddonEditor } from "@/components/errand-addon-editor";
+import { HelpMamaPricingEditor } from "@/components/help-mama-pricing-editor";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { errandAddonSchema, insertErrandSchema, type Errand, type ErrandAddon } from "@shared/schema";
+import { errandAddonSchema, helpMamaPricingSchema, insertErrandSchema, type Errand, type ErrandAddon, type HelpMamaPricing } from "@shared/schema";
+import { normalizeHelpMamaPricing } from "@shared/errand-pricing";
 
 const featureOptions = [
   "Same-Day Service",
   "Scheduled Service",
   "Weekend Availability",
   "Multiple Locations",
+  "Childcare Support",
+  "Infant Care",
+  "Clinic Visit Support",
+  "Family Travel Support",
+  "Gentle Supervision",
   "Office Friendly",
   "Eco Products Available",
 ];
@@ -30,10 +37,11 @@ const formSchema = insertErrandSchema.omit({
   managerUserId: true,
   isPublic: true,
 }).extend({
-  basePrice: z.coerce.number().min(1, "Price must be at least $1"),
+  basePrice: z.coerce.number().min(0, "Price cannot be negative"),
   shoppingCommissionPercent: z.coerce.number().min(0).max(100),
   laundryAddons: z.array(errandAddonSchema),
   houseCleaningAddons: z.array(errandAddonSchema),
+  helpMamaPricing: helpMamaPricingSchema,
 });
 
 type FormData = z.infer<typeof formSchema>;
@@ -45,6 +53,7 @@ export default function ProviderErrandEdit() {
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
   const [laundryAddons, setLaundryAddons] = useState<ErrandAddon[]>([]);
   const [houseCleaningAddons, setHouseCleaningAddons] = useState<ErrandAddon[]>([]);
+  const [helpMamaPricing, setHelpMamaPricing] = useState<HelpMamaPricing>(normalizeHelpMamaPricing({ enabled: false, ageBands: [] }));
 
   const { data: errand, isLoading } = useQuery<Errand>({
     queryKey: ["/api/provider/errands", id],
@@ -70,6 +79,7 @@ export default function ProviderErrandEdit() {
       laundryPricePerKg: 0,
       laundryAddons: [],
       houseCleaningAddons: [],
+      helpMamaPricing,
       imageUrl: "",
       galleryUrls: [],
       mediaType: "image",
@@ -92,6 +102,7 @@ export default function ProviderErrandEdit() {
       laundryPricePerKg: errand.laundryPricePerKg,
       laundryAddons: errand.laundryAddons || [],
       houseCleaningAddons: errand.houseCleaningAddons || [],
+      helpMamaPricing: normalizeHelpMamaPricing(errand.helpMamaPricing),
       imageUrl: errand.imageUrl || "",
       galleryUrls: errand.galleryUrls,
       mediaType: errand.mediaType,
@@ -101,6 +112,7 @@ export default function ProviderErrandEdit() {
     setSelectedFeatures(errand.features);
     setLaundryAddons(errand.laundryAddons || []);
     setHouseCleaningAddons(errand.houseCleaningAddons || []);
+    setHelpMamaPricing(normalizeHelpMamaPricing(errand.helpMamaPricing));
   }, [errand, form]);
 
   const mutation = useMutation({
@@ -128,6 +140,7 @@ export default function ProviderErrandEdit() {
       features: selectedFeatures,
       laundryAddons,
       houseCleaningAddons,
+      helpMamaPricing,
     });
   };
 
@@ -136,7 +149,7 @@ export default function ProviderErrandEdit() {
       <div className="p-8 max-w-4xl mx-auto">
         <div className="mb-8">
           <h1 className="text-3xl font-serif font-semibold mb-2">Manage Errand Listing</h1>
-          <p className="text-muted-foreground">Update your shopping, laundry, and house cleaning add-ons.</p>
+          <p className="text-muted-foreground">Update your shopping, laundry, house cleaning, and family support details.</p>
         </div>
         <Card id="details" className="scroll-mt-24">
           <CardHeader>
@@ -154,7 +167,7 @@ export default function ProviderErrandEdit() {
                 )} />
                 <div id="pricing" className="scroll-mt-24">
                 <FormField control={form.control} name="basePrice" render={({ field }) => (
-                  <FormItem><FormLabel>Base Price</FormLabel><FormControl><Input type="number" min="1" {...field} /></FormControl><FormDescription>Base package price in USD.</FormDescription><FormMessage /></FormItem>
+                  <FormItem><FormLabel>Base Price</FormLabel><FormControl><Input type="number" min="0" {...field} /></FormControl><FormDescription>Use 0 when Help Mama pricing below sets the family care rates.</FormDescription><FormMessage /></FormItem>
                 )} />
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
@@ -173,6 +186,7 @@ export default function ProviderErrandEdit() {
                 </div>
                 <ErrandAddonEditor label="Laundry Add-Ons" description="Examples: duvet, large blanket, extra-heavy items." value={laundryAddons} onChange={(addons) => { setLaundryAddons(addons); form.setValue("laundryAddons", addons); }} />
                 <ErrandAddonEditor label="House Cleaning Add-Ons" description="Examples: fridge cleaning, deep bathroom clean, balcony." value={houseCleaningAddons} onChange={(addons) => { setHouseCleaningAddons(addons); form.setValue("houseCleaningAddons", addons); }} />
+                <HelpMamaPricingEditor value={helpMamaPricing} onChange={(pricing) => { setHelpMamaPricing(pricing); form.setValue("helpMamaPricing", pricing); }} />
                 <div id="media" className="scroll-mt-24">
                 <FormField control={form.control} name="imageUrl" render={({ field }) => (
                   <FormItem><FormLabel>Media</FormLabel><FormControl><AdminMediaField value={field.value} galleryUrls={form.watch("galleryUrls")} mediaType={form.watch("mediaType")} onChange={({ mediaUrl, mediaType, galleryUrls }) => { form.setValue("imageUrl", mediaUrl); form.setValue("galleryUrls", galleryUrls); form.setValue("mediaType", mediaType); }} /></FormControl><FormMessage /></FormItem>

@@ -27,7 +27,7 @@ const searchBarContent: Record<
   },
   relax: {
     label: "Zero-hassle villa support and errands",
-    placeholder: "Grocery shopping + delivery, mama fua laundry, house cleaning, full errands package...",
+    placeholder: "Help Mama family care, grocery delivery, mama fua laundry, house cleaning...",
     chips: ["Grocery Shopping", "Laundry Pickup", "House Cleaning", "Shopping + Laundry Bundle"],
   },
   experience: {

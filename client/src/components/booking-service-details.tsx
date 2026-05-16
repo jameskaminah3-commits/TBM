@@ -59,6 +59,8 @@ function getModeLabel(mode?: string | null) {
       return "Laundry support";
     case "errand-house-cleaning":
       return "House cleaning";
+    case "errand-childcare":
+      return "Help Mama support";
     case "errand-base":
       return "Base support";
     case "experience-private":
