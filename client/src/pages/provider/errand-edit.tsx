@@ -87,6 +87,9 @@ export default function ProviderErrandEdit() {
       features: [],
     },
   });
+  const helpMamaPricingError = form.formState.errors.helpMamaPricing as
+    | { message?: string; ageBands?: { message?: string; root?: { message?: string } } }
+    | undefined;
 
   useEffect(() => {
     if (!errand) return;
@@ -186,7 +189,11 @@ export default function ProviderErrandEdit() {
                 </div>
                 <ErrandAddonEditor label="Laundry Add-Ons" description="Examples: duvet, large blanket, extra-heavy items." value={laundryAddons} onChange={(addons) => { setLaundryAddons(addons); form.setValue("laundryAddons", addons); }} />
                 <ErrandAddonEditor label="House Cleaning Add-Ons" description="Examples: fridge cleaning, deep bathroom clean, balcony." value={houseCleaningAddons} onChange={(addons) => { setHouseCleaningAddons(addons); form.setValue("houseCleaningAddons", addons); }} />
-                <HelpMamaPricingEditor value={helpMamaPricing} onChange={(pricing) => { setHelpMamaPricing(pricing); form.setValue("helpMamaPricing", pricing); }} />
+                <HelpMamaPricingEditor
+                  value={helpMamaPricing}
+                  error={helpMamaPricingError?.message || helpMamaPricingError?.ageBands?.message || helpMamaPricingError?.ageBands?.root?.message}
+                  onChange={(pricing) => { setHelpMamaPricing(pricing); form.setValue("helpMamaPricing", pricing); }}
+                />
                 <div id="media" className="scroll-mt-24">
                 <FormField control={form.control} name="imageUrl" render={({ field }) => (
                   <FormItem><FormLabel>Media</FormLabel><FormControl><AdminMediaField value={field.value} galleryUrls={form.watch("galleryUrls")} mediaType={form.watch("mediaType")} onChange={({ mediaUrl, mediaType, galleryUrls }) => { form.setValue("imageUrl", mediaUrl); form.setValue("galleryUrls", galleryUrls); form.setValue("mediaType", mediaType); }} /></FormControl><FormMessage /></FormItem>

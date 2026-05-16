@@ -8,9 +8,10 @@ import { DEFAULT_HELP_MAMA_AGE_BANDS, normalizeHelpMamaPricing } from "@shared/e
 type HelpMamaPricingEditorProps = {
   value?: HelpMamaPricing | null;
   onChange: (value: HelpMamaPricing) => void;
+  error?: string;
 };
 
-export function HelpMamaPricingEditor({ value, onChange }: HelpMamaPricingEditorProps) {
+export function HelpMamaPricingEditor({ value, onChange, error }: HelpMamaPricingEditorProps) {
   const pricing = normalizeHelpMamaPricing(value);
 
   const update = (patch: Partial<HelpMamaPricing>) => {
@@ -88,6 +89,10 @@ export function HelpMamaPricingEditor({ value, onChange }: HelpMamaPricingEditor
             </Button>
           </div>
         </div>
+      ) : null}
+
+      {error ? (
+        <p className="text-sm font-medium text-destructive">{error}</p>
       ) : null}
     </div>
   );

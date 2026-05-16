@@ -76,6 +76,9 @@ export default function ProviderErrandNew() {
       features: [],
     },
   });
+  const helpMamaPricingError = form.formState.errors.helpMamaPricing as
+    | { message?: string; ageBands?: { message?: string; root?: { message?: string } } }
+    | undefined;
 
   const mutation = useMutation({
     mutationFn: async (data: FormData) => apiRequest("POST", "/api/provider/errands", data),
@@ -141,7 +144,11 @@ export default function ProviderErrandNew() {
                 </div>
                 <ErrandAddonEditor label="Laundry Add-Ons" description="Examples: duvet, large blanket, extra-heavy items." value={laundryAddons} onChange={(addons) => { setLaundryAddons(addons); form.setValue("laundryAddons", addons); }} />
                 <ErrandAddonEditor label="House Cleaning Add-Ons" description="Examples: fridge cleaning, deep bathroom clean, balcony." value={houseCleaningAddons} onChange={(addons) => { setHouseCleaningAddons(addons); form.setValue("houseCleaningAddons", addons); }} />
-                <HelpMamaPricingEditor value={helpMamaPricing} onChange={(pricing) => { setHelpMamaPricing(pricing); form.setValue("helpMamaPricing", pricing); }} />
+                <HelpMamaPricingEditor
+                  value={helpMamaPricing}
+                  error={helpMamaPricingError?.message || helpMamaPricingError?.ageBands?.message || helpMamaPricingError?.ageBands?.root?.message}
+                  onChange={(pricing) => { setHelpMamaPricing(pricing); form.setValue("helpMamaPricing", pricing); }}
+                />
                 <FormField control={form.control} name="imageUrl" render={({ field }) => (
                   <FormItem><FormLabel>Media</FormLabel><FormControl><AdminMediaField value={field.value} galleryUrls={form.watch("galleryUrls")} mediaType={form.watch("mediaType")} onChange={({ mediaUrl, mediaType, galleryUrls }) => { form.setValue("imageUrl", mediaUrl); form.setValue("galleryUrls", galleryUrls); form.setValue("mediaType", mediaType); }} /></FormControl><FormMessage /></FormItem>
                 )} />

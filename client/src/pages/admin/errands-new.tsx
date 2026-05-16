@@ -101,6 +101,9 @@ export default function AdminErrandsNew() {
       features: [],
     },
   });
+  const helpMamaPricingError = form.formState.errors.helpMamaPricing as
+    | { message?: string; ageBands?: { message?: string; root?: { message?: string } } }
+    | undefined;
 
   const createMutation = useMutation({
     mutationFn: async (data: FormData) => {
@@ -335,6 +338,7 @@ export default function AdminErrandsNew() {
 
                   <HelpMamaPricingEditor
                     value={helpMamaPricing}
+                    error={helpMamaPricingError?.message || helpMamaPricingError?.ageBands?.message || helpMamaPricingError?.ageBands?.root?.message}
                     onChange={(pricing) => {
                       setHelpMamaPricing(pricing);
                       form.setValue("helpMamaPricing", pricing);

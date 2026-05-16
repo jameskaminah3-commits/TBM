@@ -111,6 +111,9 @@ export default function AdminErrandsEdit() {
       features: [],
     },
   });
+  const helpMamaPricingError = form.formState.errors.helpMamaPricing as
+    | { message?: string; ageBands?: { message?: string; root?: { message?: string } } }
+    | undefined;
 
   useEffect(() => {
     if (errand) {
@@ -395,6 +398,7 @@ export default function AdminErrandsEdit() {
 
                   <HelpMamaPricingEditor
                     value={helpMamaPricing}
+                    error={helpMamaPricingError?.message || helpMamaPricingError?.ageBands?.message || helpMamaPricingError?.ageBands?.root?.message}
                     onChange={(pricing) => {
                       setHelpMamaPricing(pricing);
                       form.setValue("helpMamaPricing", pricing);

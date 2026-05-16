@@ -76,6 +76,31 @@ export const helpMamaPricingSchema = z.object({
   overnightPrice: z.number().int().min(0).optional().default(0),
   fullDayPrice: z.number().int().min(0).optional().default(0),
   ageBands: z.array(helpMamaAgeBandSchema).default([]),
+}).superRefine((pricing, ctx) => {
+  if (!pricing.enabled) {
+    return;
+  }
+
+  const hasRate = [
+    pricing.hourlyDaytimePrice,
+    pricing.hourlyEveningPrice,
+    pricing.overnightPrice,
+    pricing.fullDayPrice,
+    ...pricing.ageBands.flatMap((band) => [
+      band.hourlyDaytimePrice,
+      band.hourlyEveningPrice,
+      band.overnightPrice,
+      band.fullDayPrice,
+    ]),
+  ].some((price) => (price || 0) > 0);
+
+  if (!hasRate) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Add at least one Help Mama rate before enabling Help Mama pricing",
+      path: ["ageBands"],
+    });
+  }
 });
 export type HelpMamaPricing = z.infer<typeof helpMamaPricingSchema>;
 export const experienceAddonSchema = z.object({
