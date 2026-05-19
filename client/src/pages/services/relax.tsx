@@ -12,6 +12,9 @@ import { filterErrands, useConciergeSearch } from "@/lib/concierge-search";
 import { getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
 import type { Errand } from "@shared/schema";
 
+const helpMamaPublicSummary =
+  "Certified in-villa childcare and family support for travelling families on the Kenyan Coast, with daytime, evening, and overnight care options.";
+
 export default function RelaxPage() {
   const [, setLocation] = useLocation();
   const { query, clearQuery } = useConciergeSearch();
@@ -110,7 +113,7 @@ export default function RelaxPage() {
                 </div>
 
                 <p className="mb-3 line-clamp-2 text-sm leading-5 text-muted-foreground">
-                  {errand.description}
+                  {usesHelpMamaPricing ? helpMamaPublicSummary : errand.description}
                 </p>
 
                 <PublicReviewPreview targetType="errand" targetId={errand.id} />
@@ -142,7 +145,7 @@ export default function RelaxPage() {
                       primaryClassName="text-lg font-semibold tracking-tight"
                     />
                     <p className="text-sm text-muted-foreground">
-                      {usesHelpMamaPricing ? "starting Help Mama rate" : "base service fee"}
+                      {usesHelpMamaPricing ? "starting Mama Care rate" : "base service fee"}
                     </p>
                     <div className="mt-2 space-y-1 text-xs text-muted-foreground">
                       {errand.shoppingEnabled ? (

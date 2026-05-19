@@ -53,7 +53,7 @@ import { db } from "./db";
 import { users } from "@shared/schema";
 import { calculateCookInclusiveTotal, calculateCookServiceTotal, getCookMinimumGuests } from "@shared/cook-pricing";
 import { customServiceRequestFeeUsd } from "@shared/custom-service";
-import { calculateHelpMamaPackagePrice, getHelpMamaAgeBandId, getHelpMamaRateId, hasHelpMamaPricing, isHelpMamaHourlyRate } from "@shared/errand-pricing";
+import { calculateHelpMamaPackagePrice, HELP_MAMA_HOURLY_MINIMUM_HOURS, getHelpMamaAgeBandId, getHelpMamaRateId, hasHelpMamaPricing, isHelpMamaHourlyRate } from "@shared/errand-pricing";
 import {
   createHostedCheckoutSession,
   getApplicationBaseUrl,
@@ -1081,8 +1081,8 @@ async function validateAccommodationAddonSelections(params: {
             if (!selectedRateId) {
               throw new Error(`Choose a Help Mama time rate for "${errand.serviceName}".`);
             }
-            if (isHelpMamaHourlyRate(selectedRateId) && (!selection.serviceHours || selection.serviceHours < 1)) {
-              throw new Error(`Add the Help Mama hours needed for "${errand.serviceName}".`);
+            if (isHelpMamaHourlyRate(selectedRateId) && (!selection.serviceHours || selection.serviceHours < HELP_MAMA_HOURLY_MINIMUM_HOURS)) {
+              throw new Error(`Hourly Mama Care bookings for "${errand.serviceName}" require at least ${HELP_MAMA_HOURLY_MINIMUM_HOURS} hours.`);
             }
             packagePrice = calculateHelpMamaPackagePrice(errand, selection.serviceAddonSelections, selection.serviceHours);
           }
@@ -3167,8 +3167,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   if (!selectedRateId) {
                     return res.status(400).json({ error: "Choose a Help Mama time rate." });
                   }
-                  if (isHelpMamaHourlyRate(selectedRateId) && (!validatedData.serviceHours || validatedData.serviceHours < 1)) {
-                    return res.status(400).json({ error: "Add the number of Help Mama hours needed." });
+                  if (isHelpMamaHourlyRate(selectedRateId) && (!validatedData.serviceHours || validatedData.serviceHours < HELP_MAMA_HOURLY_MINIMUM_HOURS)) {
+                    return res.status(400).json({ error: `Hourly Mama Care bookings require at least ${HELP_MAMA_HOURLY_MINIMUM_HOURS} hours.` });
                   }
                   packagePrice = calculateHelpMamaPackagePrice(errand, validatedData.serviceAddonSelections, validatedData.serviceHours);
                 }

@@ -32,6 +32,7 @@ import {
 } from "@shared/cook-pricing";
 import {
   calculateHelpMamaPackagePrice,
+  HELP_MAMA_HOURLY_MINIMUM_HOURS,
   getHelpMamaAgeBandId,
   getHelpMamaRateId,
   getHelpMamaRateOptions,
@@ -256,11 +257,11 @@ const serviceBookingFormSchema = insertBookingSchema.omit({
 
   if (value.serviceMode === "errand-childcare") {
     const selectedRateId = getHelpMamaRateId(value.serviceAddonSelections);
-    if (selectedRateId && isHelpMamaHourlyRate(selectedRateId) && (!value.serviceHours || value.serviceHours < 1)) {
+    if (selectedRateId && isHelpMamaHourlyRate(selectedRateId) && (!value.serviceHours || value.serviceHours < HELP_MAMA_HOURLY_MINIMUM_HOURS)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["serviceHours"],
-        message: "Add the number of Help Mama hours needed",
+        message: `Hourly Mama Care bookings require at least ${HELP_MAMA_HOURLY_MINIMUM_HOURS} hours`,
       });
     }
   }
@@ -323,6 +324,20 @@ type BookingCheckoutResponse = {
   warning?: string | null;
 };
 type ServiceItem = CarType | CookType | ErrandType | ExperienceType;
+
+const helpMamaPublicDescription = [
+  "Trusted in-villa childcare and family support provided by a certified social worker and experienced mother.",
+  "Ideal for travelling families who need a few hours for dinner, a conference, rest after travel, or gentle overnight support while children stay comfortable in your villa, apartment, or accommodation.",
+];
+
+const helpMamaIncludedServices = [
+  "Daytime childcare and supervision",
+  "Evening or overnight support",
+  "Feeding, bottle preparation, and diaper routines",
+  "Age-appropriate play and bedtime support",
+  "Short clinic visit accompaniment when needed",
+  "Light child-related support during your stay",
+];
 type CarServiceMode = "car-chauffeur-day" | "car-chauffeur-hourly" | "car-self-drive-day";
 type CookServiceMode = typeof cookBookingModes[number];
 type ErrandServiceMode = "errand-base" | "errand-shopping" | "errand-laundry" | "errand-house-cleaning" | "errand-childcare";
@@ -501,8 +516,9 @@ export default function ServiceBooking() {
   });
 
   const service = useMemo(() => allServices?.find((s) => s.id === id), [allServices, id]);
+  const isHelpMamaErrand = serviceType === "errand" && service && "basePrice" in service && hasHelpMamaPricing(service);
   const serviceDescription = service?.description?.trim() ?? "";
-  const hasLongDescription = serviceDescription.length > 220;
+  const hasLongDescription = !isHelpMamaErrand && serviceDescription.length > 220;
   const visibleDescription = hasLongDescription && !isDescriptionExpanded
     ? getDescriptionPreview(serviceDescription)
     : serviceDescription;
@@ -1324,7 +1340,22 @@ export default function ServiceBooking() {
                       <h1 className="break-words text-2xl font-bold" data-testid="text-service-name">
                         {serviceName}
                       </h1>
-                      {serviceDescription ? (
+                      {isHelpMamaErrand ? (
+                        <div className="space-y-4">
+                          <div className="space-y-2 text-sm leading-7 text-muted-foreground">
+                            {helpMamaPublicDescription.map((paragraph) => (
+                              <p key={paragraph}>{paragraph}</p>
+                            ))}
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {helpMamaIncludedServices.map((item) => (
+                              <Badge key={item} variant="outline" className="rounded-md">
+                                {item}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      ) : serviceDescription ? (
                         <>
                           <p className="text-sm leading-7 text-muted-foreground">
                             {visibleDescription}
@@ -2229,8 +2260,16 @@ export default function ServiceBooking() {
                                         <FormItem>
                                           <FormLabel>Hours needed</FormLabel>
                                           <FormControl>
-                                            <Input type="number" min="1" value={hoursField.value || ""} onChange={(event) => hoursField.onChange(Math.max(1, Number(event.target.value) || 1))} />
+                                            <Input
+                                              type="number"
+                                              min={HELP_MAMA_HOURLY_MINIMUM_HOURS}
+                                              value={hoursField.value || ""}
+                                              onChange={(event) => hoursField.onChange(Math.max(HELP_MAMA_HOURLY_MINIMUM_HOURS, Number(event.target.value) || HELP_MAMA_HOURLY_MINIMUM_HOURS))}
+                                            />
                                           </FormControl>
+                                          <FormDescription>
+                                            Hourly Mama Care bookings start from {HELP_MAMA_HOURLY_MINIMUM_HOURS} hours.
+                                          </FormDescription>
                                           <FormMessage />
                                         </FormItem>
                                       )}
@@ -2670,7 +2709,7 @@ export default function ServiceBooking() {
 
                   {"basePrice" in service && serviceMode === "errand-childcare" && hasHelpMamaPricing(service) && (
                     <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
-                      Each Help Mama package uses the time rate and age band you select. No base service fee is added.
+                      Each Mama Care package uses the time rate and age band you select.
                     </div>
                   )}
 

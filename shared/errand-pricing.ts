@@ -1,5 +1,7 @@
 import type { Errand, HelpMamaPricing } from "./schema";
 
+export const HELP_MAMA_HOURLY_MINIMUM_HOURS = 3;
+
 export const HELP_MAMA_TIME_RATE_IDS = {
   hourlyDaytime: "help-mama-hourly-daytime",
   hourlyEvening: "help-mama-hourly-evening",
@@ -137,6 +139,6 @@ export function calculateHelpMamaPackagePrice(
     return errand.basePrice;
   }
 
-  const quantity = isHelpMamaHourlyRate(rate.id) ? Math.max(1, serviceHours || 1) : 1;
+  const quantity = isHelpMamaHourlyRate(rate.id) ? Math.max(HELP_MAMA_HOURLY_MINIMUM_HOURS, serviceHours || HELP_MAMA_HOURLY_MINIMUM_HOURS) : 1;
   return rate.price * quantity;
 }
