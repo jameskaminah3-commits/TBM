@@ -1,5 +1,5 @@
 import type { Request } from "express";
-import type { Car, Cook, Errand, Experience, Stay } from "@shared/schema";
+import type { BlogPost, Car, Cook, Errand, Experience, Stay } from "@shared/schema";
 import { getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
 import { storage } from "./storage";
 
@@ -11,7 +11,10 @@ type ShareMetadata = {
   description: string;
   imageUrl: string;
   canonicalUrl: string;
-  type: "website";
+  type: "article" | "website";
+  publishedTime?: string | null;
+  modifiedTime?: string | null;
+  author?: string | null;
 };
 
 const siteName = "Tembea Bila Matata";
@@ -30,12 +33,19 @@ function stripHtml(value: string) {
   return value.replace(/<[^>]*>/g, " ");
 }
 
+function stripMarkdown(value: string) {
+  return value
+    .replace(/!\[[^\]]*]\([^)]*\)/g, " ")
+    .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
+    .replace(/[`*_~>#-]+/g, " ");
+}
+
 function normalizeWhitespace(value: string) {
   return value.replace(/\s+/g, " ").trim();
 }
 
 function truncate(value: string, maxLength: number) {
-  const normalized = normalizeWhitespace(stripHtml(value));
+  const normalized = normalizeWhitespace(stripMarkdown(stripHtml(value)));
   if (normalized.length <= maxLength) {
     return normalized;
   }
@@ -226,6 +236,25 @@ function parseListingRoute(pathname: string): ParsedListingRoute | null {
   };
 }
 
+function parseBlogRoute(pathname: string) {
+  const match = /^\/(?:blog|articles)\/([^/?#]+)\/?$/.exec(pathname);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function buildBlogMetadata(post: BlogPost, baseUrl: string): ShareMetadata {
+  const canonicalUrl = `${baseUrl}/blog/${post.slug}`;
+  return {
+    title: `${post.seoTitle || post.title} | ${siteName}`,
+    description: truncate(post.seoDescription || post.excerpt || post.contentMarkdown, 220),
+    imageUrl: toAbsoluteUrl(post.featuredImage, baseUrl),
+    canonicalUrl,
+    type: "article",
+    publishedTime: post.publishedAt,
+    modifiedTime: post.updatedAt,
+    author: post.author,
+  };
+}
+
 async function resolveListing(route: ParsedListingRoute) {
   const normalizedId = route.id.toLowerCase();
 
@@ -276,6 +305,22 @@ function defaultMetadata(req: Request): ShareMetadata {
 
 export async function resolveShareMetadata(req: Request): Promise<ShareMetadata> {
   const fallback = defaultMetadata(req);
+  const blogSlug = parseBlogRoute(req.path);
+  if (blogSlug) {
+    const baseUrl = getRequestBaseUrl(req);
+    try {
+      const post = await storage.getBlogPostBySlug(blogSlug);
+      if (!post || post.status !== "published") {
+        return fallback;
+      }
+
+      return buildBlogMetadata(post, baseUrl);
+    } catch (error) {
+      console.error("[SEO] Failed to resolve blog share metadata:", error);
+      return fallback;
+    }
+  }
+
   const route = parseListingRoute(req.path);
   if (!route) {
     return fallback;
@@ -341,6 +386,20 @@ function metaTag(attribute: "name" | "property", key: string, content: string) {
   return `<meta ${attribute}="${escapeHtml(key)}" content="${escapeHtml(content)}" />`;
 }
 
+function getGoogleSiteVerificationTag() {
+  const verificationCode = (
+    process.env.GOOGLE_SITE_VERIFICATION
+    ?? process.env.GOOGLE_SEARCH_CONSOLE_VERIFICATION
+    ?? ""
+  ).trim();
+
+  if (!verificationCode) {
+    return null;
+  }
+
+  return metaTag("name", "google-site-verification", verificationCode);
+}
+
 export function injectShareMetadata(html: string, metadata: ShareMetadata) {
   const tags = [
     metaTag("property", "og:site_name", siteName),
@@ -355,8 +414,12 @@ export function injectShareMetadata(html: string, metadata: ShareMetadata) {
     metaTag("name", "twitter:title", metadata.title),
     metaTag("name", "twitter:description", metadata.description),
     metaTag("name", "twitter:image", metadata.imageUrl),
+    metadata.publishedTime ? metaTag("property", "article:published_time", metadata.publishedTime) : null,
+    metadata.modifiedTime ? metaTag("property", "article:modified_time", metadata.modifiedTime) : null,
+    metadata.author ? metaTag("property", "article:author", metadata.author) : null,
+    getGoogleSiteVerificationTag(),
     `<link rel="canonical" href="${escapeHtml(metadata.canonicalUrl)}" />`,
-  ].join("\n    ");
+  ].filter(Boolean).join("\n    ");
 
   return html
     .replace(/<title>[\s\S]*?<\/title>/i, `<title>${escapeHtml(metadata.title)}</title>`)

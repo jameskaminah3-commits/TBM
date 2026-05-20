@@ -2284,9 +2284,175 @@ function getReviewTargetsForBooking(booking: any) {
   return targets;
 }
 
+function getPublicSiteBaseUrl() {
+  return (process.env.APP_BASE_URL?.trim() || "https://tembeabilamatata.com").replace(/\/+$/, "");
+}
+
+function escapeXml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function toIsoDateTime(value?: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function sitemapEntry(params: {
+  baseUrl: string;
+  path: string;
+  changefreq: "daily" | "weekly" | "monthly";
+  priority: string;
+  lastmod?: string | null;
+}) {
+  const normalizedPath = params.path.startsWith("/") ? params.path : `/${params.path}`;
+  const lastmod = toIsoDateTime(params.lastmod);
+  return [
+    "  <url>",
+    `    <loc>${escapeXml(`${params.baseUrl}${normalizedPath}`)}</loc>`,
+    lastmod ? `    <lastmod>${lastmod}</lastmod>` : null,
+    `    <changefreq>${params.changefreq}</changefreq>`,
+    `    <priority>${params.priority}</priority>`,
+    "  </url>",
+  ].filter(Boolean).join("\n");
+}
+
+function isPublicManagedItem(item: { isPublic?: boolean | null; managerUserId?: string | null }) {
+  return Boolean(item.isPublic && item.managerUserId?.trim());
+}
+
+async function buildSitemapXml() {
+  const baseUrl = getPublicSiteBaseUrl();
+  const now = new Date().toISOString();
+  const staticEntries = [
+    sitemapEntry({ baseUrl, path: "/", changefreq: "daily", priority: "1.0", lastmod: now }),
+    sitemapEntry({ baseUrl, path: "/accommodations", changefreq: "weekly", priority: "0.9", lastmod: now }),
+    sitemapEntry({ baseUrl, path: "/services/drive", changefreq: "weekly", priority: "0.8", lastmod: now }),
+    sitemapEntry({ baseUrl, path: "/services/dine", changefreq: "weekly", priority: "0.8", lastmod: now }),
+    sitemapEntry({ baseUrl, path: "/services/relax", changefreq: "weekly", priority: "0.8", lastmod: now }),
+    sitemapEntry({ baseUrl, path: "/services/experience", changefreq: "weekly", priority: "0.8", lastmod: now }),
+    sitemapEntry({ baseUrl, path: "/blog", changefreq: "daily", priority: "0.9", lastmod: now }),
+    sitemapEntry({ baseUrl, path: "/about", changefreq: "monthly", priority: "0.5", lastmod: now }),
+    sitemapEntry({ baseUrl, path: "/contact", changefreq: "monthly", priority: "0.5", lastmod: now }),
+    sitemapEntry({ baseUrl, path: "/faq", changefreq: "monthly", priority: "0.5", lastmod: now }),
+  ];
+
+  const [posts, stays, cars, cooks, errands, experiences] = await Promise.all([
+    storage.getPublishedBlogPosts(),
+    storage.getStays(),
+    storage.getCars(),
+    storage.getCooks(),
+    storage.getErrands(),
+    storage.getExperiences(),
+  ]);
+
+  const blogEntries = posts.map((post) => sitemapEntry({
+    baseUrl,
+    path: `/blog/${post.slug}`,
+    changefreq: "weekly",
+    priority: "0.85",
+    lastmod: post.updatedAt ?? post.publishedAt,
+  }));
+
+  const listingEntries = [
+    ...stays
+      .filter(isPublicManagedItem)
+      .map((stay) => sitemapEntry({
+        baseUrl,
+        path: `/accommodation/${stay.id}`,
+        changefreq: "weekly",
+        priority: "0.8",
+        lastmod: stay.updatedAt,
+      })),
+    ...cars
+      .filter(isPublicManagedItem)
+      .map((car) => sitemapEntry({
+        baseUrl,
+        path: `/book/car/${car.id}`,
+        changefreq: "weekly",
+        priority: "0.7",
+        lastmod: car.updatedAt,
+      })),
+    ...cooks
+      .filter(isPublicManagedItem)
+      .map((cook) => sitemapEntry({
+        baseUrl,
+        path: `/book/cook/${cook.id}`,
+        changefreq: "weekly",
+        priority: "0.7",
+        lastmod: cook.updatedAt,
+      })),
+    ...errands
+      .filter(isPublicManagedItem)
+      .map((errand) => sitemapEntry({
+        baseUrl,
+        path: `/book/errand/${errand.id}`,
+        changefreq: "weekly",
+        priority: "0.7",
+        lastmod: errand.updatedAt,
+      })),
+    ...experiences
+      .filter(isPublicManagedItem)
+      .map((experience) => sitemapEntry({
+        baseUrl,
+        path: `/book/experience/${experience.id}`,
+        changefreq: "weekly",
+        priority: "0.7",
+        lastmod: experience.updatedAt,
+      })),
+  ];
+
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    ...staticEntries,
+    ...blogEntries,
+    ...listingEntries,
+    "</urlset>",
+    "",
+  ].join("\n");
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   setupAuth(app);
   registerAuthRoutes(app);
+
+  app.get("/robots.txt", (_req, res) => {
+    const baseUrl = getPublicSiteBaseUrl();
+    res
+      .type("text/plain")
+      .send([
+        "User-agent: *",
+        "Allow: /",
+        "Disallow: /admin/",
+        "Disallow: /provider/",
+        "Disallow: /auth",
+        "Disallow: /api/",
+        "",
+        `Sitemap: ${baseUrl}/sitemap.xml`,
+        "",
+      ].join("\n"));
+  });
+
+  app.get("/sitemap.xml", async (_req, res) => {
+    try {
+      res
+        .type("application/xml")
+        .set("Cache-Control", "public, max-age=900")
+        .send(await buildSitemapXml());
+    } catch (error) {
+      console.error("[SEO] Failed to build sitemap:", error);
+      res.status(500).type("text/plain").send("Failed to build sitemap");
+    }
+  });
 
   app.get("/api/health", (_req, res) => {
     res.json({

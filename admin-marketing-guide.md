@@ -130,6 +130,17 @@ The section is functional, but there are still a few product-level limits worth 
 3. Metrics are operational and useful, but they are not yet deduplicated like a dedicated analytics product would do.
 4. The page depends on several admin APIs. It now degrades gracefully, but missing data still means some insight blocks can be partially unavailable.
 
+## Google Search Console setup
+
+Search Console is now supported at the site infrastructure level:
+
+- `GET /robots.txt` points Google to the live sitemap and keeps admin/provider/API routes out of search results.
+- `GET /sitemap.xml` lists core public pages, published blog posts, and public listings.
+- Blog article metadata is injected server-side so crawlers can see titles, descriptions, canonicals, Open Graph tags, and article dates before the React app loads.
+- Add the Search Console HTML tag token to `GOOGLE_SITE_VERIFICATION` in production. Copy only the `content` value from the Google verification meta tag.
+
+After deployment, submit `/sitemap.xml` in Google Search Console. Search Console reports organic Google Search performance; it is not real-time traffic analytics, so keep the existing admin attribution tracking for immediate blog-to-booking behavior.
+
 ## Recommended next improvements
 
 If you want the section to become more decision-grade for marketing, the next best upgrades are:
