@@ -2432,6 +2432,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       .send([
         "User-agent: *",
         "Allow: /",
+        "Allow: /api/blog",
+        "Allow: /api/stays",
+        "Allow: /api/cars",
+        "Allow: /api/cooks",
+        "Allow: /api/errands",
+        "Allow: /api/experiences",
+        "Allow: /api/reviews",
         "Disallow: /admin/",
         "Disallow: /provider/",
         "Disallow: /auth",
