@@ -70,6 +70,23 @@ function generateSlug(title: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
+function formatDateTimeLocalInput(value: string | null | undefined) {
+  if (!value) {
+    return "";
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value.slice(0, 16);
+  }
+
+  return format(parsed, "yyyy-MM-dd'T'HH:mm");
+}
+
+function isSeoReady(post: BlogPost) {
+  return Boolean(post.seoTitle?.trim() && post.seoDescription?.trim() && post.featuredImageAlt?.trim());
+}
+
 function fileToDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -154,7 +171,7 @@ function BlogPostForm({ post, onSuccess }: { post?: BlogPost; onSuccess: () => v
       primaryCtaLabel: post?.primaryCtaLabel || "",
       primaryCtaHref: post?.primaryCtaHref || "",
       primaryPromoCode: post?.primaryPromoCode || "",
-      publishedAt: post?.publishedAt || "",
+      publishedAt: formatDateTimeLocalInput(post?.publishedAt),
     },
   });
 
@@ -335,7 +352,7 @@ function BlogPostForm({ post, onSuccess }: { post?: BlogPost; onSuccess: () => v
     const alt = inlineImageAlt.trim() || form.getValues("title") || "Article image";
     const caption = inlineImageCaption.trim();
     const imageBlock = caption
-      ? `![${alt}](${inlineImageUrl} "${caption}")\n*${caption}*\n`
+      ? `![${alt}](${inlineImageUrl} "${caption}")\n`
       : `![${alt}](${inlineImageUrl})\n`;
 
     replaceSelection(`${imageBlock}\n`);
@@ -885,9 +902,7 @@ export default function AdminBlog() {
   const summary = useMemo(() => {
     const published = posts.filter((post) => post.status === "published").length;
     const draft = posts.filter((post) => post.status === "draft").length;
-    const seoReady = posts.filter((post) =>
-      Boolean((post.seoTitle || post.title) && (post.seoDescription || post.excerpt) && (post.featuredImageAlt || post.title)),
-    ).length;
+    const seoReady = posts.filter((post) => isSeoReady(post)).length;
 
     return {
       total: posts.length,
@@ -1050,7 +1065,7 @@ export default function AdminBlog() {
         ) : (
           <div className="grid gap-4 lg:grid-cols-2">
             {filteredPosts.map((post) => {
-              const isSeoReady = Boolean((post.seoTitle || post.title) && (post.seoDescription || post.excerpt) && (post.featuredImageAlt || post.title));
+              const postIsSeoReady = isSeoReady(post);
               const sectionTotal = (post.contentMarkdown.match(/^##\s+/gm) || []).length || 0;
 
               return (
@@ -1062,8 +1077,8 @@ export default function AdminBlog() {
                           <Badge variant={post.status === "published" ? "default" : "secondary"} data-testid={`badge-status-${post.id}`}>
                             {post.status}
                           </Badge>
-                          <Badge variant={isSeoReady ? "default" : "secondary"}>
-                            {isSeoReady ? "SEO ready" : "Needs SEO polish"}
+                          <Badge variant={postIsSeoReady ? "default" : "secondary"}>
+                            {postIsSeoReady ? "SEO ready" : "Needs SEO polish"}
                           </Badge>
                           <Badge variant="outline">{sectionTotal} sections</Badge>
                         </div>
