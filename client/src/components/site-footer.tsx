@@ -15,7 +15,7 @@ const exploreLinks = [
   { href: "/services/dine", label: "Dine" },
   { href: "/services/relax", label: "Relax" },
   { href: "/services/experience", label: "Experiences" },
-  { href: "/articles", label: "Concierge Articles" },
+  { href: "/blog", label: "Concierge Articles" },
 ];
 
 const companyLinks = [
