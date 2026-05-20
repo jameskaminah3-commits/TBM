@@ -1332,24 +1332,36 @@ export default function ServiceBooking() {
             <div className="lg:col-span-2">
               <Card className="p-5 sm:p-6">
                 <div className="mb-6">
-                  <div className="mb-4 flex items-start gap-3">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md bg-primary/10">
-                      <ServiceIcon className="w-6 h-6 text-primary" />
+                  <div className="mb-4 flex items-start gap-3 sm:gap-4">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-primary/10 sm:h-12 sm:w-12">
+                      <ServiceIcon className="h-5 w-5 text-primary sm:h-6 sm:w-6" />
                     </div>
                     <div className="min-w-0">
-                      <h1 className="break-words text-2xl font-bold" data-testid="text-service-name">
+                      <h1 className="break-words text-xl font-bold leading-tight sm:text-2xl" data-testid="text-service-name">
                         {serviceName}
                       </h1>
                       {isHelpMamaErrand ? (
-                        <div className="space-y-4">
-                          <div className="space-y-2 text-sm leading-7 text-muted-foreground">
+                        <div className="mt-2 space-y-4">
+                          <div className="space-y-2 text-sm leading-6 text-muted-foreground sm:leading-7">
                             {helpMamaPublicDescription.map((paragraph) => (
                               <p key={paragraph}>{paragraph}</p>
                             ))}
                           </div>
-                          <div className="flex flex-wrap gap-2">
+                          <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
                             {helpMamaIncludedServices.map((item) => (
-                              <Badge key={item} variant="outline" className="rounded-md">
+                              <div key={item} className="flex min-w-0 items-start gap-2">
+                                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                                <span className="leading-5">{item}</span>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {[
+                              "Certified care",
+                              "In-villa support",
+                              `${HELP_MAMA_HOURLY_MINIMUM_HOURS}h hourly minimum`,
+                            ].map((item) => (
+                              <Badge key={item} variant="secondary" className="rounded-md">
                                 {item}
                               </Badge>
                             ))}
@@ -1710,7 +1722,7 @@ export default function ServiceBooking() {
                                   <label className="flex items-start gap-3 rounded-lg border p-4 cursor-pointer">
                                     <RadioGroupItem value="errand-childcare" className="mt-1" />
                                     <div>
-                                      <div className="font-medium">Help Mama family support</div>
+                                      <div className="font-medium">Mama Care family support</div>
                                       <div className="text-sm text-muted-foreground">
                                         {hasHelpMamaPricing(service)
                                           ? `Starting at ${formatAmount(getHelpMamaStartingPrice(service.helpMamaPricing))}`
@@ -2215,14 +2227,17 @@ export default function ServiceBooking() {
                               const rateOptions = getHelpMamaRateOptions(service.helpMamaPricing, selectedAgeBandId);
                               return (
                                 <FormItem className="space-y-4">
-                                  <FormLabel>Help Mama Pricing</FormLabel>
+                                  <FormLabel>Mama Care Pricing</FormLabel>
                                   <div className="space-y-2">
                                     <Label>Age band</Label>
                                     {ageBands.map((band) => {
                                       const checked = currentSelections.includes(band.id);
                                       return (
-                                        <label key={band.id} className="flex items-center justify-between rounded-lg border px-3 py-2">
-                                          <div className="font-medium">{band.label}</div>
+                                        <label
+                                          key={band.id}
+                                          className={`flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-lg border px-3 py-2 transition-colors ${checked ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}
+                                        >
+                                          <div className="min-w-0 font-medium leading-5">{band.label}</div>
                                           <Checkbox
                                             checked={checked}
                                             onCheckedChange={() => {
@@ -2235,22 +2250,28 @@ export default function ServiceBooking() {
                                     })}
                                   </div>
                                   <div className="grid gap-3 sm:grid-cols-2">
-                                    {rateOptions.map((rate) => (
-                                      <label key={rate.id} className="flex items-start gap-3 rounded-lg border p-4">
-                                        <Checkbox
-                                          checked={selectedRateId === rate.id}
-                                          onCheckedChange={() => {
-                                            const ageSelections = currentSelections.filter((selection) => selection === selectedAgeBandId);
-                                            field.onChange([...ageSelections, rate.id]);
-                                          }}
-                                          className="mt-1"
-                                        />
-                                        <div>
-                                          <div className="font-medium">{rate.label}</div>
-                                          <div className="text-sm text-muted-foreground">{formatAmount(rate.price)}/{rate.unit}</div>
-                                        </div>
-                                      </label>
-                                    ))}
+                                    {rateOptions.map((rate) => {
+                                      const checked = selectedRateId === rate.id;
+                                      return (
+                                        <label
+                                          key={rate.id}
+                                          className={`flex min-h-16 cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors sm:p-4 ${checked ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}
+                                        >
+                                          <Checkbox
+                                            checked={checked}
+                                            onCheckedChange={() => {
+                                              const ageSelections = currentSelections.filter((selection) => selection === selectedAgeBandId);
+                                              field.onChange([...ageSelections, rate.id]);
+                                            }}
+                                            className="mt-1"
+                                          />
+                                          <div className="min-w-0">
+                                            <div className="font-medium leading-5">{rate.label}</div>
+                                            <div className="text-sm text-muted-foreground">{formatAmount(rate.price)}/{rate.unit}</div>
+                                          </div>
+                                        </label>
+                                      );
+                                    })}
                                   </div>
                                   {isHelpMamaHourlyRate(selectedRateId) ? (
                                     <FormField
@@ -2275,7 +2296,7 @@ export default function ServiceBooking() {
                                       )}
                                     />
                                   ) : null}
-                                  <FormDescription>Select the time package and the child age band for accurate pricing.</FormDescription>
+                                  <FormDescription>Select a time package and age band for accurate pricing.</FormDescription>
                                   <FormMessage />
                                 </FormItem>
                               );
@@ -2633,7 +2654,7 @@ export default function ServiceBooking() {
                                 : "Service fee package / day"
                           : serviceType === "errand"
                             ? serviceMode === "errand-childcare"
-                              ? "Help Mama package"
+                              ? "Mama Care package"
                               : "Price per package"
                             : "experienceType" in service
                               ? serviceMode === "experience-shared"
