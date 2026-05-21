@@ -5,6 +5,7 @@ import { storage } from "./storage";
 
 type ListingKind = "stay" | "car" | "cook" | "errand" | "experience";
 type ParsedListingRoute = { kind: ListingKind; id: string; isShortLink?: boolean };
+type ShareCurrency = "USD" | "KES";
 
 type ShareMetadata = {
   title: string;
@@ -22,6 +23,7 @@ const defaultTitle = "Tembea Bila Matata - Travel Local, Stay Easy";
 const defaultDescription =
   "Book curated stays, cars, private chefs, errands, and experiences across Kenya with Tembea Bila Matata.";
 const defaultImagePath = "/tembeabilamatata-logo.jpg";
+const sharePreviewUsdToKes = 130;
 
 function isPublicListing<T extends { isPublic: boolean; managerUserId?: string | null }>(
   listing: T | null | undefined,
@@ -92,9 +94,23 @@ function getListingImage(
   return toAbsoluteUrl(listing.mediaType === "video" ? firstImage : (firstImage ?? listing.imageUrl), baseUrl);
 }
 
-function formatUsd(amount: number | null | undefined, suffix: string) {
+function getShareCurrency(req: Request): ShareCurrency {
+  const value = Array.isArray(req.query.currency) ? req.query.currency[0] : req.query.currency;
+  return value === "KES" ? "KES" : "USD";
+}
+
+function getListingCanonicalUrl(req: Request, baseUrl: string, currency: ShareCurrency) {
+  const currencyQuery = currency === "KES" ? "?currency=KES" : "";
+  return `${baseUrl}${req.path}${currencyQuery}`;
+}
+
+function formatShareAmount(amount: number | null | undefined, suffix: string, currency: ShareCurrency) {
   if (!amount || amount <= 0) {
     return null;
+  }
+
+  if (currency === "KES") {
+    return `KSh ${Math.round(amount * sharePreviewUsdToKes).toLocaleString("en-KE")}${suffix}`;
   }
 
   return `$${amount.toLocaleString("en-US")}${suffix}`;
@@ -104,10 +120,10 @@ function joinDetails(parts: Array<string | null | undefined>) {
   return parts.filter((part): part is string => Boolean(part?.trim())).join(" · ");
 }
 
-function buildStayMetadata(stay: Stay, baseUrl: string, canonicalUrl: string): ShareMetadata {
+function buildStayMetadata(stay: Stay, baseUrl: string, canonicalUrl: string, currency: ShareCurrency): ShareMetadata {
   const details = joinDetails([
     stay.location,
-    formatUsd(stay.price, " per night"),
+    formatShareAmount(stay.price, " per night", currency),
     `${stay.bedrooms} bedroom${stay.bedrooms === 1 ? "" : "s"}`,
     `up to ${stay.maxOccupancy} guest${stay.maxOccupancy === 1 ? "" : "s"}`,
   ]);
@@ -121,11 +137,11 @@ function buildStayMetadata(stay: Stay, baseUrl: string, canonicalUrl: string): S
   };
 }
 
-function buildCarMetadata(car: Car, baseUrl: string, canonicalUrl: string): ShareMetadata {
+function buildCarMetadata(car: Car, baseUrl: string, canonicalUrl: string, currency: ShareCurrency): ShareMetadata {
   const details = joinDetails([
     car.location,
-    formatUsd(car.priceWithDriverHourly, "/hour chauffeur"),
-    formatUsd(car.pricePerDay, "/day self-drive"),
+    formatShareAmount(car.priceWithDriverHourly, "/hour chauffeur", currency),
+    formatShareAmount(car.pricePerDay, "/day self-drive", currency),
     `${car.seats} seats`,
     car.transmission,
   ]);
@@ -139,12 +155,12 @@ function buildCarMetadata(car: Car, baseUrl: string, canonicalUrl: string): Shar
   };
 }
 
-function buildCookMetadata(cook: Cook, baseUrl: string, canonicalUrl: string): ShareMetadata {
+function buildCookMetadata(cook: Cook, baseUrl: string, canonicalUrl: string, currency: ShareCurrency): ShareMetadata {
   const details = joinDetails([
     cook.location,
     cook.serviceType,
     cook.speciality,
-    formatUsd(cook.serviceFee || cook.pricePerSession, " service fee"),
+    formatShareAmount(cook.serviceFee || cook.pricePerSession, " service fee", currency),
     `up to ${cook.maxGuests} guests`,
   ]);
 
@@ -157,7 +173,7 @@ function buildCookMetadata(cook: Cook, baseUrl: string, canonicalUrl: string): S
   };
 }
 
-function buildErrandMetadata(errand: Errand, baseUrl: string, canonicalUrl: string): ShareMetadata {
+function buildErrandMetadata(errand: Errand, baseUrl: string, canonicalUrl: string, currency: ShareCurrency): ShareMetadata {
   const services = [
     errand.shoppingEnabled ? "shopping" : null,
     errand.laundryEnabled ? "laundry" : null,
@@ -166,8 +182,8 @@ function buildErrandMetadata(errand: Errand, baseUrl: string, canonicalUrl: stri
   const details = joinDetails([
     errand.location,
     hasHelpMamaPricing(errand)
-      ? formatUsd(getHelpMamaStartingPrice(errand.helpMamaPricing), " starting Help Mama rate")
-      : formatUsd(errand.basePrice, " base fee"),
+      ? formatShareAmount(getHelpMamaStartingPrice(errand.helpMamaPricing), " starting Help Mama rate", currency)
+      : formatShareAmount(errand.basePrice, " base fee", currency),
     ...services,
   ]);
 
@@ -180,11 +196,11 @@ function buildErrandMetadata(errand: Errand, baseUrl: string, canonicalUrl: stri
   };
 }
 
-function buildExperienceMetadata(experience: Experience, baseUrl: string, canonicalUrl: string): ShareMetadata {
+function buildExperienceMetadata(experience: Experience, baseUrl: string, canonicalUrl: string, currency: ShareCurrency): ShareMetadata {
   const details = joinDetails([
     experience.experienceLocation || experience.location,
     experience.experienceType,
-    formatUsd(experience.privatePricePerPerson || experience.price, " per person"),
+    formatShareAmount(experience.privatePricePerPerson || experience.price, " per person", currency),
     `${experience.durationHours} hour${experience.durationHours === 1 ? "" : "s"}`,
   ]);
 
@@ -327,7 +343,8 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
   }
 
   const baseUrl = getRequestBaseUrl(req);
-  const canonicalUrl = `${baseUrl}${req.path}`;
+  const currency = getShareCurrency(req);
+  const canonicalUrl = getListingCanonicalUrl(req, baseUrl, currency);
 
   try {
     if (route.kind === "stay") {
@@ -335,7 +352,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
       if (!isPublicListing(stay)) {
         return fallback;
       }
-      return buildStayMetadata(stay, baseUrl, canonicalUrl);
+      return buildStayMetadata(stay, baseUrl, canonicalUrl, currency);
     }
 
     if (route.kind === "car") {
@@ -343,7 +360,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
       if (!isPublicListing(car)) {
         return fallback;
       }
-      return buildCarMetadata(car, baseUrl, canonicalUrl);
+      return buildCarMetadata(car, baseUrl, canonicalUrl, currency);
     }
 
     if (route.kind === "cook") {
@@ -351,7 +368,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
       if (!isPublicListing(cook)) {
         return fallback;
       }
-      return buildCookMetadata(cook, baseUrl, canonicalUrl);
+      return buildCookMetadata(cook, baseUrl, canonicalUrl, currency);
     }
 
     if (route.kind === "errand") {
@@ -359,14 +376,14 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
       if (!isPublicListing(errand)) {
         return fallback;
       }
-      return buildErrandMetadata(errand, baseUrl, canonicalUrl);
+      return buildErrandMetadata(errand, baseUrl, canonicalUrl, currency);
     }
 
     const experience = await resolveListing(route) as Experience | undefined;
     if (!isPublicListing(experience)) {
       return fallback;
     }
-    return buildExperienceMetadata(experience, baseUrl, canonicalUrl);
+    return buildExperienceMetadata(experience, baseUrl, canonicalUrl, currency);
   } catch (error) {
     console.error("[SEO] Failed to resolve listing share metadata:", error);
     return fallback;

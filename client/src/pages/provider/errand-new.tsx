@@ -15,6 +15,13 @@ import { AdminMediaField } from "@/components/admin-media-field";
 import { ErrandAddonEditor } from "@/components/errand-addon-editor";
 import { HelpMamaPricingEditor } from "@/components/help-mama-pricing-editor";
 import { useToast } from "@/hooks/use-toast";
+import { useCurrency } from "@/lib/currency";
+import {
+  convertErrandAddonsToUsd,
+  convertErrandAmountToUsd,
+  convertHelpMamaPricingToUsd,
+  currencyLabel,
+} from "@/lib/errand-currency";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { errandAddonSchema, helpMamaPricingSchema, insertErrandSchema, type ErrandAddon, type HelpMamaPricing } from "@shared/schema";
 import { normalizeHelpMamaPricing } from "@shared/errand-pricing";
@@ -49,6 +56,8 @@ type FormData = z.infer<typeof formSchema>;
 export default function ProviderErrandNew() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { selectedCurrency, convertToUsd } = useCurrency();
+  const amountCurrencyLabel = currencyLabel(selectedCurrency);
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
   const [laundryAddons, setLaundryAddons] = useState<ErrandAddon[]>([]);
   const [houseCleaningAddons, setHouseCleaningAddons] = useState<ErrandAddon[]>([]);
@@ -97,10 +106,12 @@ export default function ProviderErrandNew() {
   const onSubmit = async (data: FormData) => {
     await mutation.mutateAsync({
       ...data,
+      basePrice: convertErrandAmountToUsd(data.basePrice, convertToUsd, selectedCurrency),
+      laundryPricePerKg: convertErrandAmountToUsd(data.laundryPricePerKg ?? 0, convertToUsd, selectedCurrency),
       features: selectedFeatures,
-      laundryAddons,
-      houseCleaningAddons,
-      helpMamaPricing,
+      laundryAddons: convertErrandAddonsToUsd(laundryAddons, convertToUsd, selectedCurrency),
+      houseCleaningAddons: convertErrandAddonsToUsd(houseCleaningAddons, convertToUsd, selectedCurrency),
+      helpMamaPricing: convertHelpMamaPricingToUsd(helpMamaPricing, convertToUsd, selectedCurrency),
     });
   };
 
@@ -126,7 +137,7 @@ export default function ProviderErrandNew() {
                   <FormItem><FormLabel>Location</FormLabel><FormControl><Input placeholder="Nyali, Mtwapa, Bamburi..." {...field} /></FormControl><FormDescription>Where you mainly offer this errand package.</FormDescription><FormMessage /></FormItem>
                 )} />
                 <FormField control={form.control} name="basePrice" render={({ field }) => (
-                  <FormItem><FormLabel>Base Price</FormLabel><FormControl><Input type="number" min="0" {...field} /></FormControl><FormDescription>Use 0 when Help Mama pricing below sets the family care rates.</FormDescription><FormMessage /></FormItem>
+                  <FormItem><FormLabel>Base Price ({amountCurrencyLabel})</FormLabel><FormControl><Input type="number" min="0" {...field} /></FormControl><FormDescription>Use 0 when Help Mama pricing below sets the family care rates.</FormDescription><FormMessage /></FormItem>
                 )} />
                 <div className="grid gap-4 md:grid-cols-2">
                   <FormField control={form.control} name="shoppingEnabled" render={({ field }) => (
@@ -142,11 +153,12 @@ export default function ProviderErrandNew() {
                     <FormItem><FormLabel>Shopping Commission %</FormLabel><FormControl><Input type="number" min="0" max="100" {...field} /></FormControl><FormMessage /></FormItem>
                   )} />
                 </div>
-                <ErrandAddonEditor label="Laundry Add-Ons" description="Examples: duvet, large blanket, extra-heavy items." value={laundryAddons} onChange={(addons) => { setLaundryAddons(addons); form.setValue("laundryAddons", addons); }} />
-                <ErrandAddonEditor label="House Cleaning Add-Ons" description="Examples: fridge cleaning, deep bathroom clean, balcony." value={houseCleaningAddons} onChange={(addons) => { setHouseCleaningAddons(addons); form.setValue("houseCleaningAddons", addons); }} />
+                <ErrandAddonEditor label="Laundry Add-Ons" description="Examples: duvet, large blanket, extra-heavy items." value={laundryAddons} onChange={(addons) => { setLaundryAddons(addons); form.setValue("laundryAddons", addons); }} currencyLabel={amountCurrencyLabel} />
+                <ErrandAddonEditor label="House Cleaning Add-Ons" description="Examples: fridge cleaning, deep bathroom clean, balcony." value={houseCleaningAddons} onChange={(addons) => { setHouseCleaningAddons(addons); form.setValue("houseCleaningAddons", addons); }} currencyLabel={amountCurrencyLabel} />
                 <HelpMamaPricingEditor
                   value={helpMamaPricing}
                   error={helpMamaPricingError?.message || helpMamaPricingError?.ageBands?.message || helpMamaPricingError?.ageBands?.root?.message}
+                  currencyLabel={amountCurrencyLabel}
                   onChange={(pricing) => { setHelpMamaPricing(pricing); form.setValue("helpMamaPricing", pricing); }}
                 />
                 <FormField control={form.control} name="imageUrl" render={({ field }) => (

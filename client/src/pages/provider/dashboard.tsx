@@ -59,6 +59,7 @@ function ShareListingButton({
   className?: string;
 }) {
   const { toast } = useToast();
+  const { selectedCurrency } = useCurrency();
 
   const handleShare = async () => {
     if (!isPublic) {
@@ -70,7 +71,7 @@ function ShareListingButton({
       return;
     }
 
-    const url = getShortShareUrl(serviceType, id);
+    const url = getShortShareUrl(serviceType, id, undefined, selectedCurrency);
 
     try {
       if (navigator.share) {

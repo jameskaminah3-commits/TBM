@@ -16,7 +16,15 @@ import {
 import { InboxQuickPanel } from "@/components/inbox-quick-panel";
 import { useAuth } from "@/hooks/useAuth";
 import { useInbox } from "@/hooks/use-inbox";
+import { useCurrency } from "@/lib/currency";
 import { useEffect } from "react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 function ProviderSidebar() {
   const [location] = useLocation();
@@ -82,6 +90,22 @@ function ProviderSidebar() {
   );
 }
 
+function ProviderCurrencySelect() {
+  const { selectedCurrency, setSelectedCurrency } = useCurrency();
+
+  return (
+    <Select value={selectedCurrency} onValueChange={(value) => setSelectedCurrency(value as "USD" | "KES")}>
+      <SelectTrigger className="h-9 w-[86px] rounded-full bg-background" aria-label="Currency">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent align="end">
+        <SelectItem value="KES">KSH</SelectItem>
+        <SelectItem value="USD">USD</SelectItem>
+      </SelectContent>
+    </Select>
+  );
+}
+
 export function ProviderLayout({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const { unreadCount } = useInbox({ enabled: Boolean(user && (user.role === "provider" || user.role === "admin")), refetchInterval: 15000 });
@@ -111,6 +135,7 @@ export function ProviderLayout({ children }: { children: React.ReactNode }) {
           <header className="sticky top-0 z-40 flex items-center justify-between border-b bg-background/95 px-3 py-3 backdrop-blur sm:px-4">
             <SidebarTrigger />
             <div className="flex items-center gap-2">
+              <ProviderCurrencySelect />
               {user ? <InboxQuickPanel unreadCount={unreadCount} userRole={user.role} /> : null}
             </div>
           </header>

@@ -9,9 +9,10 @@ type HelpMamaPricingEditorProps = {
   value?: HelpMamaPricing | null;
   onChange: (value: HelpMamaPricing) => void;
   error?: string;
+  currencyLabel?: string;
 };
 
-export function HelpMamaPricingEditor({ value, onChange, error }: HelpMamaPricingEditorProps) {
+export function HelpMamaPricingEditor({ value, onChange, error, currencyLabel = "USD" }: HelpMamaPricingEditorProps) {
   const pricing = normalizeHelpMamaPricing(value);
 
   const update = (patch: Partial<HelpMamaPricing>) => {
@@ -50,7 +51,7 @@ export function HelpMamaPricingEditor({ value, onChange, error }: HelpMamaPricin
             <div>
               <Label>Age pricing</Label>
               <p className="mt-1 text-sm text-muted-foreground">
-                Set each age band's hourly daytime, hourly evening, overnight, and full-day prices in USD.
+                Set each age band's hourly daytime, hourly evening, overnight, and full-day prices in {currencyLabel}.
               </p>
             </div>
             {pricing.ageBands.map((band) => (

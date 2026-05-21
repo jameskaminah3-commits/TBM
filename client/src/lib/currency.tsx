@@ -73,6 +73,12 @@ export function CurrencyProvider({ children, preferredCurrency }: CurrencyProvid
       return;
     }
 
+    const queryCurrency = new URLSearchParams(window.location.search).get("currency");
+    if (queryCurrency === "USD" || queryCurrency === "KES") {
+      setSelectedCurrencyState(queryCurrency);
+      return;
+    }
+
     const storedCurrency = window.localStorage.getItem(CURRENCY_STORAGE_KEY);
     if (storedCurrency === "USD" || storedCurrency === "KES") {
       setSelectedCurrencyState(storedCurrency);

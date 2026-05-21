@@ -30,6 +30,16 @@ import { AdminMediaField } from "@/components/admin-media-field";
 import { ErrandAddonEditor } from "@/components/errand-addon-editor";
 import { HelpMamaPricingEditor } from "@/components/help-mama-pricing-editor";
 import { useToast } from "@/hooks/use-toast";
+import { useCurrency } from "@/lib/currency";
+import {
+  convertErrandAddonsFromUsd,
+  convertErrandAddonsToUsd,
+  convertErrandAmountFromUsd,
+  convertErrandAmountToUsd,
+  convertHelpMamaPricingFromUsd,
+  convertHelpMamaPricingToUsd,
+  currencyLabel,
+} from "@/lib/errand-currency";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { errandAddonSchema, helpMamaPricingSchema, insertErrandSchema, type Errand, type ErrandAddon, type HelpMamaPricing, type ProviderAccountSummary } from "@shared/schema";
 import { normalizeHelpMamaPricing } from "@shared/errand-pricing";
@@ -74,6 +84,8 @@ export default function AdminErrandsEdit() {
   const errandId = params.id;
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { selectedCurrency, convertFromUsd, convertToUsd } = useCurrency();
+  const amountCurrencyLabel = currencyLabel(selectedCurrency);
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
   const [laundryAddons, setLaundryAddons] = useState<ErrandAddon[]>([]);
   const [houseCleaningAddons, setHouseCleaningAddons] = useState<ErrandAddon[]>([]);
@@ -120,16 +132,16 @@ export default function AdminErrandsEdit() {
       form.reset({
         serviceName: errand.serviceName,
         location: errand.location || "",
-        basePrice: errand.basePrice,
+        basePrice: convertErrandAmountFromUsd(errand.basePrice, convertFromUsd, selectedCurrency),
         shoppingEnabled: errand.shoppingEnabled,
         shoppingCommissionPercent: errand.shoppingCommissionPercent,
         laundryEnabled: errand.laundryEnabled,
         houseCleaningEnabled: errand.houseCleaningEnabled,
         laundryIncludedKg: errand.laundryIncludedKg,
-        laundryPricePerKg: errand.laundryPricePerKg,
-        laundryAddons: errand.laundryAddons || [],
-        houseCleaningAddons: errand.houseCleaningAddons || [],
-        helpMamaPricing: normalizeHelpMamaPricing(errand.helpMamaPricing),
+        laundryPricePerKg: convertErrandAmountFromUsd(errand.laundryPricePerKg, convertFromUsd, selectedCurrency),
+        laundryAddons: convertErrandAddonsFromUsd(errand.laundryAddons, convertFromUsd, selectedCurrency),
+        houseCleaningAddons: convertErrandAddonsFromUsd(errand.houseCleaningAddons, convertFromUsd, selectedCurrency),
+        helpMamaPricing: convertHelpMamaPricingFromUsd(errand.helpMamaPricing, convertFromUsd, selectedCurrency),
         managerUserId: errand.managerUserId ?? "unassigned",
         imageUrl: errand.imageUrl || "",
         galleryUrls: errand.galleryUrls,
@@ -139,11 +151,11 @@ export default function AdminErrandsEdit() {
         features: errand.features,
       });
       setSelectedFeatures(errand.features);
-      setLaundryAddons(errand.laundryAddons || []);
-      setHouseCleaningAddons(errand.houseCleaningAddons || []);
-      setHelpMamaPricing(normalizeHelpMamaPricing(errand.helpMamaPricing));
+      setLaundryAddons(convertErrandAddonsFromUsd(errand.laundryAddons, convertFromUsd, selectedCurrency));
+      setHouseCleaningAddons(convertErrandAddonsFromUsd(errand.houseCleaningAddons, convertFromUsd, selectedCurrency));
+      setHelpMamaPricing(convertHelpMamaPricingFromUsd(errand.helpMamaPricing, convertFromUsd, selectedCurrency));
     }
-  }, [errand, form]);
+  }, [convertFromUsd, errand, form, selectedCurrency]);
 
   const updateMutation = useMutation({
     mutationFn: async (data: FormData) => {
@@ -179,10 +191,12 @@ export default function AdminErrandsEdit() {
     await updateMutation.mutateAsync({
       ...data,
       managerUserId: data.managerUserId === "unassigned" ? undefined : data.managerUserId,
+      basePrice: convertErrandAmountToUsd(data.basePrice, convertToUsd, selectedCurrency),
+      laundryPricePerKg: convertErrandAmountToUsd(data.laundryPricePerKg, convertToUsd, selectedCurrency),
       features: selectedFeatures,
-      laundryAddons,
-      houseCleaningAddons,
-      helpMamaPricing,
+      laundryAddons: convertErrandAddonsToUsd(laundryAddons, convertToUsd, selectedCurrency),
+      houseCleaningAddons: convertErrandAddonsToUsd(houseCleaningAddons, convertToUsd, selectedCurrency),
+      helpMamaPricing: convertHelpMamaPricingToUsd(helpMamaPricing, convertToUsd, selectedCurrency),
     });
   };
 
@@ -286,7 +300,7 @@ export default function AdminErrandsEdit() {
                   name="basePrice"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Base Price</FormLabel>
+                      <FormLabel>Base Price ({amountCurrencyLabel})</FormLabel>
                       <FormControl>
                         <Input
                           type="number"
@@ -380,6 +394,7 @@ export default function AdminErrandsEdit() {
                     label="Laundry Add-Ons"
                     description="Examples: duvet, large blanket, extra-heavy items."
                     value={laundryAddons}
+                    currencyLabel={amountCurrencyLabel}
                     onChange={(addons) => {
                       setLaundryAddons(addons);
                       form.setValue("laundryAddons", addons);
@@ -390,6 +405,7 @@ export default function AdminErrandsEdit() {
                     label="House Cleaning Add-Ons"
                     description="Examples: fridge cleaning, balcony, deep bathroom clean, sofa steaming."
                     value={houseCleaningAddons}
+                    currencyLabel={amountCurrencyLabel}
                     onChange={(addons) => {
                       setHouseCleaningAddons(addons);
                       form.setValue("houseCleaningAddons", addons);
@@ -399,6 +415,7 @@ export default function AdminErrandsEdit() {
                   <HelpMamaPricingEditor
                     value={helpMamaPricing}
                     error={helpMamaPricingError?.message || helpMamaPricingError?.ageBands?.message || helpMamaPricingError?.ageBands?.root?.message}
+                    currencyLabel={amountCurrencyLabel}
                     onChange={(pricing) => {
                       setHelpMamaPricing(pricing);
                       form.setValue("helpMamaPricing", pricing);

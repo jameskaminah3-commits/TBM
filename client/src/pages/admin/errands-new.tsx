@@ -30,6 +30,13 @@ import { AdminMediaField } from "@/components/admin-media-field";
 import { ErrandAddonEditor } from "@/components/errand-addon-editor";
 import { HelpMamaPricingEditor } from "@/components/help-mama-pricing-editor";
 import { useToast } from "@/hooks/use-toast";
+import { useCurrency } from "@/lib/currency";
+import {
+  convertErrandAddonsToUsd,
+  convertErrandAmountToUsd,
+  convertHelpMamaPricingToUsd,
+  currencyLabel,
+} from "@/lib/errand-currency";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { errandAddonSchema, helpMamaPricingSchema, insertErrandSchema, type ErrandAddon, type HelpMamaPricing, type ProviderAccountSummary } from "@shared/schema";
 import { normalizeHelpMamaPricing } from "@shared/errand-pricing";
@@ -69,6 +76,8 @@ type FormData = z.infer<typeof formSchema>;
 export default function AdminErrandsNew() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { selectedCurrency, convertToUsd } = useCurrency();
+  const amountCurrencyLabel = currencyLabel(selectedCurrency);
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
   const [laundryAddons, setLaundryAddons] = useState<ErrandAddon[]>([]);
   const [houseCleaningAddons, setHouseCleaningAddons] = useState<ErrandAddon[]>([]);
@@ -139,10 +148,12 @@ export default function AdminErrandsNew() {
     await createMutation.mutateAsync({
       ...data,
       managerUserId: data.managerUserId === "unassigned" ? undefined : data.managerUserId,
+      basePrice: convertErrandAmountToUsd(data.basePrice, convertToUsd, selectedCurrency),
+      laundryPricePerKg: convertErrandAmountToUsd(data.laundryPricePerKg, convertToUsd, selectedCurrency),
       features: selectedFeatures,
-      laundryAddons,
-      houseCleaningAddons,
-      helpMamaPricing,
+      laundryAddons: convertErrandAddonsToUsd(laundryAddons, convertToUsd, selectedCurrency),
+      houseCleaningAddons: convertErrandAddonsToUsd(houseCleaningAddons, convertToUsd, selectedCurrency),
+      helpMamaPricing: convertHelpMamaPricingToUsd(helpMamaPricing, convertToUsd, selectedCurrency),
     });
   };
 
@@ -226,7 +237,7 @@ export default function AdminErrandsNew() {
                   name="basePrice"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Base Price</FormLabel>
+                      <FormLabel>Base Price ({amountCurrencyLabel})</FormLabel>
                       <FormControl>
                         <Input
                           type="number"
@@ -320,6 +331,7 @@ export default function AdminErrandsNew() {
                     label="Laundry Add-Ons"
                     description="Examples: duvet, large blanket, extra-heavy items."
                     value={laundryAddons}
+                    currencyLabel={amountCurrencyLabel}
                     onChange={(addons) => {
                       setLaundryAddons(addons);
                       form.setValue("laundryAddons", addons);
@@ -330,6 +342,7 @@ export default function AdminErrandsNew() {
                     label="House Cleaning Add-Ons"
                     description="Examples: fridge cleaning, balcony, deep bathroom clean, sofa steaming."
                     value={houseCleaningAddons}
+                    currencyLabel={amountCurrencyLabel}
                     onChange={(addons) => {
                       setHouseCleaningAddons(addons);
                       form.setValue("houseCleaningAddons", addons);
@@ -339,6 +352,7 @@ export default function AdminErrandsNew() {
                   <HelpMamaPricingEditor
                     value={helpMamaPricing}
                     error={helpMamaPricingError?.message || helpMamaPricingError?.ageBands?.message || helpMamaPricingError?.ageBands?.root?.message}
+                    currencyLabel={amountCurrencyLabel}
                     onChange={(pricing) => {
                       setHelpMamaPricing(pricing);
                       form.setValue("helpMamaPricing", pricing);

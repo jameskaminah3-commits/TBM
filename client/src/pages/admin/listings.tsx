@@ -222,18 +222,19 @@ function getPublicListingUrl(category: ServiceCategory, id: string) {
   return new URL(path, window.location.origin).toString();
 }
 
-function getPublicShareUrl(category: ServiceCategory, id: string) {
+function getPublicShareUrl(category: ServiceCategory, id: string, currency: "USD" | "KES") {
   return getShortShareUrl(
     shareServiceTypeByCategory[category],
     id,
     typeof window === "undefined" ? undefined : window.location.origin,
+    currency,
   );
 }
 
 export default function AdminListings() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { formatAmount, usdToKes } = useCurrency();
+  const { formatAmount, usdToKes, selectedCurrency } = useCurrency();
   const [activeTab, setActiveTab] = useState<ServiceCategory>("stays");
   const [searchTerm, setSearchTerm] = useState("");
   const [visibilityFilter, setVisibilityFilter] = useState<VisibilityFilter>("all");
@@ -451,7 +452,7 @@ export default function AdminListings() {
       return;
     }
 
-    const url = getPublicShareUrl(category, id);
+    const url = getPublicShareUrl(category, id, selectedCurrency);
     const webNavigator = navigator as Navigator & {
       share?: (data: ShareData) => Promise<void>;
       clipboard?: Clipboard;

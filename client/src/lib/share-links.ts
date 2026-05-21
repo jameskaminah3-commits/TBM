@@ -1,4 +1,5 @@
 export type ShareServiceType = "stay" | "car" | "cook" | "errand" | "experience";
+export type ShareCurrency = "USD" | "KES";
 
 const shortTypeByService: Record<ShareServiceType, string> = {
   stay: "s",
@@ -28,7 +29,8 @@ export function getCanonicalBookingPath(serviceType: ShareServiceType, id: strin
   return serviceType === "stay" ? `/book/${id}` : `/book/${serviceType}/${id}`;
 }
 
-export function getShortShareUrl(serviceType: ShareServiceType, id: string, origin?: string) {
+export function getShortShareUrl(serviceType: ShareServiceType, id: string, origin?: string, currency?: ShareCurrency) {
   const baseUrl = origin ?? (typeof window !== "undefined" ? window.location.origin : "");
-  return `${baseUrl}${getShortSharePath(serviceType, id)}`;
+  const currencyQuery = currency ? `?currency=${encodeURIComponent(currency)}` : "";
+  return `${baseUrl}${getShortSharePath(serviceType, id)}${currencyQuery}`;
 }

@@ -8,6 +8,7 @@ type ErrandAddonEditorProps = {
   description: string;
   value: ErrandAddon[];
   onChange: (addons: ErrandAddon[]) => void;
+  currencyLabel?: string;
 };
 
 function createAddon(): ErrandAddon {
@@ -18,7 +19,7 @@ function createAddon(): ErrandAddon {
   };
 }
 
-export function ErrandAddonEditor({ label, description, value, onChange }: ErrandAddonEditorProps) {
+export function ErrandAddonEditor({ label, description, value, onChange, currencyLabel }: ErrandAddonEditorProps) {
   const updateAddon = (id: string, patch: Partial<ErrandAddon>) => {
     onChange(value.map((addon) => addon.id === id ? { ...addon, ...patch } : addon));
   };
@@ -44,7 +45,7 @@ export function ErrandAddonEditor({ label, description, value, onChange }: Erran
           <Input
             type="number"
             min="0"
-            placeholder="Price"
+            placeholder={currencyLabel ? `Price (${currencyLabel})` : "Price"}
             value={addon.price}
             onChange={(e) => updateAddon(addon.id, { price: e.target.value === "" ? 0 : Number(e.target.value) })}
           />

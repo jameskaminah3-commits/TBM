@@ -26,6 +26,14 @@ export default function ShortBookingLink() {
   const [, setLocation] = useLocation();
   const serviceType = serviceByShortType[shortType.toLowerCase()];
   const normalizedCode = code.trim().toLowerCase();
+  const currencyQuery = useMemo(() => {
+    if (typeof window === "undefined") {
+      return "";
+    }
+
+    const currency = new URLSearchParams(window.location.search).get("currency");
+    return currency === "USD" || currency === "KES" ? `?currency=${currency}` : "";
+  }, []);
 
   const { data: listings = [], isLoading } = useQuery<PublicListing[]>({
     queryKey: ["short-share-link", serviceType],
@@ -49,8 +57,8 @@ export default function ShortBookingLink() {
       return;
     }
 
-    setLocation(getCanonicalBookingPath(serviceType, matchingListing.id), { replace: true });
-  }, [isLoading, matchingListing, normalizedCode, serviceType, setLocation]);
+    setLocation(`${getCanonicalBookingPath(serviceType, matchingListing.id)}${currencyQuery}`, { replace: true });
+  }, [currencyQuery, isLoading, matchingListing, normalizedCode, serviceType, setLocation]);
 
   if (!serviceType || !normalizedCode || (!isLoading && !matchingListing)) {
     return (
