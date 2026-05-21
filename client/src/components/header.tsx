@@ -13,7 +13,6 @@ import {
   Sparkles,
   Compass,
   CalendarDays,
-  Newspaper,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { InboxQuickPanel } from "@/components/inbox-quick-panel";
@@ -66,7 +65,6 @@ export function Header() {
     { href: "/services/dine", label: "Dine", description: "Private chefs and dining", icon: UtensilsCrossed, testId: "link-nav-dine" },
     { href: "/services/relax", label: "Relax", description: "Errands, laundry, and support", icon: Sparkles, testId: "link-nav-relax" },
     { href: "/services/experience", label: "Experience", description: "Curated outings and moments", icon: Compass, testId: "link-nav-experience" },
-    { href: "/blog", label: "Articles", description: "Coast travel guides and tips", icon: Newspaper, testId: "link-nav-blog" },
     ...(isAuthenticated
       ? [{ href: "/bookings", label: "My Bookings", shortLabel: "Bookings", description: "Trips, updates, and status", icon: CalendarDays, testId: "link-nav-bookings" }]
       : []),
