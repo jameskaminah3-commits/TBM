@@ -451,7 +451,8 @@ function getErrandPackagePrice(
 ): number {
   if (serviceMode === "errand-shopping") {
     const commissionPercent = service.shoppingCommissionPercent ?? DEFAULT_SHOPPING_COMMISSION_PERCENT;
-    return service.basePrice + Math.ceil((Math.max(0, budgetAmount) * commissionPercent) / 100);
+    const receiptValue = Math.max(0, budgetAmount);
+    return service.basePrice + receiptValue + Math.ceil((receiptValue * commissionPercent) / 100);
   }
 
   if (serviceMode === "errand-laundry") {
@@ -1437,7 +1438,7 @@ export default function ServiceBooking() {
                             </div>
                             <div>
                               <div className="font-semibold text-foreground">Receipt Value</div>
-                              <div className="mt-1 text-muted-foreground">Used only to calculate the commission</div>
+                              <div className="mt-1 text-muted-foreground">Paid toward the shopping items</div>
                             </div>
                           </div>
 
@@ -2283,7 +2284,7 @@ export default function ServiceBooking() {
                                 />
                               </FormControl>
                               <FormDescription>
-                                Your service charge is the base service fee plus {("shoppingCommissionPercent" in service ? (service.shoppingCommissionPercent ?? DEFAULT_SHOPPING_COMMISSION_PERCENT) : DEFAULT_SHOPPING_COMMISSION_PERCENT)}% of the shopping receipt value.
+                                Client total includes this receipt value for the shopping items, plus the base service fee and {("shoppingCommissionPercent" in service ? (service.shoppingCommissionPercent ?? DEFAULT_SHOPPING_COMMISSION_PERCENT) : DEFAULT_SHOPPING_COMMISSION_PERCENT)}% service and delivery commission.
                               </FormDescription>
                               <FormMessage />
                             </FormItem>
@@ -2757,7 +2758,7 @@ export default function ServiceBooking() {
                             ? serviceMode === "errand-childcare"
                               ? "Mama Care package"
                               : serviceMode === "errand-shopping"
-                                ? "Base fee + commission"
+                                ? "Receipt + service"
                                 : serviceMode === "errand-laundry"
                                   ? "Base + laundry add-ons"
                                   : serviceMode === "errand-house-cleaning"
@@ -2813,7 +2814,7 @@ export default function ServiceBooking() {
 
                   {"basePrice" in service && serviceMode === "errand-shopping" && (
                     <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
-                      Each shopping trip = base service fee + {(service.shoppingCommissionPercent ?? DEFAULT_SHOPPING_COMMISSION_PERCENT)}% of the receipt value.
+                      Each shopping trip = receipt value + base service fee + {(service.shoppingCommissionPercent ?? DEFAULT_SHOPPING_COMMISSION_PERCENT)}% of the receipt value. The base fee and commission cover service and delivery.
                     </div>
                   )}
 

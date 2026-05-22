@@ -647,7 +647,7 @@ function getErrandPackagePrice(
   let packagePrice = errand.basePrice;
 
   if (mode === "errand-shopping") {
-    packagePrice += getErrandShoppingCommission(budgetAmount, errand.shoppingCommissionPercent);
+    packagePrice += Math.max(0, budgetAmount || 0) + getErrandShoppingCommission(budgetAmount, errand.shoppingCommissionPercent);
     return packagePrice;
   }
 

@@ -549,7 +549,7 @@ export default function Booking() {
 
     if (configured?.serviceMode === "errand-shopping") {
       const budgetAmount = configured.serviceBudgetAmount || 0;
-      return service.basePrice + Math.ceil((budgetAmount * (service.shoppingCommissionPercent ?? 5)) / 100);
+      return service.basePrice + budgetAmount + Math.ceil((budgetAmount * (service.shoppingCommissionPercent ?? 5)) / 100);
     }
 
     if (configured?.serviceMode === "errand-childcare" && hasHelpMamaPricing(service)) {
