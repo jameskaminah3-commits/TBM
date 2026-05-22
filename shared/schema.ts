@@ -1284,7 +1284,7 @@ export const errands = pgTable("errands", {
   location: text("location").notNull().default(""),
   basePrice: integer("base_price").notNull(),
   shoppingEnabled: boolean("shopping_enabled").notNull().default(false),
-  shoppingCommissionPercent: integer("shopping_commission_percent").notNull().default(10),
+  shoppingCommissionPercent: integer("shopping_commission_percent").notNull().default(5),
   laundryEnabled: boolean("laundry_enabled").notNull().default(false),
   houseCleaningEnabled: boolean("house_cleaning_enabled").notNull().default(false),
   laundryIncludedKg: integer("laundry_included_kg").notNull().default(0),

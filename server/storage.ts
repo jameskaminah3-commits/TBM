@@ -633,7 +633,7 @@ function getErrandShoppingCommission(budgetAmount: number | null | undefined, co
     return 0;
   }
 
-  return Math.ceil((safeBudget * (commissionPercent || 10)) / 100);
+  return Math.ceil((safeBudget * (commissionPercent ?? 5)) / 100);
 }
 
 function getErrandPackagePrice(
@@ -647,7 +647,7 @@ function getErrandPackagePrice(
   let packagePrice = errand.basePrice;
 
   if (mode === "errand-shopping") {
-    packagePrice += Math.max(0, budgetAmount || 0) + getErrandShoppingCommission(budgetAmount, errand.shoppingCommissionPercent);
+    packagePrice += getErrandShoppingCommission(budgetAmount, errand.shoppingCommissionPercent);
     return packagePrice;
   }
 
@@ -3880,7 +3880,7 @@ export class DatabaseStorage implements IStorage {
       columns.has("location") ? "location" : "''::text AS location",
       "base_price AS \"basePrice\"",
       columns.has("shopping_enabled") ? "shopping_enabled AS \"shoppingEnabled\"" : "false AS \"shoppingEnabled\"",
-      columns.has("shopping_commission_percent") ? "shopping_commission_percent AS \"shoppingCommissionPercent\"" : "10 AS \"shoppingCommissionPercent\"",
+      columns.has("shopping_commission_percent") ? "shopping_commission_percent AS \"shoppingCommissionPercent\"" : "5 AS \"shoppingCommissionPercent\"",
       columns.has("laundry_enabled") ? "laundry_enabled AS \"laundryEnabled\"" : "false AS \"laundryEnabled\"",
       columns.has("house_cleaning_enabled") ? "house_cleaning_enabled AS \"houseCleaningEnabled\"" : "false AS \"houseCleaningEnabled\"",
       columns.has("laundry_included_kg") ? "laundry_included_kg AS \"laundryIncludedKg\"" : "0 AS \"laundryIncludedKg\"",
@@ -3913,7 +3913,7 @@ export class DatabaseStorage implements IStorage {
       columns.has("location") ? "location" : "''::text AS location",
       "base_price AS \"basePrice\"",
       columns.has("shopping_enabled") ? "shopping_enabled AS \"shoppingEnabled\"" : "false AS \"shoppingEnabled\"",
-      columns.has("shopping_commission_percent") ? "shopping_commission_percent AS \"shoppingCommissionPercent\"" : "10 AS \"shoppingCommissionPercent\"",
+      columns.has("shopping_commission_percent") ? "shopping_commission_percent AS \"shoppingCommissionPercent\"" : "5 AS \"shoppingCommissionPercent\"",
       columns.has("laundry_enabled") ? "laundry_enabled AS \"laundryEnabled\"" : "false AS \"laundryEnabled\"",
       columns.has("house_cleaning_enabled") ? "house_cleaning_enabled AS \"houseCleaningEnabled\"" : "false AS \"houseCleaningEnabled\"",
       columns.has("laundry_included_kg") ? "laundry_included_kg AS \"laundryIncludedKg\"" : "0 AS \"laundryIncludedKg\"",

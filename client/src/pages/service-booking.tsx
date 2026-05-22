@@ -123,7 +123,7 @@ const serviceBookingFormSchema = insertBookingSchema.omit({
   serviceScheduleSlots: z.array(serviceScheduleSlotSchema).optional(),
   serviceBudgetAmount: z.preprocess(
     (val) => (val === "" || val == null ? undefined : val),
-    z.coerce.number().min(1, "Shopping budget must be at least 1").optional(),
+    z.coerce.number().min(1, "Estimated receipt value must be at least 1").optional(),
   ),
   serviceLaundryWeightKg: z.preprocess(
     (val) => (val === "" || val == null ? undefined : val),
@@ -235,7 +235,7 @@ const serviceBookingFormSchema = insertBookingSchema.omit({
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["serviceBudgetAmount"],
-      message: "Shopping budget is required",
+      message: "Estimated receipt value is required",
     });
   }
 
@@ -338,6 +338,22 @@ const helpMamaIncludedServices = [
   "Short clinic visit accompaniment when needed",
   "Light child-related support during your stay",
 ];
+
+const shoppingErrandHighlights = [
+  "Fresh groceries, pantry staples, drinks, and snacks",
+  "Household items, toiletries, and cleaning supplies",
+  "Pharmacy and personal care pick-ups",
+  "Villa, Airbnb, and apartment pre-arrival stocking",
+];
+
+const shoppingErrandTrustNotes = [
+  "Clear list confirmation",
+  "Receipt-based budget",
+  "Delivery to your address",
+];
+
+const DEFAULT_SHOPPING_COMMISSION_PERCENT = 5;
+
 type CarServiceMode = "car-chauffeur-day" | "car-chauffeur-hourly" | "car-self-drive-day";
 type CookServiceMode = typeof cookBookingModes[number];
 type ErrandServiceMode = "errand-base" | "errand-shopping" | "errand-laundry" | "errand-house-cleaning" | "errand-childcare";
@@ -434,7 +450,8 @@ function getErrandPackagePrice(
   serviceHours?: number | null,
 ): number {
   if (serviceMode === "errand-shopping") {
-    return service.basePrice + budgetAmount + Math.ceil((budgetAmount * (service.shoppingCommissionPercent || 10)) / 100);
+    const commissionPercent = service.shoppingCommissionPercent ?? DEFAULT_SHOPPING_COMMISSION_PERCENT;
+    return service.basePrice + Math.ceil((Math.max(0, budgetAmount) * commissionPercent) / 100);
   }
 
   if (serviceMode === "errand-laundry") {
@@ -497,12 +514,29 @@ function getDescriptionPreview(description: string, maxLength = 220): string {
   return `${preview.trimEnd()}...`;
 }
 
+function cleanPublicDescription(description: string): string {
+  return description
+    .replace(/\s+/g, " ")
+    .replace(/([.!?])(?=[A-Z0-9])/g, "$1 ")
+    .replace(/:([A-Z0-9])/g, ": $1")
+    .trim();
+}
+
+function getErrandMobileSummary(serviceMode: ServiceBookingMode | undefined, count: number): string {
+  if (count <= 0) return "Add dates to price this request";
+  if (serviceMode === "errand-shopping") return `${count} shopping run${count === 1 ? "" : "s"} selected`;
+  if (serviceMode === "errand-laundry") return `${count} laundry package${count === 1 ? "" : "s"} selected`;
+  if (serviceMode === "errand-house-cleaning") return `${count} cleaning package${count === 1 ? "" : "s"} selected`;
+  if (serviceMode === "errand-childcare") return `${count} Mama Care package${count === 1 ? "" : "s"} selected`;
+  return `${count} errand package${count === 1 ? "" : "s"} selected`;
+}
+
 export default function ServiceBooking() {
   const { serviceType, id } = useParams<{ serviceType: string; id: string }>();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
-  const { formatAmount, usdToKes, selectedCurrency, convertFromUsd, convertToUsd } = useCurrency();
+  const { formatAmount, formatDualAmount, usdToKes, selectedCurrency, convertFromUsd, convertToUsd } = useCurrency();
   const [hasRestoredPendingDraft, setHasRestoredPendingDraft] = React.useState(false);
   const [promoCode, setPromoCode] = React.useState("");
   const [isDescriptionExpanded, setIsDescriptionExpanded] = React.useState(false);
@@ -517,7 +551,8 @@ export default function ServiceBooking() {
 
   const service = useMemo(() => allServices?.find((s) => s.id === id), [allServices, id]);
   const isHelpMamaErrand = serviceType === "errand" && service && "basePrice" in service && hasHelpMamaPricing(service);
-  const serviceDescription = service?.description?.trim() ?? "";
+  const isShoppingErrand = serviceType === "errand" && service && "basePrice" in service && service.shoppingEnabled && !isHelpMamaErrand;
+  const serviceDescription = cleanPublicDescription(service?.description ?? "");
   const hasLongDescription = !isHelpMamaErrand && serviceDescription.length > 220;
   const visibleDescription = hasLongDescription && !isDescriptionExpanded
     ? getDescriptionPreview(serviceDescription)
@@ -744,6 +779,15 @@ export default function ServiceBooking() {
     if (requestedMode === "errand-childcare" && supportsChildcareErrand(service)) return;
 
     const currentMode = form.getValues("serviceMode");
+    if (currentMode === "errand-base" && service.shoppingEnabled && !hasHelpMamaPricing(service)) {
+      form.setValue("serviceMode", "errand-shopping", {
+        shouldDirty: false,
+        shouldTouch: false,
+        shouldValidate: false,
+      });
+      return;
+    }
+
     if (currentMode !== "errand-base" || !hasHelpMamaPricing(service)) {
       return;
     }
@@ -1212,9 +1256,7 @@ export default function ServiceBooking() {
     : 0;
   const mobileBookingSummary = (() => {
     if (serviceType === "errand") {
-      return errandPackageCount > 0
-        ? `${errandPackageCount} package${errandPackageCount === 1 ? "" : "s"} selected`
-        : "Add package dates to price this request";
+      return getErrandMobileSummary(serviceMode, errandPackageCount);
     }
 
     if (serviceType === "car" && serviceMode === "car-chauffeur-hourly") {
@@ -1313,9 +1355,10 @@ export default function ServiceBooking() {
   const showSelfDriveOption = serviceType === "car" && "pricePerDay" in service && !!service.pricePerDay;
   const showZoneSelector = serviceType === "car" && "chauffeurZones" in service && service.chauffeurZones.length > 0;
   const showCookCustomMenu = serviceType === "cook" && "customMenuEnabled" in service && service.customMenuEnabled;
+  const serviceFeatureBadges = "features" in service ? service.features.filter(Boolean).slice(0, 4) : [];
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen overflow-x-hidden bg-background">
       <div className="container mx-auto px-4 py-8 pb-28 lg:pb-8">
         <div className="max-w-4xl mx-auto">
           <Button
@@ -1330,7 +1373,7 @@ export default function ServiceBooking() {
 
           <div className="grid gap-6 lg:grid-cols-3 lg:gap-8">
             <div className="lg:col-span-2">
-              <Card className="p-5 sm:p-6">
+              <Card className="min-w-0 p-4 sm:p-6">
                 <div className="mb-6">
                   <div className="mb-4 flex items-start gap-3 sm:gap-4">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-primary/10 sm:h-12 sm:w-12">
@@ -1366,6 +1409,63 @@ export default function ServiceBooking() {
                               </Badge>
                             ))}
                           </div>
+                        </div>
+                      ) : isShoppingErrand && "basePrice" in service ? (
+                        <div className="mt-3 space-y-4">
+                          <p className="text-sm leading-6 text-muted-foreground sm:text-base sm:leading-7">
+                            Send your list and budget. A local shopper picks up groceries, household essentials, or pharmacy items,
+                            keeps the receipt trail clear, and delivers to {"location" in service && service.location ? `${service.location} or nearby addresses` : "your preferred address"}.
+                          </p>
+
+                          <div className="grid gap-2 text-sm sm:grid-cols-2">
+                            {shoppingErrandHighlights.map((item) => (
+                              <div key={item} className="flex min-w-0 items-start gap-2 text-muted-foreground">
+                                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                                <span className="leading-5">{item}</span>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="grid gap-3 rounded-md border border-primary/15 bg-primary/5 p-3 text-sm sm:grid-cols-3">
+                            <div>
+                              <div className="font-semibold text-foreground">Base Service Fee</div>
+                              <div className="mt-1 text-muted-foreground">{formatDualAmount(service.basePrice)} per shopping trip</div>
+                            </div>
+                            <div>
+                              <div className="font-semibold text-foreground">Variable Commission</div>
+                              <div className="mt-1 text-muted-foreground">{service.shoppingCommissionPercent ?? DEFAULT_SHOPPING_COMMISSION_PERCENT}% of the receipt value</div>
+                            </div>
+                            <div>
+                              <div className="font-semibold text-foreground">Receipt Value</div>
+                              <div className="mt-1 text-muted-foreground">Used only to calculate the commission</div>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap gap-2">
+                            {[...shoppingErrandTrustNotes, ...serviceFeatureBadges].slice(0, 6).map((item) => (
+                              <Badge key={item} variant="secondary" className="rounded-md">
+                                {item}
+                              </Badge>
+                            ))}
+                          </div>
+
+                          {serviceDescription ? (
+                            <div>
+                              {isDescriptionExpanded ? (
+                                <p className="text-sm leading-6 text-muted-foreground">
+                                  {serviceDescription}
+                                </p>
+                              ) : null}
+                              <button
+                                type="button"
+                                onClick={() => setIsDescriptionExpanded((current) => !current)}
+                                className="mt-1 inline-flex items-center text-sm font-medium text-primary underline-offset-4 transition-colors hover:text-primary/80 hover:underline"
+                                aria-expanded={isDescriptionExpanded}
+                              >
+                                {isDescriptionExpanded ? "Hide listing note" : "Read listing note"}
+                              </button>
+                            </div>
+                          ) : null}
                         </div>
                       ) : serviceDescription ? (
                         <>
@@ -1670,7 +1770,7 @@ export default function ServiceBooking() {
                                 onValueChange={field.onChange}
                                 className="space-y-3"
                               >
-                                {!hasHelpMamaPricing(service) ? (
+                                {!hasHelpMamaPricing(service) && !service.shoppingEnabled ? (
                                   <label className="flex items-start gap-3 rounded-lg border p-4 cursor-pointer">
                                     <RadioGroupItem value="errand-base" className="mt-1" />
                                     <div>
@@ -1686,9 +1786,9 @@ export default function ServiceBooking() {
                                   <label className="flex items-start gap-3 rounded-lg border p-4 cursor-pointer">
                                     <RadioGroupItem value="errand-shopping" className="mt-1" />
                                     <div>
-                                      <div className="font-medium">Shopping</div>
+                                      <div className="font-medium">Grocery and personal shopping</div>
                                       <div className="text-sm text-muted-foreground">
-                                        Base fee + shopping budget + {service.shoppingCommissionPercent}% service charge
+                                        Base service fee + {(service.shoppingCommissionPercent ?? DEFAULT_SHOPPING_COMMISSION_PERCENT)}% receipt-based commission
                                       </div>
                                     </div>
                                   </label>
@@ -1872,7 +1972,7 @@ export default function ServiceBooking() {
                         name="serviceScheduleSlots"
                         render={() => (
                           <FormItem className="space-y-4">
-                            <div className="flex items-start justify-between gap-4">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                               <div>
                                 <FormLabel>Package Dates</FormLabel>
                                 <FormDescription>
@@ -1884,6 +1984,7 @@ export default function ServiceBooking() {
                                 variant="outline"
                                 size="sm"
                                 onClick={() => appendErrandSlot({ date: "", note: "" })}
+                                className="w-full sm:w-auto"
                               >
                                 <Plus className="mr-2 h-4 w-4" />
                                 Add Package
@@ -2158,7 +2259,7 @@ export default function ServiceBooking() {
                           name="serviceBudgetAmount"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>{selectedCurrency === "KES" ? "Shopping Budget (KSh)" : "Shopping Budget (USD)"}</FormLabel>
+                              <FormLabel>{selectedCurrency === "KES" ? "Estimated Receipt Value (KSh)" : "Estimated Receipt Value (USD)"}</FormLabel>
                               <FormControl>
                                 <Input
                                   type="number"
@@ -2182,7 +2283,7 @@ export default function ServiceBooking() {
                                 />
                               </FormControl>
                               <FormDescription>
-                                You will be charged the base service fee, the full shopping budget, and the {("shoppingCommissionPercent" in service ? service.shoppingCommissionPercent : 10)}% shopping service charge.
+                                Your service charge is the base service fee plus {("shoppingCommissionPercent" in service ? (service.shoppingCommissionPercent ?? DEFAULT_SHOPPING_COMMISSION_PERCENT) : DEFAULT_SHOPPING_COMMISSION_PERCENT)}% of the shopping receipt value.
                               </FormDescription>
                               <FormMessage />
                             </FormItem>
@@ -2521,7 +2622,7 @@ export default function ServiceBooking() {
             </div>
 
             <div className="lg:col-span-1">
-              <Card className="p-5 sm:p-6 lg:sticky lg:top-8">
+              <Card className="min-w-0 p-4 sm:p-6 lg:sticky lg:top-8">
                 <h3 className="font-semibold text-lg mb-4">Booking Summary</h3>
 
                 <div className="space-y-4">
@@ -2655,18 +2756,18 @@ export default function ServiceBooking() {
                           : serviceType === "errand"
                             ? serviceMode === "errand-childcare"
                               ? "Mama Care package"
-                              : "Price per package"
+                              : serviceMode === "errand-shopping"
+                                ? "Base fee + commission"
+                                : serviceMode === "errand-laundry"
+                                  ? "Base + laundry add-ons"
+                                  : serviceMode === "errand-house-cleaning"
+                                    ? "Base + cleaning add-ons"
+                                    : "Price per package"
                             : "experienceType" in service
                               ? serviceMode === "experience-shared"
                                 ? "Shared price per person"
                                 : "Private price per person"
-                            : serviceMode === "errand-shopping"
-                              ? "Base fee + budget + commission"
-                              : serviceMode === "errand-laundry"
-                                ? "Base package + laundry add-ons"
-                                : serviceMode === "errand-house-cleaning"
-                                  ? "Base package + cleaning add-ons"
-                                  : "Base service fee"}
+                              : "Base service fee"}
                     </span>
                     <span className="font-medium" data-testid="text-summary-unit-price">
                       {"pricePerSession" in service && serviceMode === "cook-custom-menu" ? (
@@ -2712,7 +2813,7 @@ export default function ServiceBooking() {
 
                   {"basePrice" in service && serviceMode === "errand-shopping" && (
                     <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
-                      Each package = base fee + customer budget + {service.shoppingCommissionPercent}% service charge.
+                      Each shopping trip = base service fee + {(service.shoppingCommissionPercent ?? DEFAULT_SHOPPING_COMMISSION_PERCENT)}% of the receipt value.
                     </div>
                   )}
 

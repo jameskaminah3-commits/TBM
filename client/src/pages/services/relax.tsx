@@ -145,11 +145,11 @@ export default function RelaxPage() {
                       primaryClassName="text-lg font-semibold tracking-tight"
                     />
                     <p className="text-sm text-muted-foreground">
-                      {usesHelpMamaPricing ? "starting Mama Care rate" : "base service fee"}
+                      {usesHelpMamaPricing ? "starting Mama Care rate" : errand.shoppingEnabled ? "base service fee per shopping trip" : "base service fee"}
                     </p>
                     <div className="mt-2 space-y-1 text-xs text-muted-foreground">
                       {errand.shoppingEnabled ? (
-                        <div>Shopping: budget + {errand.shoppingCommissionPercent}% service charge</div>
+                        <div>Variable commission: {(errand.shoppingCommissionPercent ?? 5)}% of receipt value</div>
                       ) : null}
                     </div>
                   </div>

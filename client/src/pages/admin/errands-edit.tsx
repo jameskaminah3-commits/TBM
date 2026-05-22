@@ -106,7 +106,7 @@ export default function AdminErrandsEdit() {
       location: "",
       basePrice: 0,
       shoppingEnabled: false,
-      shoppingCommissionPercent: 10,
+      shoppingCommissionPercent: 5,
       laundryEnabled: false,
       houseCleaningEnabled: false,
       laundryIncludedKg: 0,
@@ -332,7 +332,7 @@ export default function AdminErrandsEdit() {
                         <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
                           <div className="space-y-1">
                             <FormLabel>Shopping Mode</FormLabel>
-                            <FormDescription>Charge shopping budget plus a commission.</FormDescription>
+                            <FormDescription>Charge the base service fee plus receipt-based commission.</FormDescription>
                           </div>
                           <FormControl>
                             <Checkbox checked={field.value} onCheckedChange={field.onChange} />
@@ -380,9 +380,9 @@ export default function AdminErrandsEdit() {
                         <FormItem>
                           <FormLabel>Shopping Commission %</FormLabel>
                           <FormControl>
-                            <Input type="number" min="0" max="100" placeholder="10" {...field} />
+                            <Input type="number" min="0" max="100" placeholder="5" {...field} />
                           </FormControl>
-                          <FormDescription>Usually 10% of the customer shopping budget.</FormDescription>
+                          <FormDescription>Usually 5% of the final shopping receipt value.</FormDescription>
                           <FormMessage />
                         </FormItem>
                       )}

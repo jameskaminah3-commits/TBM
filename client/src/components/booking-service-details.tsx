@@ -157,7 +157,7 @@ export function BookingServiceDetails({
             selection.category === "cars" && selection.serviceStartTime ? `Start time: ${formatTime(selection.serviceStartTime) || selection.serviceStartTime}` : null,
             selection.category === "cooks" && selection.serviceLocation ? `Service location: ${selection.serviceLocation}` : null,
             selection.category === "errands" && selection.serviceLocation ? `Service location: ${selection.serviceLocation}` : null,
-            selection.category === "errands" && selection.serviceMode === "errand-shopping" && selection.serviceBudgetAmount ? `Shopping budget: ${formatAmount(selection.serviceBudgetAmount)}` : null,
+            selection.category === "errands" && selection.serviceMode === "errand-shopping" && selection.serviceBudgetAmount ? `Estimated receipt value: ${formatAmount(selection.serviceBudgetAmount)}` : null,
             selection.category === "errands" && addonNames.length ? `Selected add-ons: ${addonNames.join(", ")}` : null,
             selection.category === "experiences" && selection.serviceMode === "experience-shared" ? "Shared departure selected" : null,
           ].filter(Boolean);

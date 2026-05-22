@@ -2308,7 +2308,7 @@ export default function ProviderDashboard() {
                     ) : null}
                     {getAssignmentServiceMode(booking) === "errand-shopping" && getAssignmentBudgetAmount(booking) ? (
                       <div className="text-sm text-muted-foreground">
-                        Shopping budget: <span className="font-medium text-foreground">{formatAmount(getAssignmentBudgetAmount(booking) ?? 0)}</span>
+                        Estimated receipt value: <span className="font-medium text-foreground">{formatAmount(getAssignmentBudgetAmount(booking) ?? 0)}</span>
                       </div>
                     ) : null}
                       <BookingThread

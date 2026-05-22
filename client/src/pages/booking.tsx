@@ -197,7 +197,7 @@ function getSupportedModes(service: ConciergeService): string[] {
 
   if (service.category === "errands") {
     return [
-      ...(hasHelpMamaPricing(service) ? [] : ["errand-base"]),
+      ...(hasHelpMamaPricing(service) || service.shoppingEnabled ? [] : ["errand-base"]),
       ...(service.shoppingEnabled ? ["errand-shopping"] : []),
       ...(service.laundryEnabled ? ["errand-laundry"] : []),
       ...(service.houseCleaningEnabled ? ["errand-house-cleaning"] : []),
@@ -549,7 +549,7 @@ export default function Booking() {
 
     if (configured?.serviceMode === "errand-shopping") {
       const budgetAmount = configured.serviceBudgetAmount || 0;
-      return service.basePrice + budgetAmount + Math.ceil((budgetAmount * (service.shoppingCommissionPercent || 10)) / 100);
+      return service.basePrice + Math.ceil((budgetAmount * (service.shoppingCommissionPercent ?? 5)) / 100);
     }
 
     if (configured?.serviceMode === "errand-childcare" && hasHelpMamaPricing(service)) {
@@ -2025,7 +2025,7 @@ export default function Booking() {
 
                 {draftSelection.serviceMode === "errand-shopping" ? (
                   <div className="space-y-2">
-                    <Label>Shopping budget</Label>
+                    <Label>Estimated receipt value</Label>
                     <Input
                       type="number"
                       min="1"

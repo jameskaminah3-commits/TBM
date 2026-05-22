@@ -84,7 +84,7 @@ export default function ProviderErrandEdit() {
       location: "",
       basePrice: 0,
       shoppingEnabled: false,
-      shoppingCommissionPercent: 10,
+      shoppingCommissionPercent: 5,
       laundryEnabled: false,
       houseCleaningEnabled: false,
       laundryIncludedKg: 0,
@@ -189,7 +189,7 @@ export default function ProviderErrandEdit() {
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
                   <FormField control={form.control} name="shoppingEnabled" render={({ field }) => (
-                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4"><div><FormLabel>Shopping</FormLabel><FormDescription>Budget plus service charge.</FormDescription></div><FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem>
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4"><div><FormLabel>Shopping</FormLabel><FormDescription>Base service fee plus receipt-based commission.</FormDescription></div><FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem>
                   )} />
                   <FormField control={form.control} name="shoppingCommissionPercent" render={({ field }) => (
                     <FormItem><FormLabel>Shopping Commission %</FormLabel><FormControl><Input type="number" min="0" max="100" {...field} /></FormControl><FormMessage /></FormItem>
