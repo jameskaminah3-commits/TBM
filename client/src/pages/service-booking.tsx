@@ -339,21 +339,6 @@ const helpMamaIncludedServices = [
   "Light child-related support during your stay",
 ];
 
-const shoppingErrandHighlights = [
-  "Fresh groceries, pantry staples, drinks, and snacks",
-  "Household items, toiletries, and cleaning supplies",
-  "Pharmacy and personal care pick-ups",
-  "Villa, Airbnb, and apartment pre-arrival stocking",
-];
-
-const shoppingErrandTrustNotes = [
-  "Clear list confirmation",
-  "Receipt-based budget",
-  "Delivery to your address",
-];
-
-const DEFAULT_SHOPPING_COMMISSION_PERCENT = 5;
-
 type CarServiceMode = "car-chauffeur-day" | "car-chauffeur-hourly" | "car-self-drive-day";
 type CookServiceMode = typeof cookBookingModes[number];
 type ErrandServiceMode = "errand-base" | "errand-shopping" | "errand-laundry" | "errand-house-cleaning" | "errand-childcare";
@@ -450,9 +435,8 @@ function getErrandPackagePrice(
   serviceHours?: number | null,
 ): number {
   if (serviceMode === "errand-shopping") {
-    const commissionPercent = service.shoppingCommissionPercent ?? DEFAULT_SHOPPING_COMMISSION_PERCENT;
     const receiptValue = Math.max(0, budgetAmount);
-    return service.basePrice + receiptValue + Math.ceil((receiptValue * commissionPercent) / 100);
+    return service.basePrice + receiptValue + Math.ceil((receiptValue * service.shoppingCommissionPercent) / 100);
   }
 
   if (serviceMode === "errand-laundry") {
@@ -1413,19 +1397,22 @@ export default function ServiceBooking() {
                         </div>
                       ) : isShoppingErrand && "basePrice" in service ? (
                         <div className="mt-3 space-y-4">
-                          <p className="text-sm leading-6 text-muted-foreground sm:text-base sm:leading-7">
-                            Send your list and budget. A local shopper picks up groceries, household essentials, or pharmacy items,
-                            keeps the receipt trail clear, and delivers to {"location" in service && service.location ? `${service.location} or nearby addresses` : "your preferred address"}.
-                          </p>
+                          {serviceDescription ? (
+                            <p className="text-sm leading-6 text-muted-foreground sm:text-base sm:leading-7">
+                              {visibleDescription}
+                            </p>
+                          ) : null}
 
-                          <div className="grid gap-2 text-sm sm:grid-cols-2">
-                            {shoppingErrandHighlights.map((item) => (
-                              <div key={item} className="flex min-w-0 items-start gap-2 text-muted-foreground">
-                                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                                <span className="leading-5">{item}</span>
-                              </div>
-                            ))}
-                          </div>
+                          {serviceFeatureBadges.length ? (
+                            <div className="grid gap-2 text-sm sm:grid-cols-2">
+                              {serviceFeatureBadges.map((item) => (
+                                <div key={item} className="flex min-w-0 items-start gap-2 text-muted-foreground">
+                                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                                  <span className="leading-5">{item}</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
 
                           <div className="grid gap-3 rounded-md border border-primary/15 bg-primary/5 p-3 text-sm sm:grid-cols-3">
                             <div>
@@ -1434,7 +1421,7 @@ export default function ServiceBooking() {
                             </div>
                             <div>
                               <div className="font-semibold text-foreground">Variable Commission</div>
-                              <div className="mt-1 text-muted-foreground">{service.shoppingCommissionPercent ?? DEFAULT_SHOPPING_COMMISSION_PERCENT}% of the receipt value</div>
+                              <div className="mt-1 text-muted-foreground">{service.shoppingCommissionPercent}% of the receipt value</div>
                             </div>
                             <div>
                               <div className="font-semibold text-foreground">Receipt Value</div>
@@ -1442,30 +1429,15 @@ export default function ServiceBooking() {
                             </div>
                           </div>
 
-                          <div className="flex flex-wrap gap-2">
-                            {[...shoppingErrandTrustNotes, ...serviceFeatureBadges].slice(0, 6).map((item) => (
-                              <Badge key={item} variant="secondary" className="rounded-md">
-                                {item}
-                              </Badge>
-                            ))}
-                          </div>
-
-                          {serviceDescription ? (
-                            <div>
-                              {isDescriptionExpanded ? (
-                                <p className="text-sm leading-6 text-muted-foreground">
-                                  {serviceDescription}
-                                </p>
-                              ) : null}
-                              <button
-                                type="button"
-                                onClick={() => setIsDescriptionExpanded((current) => !current)}
-                                className="mt-1 inline-flex items-center text-sm font-medium text-primary underline-offset-4 transition-colors hover:text-primary/80 hover:underline"
-                                aria-expanded={isDescriptionExpanded}
-                              >
-                                {isDescriptionExpanded ? "Hide listing note" : "Read listing note"}
-                              </button>
-                            </div>
+                          {hasLongDescription ? (
+                            <button
+                              type="button"
+                              onClick={() => setIsDescriptionExpanded((current) => !current)}
+                              className="mt-1 inline-flex items-center text-sm font-medium text-primary underline-offset-4 transition-colors hover:text-primary/80 hover:underline"
+                              aria-expanded={isDescriptionExpanded}
+                            >
+                              {isDescriptionExpanded ? "Show less" : "Show more"}
+                            </button>
                           ) : null}
                         </div>
                       ) : serviceDescription ? (
@@ -1789,7 +1761,7 @@ export default function ServiceBooking() {
                                     <div>
                                       <div className="font-medium">Grocery and personal shopping</div>
                                       <div className="text-sm text-muted-foreground">
-                                        Base service fee + {(service.shoppingCommissionPercent ?? DEFAULT_SHOPPING_COMMISSION_PERCENT)}% receipt-based commission
+                                        Base service fee + {service.shoppingCommissionPercent}% receipt-based commission
                                       </div>
                                     </div>
                                   </label>
@@ -2284,7 +2256,7 @@ export default function ServiceBooking() {
                                 />
                               </FormControl>
                               <FormDescription>
-                                Client total includes this receipt value for the shopping items, plus the base service fee and {("shoppingCommissionPercent" in service ? (service.shoppingCommissionPercent ?? DEFAULT_SHOPPING_COMMISSION_PERCENT) : DEFAULT_SHOPPING_COMMISSION_PERCENT)}% service and delivery commission.
+                                Client total includes this receipt value for the shopping items, plus the base service fee and {("shoppingCommissionPercent" in service ? service.shoppingCommissionPercent : 0)}% service and delivery commission.
                               </FormDescription>
                               <FormMessage />
                             </FormItem>
@@ -2814,7 +2786,7 @@ export default function ServiceBooking() {
 
                   {"basePrice" in service && serviceMode === "errand-shopping" && (
                     <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
-                      Each shopping trip = receipt value + base service fee + {(service.shoppingCommissionPercent ?? DEFAULT_SHOPPING_COMMISSION_PERCENT)}% of the receipt value. The base fee and commission cover service and delivery.
+                      Each shopping trip = receipt value + base service fee + {service.shoppingCommissionPercent}% of the receipt value. The base fee and commission cover service and delivery.
                     </div>
                   )}
 

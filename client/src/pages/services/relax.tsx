@@ -149,7 +149,7 @@ export default function RelaxPage() {
                     </p>
                     <div className="mt-2 space-y-1 text-xs text-muted-foreground">
                       {errand.shoppingEnabled ? (
-                        <div>Total adds receipt value + {(errand.shoppingCommissionPercent ?? 5)}% service and delivery commission</div>
+                        <div>Total adds receipt value + {errand.shoppingCommissionPercent}% service and delivery commission</div>
                       ) : null}
                     </div>
                   </div>

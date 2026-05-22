@@ -319,7 +319,7 @@ export default function AdminErrandsNew() {
                           <FormControl>
                             <Input type="number" min="0" max="100" placeholder="5" {...field} />
                           </FormControl>
-                          <FormDescription>Usually 5% of the final shopping receipt value.</FormDescription>
+                          <FormDescription>Percentage applied to the final shopping receipt value.</FormDescription>
                           <FormMessage />
                         </FormItem>
                       )}

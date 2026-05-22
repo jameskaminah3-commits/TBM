@@ -1051,7 +1051,7 @@ async function validateAccommodationAddonSelections(params: {
           if (!selection.serviceRequestDetails?.trim()) {
             throw new Error(`Add a shopping list or brief for "${errand.serviceName}".`);
           }
-          packagePrice = errand.basePrice + budgetAmount + Math.ceil((budgetAmount * (errand.shoppingCommissionPercent ?? 5)) / 100);
+          packagePrice = errand.basePrice + budgetAmount + Math.ceil((budgetAmount * errand.shoppingCommissionPercent) / 100);
         } else if (mode === "errand-laundry") {
           const selectedAddons = (selection.serviceAddonSelections || []).filter((addonId) =>
             (errand.laundryAddons || []).some((addon) => addon.id === addonId),
@@ -3302,7 +3302,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   return res.status(400).json({ error: "Estimated shopping receipt value is required." });
                 }
 
-                packagePrice = errand.basePrice + budgetAmount + Math.ceil((budgetAmount * (errand.shoppingCommissionPercent ?? 5)) / 100);
+                packagePrice = errand.basePrice + budgetAmount + Math.ceil((budgetAmount * errand.shoppingCommissionPercent) / 100);
               } else if (serviceMode === "errand-laundry") {
                 if (!errand.laundryEnabled) {
                   return res.status(400).json({ error: "Laundry pricing is not available for this errand." });
