@@ -317,6 +317,19 @@ type ServiceBookingSubmission = ServiceBookingFormValues & {
   promoCode?: string | null;
   marketingAttribution?: MarketingAttributionPayload;
 };
+
+function normalizeOptionalIntegerAmount(value: number | null | undefined) {
+  if (value == null) {
+    return undefined;
+  }
+
+  if (!Number.isFinite(value)) {
+    return undefined;
+  }
+
+  return Math.max(1, Math.round(value));
+}
+
 type BookingCheckoutResponse = {
   payment?: {
     redirectUrl?: string | null;
@@ -1076,6 +1089,7 @@ export default function ServiceBooking() {
       ...values,
       checkIn: normalizedCheckIn,
       checkOut: normalizedCheckOut,
+      serviceBudgetAmount: normalizeOptionalIntegerAmount(values.serviceBudgetAmount),
       promoCode: nextPromoCode,
       marketingAttribution: getMarketingAttributionPayload({
         landingPath: getCurrentBookingPath(),
