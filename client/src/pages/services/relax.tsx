@@ -81,6 +81,13 @@ export default function RelaxPage() {
           {errandListings.map((errand) => {
             const usesHelpMamaPricing = hasHelpMamaPricing(errand);
             const displayPrice = usesHelpMamaPricing ? getHelpMamaStartingPrice(errand.helpMamaPricing) : errand.basePrice;
+            const priceLabel = usesHelpMamaPricing
+              ? "starting Mama Care rate"
+              : errand.laundryEnabled && !errand.shoppingEnabled
+                ? "laundry package"
+                : errand.shoppingEnabled
+                  ? "service fee per shopping trip"
+                  : "service package";
             return (
               <Card
                 key={errand.id}
@@ -145,7 +152,7 @@ export default function RelaxPage() {
                       primaryClassName="text-lg font-semibold tracking-tight"
                     />
                     <p className="text-sm text-muted-foreground">
-                      {usesHelpMamaPricing ? "starting Mama Care rate" : errand.shoppingEnabled ? "base service fee per shopping trip" : "base service fee"}
+                      {priceLabel}
                     </p>
                     <div className="mt-2 space-y-1 text-xs text-muted-foreground">
                       {errand.shoppingEnabled ? (

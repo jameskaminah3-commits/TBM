@@ -786,6 +786,15 @@ export default function ServiceBooking() {
       return;
     }
 
+    if (currentMode === "errand-base" && service.laundryEnabled && !hasHelpMamaPricing(service)) {
+      form.setValue("serviceMode", "errand-laundry", {
+        shouldDirty: false,
+        shouldTouch: false,
+        shouldValidate: false,
+      });
+      return;
+    }
+
     if (currentMode !== "errand-base" || !hasHelpMamaPricing(service)) {
       return;
     }
@@ -1757,7 +1766,7 @@ export default function ServiceBooking() {
                                 onValueChange={field.onChange}
                                 className="space-y-3"
                               >
-                                {!hasHelpMamaPricing(service) && !service.shoppingEnabled ? (
+                                {!hasHelpMamaPricing(service) && !service.shoppingEnabled && !service.laundryEnabled ? (
                                   <label className="flex items-start gap-3 rounded-lg border p-4 cursor-pointer">
                                     <RadioGroupItem value="errand-base" className="mt-1" />
                                     <div>
@@ -1787,7 +1796,7 @@ export default function ServiceBooking() {
                                     <div>
                                       <div className="font-medium">Laundry</div>
                                       <div className="text-sm text-muted-foreground">
-                                        Base package plus any laundry add-ons you select
+                                        Laundry package with optional add-ons
                                       </div>
                                     </div>
                                   </label>
@@ -2746,7 +2755,7 @@ export default function ServiceBooking() {
                               : serviceMode === "errand-shopping"
                                 ? "Receipt + service"
                                 : serviceMode === "errand-laundry"
-                                  ? "Base + laundry add-ons"
+                                  ? "Laundry package"
                                   : serviceMode === "errand-house-cleaning"
                                     ? "Base + cleaning add-ons"
                                     : "Price per package"
@@ -2806,7 +2815,7 @@ export default function ServiceBooking() {
 
                   {"basePrice" in service && serviceMode === "errand-laundry" && (
                     <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
-                      Each laundry package = base package + the laundry add-ons you select.
+                      Each laundry package includes the service fee. Optional add-ons are added only when selected.
                     </div>
                   )}
 
