@@ -32,11 +32,13 @@ import {
 } from "@shared/cook-pricing";
 import {
   calculateHelpMamaPackagePrice,
+  calculateHouseCleaningPackagePrice,
   HELP_MAMA_HOURLY_MINIMUM_HOURS,
   getHelpMamaAgeBandId,
   getHelpMamaRateId,
   getHelpMamaRateOptions,
   getHelpMamaStartingPrice,
+  getHouseCleaningBedroomCount,
   hasHelpMamaPricing,
   isHelpMamaHourlyRate,
   normalizeHelpMamaPricing,
@@ -266,6 +268,14 @@ const serviceBookingFormSchema = insertBookingSchema.omit({
     }
   }
 
+  if (value.serviceMode === "errand-house-cleaning" && (!value.serviceHours || value.serviceHours < 1)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["serviceHours"],
+      message: "Add the number of bedrooms or rooms to clean",
+    });
+  }
+
   if (value.serviceMode?.startsWith("errand-")) {
     if (!value.serviceLocation?.trim()) {
       ctx.addIssue({
@@ -458,8 +468,7 @@ function getErrandPackagePrice(
   }
 
   if (serviceMode === "errand-house-cleaning") {
-    const selectedAddons = (service.houseCleaningAddons || []).filter((addon) => addonSelections.includes(addon.id));
-    return service.basePrice + selectedAddons.reduce((sum, addon) => sum + addon.price, 0);
+    return calculateHouseCleaningPackagePrice(service, addonSelections, serviceHours);
   }
 
   if (serviceMode === "errand-childcare" && hasHelpMamaPricing(service)) {
@@ -524,7 +533,7 @@ function getErrandMobileSummary(serviceMode: ServiceBookingMode | undefined, cou
   if (count <= 0) return "Add dates to price this request";
   if (serviceMode === "errand-shopping") return `${count} shopping run${count === 1 ? "" : "s"} selected`;
   if (serviceMode === "errand-laundry") return `${count} laundry package${count === 1 ? "" : "s"} selected`;
-  if (serviceMode === "errand-house-cleaning") return `${count} cleaning package${count === 1 ? "" : "s"} selected`;
+  if (serviceMode === "errand-house-cleaning") return `${count} cleaning visit${count === 1 ? "" : "s"} selected`;
   if (serviceMode === "errand-childcare") return `${count} Mama Care package${count === 1 ? "" : "s"} selected`;
   return `${count} errand package${count === 1 ? "" : "s"} selected`;
 }
@@ -550,6 +559,7 @@ export default function ServiceBooking() {
   const service = useMemo(() => allServices?.find((s) => s.id === id), [allServices, id]);
   const isHelpMamaErrand = serviceType === "errand" && service && "basePrice" in service && hasHelpMamaPricing(service);
   const isShoppingErrand = serviceType === "errand" && service && "basePrice" in service && service.shoppingEnabled && !isHelpMamaErrand;
+  const isHouseCleaningErrand = serviceType === "errand" && service && "basePrice" in service && service.houseCleaningEnabled && !isHelpMamaErrand && !isShoppingErrand;
   const serviceDescription = cleanPublicDescription(service?.description ?? "");
   const hasLongDescription = !isHelpMamaErrand && serviceDescription.length > 220;
   const visibleDescription = hasLongDescription && !isDescriptionExpanded
@@ -795,6 +805,15 @@ export default function ServiceBooking() {
       return;
     }
 
+    if (currentMode === "errand-base" && service.houseCleaningEnabled && !hasHelpMamaPricing(service)) {
+      form.setValue("serviceMode", "errand-house-cleaning", {
+        shouldDirty: false,
+        shouldTouch: false,
+        shouldValidate: false,
+      });
+      return;
+    }
+
     if (currentMode !== "errand-base" || !hasHelpMamaPricing(service)) {
       return;
     }
@@ -918,7 +937,9 @@ export default function ServiceBooking() {
       }
 
       const selectedHelpMamaRateId = getHelpMamaRateId(form.getValues("serviceAddonSelections"));
-      if (serviceMode !== "errand-childcare" || !isHelpMamaHourlyRate(selectedHelpMamaRateId)) {
+      if (serviceMode === "errand-house-cleaning" && !form.getValues("serviceHours")) {
+        form.setValue("serviceHours", 1, { shouldDirty: false, shouldTouch: false, shouldValidate: false });
+      } else if (serviceMode !== "errand-house-cleaning" && (serviceMode !== "errand-childcare" || !isHelpMamaHourlyRate(selectedHelpMamaRateId))) {
         form.setValue("serviceHours", undefined);
       }
 
@@ -1247,6 +1268,7 @@ export default function ServiceBooking() {
   const days = calculateDays(form.watch("checkIn"), form.watch("checkOut"));
   const guestsCount = form.watch("guests") || 0;
   const serviceHours = form.watch("serviceHours") || 0;
+  const houseCleaningBedrooms = serviceMode === "errand-house-cleaning" ? getHouseCleaningBedroomCount(serviceHours) : 1;
   const errandPackageCount = serviceType === "errand"
     ? (watchedErrandSlots || []).filter((slot) => slot?.date).length
     : 0;
@@ -1462,6 +1484,24 @@ export default function ServiceBooking() {
                               {isDescriptionExpanded ? "Show less" : "Show more"}
                             </button>
                           ) : null}
+                        </div>
+                      ) : isHouseCleaningErrand && "basePrice" in service ? (
+                        <div className="mt-3 space-y-4">
+                          {serviceDescription ? (
+                            <p className="text-sm leading-6 text-muted-foreground sm:text-base sm:leading-7">
+                              {visibleDescription}
+                            </p>
+                          ) : null}
+                          <div className="grid gap-3 rounded-md border border-primary/15 bg-primary/5 p-3 text-sm sm:grid-cols-2">
+                            <div>
+                              <div className="font-semibold text-foreground">Studio / 1-bedroom rate</div>
+                              <div className="mt-1 text-muted-foreground">{formatDualAmount(service.basePrice)} per cleaning visit</div>
+                            </div>
+                            <div>
+                              <div className="font-semibold text-foreground">Bedroom based pricing</div>
+                              <div className="mt-1 text-muted-foreground">Guests enter bedrooms and selected add-ons update the total instantly.</div>
+                            </div>
+                          </div>
                         </div>
                       ) : serviceDescription ? (
                         <>
@@ -1766,7 +1806,7 @@ export default function ServiceBooking() {
                                 onValueChange={field.onChange}
                                 className="space-y-3"
                               >
-                                {!hasHelpMamaPricing(service) && !service.shoppingEnabled && !service.laundryEnabled ? (
+                                {!hasHelpMamaPricing(service) && !service.shoppingEnabled && !service.laundryEnabled && !service.houseCleaningEnabled ? (
                                   <label className="flex items-start gap-3 rounded-lg border p-4 cursor-pointer">
                                     <RadioGroupItem value="errand-base" className="mt-1" />
                                     <div>
@@ -1808,7 +1848,7 @@ export default function ServiceBooking() {
                                     <div>
                                       <div className="font-medium">House Cleaning</div>
                                       <div className="text-sm text-muted-foreground">
-                                        Base cleaning package plus optional cleaning add-ons
+                                        {formatAmount(service.basePrice)} for a studio / 1-bedroom, then scales by bedrooms
                                       </div>
                                     </div>
                                   </label>
@@ -2425,6 +2465,31 @@ export default function ServiceBooking() {
                       </>
                     )}
 
+                    {serviceType === "errand" && serviceMode === "errand-house-cleaning" && (
+                      <FormField
+                        control={form.control}
+                        name="serviceHours"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Bedrooms / rooms to clean</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                min="1"
+                                value={field.value || 1}
+                                onChange={(event) => field.onChange(Math.max(1, Number(event.target.value) || 1))}
+                                data-testid="input-house-cleaning-bedrooms"
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              Studio or 1-bedroom uses the base cleaning rate. Larger homes multiply that rate by the bedroom count before add-ons.
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+
                     {serviceType === "errand" && "basePrice" in service && (serviceMode === "errand-laundry" || serviceMode === "errand-house-cleaning") && (
                       <FormField
                         control={form.control}
@@ -2649,9 +2714,18 @@ export default function ServiceBooking() {
 
                   {serviceType === "errand" && errandPackageCount > 0 && (
                     <div className="flex items-start justify-between gap-3 text-sm">
-                      <span className="text-muted-foreground">Packages</span>
+                      <span className="text-muted-foreground">{serviceMode === "errand-house-cleaning" ? "Cleaning visits" : "Packages"}</span>
                       <span className="font-medium" data-testid="text-summary-errand-packages">
-                        {errandPackageCount} {errandPackageCount === 1 ? "package" : "packages"}
+                        {errandPackageCount} {serviceMode === "errand-house-cleaning" ? `visit${errandPackageCount === 1 ? "" : "s"}` : errandPackageCount === 1 ? "package" : "packages"}
+                      </span>
+                    </div>
+                  )}
+
+                  {serviceType === "errand" && serviceMode === "errand-house-cleaning" && (
+                    <div className="flex items-start justify-between gap-3 text-sm">
+                      <span className="text-muted-foreground">Bedrooms</span>
+                      <span className="font-medium" data-testid="text-summary-house-cleaning-bedrooms">
+                        {houseCleaningBedrooms}
                       </span>
                     </div>
                   )}
@@ -2754,10 +2828,10 @@ export default function ServiceBooking() {
                               ? "Mama Care package"
                               : serviceMode === "errand-shopping"
                                 ? "Receipt + service"
-                                : serviceMode === "errand-laundry"
-                                  ? "Laundry package"
+                                  : serviceMode === "errand-laundry"
+                                    ? "Laundry package"
                                   : serviceMode === "errand-house-cleaning"
-                                    ? "Base + cleaning add-ons"
+                                    ? "Cleaning visit"
                                     : "Price per package"
                             : "experienceType" in service
                               ? serviceMode === "experience-shared"
@@ -2821,7 +2895,7 @@ export default function ServiceBooking() {
 
                   {"basePrice" in service && serviceMode === "errand-house-cleaning" && (
                     <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
-                      Each cleaning package = base package + the cleaning add-ons you select.
+                      Each cleaning visit = {formatAmount(service.basePrice)} x bedrooms, plus any cleaning add-ons selected.
                     </div>
                   )}
 

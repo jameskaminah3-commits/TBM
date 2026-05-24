@@ -21,7 +21,7 @@ import {
   type ShareServiceType,
 } from "@/lib/share-links";
 import { getCookServiceFee } from "@shared/cook-pricing";
-import { getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
+import { HOUSE_CLEANING_BASE_ROOM_LABEL, getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
 import type { Car, Cook, Errand, Experience, Stay } from "@shared/schema";
 
 type PublicListing = Stay | Car | Cook | Errand | Experience;
@@ -108,7 +108,9 @@ function getPriceInfo(serviceType: ShareServiceType, listing: PublicListing) {
 
     return {
       amount: errand.basePrice,
-      label: errand.laundryEnabled && !errand.shoppingEnabled
+      label: errand.houseCleaningEnabled && !errand.shoppingEnabled && !errand.laundryEnabled
+        ? `${HOUSE_CLEANING_BASE_ROOM_LABEL} cleaning`
+        : errand.laundryEnabled && !errand.shoppingEnabled
         ? "laundry package"
         : errand.shoppingEnabled
           ? "service fee per shopping trip"

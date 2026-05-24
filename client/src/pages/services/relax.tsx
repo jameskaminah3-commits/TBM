@@ -17,7 +17,7 @@ import {
 import { cn } from "@/lib/utils";
 import { ChevronLeft, ChevronRight, MapPin, ShoppingBag, Star } from "lucide-react";
 import { filterErrands, useConciergeSearch } from "@/lib/concierge-search";
-import { getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
+import { HOUSE_CLEANING_BASE_ROOM_LABEL, getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
 import type { Errand } from "@shared/schema";
 
 const helpMamaPublicSummary =
@@ -204,6 +204,8 @@ export default function RelaxPage() {
             const displayPrice = usesHelpMamaPricing ? getHelpMamaStartingPrice(errand.helpMamaPricing) : errand.basePrice;
             const priceLabel = usesHelpMamaPricing
               ? "starting Mama Care rate"
+              : errand.houseCleaningEnabled && !errand.shoppingEnabled && !errand.laundryEnabled
+                ? `${HOUSE_CLEANING_BASE_ROOM_LABEL} cleaning`
               : errand.laundryEnabled && !errand.shoppingEnabled
                 ? "laundry package"
                 : errand.shoppingEnabled
@@ -269,6 +271,9 @@ export default function RelaxPage() {
                     <div className="mt-2 space-y-1 text-xs text-muted-foreground">
                       {errand.shoppingEnabled ? (
                         <div>Total adds receipt value + {errand.shoppingCommissionPercent}% service and delivery commission</div>
+                      ) : null}
+                      {errand.houseCleaningEnabled ? (
+                        <div>Cleaning total changes with the bedroom count and selected add-ons</div>
                       ) : null}
                     </div>
                   </div>

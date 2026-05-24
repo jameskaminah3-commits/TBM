@@ -113,7 +113,7 @@ import {
 } from "@shared/schema";
 import { hasLockedInBookingDeposit } from "@shared/booking-payments";
 import { calculateCookInclusiveTotal, calculateCookServiceTotal } from "@shared/cook-pricing";
-import { calculateHelpMamaPackagePrice } from "@shared/errand-pricing";
+import { calculateHelpMamaPackagePrice, calculateHouseCleaningPackagePrice } from "@shared/errand-pricing";
 import { buildAppInboxActionUrl, buildInboxWorkspaceUrl } from "@shared/inbox";
 import { getWebPushPublicConfig, sendWebPushNotification } from "./push";
 import { db, pool } from "./db";
@@ -655,12 +655,14 @@ function getErrandPackagePrice(
     return calculateHelpMamaPackagePrice(errand, addonSelections, serviceHours);
   }
 
+  if (mode === "errand-house-cleaning") {
+    return calculateHouseCleaningPackagePrice(errand, addonSelections, serviceHours);
+  }
+
   const selectedAddons = new Set(addonSelections || []);
   const supportedAddons = mode === "errand-laundry"
     ? errand.laundryAddons || []
-    : mode === "errand-house-cleaning"
-      ? errand.houseCleaningAddons || []
-      : [];
+    : [];
 
   return packagePrice + supportedAddons
     .filter((addon) => selectedAddons.has(addon.id))

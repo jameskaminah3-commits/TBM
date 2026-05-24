@@ -53,7 +53,7 @@ import { db } from "./db";
 import { users } from "@shared/schema";
 import { calculateCookInclusiveTotal, calculateCookServiceTotal, getCookMinimumGuests } from "@shared/cook-pricing";
 import { customServiceRequestFeeUsd } from "@shared/custom-service";
-import { calculateHelpMamaPackagePrice, HELP_MAMA_HOURLY_MINIMUM_HOURS, getHelpMamaAgeBandId, getHelpMamaRateId, hasHelpMamaPricing, isHelpMamaHourlyRate } from "@shared/errand-pricing";
+import { calculateHelpMamaPackagePrice, calculateHouseCleaningPackagePrice, getHouseCleaningBedroomCount, HELP_MAMA_HOURLY_MINIMUM_HOURS, getHelpMamaAgeBandId, getHelpMamaRateId, hasHelpMamaPricing, isHelpMamaHourlyRate } from "@shared/errand-pricing";
 import {
   createHostedCheckoutSession,
   getApplicationBaseUrl,
@@ -1061,13 +1061,13 @@ async function validateAccommodationAddonSelections(params: {
             .reduce((sum, addon) => sum + addon.price, 0);
           selection.serviceAddonSelections = selectedAddons;
         } else if (mode === "errand-house-cleaning") {
+          const bedroomCount = getHouseCleaningBedroomCount(selection.serviceHours);
           const selectedAddons = (selection.serviceAddonSelections || []).filter((addonId) =>
             (errand.houseCleaningAddons || []).some((addon) => addon.id === addonId),
           );
-          packagePrice += (errand.houseCleaningAddons || [])
-            .filter((addon) => selectedAddons.includes(addon.id))
-            .reduce((sum, addon) => sum + addon.price, 0);
+          packagePrice = calculateHouseCleaningPackagePrice(errand, selectedAddons, bedroomCount);
           selection.serviceAddonSelections = selectedAddons;
+          selection.serviceHours = bedroomCount;
         } else if (mode === "errand-childcare") {
           if (!selection.serviceRequestDetails?.trim() || selection.serviceRequestDetails.trim().length < 20) {
             throw new Error(`Add child ages, care needs, timing, and safety notes for "${errand.serviceName}".`);
@@ -3319,14 +3319,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 if (!errand.houseCleaningEnabled) {
                   return res.status(400).json({ error: "House cleaning is not available for this errand." });
                 }
+                const bedroomCount = getHouseCleaningBedroomCount(validatedData.serviceHours);
                 const selectedAddons = (validatedData.serviceAddonSelections || []).filter((addonId) =>
                   (errand.houseCleaningAddons || []).some((addon) => addon.id === addonId),
                 );
-                const addonTotal = (errand.houseCleaningAddons || [])
-                  .filter((addon) => selectedAddons.includes(addon.id))
-                  .reduce((sum, addon) => sum + addon.price, 0);
                 validatedData.serviceAddonSelections = selectedAddons;
-                packagePrice = errand.basePrice + addonTotal;
+                validatedData.serviceHours = bedroomCount;
+                packagePrice = calculateHouseCleaningPackagePrice(errand, selectedAddons, bedroomCount);
               } else if (serviceMode === "errand-childcare") {
                 if (!validatedData.serviceRequestDetails?.trim() || validatedData.serviceRequestDetails.trim().length < 20) {
                   return res.status(400).json({ error: "Share the child ages, care needs, timing, and any safety notes." });

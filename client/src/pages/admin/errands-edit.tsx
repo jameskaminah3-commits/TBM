@@ -42,7 +42,7 @@ import {
 } from "@/lib/errand-currency";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { errandAddonSchema, helpMamaPricingSchema, insertErrandSchema, type Errand, type ErrandAddon, type HelpMamaPricing, type ProviderAccountSummary } from "@shared/schema";
-import { normalizeHelpMamaPricing } from "@shared/errand-pricing";
+import { getDefaultHouseCleaningAddons, normalizeHelpMamaPricing } from "@shared/errand-pricing";
 
 const featureOptions = [
   "Same-Day Service",
@@ -129,6 +129,11 @@ export default function AdminErrandsEdit() {
 
   useEffect(() => {
     if (errand) {
+      const convertedHouseCleaningAddons = convertErrandAddonsFromUsd(errand.houseCleaningAddons, convertFromUsd, selectedCurrency);
+      const houseCleaningAddonsForForm = errand.houseCleaningEnabled && convertedHouseCleaningAddons.length === 0
+        ? getDefaultHouseCleaningAddons()
+        : convertedHouseCleaningAddons;
+
       form.reset({
         serviceName: errand.serviceName,
         location: errand.location || "",
@@ -140,7 +145,7 @@ export default function AdminErrandsEdit() {
         laundryIncludedKg: errand.laundryIncludedKg,
         laundryPricePerKg: convertErrandAmountFromUsd(errand.laundryPricePerKg, convertFromUsd, selectedCurrency),
         laundryAddons: convertErrandAddonsFromUsd(errand.laundryAddons, convertFromUsd, selectedCurrency),
-        houseCleaningAddons: convertErrandAddonsFromUsd(errand.houseCleaningAddons, convertFromUsd, selectedCurrency),
+        houseCleaningAddons: houseCleaningAddonsForForm,
         helpMamaPricing: convertHelpMamaPricingFromUsd(errand.helpMamaPricing, convertFromUsd, selectedCurrency),
         managerUserId: errand.managerUserId ?? "unassigned",
         imageUrl: errand.imageUrl || "",
@@ -152,7 +157,7 @@ export default function AdminErrandsEdit() {
       });
       setSelectedFeatures(errand.features);
       setLaundryAddons(convertErrandAddonsFromUsd(errand.laundryAddons, convertFromUsd, selectedCurrency));
-      setHouseCleaningAddons(convertErrandAddonsFromUsd(errand.houseCleaningAddons, convertFromUsd, selectedCurrency));
+      setHouseCleaningAddons(houseCleaningAddonsForForm);
       setHelpMamaPricing(convertHelpMamaPricingFromUsd(errand.helpMamaPricing, convertFromUsd, selectedCurrency));
     }
   }, [convertFromUsd, errand, form, selectedCurrency]);
@@ -310,7 +315,7 @@ export default function AdminErrandsEdit() {
                           data-testid="input-errand-base-price"
                         />
                       </FormControl>
-                      <FormDescription>Use 0 for Help Mama errands that rely on Help Mama pricing below.</FormDescription>
+                      <FormDescription>For house cleaning, this is the studio / 1-bedroom rate. Use 0 for Help Mama errands that rely on Help Mama pricing below.</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -364,7 +369,7 @@ export default function AdminErrandsEdit() {
                         <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
                           <div className="space-y-1">
                             <FormLabel>House Cleaning</FormLabel>
-                            <FormDescription>Offer a base house cleaning package with optional extras.</FormDescription>
+                            <FormDescription>Price starts at studio / 1-bedroom, then scales by bedrooms and optional extras.</FormDescription>
                           </div>
                           <FormControl>
                             <Checkbox checked={field.value} onCheckedChange={field.onChange} />
@@ -403,7 +408,7 @@ export default function AdminErrandsEdit() {
 
                   <ErrandAddonEditor
                     label="House Cleaning Add-Ons"
-                    description="Examples: fridge cleaning, balcony, deep bathroom clean, sofa steaming."
+                    description="Examples: balcony / terrace cleaning, fridge cleaning, deep oven / stove cleaning, heavy dishwashing, deep cleaning, post-event cleanup, and deep bathroom clean."
                     value={houseCleaningAddons}
                     currencyLabel={amountCurrencyLabel}
                     onChange={(addons) => {

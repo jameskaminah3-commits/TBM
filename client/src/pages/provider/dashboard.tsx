@@ -35,7 +35,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { getShortShareUrl, type ShareServiceType } from "@/lib/share-links";
 import { getCookExtraGuestInclusivePrice, getCookExtraGuestServiceFee, getCookMinimumGuests } from "@shared/cook-pricing";
-import { getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
+import { HOUSE_CLEANING_BASE_ROOM_LABEL, getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
 
 type ProviderAssignments = {
   stays: Stay[];
@@ -1670,7 +1670,9 @@ export default function ProviderDashboard() {
                     <Badge variant="outline">
                       {hasHelpMamaPricing(errand)
                         ? `From ${formatAmount(getHelpMamaStartingPrice(errand.helpMamaPricing))}`
-                        : `${formatAmount(errand.basePrice)} base`}
+                        : errand.houseCleaningEnabled && !errand.shoppingEnabled && !errand.laundryEnabled
+                          ? `${formatAmount(errand.basePrice)} ${HOUSE_CLEANING_BASE_ROOM_LABEL}`
+                          : `${formatAmount(errand.basePrice)} base`}
                     </Badge>
                     {errand.shoppingEnabled ? <Badge variant="outline">shopping + {errand.shoppingCommissionPercent}%</Badge> : null}
                     {errand.laundryEnabled ? <Badge variant="outline">laundry + {(errand.laundryAddons || []).length} add-ons</Badge> : null}

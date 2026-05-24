@@ -1,6 +1,18 @@
-import type { Errand, HelpMamaPricing } from "./schema";
+import type { Errand, ErrandAddon, HelpMamaPricing } from "./schema";
 
 export const HELP_MAMA_HOURLY_MINIMUM_HOURS = 3;
+
+export const HOUSE_CLEANING_BASE_ROOM_LABEL = "Studio / 1-bedroom";
+
+export const DEFAULT_HOUSE_CLEANING_ADDON_NAMES = [
+  "Balcony / Terrace Cleaning",
+  "Fridge Cleaning",
+  "Deep Oven / Stove Cleaning",
+  "Full Dishwashing (heavy load)",
+  "Extra Thorough / Deep Cleaning",
+  "Post-Event or BBQ Cleanup",
+  "Deep Bathroom Clean",
+] as const;
 
 export const HELP_MAMA_TIME_RATE_IDS = {
   hourlyDaytime: "help-mama-hourly-daytime",
@@ -141,4 +153,29 @@ export function calculateHelpMamaPackagePrice(
 
   const quantity = isHelpMamaHourlyRate(rate.id) ? Math.max(HELP_MAMA_HOURLY_MINIMUM_HOURS, serviceHours || HELP_MAMA_HOURLY_MINIMUM_HOURS) : 1;
   return rate.price * quantity;
+}
+
+export function getHouseCleaningBedroomCount(value?: number | null) {
+  return Math.max(1, Math.round(Number(value) || 1));
+}
+
+export function calculateHouseCleaningPackagePrice(
+  errand: Pick<Errand, "basePrice" | "houseCleaningAddons">,
+  addonSelections: string[] | null | undefined,
+  bedroomCount?: number | null,
+) {
+  const selectedAddons = new Set(addonSelections || []);
+  const addonTotal = (errand.houseCleaningAddons || [])
+    .filter((addon) => selectedAddons.has(addon.id))
+    .reduce((sum, addon) => sum + addon.price, 0);
+
+  return (errand.basePrice * getHouseCleaningBedroomCount(bedroomCount)) + addonTotal;
+}
+
+export function getDefaultHouseCleaningAddons(): ErrandAddon[] {
+  return DEFAULT_HOUSE_CLEANING_ADDON_NAMES.map((name) => ({
+    id: `house-cleaning-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`,
+    name,
+    price: 0,
+  }));
 }

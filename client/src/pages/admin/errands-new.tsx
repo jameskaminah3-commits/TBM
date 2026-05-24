@@ -39,7 +39,7 @@ import {
 } from "@/lib/errand-currency";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { errandAddonSchema, helpMamaPricingSchema, insertErrandSchema, type ErrandAddon, type HelpMamaPricing, type ProviderAccountSummary } from "@shared/schema";
-import { normalizeHelpMamaPricing } from "@shared/errand-pricing";
+import { getDefaultHouseCleaningAddons, normalizeHelpMamaPricing } from "@shared/errand-pricing";
 
 const featureOptions = [
   "Same-Day Service",
@@ -80,7 +80,7 @@ export default function AdminErrandsNew() {
   const amountCurrencyLabel = currencyLabel(selectedCurrency);
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
   const [laundryAddons, setLaundryAddons] = useState<ErrandAddon[]>([]);
-  const [houseCleaningAddons, setHouseCleaningAddons] = useState<ErrandAddon[]>([]);
+  const [houseCleaningAddons, setHouseCleaningAddons] = useState<ErrandAddon[]>(getDefaultHouseCleaningAddons());
   const [helpMamaPricing, setHelpMamaPricing] = useState<HelpMamaPricing>(normalizeHelpMamaPricing({ enabled: false, ageBands: [] }));
   const { data: providers = [] } = useQuery<ProviderAccountSummary[]>({
     queryKey: ["/api/admin/provider-accounts"],
@@ -99,7 +99,7 @@ export default function AdminErrandsNew() {
       laundryIncludedKg: 0,
       laundryPricePerKg: 0,
       laundryAddons: [],
-      houseCleaningAddons: [],
+      houseCleaningAddons: getDefaultHouseCleaningAddons(),
       helpMamaPricing,
       managerUserId: "unassigned",
       imageUrl: "",
@@ -247,7 +247,7 @@ export default function AdminErrandsNew() {
                           data-testid="input-errand-base-price"
                         />
                       </FormControl>
-                      <FormDescription>Use 0 for Help Mama errands that rely on Help Mama pricing below.</FormDescription>
+                      <FormDescription>For house cleaning, this is the studio / 1-bedroom rate. Use 0 for Help Mama errands that rely on Help Mama pricing below.</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -301,7 +301,7 @@ export default function AdminErrandsNew() {
                         <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
                           <div className="space-y-1">
                             <FormLabel>House Cleaning</FormLabel>
-                            <FormDescription>Offer a base house cleaning package with optional extras.</FormDescription>
+                            <FormDescription>Price starts at studio / 1-bedroom, then scales by bedrooms and optional extras.</FormDescription>
                           </div>
                           <FormControl>
                             <Checkbox checked={field.value} onCheckedChange={field.onChange} />
@@ -340,7 +340,7 @@ export default function AdminErrandsNew() {
 
                   <ErrandAddonEditor
                     label="House Cleaning Add-Ons"
-                    description="Examples: fridge cleaning, balcony, deep bathroom clean, sofa steaming."
+                    description="Examples: balcony / terrace cleaning, fridge cleaning, deep oven / stove cleaning, heavy dishwashing, deep cleaning, post-event cleanup, and deep bathroom clean."
                     value={houseCleaningAddons}
                     currencyLabel={amountCurrencyLabel}
                     onChange={(addons) => {

@@ -45,10 +45,13 @@ import {
 import { calculateCookServiceTotal, getCookMinimumGuests, getCookServiceFee } from "@shared/cook-pricing";
 import {
   calculateHelpMamaPackagePrice,
+  calculateHouseCleaningPackagePrice,
+  HOUSE_CLEANING_BASE_ROOM_LABEL,
   getHelpMamaAgeBandId,
   getHelpMamaRateId,
   getHelpMamaRateOptions,
   getHelpMamaStartingPrice,
+  getHouseCleaningBedroomCount,
   hasHelpMamaPricing,
   isHelpMamaHourlyRate,
   normalizeHelpMamaPricing,
@@ -197,7 +200,7 @@ function getSupportedModes(service: ConciergeService): string[] {
 
   if (service.category === "errands") {
     return [
-      ...(hasHelpMamaPricing(service) || service.shoppingEnabled ? [] : ["errand-base"]),
+      ...(hasHelpMamaPricing(service) || service.shoppingEnabled || service.laundryEnabled || service.houseCleaningEnabled ? [] : ["errand-base"]),
       ...(service.shoppingEnabled ? ["errand-shopping"] : []),
       ...(service.laundryEnabled ? ["errand-laundry"] : []),
       ...(service.houseCleaningEnabled ? ["errand-house-cleaning"] : []),
@@ -481,6 +484,7 @@ export default function Booking() {
         serviceMode: preferredMode,
         units: 1,
         guests: 1,
+        serviceHours: preferredMode === "errand-house-cleaning" ? 1 : null,
         serviceLocation: accommodation?.location || "",
         serviceBudgetAmount: service.shoppingEnabled ? 50 : null,
         serviceAddonSelections: [],
@@ -529,6 +533,7 @@ export default function Booking() {
     if (service.category === "cars") return `${formatAmount(price)}/day`;
     if (service.category === "cooks") return `${formatAmount(price)}/day chef fee`;
     if (hasHelpMamaPricing(service)) return `From ${formatAmount(getHelpMamaStartingPrice(service.helpMamaPricing))}`;
+    if (service.houseCleaningEnabled && !service.shoppingEnabled && !service.laundryEnabled) return `${formatAmount(price)} studio / 1-bedroom clean`;
     return `${formatAmount(price)} base`;
   };
 
@@ -557,11 +562,13 @@ export default function Booking() {
     }
 
     const selectedAddons = configured?.serviceAddonSelections || [];
+    if (configured?.serviceMode === "errand-house-cleaning") {
+      return calculateHouseCleaningPackagePrice(service, selectedAddons, configured.serviceHours) * (configured?.units || 1);
+    }
+
     const addonTotal = configured?.serviceMode === "errand-laundry"
       ? (service.laundryAddons || []).filter((addon) => selectedAddons.includes(addon.id)).reduce((sum, addon) => sum + addon.price, 0)
-      : configured?.serviceMode === "errand-house-cleaning"
-        ? (service.houseCleaningAddons || []).filter((addon) => selectedAddons.includes(addon.id)).reduce((sum, addon) => sum + addon.price, 0)
-        : 0;
+      : 0;
 
     return service.basePrice + addonTotal;
   };
@@ -973,7 +980,7 @@ export default function Booking() {
             category: service.category,
             title: `${service.serviceName} cleaning support`,
             summary: "A comfort-focused recommendation to keep the stay feeling reset when several people are using it.",
-            priceLabel: `${formatAmount(service.basePrice)} base`,
+            priceLabel: `${formatAmount(service.basePrice)} ${HOUSE_CLEANING_BASE_ROOM_LABEL}`,
             score: 43 + locationScore + (isLongStay ? 12 : 0) + (isFamilyTrip ? 9 : 0),
             stage: "Stay",
             reasons: [
@@ -1960,7 +1967,7 @@ export default function Booking() {
                     onValueChange={(value) => setDraftSelection((current) => current ? {
                       ...current,
                       serviceMode: value,
-                      serviceHours: value === "car-chauffeur-hourly" ? (current.serviceHours || current.units || 3) : null,
+                      serviceHours: value === "car-chauffeur-hourly" ? (current.serviceHours || current.units || 3) : value === "errand-house-cleaning" ? (current.serviceHours || 1) : null,
                       units: value === "car-chauffeur-hourly" ? (current.serviceHours || current.units || 3) : Math.max(1, current.units || 1),
                       serviceStartTime: value === "car-chauffeur-hourly" ? (current.serviceStartTime || "09:00") : current.serviceStartTime,
                       serviceDepartureId: value === "experience-shared" ? current.serviceDepartureId || "" : "",
@@ -1982,7 +1989,7 @@ export default function Booking() {
 
                 {(configuringService.category === "cars" || configuringService.category === "cooks" || configuringService.category === "errands") && draftSelection.serviceMode !== "car-chauffeur-hourly" ? (
                   <div className="space-y-2">
-                    <Label>{configuringService.category === "cooks" ? "Sessions or service days" : configuringService.category === "cars" ? "Days needed" : "Packages"}</Label>
+                    <Label>{configuringService.category === "cooks" ? "Sessions or service days" : configuringService.category === "cars" ? "Days needed" : draftSelection.serviceMode === "errand-house-cleaning" ? "Cleaning visits" : "Packages"}</Label>
                     <Input
                       type="number"
                       min="1"
@@ -2005,6 +2012,22 @@ export default function Booking() {
                         ...current,
                         serviceHours: Math.max(3, Number(e.target.value) || 3),
                         units: Math.max(3, Number(e.target.value) || 3),
+                      } : current)}
+                    />
+                  </div>
+                ) : null}
+
+                {draftSelection.serviceMode === "errand-house-cleaning" ? (
+                  <div className="space-y-2">
+                    <Label>Bedrooms / rooms to clean</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      value={draftSelection.serviceHours || 1}
+                      className="text-base sm:text-sm"
+                      onChange={(e) => setDraftSelection((current) => current ? {
+                        ...current,
+                        serviceHours: getHouseCleaningBedroomCount(Number(e.target.value) || 1),
                       } : current)}
                     />
                   </div>

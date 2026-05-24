@@ -1,6 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Car, ChefHat, Compass, ShoppingBag } from "lucide-react";
+import { getHouseCleaningBedroomCount } from "@shared/errand-pricing";
 import type { Booking, Car as CarType, Cook, Errand, Experience, StayServiceSelection } from "@shared/schema";
 
 type ServiceItem = CarType | Cook | Errand | Experience;
@@ -142,6 +143,9 @@ export function BookingServiceDetails({
               : null,
             selection.category === "cars" && selection.serviceMode !== "car-chauffeur-hourly" && selection.units
               ? `${selection.units} day${selection.units === 1 ? "" : "s"}`
+              : null,
+            selection.category === "errands" && selection.serviceMode === "errand-house-cleaning"
+              ? `${getHouseCleaningBedroomCount(selection.serviceHours)} bedroom${getHouseCleaningBedroomCount(selection.serviceHours) === 1 ? "" : "s"}`
               : null,
             selection.category === "cooks" && selection.units
               ? `${selection.units} session${selection.units === 1 ? "" : "s"}`
