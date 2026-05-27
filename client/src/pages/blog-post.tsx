@@ -18,6 +18,7 @@ import {
   trackMarketingPageView,
 } from "@/lib/marketing-attribution";
 import { SeoHead } from "@/components/seo-head";
+import { buildCanonicalUrl } from "@/lib/canonical-url";
 
 function slugify(value: string) {
   return value
@@ -37,13 +38,6 @@ function childrenToText(children: ReactNode): string {
     return childrenToText((children as { props?: { children?: ReactNode } }).props?.children ?? "");
   }
   return "";
-}
-
-function buildCanonicalUrl(path: string) {
-  if (typeof window === "undefined") {
-    return path;
-  }
-  return `${window.location.origin}${path}`;
 }
 
 function isInternalLink(href?: string) {
@@ -120,9 +114,35 @@ export default function BlogPostDetail() {
     enabled: !!slug,
   });
 
-  const faqSection = useMemo(
-    () => (post?.contentMarkdown ? extractFaqSection(post.contentMarkdown) : null),
-    [post?.contentMarkdown],
+  const articleMarkdown = useMemo(() => {
+    if (!post?.contentMarkdown) {
+      return "";
+    }
+
+    const lines = post.contentMarkdown.split("\n");
+    const firstContentLineIndex = lines.findIndex((line) => line.trim().length > 0);
+    if (firstContentLineIndex === -1) {
+      return post.contentMarkdown;
+    }
+
+    const firstHeadingMatch = /^#\s+(.+)$/.exec(lines[firstContentLineIndex].trim());
+    if (!firstHeadingMatch) {
+      return post.contentMarkdown;
+    }
+
+    if (slugify(firstHeadingMatch[1]) !== slugify(post.title)) {
+      return post.contentMarkdown;
+    }
+
+    return [
+      ...lines.slice(0, firstContentLineIndex),
+      ...lines.slice(firstContentLineIndex + 1),
+    ].join("\n").trimStart();
+  }, [post?.contentMarkdown, post?.title]);
+
+  const renderedFaqSection = useMemo(
+    () => (articleMarkdown ? extractFaqSection(articleMarkdown) : null),
+    [articleMarkdown],
   );
   const trackedCtaHref = useMemo(() => {
     if (!post?.primaryCtaHref) {
@@ -165,9 +185,9 @@ export default function BlogPostDetail() {
       return [];
     }
 
-    const baseMarkdown = faqSection
-      ? [faqSection.beforeMarkdown, `## ${faqSection.faqTitle}`, faqSection.afterMarkdown].filter(Boolean).join("\n")
-      : post.contentMarkdown;
+    const baseMarkdown = renderedFaqSection
+      ? [renderedFaqSection.beforeMarkdown, `## ${renderedFaqSection.faqTitle}`, renderedFaqSection.afterMarkdown].filter(Boolean).join("\n")
+      : articleMarkdown;
 
     return baseMarkdown
       .split("\n")
@@ -178,7 +198,7 @@ export default function BlogPostDetail() {
         label: match[2].trim(),
         id: slugify(match[2].trim()),
       }));
-  }, [faqSection, post?.contentMarkdown]);
+  }, [articleMarkdown, renderedFaqSection, post?.contentMarkdown]);
 
   if (isLoading) {
     return (
@@ -239,7 +259,7 @@ export default function BlogPostDetail() {
   };
 
   const markdownComponents = {
-    h1: ({ children }: { children?: ReactNode }) => <h1 className="mt-10 font-serif text-3xl font-medium">{children}</h1>,
+    h1: ({ children }: { children?: ReactNode }) => <h1 className="mt-8 font-serif text-2xl font-medium leading-tight sm:mt-10 sm:text-3xl">{children}</h1>,
     h2: ({ children }: { children?: ReactNode }) => {
       const label = childrenToText(children);
       return (
@@ -256,7 +276,7 @@ export default function BlogPostDetail() {
         </h3>
       );
     },
-    p: ({ children }: { children?: ReactNode }) => <p className="mb-5 leading-8 text-foreground">{children}</p>,
+    p: ({ children }: { children?: ReactNode }) => <p className="mb-5 leading-7 text-foreground sm:leading-8">{children}</p>,
     a: ({ children, href }: { children?: ReactNode; href?: string }) => {
       if (isInternalLink(href)) {
         if (href?.startsWith("#")) {
@@ -291,9 +311,9 @@ export default function BlogPostDetail() {
     code: ({ children }: { children?: ReactNode }) => <code className="rounded bg-muted px-1.5 py-0.5 text-sm font-mono">{children}</code>,
     pre: ({ children }: { children?: ReactNode }) => <pre className="my-6 overflow-x-auto rounded-2xl bg-muted p-4">{children}</pre>,
     img: ({ src, alt, title }: { src?: string; alt?: string; title?: string }) => (
-      <figure className="surface-soft-card my-10 overflow-hidden rounded-[1.75rem] border">
-        <img src={src || ""} alt={alt || ""} className="w-full object-cover" />
-        {title ? <figcaption className="border-t border-border/60 px-5 py-4 text-sm italic text-muted-foreground">{title}</figcaption> : null}
+      <figure className="surface-soft-card my-7 overflow-hidden rounded-2xl border sm:my-10 sm:rounded-[1.75rem]">
+        <img src={src || ""} alt={alt || ""} className="h-auto max-h-[75vh] w-full bg-muted/20 object-contain" loading="lazy" />
+        {title ? <figcaption className="border-t border-border/60 px-4 py-3 text-xs leading-5 italic text-muted-foreground sm:px-5 sm:py-4 sm:text-sm">{title}</figcaption> : null}
       </figure>
     ),
   };
@@ -327,7 +347,7 @@ export default function BlogPostDetail() {
                 <img
                   src={post.featuredImage}
                   alt={post.featuredImageAlt || post.title}
-                  className="aspect-[21/9] w-full object-cover"
+                  className="aspect-[16/10] w-full object-cover sm:aspect-[21/9]"
                   data-testid="img-featured"
                 />
               </div>
@@ -337,7 +357,7 @@ export default function BlogPostDetail() {
               <div className="surface-badge inline-flex rounded-full border px-3 py-2 text-[0.65rem] font-medium uppercase tracking-[0.24em] text-muted-foreground sm:px-4 sm:text-xs sm:tracking-[0.28em]">
                 Concierge Journal
               </div>
-              <h1 className="font-serif text-[2.5rem] font-medium leading-[0.98] sm:text-5xl" data-testid="text-title">
+              <h1 className="font-serif text-3xl font-medium leading-tight sm:text-5xl sm:leading-[0.98]" data-testid="text-title">
                 {post.title}
               </h1>
               <p className="max-w-3xl text-base leading-7 text-muted-foreground sm:text-lg sm:leading-8">{post.excerpt}</p>
@@ -359,17 +379,17 @@ export default function BlogPostDetail() {
             </header>
 
             <div className="prose max-w-none prose-headings:font-serif prose-headings:text-foreground prose-p:text-foreground prose-p:leading-7 prose-a:text-primary prose-blockquote:border-l-primary prose-blockquote:text-muted-foreground sm:prose-lg sm:prose-p:leading-8" data-testid="content-markdown">
-              {faqSection?.beforeMarkdown ? (
+              {renderedFaqSection?.beforeMarkdown ? (
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                  {faqSection.beforeMarkdown}
+                  {renderedFaqSection.beforeMarkdown}
                 </ReactMarkdown>
               ) : null}
 
-              {faqSection ? (
-                <div className="my-12 scroll-mt-24" id={slugify(faqSection.faqTitle)}>
-                  <h2 className="mb-6 font-serif text-2xl font-medium">{faqSection.faqTitle}</h2>
+              {renderedFaqSection ? (
+                <div className="my-12 scroll-mt-24" id={slugify(renderedFaqSection.faqTitle)}>
+                  <h2 className="mb-6 font-serif text-2xl font-medium">{renderedFaqSection.faqTitle}</h2>
                   <Accordion type="single" collapsible className="surface-soft-card rounded-[1.75rem] border px-5 py-2">
-                    {faqSection.items.map((item, index) => (
+                    {renderedFaqSection.items.map((item, index) => (
                       <AccordionItem key={`${item.question}-${index}`} value={`faq-${index}`} className="border-border/50">
                         <AccordionTrigger className="py-5 text-left text-base font-medium hover:no-underline">
                           {item.question}
@@ -387,15 +407,15 @@ export default function BlogPostDetail() {
                 </div>
               ) : null}
 
-              {faqSection?.afterMarkdown ? (
+              {renderedFaqSection?.afterMarkdown ? (
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                  {faqSection.afterMarkdown}
+                  {renderedFaqSection.afterMarkdown}
                 </ReactMarkdown>
               ) : null}
 
-              {!faqSection ? (
+              {!renderedFaqSection ? (
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                  {post.contentMarkdown}
+                  {articleMarkdown}
                 </ReactMarkdown>
               ) : null}
             </div>

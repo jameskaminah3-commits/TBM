@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1132 904" role="img" aria-labelledby="title desc">
+  <title id="title">My Bookings custom offer dashboard</title>
+  <desc id="desc">A Tembea Bila Matata My Bookings dashboard showing a pending custom offer, amount due and progress steps.</desc>
+  <rect width="1132" height="904" fill="#f7fafc"/>
+  <rect width="1132" height="76" fill="#fff" stroke="#eadfce"/>
+  <rect x="17" y="12" width="234" height="54" rx="16" fill="#fffaf3" stroke="#e8d9c6"/>
+  <text x="82" y="38" font-family="Georgia,serif" font-size="14" fill="#1f2937">Tembea Bila Matata</text>
+  <text x="82" y="53" font-family="Arial,sans-serif" font-size="8" letter-spacing="2" fill="#8b8172">TRAVEL WITHOUT WORRIES</text>
+  <text x="360" y="45" font-family="Arial,sans-serif" font-size="15" fill="#475569">Home     Stay     Drive     Dine     Relax     Experience</text>
+  <rect x="758" y="14" width="104" height="50" rx="12" fill="#fff" stroke="#e8d9c6"/>
+  <text x="768" y="45" font-family="Arial,sans-serif" font-size="15" fill="#0f172a">My Bookings</text>
+  <path d="M754 11c38-16 86-8 111 9M865 20c10 17 3 38-10 46M855 66c-37 7-82 3-99-8" fill="none" stroke="#ef1c24" stroke-width="7" stroke-linecap="round"/>
+  <rect x="186" y="92" width="946" height="825" rx="24" fill="#fff" stroke="#e8d9c6"/>
+  <rect x="208" y="121" width="126" height="99" rx="17" fill="#071312"/>
+  <text x="349" y="162" font-family="Arial,sans-serif" font-size="9" letter-spacing="4" fill="#64748b">SERVICE</text>
+  <text x="349" y="192" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="#0f172a">Service Booking</text>
+  <text x="349" y="216" font-family="Arial,sans-serif" font-size="14" fill="#334155">May 30, 2026   Diani   6 guests</text>
+  <rect x="349" y="121" width="63" height="20" rx="6" fill="#f59e0b"/>
+  <text x="358" y="136" font-family="Arial,sans-serif" font-size="9" font-weight="700" fill="#fff">Pending</text>
+  <rect x="419" y="121" width="109" height="20" rx="6" fill="#fff" stroke="#e5e7eb"/>
+  <text x="429" y="136" font-family="Arial,sans-serif" font-size="9" fill="#0f172a">Payment pending</text>
+  <rect x="536" y="121" width="82" height="20" rx="6" fill="#fff" stroke="#e5e7eb"/>
+  <text x="546" y="136" font-family="Arial,sans-serif" font-size="9" fill="#0f172a">Custom offer</text>
+  <text x="997" y="130" font-family="Arial,sans-serif" font-size="9" letter-spacing="3" fill="#64748b">AMOUNT DUE</text>
+  <text x="1028" y="158" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="#0f172a">KSh650</text>
+  <text x="953" y="227" font-family="Arial,sans-serif" font-size="13" fill="#475569">Booking ID BF105D1C</text>
+  <rect x="208" y="298" width="330" height="164" rx="20" fill="#fbf4ea" stroke="#eadcc8"/>
+  <text x="227" y="329" font-family="Arial,sans-serif" font-size="9" letter-spacing="4" font-weight="700" fill="#64748b">OVERVIEW</text>
+  <rect x="227" y="344" width="61" height="22" rx="7" fill="#f59e0b"/>
+  <text x="238" y="360" font-family="Arial,sans-serif" font-size="10" font-weight="700" fill="#fff">Pending</text>
+  <rect x="296" y="344" width="62" height="22" rx="7" fill="#239a9b"/>
+  <text x="306" y="360" font-family="Arial,sans-serif" font-size="10" font-weight="700" fill="#fff">Booked</text>
+  <rect x="227" y="405" width="140" height="40" rx="12" fill="#f8efe3"/>
+  <text x="262" y="430" font-family="Arial,sans-serif" font-size="13" fill="#475569">May 30, 2026</text>
+  <rect x="378" y="405" width="140" height="40" rx="12" fill="#f8efe3"/>
+  <text x="423" y="430" font-family="Arial,sans-serif" font-size="13" fill="#475569">Diani</text>
+  <rect x="552" y="298" width="268" height="164" rx="20" fill="#fbf4ea" stroke="#eadcc8"/>
+  <text x="570" y="329" font-family="Arial,sans-serif" font-size="9" letter-spacing="4" font-weight="700" fill="#64748b">SCHEDULE</text>
+  <rect x="570" y="344" width="232" height="42" rx="12" fill="#f8efe3"/>
+  <text x="585" y="370" font-family="Arial,sans-serif" font-size="13" fill="#64748b">Check-in</text>
+  <text x="706" y="370" font-family="Arial,sans-serif" font-size="13" font-weight="700" fill="#0f172a">May 30, 2026</text>
+  <rect x="570" y="395" width="232" height="42" rx="12" fill="#f8efe3"/>
+  <text x="585" y="421" font-family="Arial,sans-serif" font-size="13" fill="#64748b">Check-out</text>
+  <text x="706" y="421" font-family="Arial,sans-serif" font-size="13" font-weight="700" fill="#0f172a">May 30, 2026</text>
+  <rect x="208" y="478" width="612" height="193" rx="20" fill="#eef9ff" stroke="#bae6fd"/>
+  <text x="227" y="509" font-family="Arial,sans-serif" font-size="14" font-weight="700" fill="#0f172a">Custom offer</text>
+  <text x="227" y="528" font-family="Arial,sans-serif" font-size="13" fill="#0369a1">Waiting for an offer.</text>
+  <rect x="227" y="546" width="575" height="105" rx="8" fill="#fff" stroke="#bae6fd"/>
+  <text x="242" y="574" font-family="Arial,sans-serif" font-size="10" letter-spacing="3" font-weight="700" fill="#0369a1">REQUEST #BF105D1C</text>
+  <text x="242" y="596" font-family="Arial,sans-serif" font-size="11" fill="#0369a1">Custom request type: other   Request details: A romantic dinner at Mambrui...</text>
+  <text x="242" y="612" font-family="Arial,sans-serif" font-size="11" fill="#0369a1">Preferred time: 06:00   Preferred location: ...</text>
+  <text x="242" y="635" font-family="Arial,sans-serif" font-size="10" letter-spacing="3" font-weight="700" fill="#64748b">SHOW BRIEF</text>
+  <rect x="208" y="686" width="612" height="221" rx="20" fill="#fbf4ea" stroke="#eadcc8"/>
+  <text x="227" y="717" font-family="Arial,sans-serif" font-size="9" letter-spacing="4" font-weight="700" fill="#64748b">PROGRESS</text>
+  <text x="227" y="744" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#0f172a">Where this booking stands</text>
+  <g font-family="Arial,sans-serif">
+    <rect x="227" y="764" width="136" height="125" rx="16" fill="#fff9f0" stroke="#eadcc8"/>
+    <circle cx="256" cy="791" r="14" fill="#239a9b"/><text x="252" y="796" font-size="11" font-weight="700" fill="#fff">1</text>
+    <text x="281" y="791" font-size="10" letter-spacing="2" font-weight="700" fill="#64748b">REQUESTED</text><text x="281" y="814" font-size="13" fill="#0f172a">May 27,</text><text x="281" y="834" font-size="13" fill="#0f172a">2026</text>
+    <rect x="374" y="764" width="136" height="125" rx="16" fill="#fff9f0" stroke="#eadcc8" stroke-dasharray="3 3"/>
+    <circle cx="403" cy="791" r="14" fill="#fff" stroke="#e8d9c6"/><text x="399" y="796" font-size="11" fill="#64748b">2</text>
+    <text x="428" y="791" font-size="10" letter-spacing="2" font-weight="700" fill="#64748b">CUSTOM</text><text x="428" y="810" font-size="10" letter-spacing="2" font-weight="700" fill="#64748b">OFFER</text><text x="428" y="834" font-size="13" fill="#475569">Waiting for</text><text x="428" y="854" font-size="13" fill="#475569">partner response</text>
+    <rect x="521" y="764" width="136" height="125" rx="16" fill="#fff9f0" stroke="#eadcc8" stroke-dasharray="3 3"/>
+    <circle cx="550" cy="791" r="14" fill="#fff" stroke="#e8d9c6"/><text x="546" y="796" font-size="11" fill="#64748b">3</text>
+    <text x="575" y="791" font-size="10" letter-spacing="2" font-weight="700" fill="#64748b">SCHEDULE</text><text x="575" y="814" font-size="13" fill="#0f172a">May 30,</text><text x="575" y="834" font-size="13" fill="#0f172a">2026</text>
+    <rect x="668" y="764" width="136" height="125" rx="16" fill="#fff9f0" stroke="#eadcc8" stroke-dasharray="3 3"/>
+    <circle cx="697" cy="791" r="14" fill="#fff" stroke="#e8d9c6"/><text x="693" y="796" font-size="11" fill="#64748b">4</text>
+    <text x="722" y="791" font-size="10" letter-spacing="2" font-weight="700" fill="#64748b">COMPLETED</text><text x="722" y="814" font-size="13" fill="#475569">Awaiting</text><text x="722" y="834" font-size="13" fill="#475569">completion</text>
+  </g>
+  <rect x="841" y="298" width="283" height="436" rx="20" fill="#fffbf5" stroke="#eadcc8"/>
+  <text x="859" y="329" font-family="Arial,sans-serif" font-size="9" letter-spacing="4" font-weight="700" fill="#64748b">NEXT STEP</text>
+  <text x="859" y="356" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#0f172a">Pending</text>
+  <text x="859" y="382" font-family="Arial,sans-serif" font-size="13" fill="#475569">Finish payment from here whenever you're ready.</text>
+  <text x="859" y="424" font-family="Arial,sans-serif" font-size="9" letter-spacing="3" font-weight="700" fill="#64748b">AMOUNT DUE</text>
+  <text x="859" y="455" font-family="Arial,sans-serif" font-size="27" font-weight="700" fill="#0f172a">KSh650</text>
+  <rect x="859" y="486" width="245" height="32" rx="10" fill="#fff"/>
+  <text x="874" y="507" font-family="Arial,sans-serif" font-size="13" fill="#9a6b3d">Booking ID</text>
+  <text x="1037" y="507" font-family="Arial,sans-serif" font-size="13" fill="#0f172a">bf105d1c</text>
+  <rect x="859" y="529" width="245" height="32" rx="10" fill="#fff"/>
+  <text x="874" y="550" font-family="Arial,sans-serif" font-size="13" fill="#9a6b3d">Payment</text>
+  <text x="984" y="550" font-family="Arial,sans-serif" font-size="13" fill="#0f172a">Payment pending</text>
+  <rect x="841" y="750" width="283" height="315" rx="20" fill="#fffdf4" stroke="#facc15"/>
+  <text x="856" y="779" font-family="Arial,sans-serif" font-size="9" letter-spacing="4" font-weight="700" fill="#f97316">PAYMENT</text>
+  <text x="856" y="808" font-family="Arial,sans-serif" font-size="13" fill="#334155">This booking moves forward on full payment.</text>
+  <rect x="857" y="869" width="251" height="33" rx="6" fill="#239a9b"/>
+  <text x="946" y="891" font-family="Arial,sans-serif" font-size="13" font-weight="700" fill="#fff">Pay in full</text>
+  <path d="M907 288c-43 6-76 27-88 58-24 64 23 142 107 154 73 11 141-28 159-87 18-57-18-112-83-129" fill="none" stroke="#ef1c24" stroke-width="7" stroke-linecap="round"/>
+  <path d="M909 288l-57 13-21 16" fill="none" stroke="#ef1c24" stroke-width="7" stroke-linecap="round"/>
+  <path d="M424 876l15 27 70-68" fill="none" stroke="#ef1c24" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
