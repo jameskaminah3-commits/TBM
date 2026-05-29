@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import type { Stay, Car, Cook, Errand, Experience, ProviderBookingAssignmentView, ProviderPaymentData } from "@shared/schema";
 import { InboxCenter } from "@/components/inbox-center";
+import { PartnerAdminThread } from "@/components/partner-admin-thread";
 import { ProviderLayout } from "@/components/provider-layout";
 import { useAuth } from "@/hooks/useAuth";
 import { useInbox } from "@/hooks/use-inbox";
@@ -628,6 +629,7 @@ function readProviderDashboardIntent(search: string) {
     bookingId: params.get("bookingId"),
     assignmentId: params.get("assignmentId"),
     openThread: params.get("openThread") === "1",
+    openAdminThread: params.get("openAdminThread") === "1",
   };
 }
 
@@ -917,6 +919,11 @@ export default function ProviderDashboard() {
 
   useEffect(() => {
     if (!dashboardIntent.bookingId && !dashboardIntent.assignmentId) {
+      if (dashboardIntent.openAdminThread) {
+        setActiveTab("overview");
+        return;
+      }
+
       if (dashboardIntent.tab !== "overview") {
         setActiveTab(dashboardIntent.tab);
       }
@@ -1446,6 +1453,24 @@ export default function ProviderDashboard() {
                     <Button onClick={() => updateProfileMutation.mutate(profileForm)} disabled={updateProfileMutation.isPending} className="w-full rounded-full">{updateProfileMutation.isPending ? "Saving..." : "Save Profile"}</Button>
                   </CardContent>
                 </Card>
+
+                {isProvider ? (
+                  <Card className="border-stone-200/70 bg-white/82 shadow-[0_20px_60px_-42px_rgba(92,73,47,0.34)]">
+                    <CardHeader>
+                      <CardTitle>Admin Channel</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <PartnerAdminThread
+                        mode="provider"
+                        providerUserId={user?.id}
+                        title="Message Admin"
+                        description="Use this thread for account questions, listing approvals, payout follow-ups, or anything outside a booking."
+                        enabled={isProvider}
+                        defaultOpen={dashboardIntent.openAdminThread}
+                      />
+                    </CardContent>
+                  </Card>
+                ) : null}
 
                 <Card className="border-stone-200/70 bg-white/82 shadow-[0_20px_60px_-42px_rgba(92,73,47,0.34)]">
                   <CardHeader>

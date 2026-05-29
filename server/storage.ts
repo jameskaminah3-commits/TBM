@@ -7,8 +7,10 @@ import {
   type InsertProvider,
   type Booking,
   type BookingMessage,
+  type PartnerAdminMessage,
   type InsertBooking,
   type InsertBookingMessage,
+  type InsertPartnerAdminMessage,
   type ServerBooking,
   type BlogPost,
   type InsertBlogPost,
@@ -89,6 +91,7 @@ import {
   providers,
   bookings,
   bookingMessages,
+  partnerAdminMessages,
   bookingServiceAssignments,
   bookingAttributions,
   blogPosts,
@@ -289,6 +292,10 @@ function buildInboxDeliveryState(
 
 function buildBookingInboxThreadKey(bookingId: string) {
   return `booking:${bookingId}`;
+}
+
+function buildPartnerAdminInboxThreadKey(providerUserId: string) {
+  return `partner-admin:${providerUserId}`;
 }
 
 function getInboxSenderRoleLabel(role: string | null | undefined) {
@@ -1314,6 +1321,8 @@ export interface IStorage {
   deleteBooking(id: string): Promise<boolean>;
   getBookingMessages(bookingId: string): Promise<BookingMessage[]>;
   createBookingMessage(message: InsertBookingMessage & { userId: string; senderRole: string }): Promise<BookingMessage>;
+  getPartnerAdminMessages(providerUserId: string): Promise<PartnerAdminMessage[]>;
+  createPartnerAdminMessage(message: InsertPartnerAdminMessage & { providerUserId: string; userId: string; senderRole: string }): Promise<PartnerAdminMessage>;
   syncBookingServiceAssignments(options?: { bookingIds?: string[]; notifyProviders?: boolean }): Promise<{ created: number; updated: number; cancelled: number }>;
   getBookingServiceAssignments(): Promise<BookingServiceAssignment[]>;
   getBookingServiceAssignmentsByBookingId(bookingId: string): Promise<BookingServiceAssignment[]>;
@@ -1705,6 +1714,22 @@ export class DatabaseStorage implements IStorage {
     await pool.query(`
       CREATE INDEX IF NOT EXISTS app_inbox_items_booking_idx
       ON app_inbox_items (booking_id, assignment_id, created_at DESC);
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS partner_admin_messages (
+        id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+        provider_user_id varchar NOT NULL,
+        user_id varchar NOT NULL,
+        sender_role text NOT NULL,
+        message text NOT NULL,
+        created_at text NOT NULL
+      );
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS partner_admin_messages_provider_idx
+      ON partner_admin_messages (provider_user_id, created_at);
     `);
 
     this.inboxTablesEnsured = true;
@@ -2644,6 +2669,23 @@ export class DatabaseStorage implements IStorage {
     return message;
   }
 
+  async getPartnerAdminMessages(providerUserId: string): Promise<PartnerAdminMessage[]> {
+    await this.ensureInboxTables();
+    return await db
+      .select()
+      .from(partnerAdminMessages)
+      .where(eq(partnerAdminMessages.providerUserId, providerUserId))
+      .orderBy(asc(partnerAdminMessages.createdAt));
+  }
+
+  async createPartnerAdminMessage(data: InsertPartnerAdminMessage & { providerUserId: string; userId: string; senderRole: string }): Promise<PartnerAdminMessage> {
+    await this.ensureInboxTables();
+    const now = new Date().toISOString();
+    const [message] = await db.insert(partnerAdminMessages).values({ ...data, createdAt: now }).returning();
+    await this.createPartnerAdminMessageInboxItems(message);
+    return message;
+  }
+
   private async getProviderWorkflowCatalog(): Promise<ProviderFinancialCatalog> {
     const [allStays, allCars, allCooks, allErrands, allExperiences, providerUsers] = await Promise.all([
       this.getStays(),
@@ -2742,11 +2784,11 @@ export class DatabaseStorage implements IStorage {
       return await this.updateInboxPushDeliveryState(item, "suppressed", "Push is disabled in user preferences.");
     }
 
-    if (item.type === "booking-message" && !preferences.bookingMessages) {
-      return await this.updateInboxPushDeliveryState(item, "suppressed", "Booking message push is disabled.");
+    if ((item.type === "booking-message" || item.type === "partner-admin-message") && !preferences.bookingMessages) {
+      return await this.updateInboxPushDeliveryState(item, "suppressed", "Message push is disabled.");
     }
 
-    if (item.type !== "booking-message" && !preferences.assignmentAlerts) {
+    if (item.type !== "booking-message" && item.type !== "partner-admin-message" && !preferences.assignmentAlerts) {
       return await this.updateInboxPushDeliveryState(item, "suppressed", "Assignment alert push is disabled.");
     }
 
@@ -2892,6 +2934,49 @@ export class DatabaseStorage implements IStorage {
         channels: ["in-app", "push"],
         metadata: {
           bookingId: message.bookingId,
+          senderRole: message.senderRole,
+          senderName: senderLabel,
+        },
+      }));
+    }
+
+    return createdItems;
+  }
+
+  private async createPartnerAdminMessageInboxItems(message: PartnerAdminMessage) {
+    const [sender, providerUser, adminUsers] = await Promise.all([
+      this.getUser(message.userId),
+      this.getUser(message.providerUserId),
+      this.getUsersByRole("admin"),
+    ]);
+    const threadKey = buildPartnerAdminInboxThreadKey(message.providerUserId);
+    const senderLabel = [sender?.firstName, sender?.lastName].filter(Boolean).join(" ").trim()
+      || sender?.email
+      || getInboxSenderRoleLabel(message.senderRole);
+    const providerLabel = [providerUser?.firstName, providerUser?.lastName].filter(Boolean).join(" ").trim()
+      || providerUser?.email
+      || "Partner";
+    const messageExcerpt = getInboxMessageExcerpt(message.message);
+    const recipients = message.senderRole === "admin"
+      ? [message.providerUserId]
+      : adminUsers.map((adminUser) => adminUser.id);
+    const createdItems: AppInboxItem[] = [];
+
+    for (const recipientUserId of Array.from(new Set(recipients)).filter((id) => id && id !== message.userId)) {
+      createdItems.push(await this.createInboxItem({
+        userId: recipientUserId,
+        actorUserId: message.userId,
+        actorRole: message.senderRole,
+        threadKey,
+        type: "partner-admin-message",
+        title: message.senderRole === "admin"
+          ? "New message from admin"
+          : `Partner message from ${providerLabel}`,
+        body: `${senderLabel}: ${messageExcerpt}`,
+        priority: "normal",
+        channels: ["in-app", "push"],
+        metadata: {
+          providerUserId: message.providerUserId,
           senderRole: message.senderRole,
           senderName: senderLabel,
         },
@@ -3120,11 +3205,11 @@ export class DatabaseStorage implements IStorage {
         }
 
         if (scope === "messages") {
-          return item.type === "booking-message";
+          return item.type === "booking-message" || item.type === "partner-admin-message";
         }
 
         if (scope === "alerts") {
-          return item.type !== "booking-message";
+          return item.type !== "booking-message" && item.type !== "partner-admin-message";
         }
 
         return true;

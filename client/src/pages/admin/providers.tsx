@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -7,6 +7,7 @@ import { z } from "zod";
 import { Briefcase, Mail, Pencil, Phone, Search, ShieldAlert, ShieldCheck, Star, Trash2, TriangleAlert, Users, type LucideIcon } from "lucide-react";
 import { providerCategories, type ProviderAccountSummary } from "@shared/schema";
 import { AdminLayout } from "@/components/admin-layout";
+import { PartnerAdminThread } from "@/components/partner-admin-thread";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -165,9 +166,11 @@ function ProvidersSkeleton() {
 
 export default function AdminProviders() {
   const [, setLocation] = useLocation();
+  const search = useSearch();
   const { toast } = useToast();
   const { isLoading: authLoading, isAdmin } = useAuth();
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
+  const [activeMessageProviderId, setActiveMessageProviderId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editPhone, setEditPhone] = useState("");
   const [editProviderTypes, setEditProviderTypes] = useState<FormData["providerTypes"]>(["stays"]);
@@ -180,6 +183,14 @@ export default function AdminProviders() {
       setLocation("/auth?next=/admin/providers");
     }
   }, [authLoading, isAdmin, setLocation]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(search);
+    const providerId = params.get("providerId");
+    if (providerId && params.get("openThread") === "1") {
+      setActiveMessageProviderId(providerId);
+    }
+  }, [search]);
 
   const { data: providers = [], isLoading } = useQuery<ProviderAccountSummary[]>({
     queryKey: ["/api/admin/provider-accounts"],
@@ -592,6 +603,14 @@ export default function AdminProviders() {
                         <Button
                           variant="outline"
                           className="justify-start"
+                          onClick={() => setActiveMessageProviderId((current) => current === provider.id ? null : provider.id)}
+                        >
+                          <Mail className="mr-2 h-4 w-4" />
+                          {activeMessageProviderId === provider.id ? "Hide messages" : "Message partner"}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="justify-start"
                           onClick={() => {
                             setEditingProviderId(provider.id);
                             setEditName([provider.firstName, provider.lastName].filter(Boolean).join(" "));
@@ -661,6 +680,17 @@ export default function AdminProviders() {
                         </AlertDialog>
                       </div>
                     )}
+
+                    {activeMessageProviderId === provider.id ? (
+                      <PartnerAdminThread
+                        mode="admin"
+                        providerUserId={provider.id}
+                        partnerName={getProviderDisplayName(provider)}
+                        title="Partner Admin Channel"
+                        description="Direct admin conversation with"
+                        defaultOpen
+                      />
+                    ) : null}
 
                     <div className="space-y-3">
                       <div className="flex items-center gap-2 text-sm font-medium text-foreground">

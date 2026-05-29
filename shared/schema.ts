@@ -411,6 +411,15 @@ export const bookingMessages = pgTable("booking_messages", {
   createdAt: text("created_at").notNull(),
 });
 
+export const partnerAdminMessages = pgTable("partner_admin_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  providerUserId: varchar("provider_user_id").notNull(),
+  userId: varchar("user_id").notNull(),
+  senderRole: text("sender_role").notNull(),
+  message: text("message").notNull(),
+  createdAt: text("created_at").notNull(),
+});
+
 // Client-side booking schema - omits fields that backend injects from session
 export const insertBookingSchema = createInsertSchema(bookings).omit({
   id: true,
@@ -513,6 +522,17 @@ export const insertBookingMessageSchema = createInsertSchema(bookingMessages).om
 });
 export type InsertBookingMessage = z.infer<typeof insertBookingMessageSchema>;
 export type BookingMessage = typeof bookingMessages.$inferSelect;
+export const insertPartnerAdminMessageSchema = createInsertSchema(partnerAdminMessages).omit({
+  id: true,
+  createdAt: true,
+  userId: true,
+  senderRole: true,
+}).extend({
+  providerUserId: z.string().optional(),
+  message: z.string().trim().min(1, "Message is required").max(2000, "Message is too long"),
+});
+export type InsertPartnerAdminMessage = z.infer<typeof insertPartnerAdminMessageSchema>;
+export type PartnerAdminMessage = typeof partnerAdminMessages.$inferSelect;
 export const providerNotificationTypes = ["assignment-created", "assignment-reassigned", "assignment-updated"] as const;
 export type ProviderNotificationType = typeof providerNotificationTypes[number];
 export const providerNotifications = pgTable("provider_notifications", {
@@ -532,7 +552,7 @@ export type ProviderBookingAssignmentView = {
   assignment: BookingServiceAssignment;
   booking: Booking;
 };
-export const appInboxItemTypes = ["assignment-created", "assignment-reassigned", "assignment-updated", "booking-message"] as const;
+export const appInboxItemTypes = ["assignment-created", "assignment-reassigned", "assignment-updated", "booking-message", "partner-admin-message"] as const;
 export type AppInboxItemType = typeof appInboxItemTypes[number];
 export const appInboxPriorities = ["low", "normal", "high", "urgent"] as const;
 export type AppInboxPriority = typeof appInboxPriorities[number];

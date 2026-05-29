@@ -11,6 +11,7 @@ import {
 } from "./middleware/auth";
 import {
   insertBookingMessageSchema,
+  insertPartnerAdminMessageSchema,
   publicBookingRequestSchema,
   serverBookingSchema,
   insertAccommodationSchema,
@@ -3861,6 +3862,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/provider/admin-messages", requireProviderOrAdmin, async (req: any, res) => {
+    try {
+      if (req.user.claims.role !== "provider") {
+        return res.status(403).json({ error: "Provider account required" });
+      }
+
+      res.json(await storage.getPartnerAdminMessages(req.user.claims.sub));
+    } catch (error) {
+      console.error("[PARTNER_ADMIN_MESSAGES] Failed to fetch provider thread:", error);
+      res.status(500).json({ error: "Failed to fetch admin messages" });
+    }
+  });
+
+  app.post("/api/provider/admin-messages", requireProviderOrAdmin, async (req: any, res) => {
+    try {
+      if (req.user.claims.role !== "provider") {
+        return res.status(403).json({ error: "Provider account required" });
+      }
+
+      const validatedData = insertPartnerAdminMessageSchema.parse({
+        providerUserId: req.user.claims.sub,
+        message: req.body?.message,
+      });
+      const message = await storage.createPartnerAdminMessage({
+        ...validatedData,
+        providerUserId: req.user.claims.sub,
+        userId: req.user.claims.sub,
+        senderRole: "provider",
+      });
+
+      res.status(201).json(message);
+    } catch (error) {
+      if (error instanceof Error) {
+        return res.status(400).json({ error: error.message });
+      }
+      res.status(500).json({ error: "Failed to send admin message" });
+    }
+  });
+
   app.get("/api/inbox", isAuthenticated, async (req: any, res) => {
     try {
       res.json(await storage.getUserInbox(req.user.claims.sub));
@@ -4349,6 +4389,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("[ADMIN] Failed to fetch provider accounts:", error);
       res.status(500).json({ error: "Failed to fetch provider accounts" });
+    }
+  });
+
+  app.get("/api/admin/provider-accounts/:id/messages", requireAdmin, async (req, res) => {
+    try {
+      const provider = await storage.getUser(req.params.id);
+      if (!provider || provider.role !== "provider") {
+        return res.status(404).json({ error: "Provider account not found" });
+      }
+
+      res.json(await storage.getPartnerAdminMessages(req.params.id));
+    } catch (error) {
+      console.error("[ADMIN] Failed to fetch provider admin thread:", error);
+      res.status(500).json({ error: "Failed to fetch provider messages" });
+    }
+  });
+
+  app.post("/api/admin/provider-accounts/:id/messages", requireAdmin, async (req: any, res) => {
+    try {
+      const provider = await storage.getUser(req.params.id);
+      if (!provider || provider.role !== "provider") {
+        return res.status(404).json({ error: "Provider account not found" });
+      }
+
+      const validatedData = insertPartnerAdminMessageSchema.parse({
+        providerUserId: req.params.id,
+        message: req.body?.message,
+      });
+      const message = await storage.createPartnerAdminMessage({
+        ...validatedData,
+        providerUserId: req.params.id,
+        userId: req.user.claims.sub,
+        senderRole: "admin",
+      });
+
+      res.status(201).json(message);
+    } catch (error) {
+      if (error instanceof Error) {
+        return res.status(400).json({ error: error.message });
+      }
+      res.status(500).json({ error: "Failed to send provider message" });
     }
   });
 

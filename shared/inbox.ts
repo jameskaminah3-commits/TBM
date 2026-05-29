@@ -39,7 +39,7 @@ export function isBookingMessageInboxItem(
   value: Pick<AppInboxItem, "type"> | string | null | undefined,
 ): boolean {
   const type = typeof value === "string" ? value : value?.type;
-  return type === "booking-message";
+  return type === "booking-message" || type === "partner-admin-message";
 }
 
 export function getAppInboxCategory(item: Pick<AppInboxItem, "type">): AppInboxCategory {
@@ -150,6 +150,17 @@ export function buildInboxWorkspaceUrl(
   userRole?: string | null,
 ): string {
   if (userRole === "admin") {
+    if (item.threadKey?.startsWith("partner-admin:")) {
+      const providerUserId = item.threadKey.slice("partner-admin:".length).trim();
+      const params = new URLSearchParams();
+      if (providerUserId) {
+        params.set("providerId", providerUserId);
+      }
+      params.set("openThread", "1");
+      const search = params.toString();
+      return search ? `/admin/providers?${search}` : "/admin/providers";
+    }
+
     const params = new URLSearchParams();
     if (item.bookingId?.trim()) {
       params.set("bookingId", item.bookingId.trim());
@@ -165,6 +176,10 @@ export function buildInboxWorkspaceUrl(
   }
 
   if (userRole === "provider") {
+    if (item.threadKey?.startsWith("partner-admin:")) {
+      return "/provider/dashboard?tab=overview&openAdminThread=1";
+    }
+
     const params = new URLSearchParams({ tab: "bookings" });
     if (item.bookingId?.trim()) {
       params.set("bookingId", item.bookingId.trim());
