@@ -8,21 +8,12 @@ import {
 const CONTACT_EMAIL = "contact@tembeabilamatata.com";
 const CONTACT_PHONE_DISPLAY = "+254 718 475 264";
 
-export function escapeReceiptHtml(value: string | number | null | undefined) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
 export function getReceiptBookingReference(bookingId: string) {
   return bookingId.slice(0, 8).toUpperCase();
 }
 
 export function getReceiptDownloadFilename(bookingId: string) {
-  return `tembea-bila-matata-receipt-${getReceiptBookingReference(bookingId)}.html`;
+  return `tembea-bila-matata-receipt-${getReceiptBookingReference(bookingId)}.pdf`;
 }
 
 function formatReceiptAmount(amount: number) {
@@ -90,11 +81,52 @@ function getReceiptPaymentProviderLabel(provider?: string | null) {
   return provider;
 }
 
-function receiptListItem(label: string, value: string | number) {
-  return `<li>${escapeReceiptHtml(label)}: ${escapeReceiptHtml(value)}</li>`;
+function escapePdfText(value: string | number | null | undefined) {
+  return String(value ?? "")
+    .normalize("NFKD")
+    .replace(/[^\x20-\x7E]/g, "")
+    .replace(/\\/g, "\\\\")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)");
 }
 
-export function buildBookingReceiptHtml(booking: Booking) {
+function drawText(text: string, x: number, y: number, size = 11) {
+  return `BT /F1 ${size} Tf ${x} ${y} Td (${escapePdfText(text)}) Tj ET`;
+}
+
+function drawLine(x1: number, y1: number, x2: number, y2: number) {
+  return `${x1} ${y1} m ${x2} ${y2} l S`;
+}
+
+function buildPdfDocument(contentStream: string) {
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    `<< /Length ${Buffer.byteLength(contentStream, "latin1")} >>\nstream\n${contentStream}\nendstream`,
+  ];
+
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+
+  objects.forEach((object, index) => {
+    offsets.push(Buffer.byteLength(pdf, "latin1"));
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+
+  const xrefOffset = Buffer.byteLength(pdf, "latin1");
+  pdf += `xref\n0 ${objects.length + 1}\n`;
+  pdf += "0000000000 65535 f \n";
+  for (let index = 1; index < offsets.length; index += 1) {
+    pdf += `${offsets[index].toString().padStart(10, "0")} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+
+  return Buffer.from(pdf, "latin1");
+}
+
+export function buildBookingReceiptPdf(booking: Booking) {
   const amountPaid = getBookingAmountPaid(booking);
   const outstandingAmount = getBookingOutstandingAmount(booking);
   const bookingReference = getReceiptBookingReference(booking.id);
@@ -103,53 +135,46 @@ export function buildBookingReceiptHtml(booking: Booking) {
     ? `${formatReceiptDate(booking.checkIn)} to ${formatReceiptDate(booking.checkOut)}`
     : formatReceiptDate(booking.checkIn);
 
-  const balanceLine = outstandingAmount > 0
-    ? receiptListItem("Balance remaining", formatReceiptAmount(outstandingAmount))
-    : "<li>Balance remaining: Fully settled</li>";
+  const rows = [
+    ["Guest", guestLabel],
+    ["Receipt amount", formatReceiptAmount(amountPaid)],
+    ["Payment status", getReceiptPaymentStatusLabel(booking)],
+    ["Paid at", formatReceiptTimestamp(booking.paidAt)],
+    ["Booking dates", bookingDates],
+    ["Total booking value", formatReceiptAmount(booking.totalPrice)],
+    ["Total paid so far", formatReceiptAmount(amountPaid)],
+    ["Balance remaining", outstandingAmount > 0 ? formatReceiptAmount(outstandingAmount) : "Fully settled"],
+    ["Payment provider", getReceiptPaymentProviderLabel(booking.paymentProvider)],
+    ["Payment reference", booking.paymentReference || "Pending confirmation"],
+  ];
 
-  return [
-    "<!doctype html>",
-    "<html lang=\"en\">",
-    "<head>",
-    "<meta charset=\"utf-8\" />",
-    `<title>Receipt ${escapeReceiptHtml(bookingReference)}</title>`,
-    "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />",
-    "<style>",
-    "body{font-family:Arial,sans-serif;background:#f6f8fb;color:#0f172a;margin:0;padding:32px;}",
-    ".sheet{max-width:760px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:24px;padding:32px;box-shadow:0 24px 60px -40px rgba(15,23,42,.35);}",
-    ".eyebrow{font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:#64748b;font-weight:700;}",
-    "h1{font-size:28px;margin:8px 0 4px;}",
-    "p{line-height:1.6;color:#475569;}",
-    ".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:24px 0;}",
-    ".card{border:1px solid #e2e8f0;border-radius:18px;padding:16px;background:#f8fafc;}",
-    ".label{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#64748b;font-weight:700;}",
-    ".value{margin-top:8px;font-size:18px;font-weight:700;color:#0f172a;}",
-    "ul{padding-left:18px;line-height:1.8;color:#334155;}",
-    ".footer{margin-top:24px;padding-top:20px;border-top:1px solid #e2e8f0;font-size:14px;color:#475569;}",
-    "</style>",
-    "</head>",
-    "<body>",
-    "<div class=\"sheet\">",
-    "<div class=\"eyebrow\">Tembea Bila Matata</div>",
-    "<h1>Payment Receipt</h1>",
-    `<p>Booking reference ${escapeReceiptHtml(bookingReference)}</p>`,
-    "<div class=\"grid\">",
-    `<div class=\"card\"><div class=\"label\">Guest</div><div class=\"value\">${escapeReceiptHtml(guestLabel)}</div></div>`,
-    `<div class=\"card\"><div class=\"label\">Receipt amount</div><div class=\"value\">${escapeReceiptHtml(formatReceiptAmount(amountPaid))}</div></div>`,
-    `<div class=\"card\"><div class=\"label\">Payment status</div><div class=\"value\">${escapeReceiptHtml(getReceiptPaymentStatusLabel(booking))}</div></div>`,
-    `<div class=\"card\"><div class=\"label\">Paid at</div><div class=\"value\">${escapeReceiptHtml(formatReceiptTimestamp(booking.paidAt))}</div></div>`,
-    "</div>",
-    "<ul>",
-    receiptListItem("Booking dates", bookingDates),
-    receiptListItem("Total booking value", formatReceiptAmount(booking.totalPrice)),
-    receiptListItem("Total paid so far", formatReceiptAmount(amountPaid)),
-    balanceLine,
-    receiptListItem("Payment provider", getReceiptPaymentProviderLabel(booking.paymentProvider)),
-    receiptListItem("Payment reference", booking.paymentReference || "Pending confirmation"),
-    "</ul>",
-    `<div class=\"footer\">Need help? Contact ${escapeReceiptHtml(CONTACT_EMAIL)} or ${escapeReceiptHtml(CONTACT_PHONE_DISPLAY)}.</div>`,
-    "</div>",
-    "</body>",
-    "</html>",
-  ].join("");
+  const commands = [
+    "0.96 0.97 0.98 rg 0 0 612 792 re f",
+    "1 1 1 rg 54 56 504 680 re f",
+    "0.88 0.91 0.95 RG 54 56 504 680 re S",
+    "0.39 0.45 0.55 rg",
+    drawText("TEMBEA BILA MATATA", 78, 696, 10),
+    "0.06 0.09 0.16 rg",
+    drawText("Payment Receipt", 78, 668, 28),
+    "0.29 0.33 0.41 rg",
+    drawText(`Booking reference ${bookingReference}`, 78, 646, 12),
+    "0.88 0.91 0.95 RG",
+    drawLine(78, 622, 534, 622),
+  ];
+
+  let y = 592;
+  rows.forEach(([label, value]) => {
+    commands.push("0.39 0.45 0.55 rg");
+    commands.push(drawText(label.toUpperCase(), 78, y, 9));
+    commands.push("0.06 0.09 0.16 rg");
+    commands.push(drawText(value, 236, y, 12));
+    y -= 30;
+  });
+
+  commands.push("0.88 0.91 0.95 RG");
+  commands.push(drawLine(78, 126, 534, 126));
+  commands.push("0.29 0.33 0.41 rg");
+  commands.push(drawText(`Need help? Contact ${CONTACT_EMAIL} or ${CONTACT_PHONE_DISPLAY}.`, 78, 104, 10));
+
+  return buildPdfDocument(commands.join("\n"));
 }

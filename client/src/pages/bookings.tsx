@@ -579,7 +579,7 @@ export default function Bookings() {
     const receiptUrl = `/api/bookings/${encodeURIComponent(booking.id)}/receipt`;
     const link = document.createElement("a");
     link.href = receiptUrl;
-    link.download = `tembea-bila-matata-receipt-${bookingReference}.html`;
+    link.download = `tembea-bila-matata-receipt-${bookingReference}.pdf`;
     document.body.appendChild(link);
     link.click();
     link.remove();

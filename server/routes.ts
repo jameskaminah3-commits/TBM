@@ -71,7 +71,7 @@ import {
   sendBookingPaymentNotificationEmails,
 } from "./notifications";
 import {
-  buildBookingReceiptHtml,
+  buildBookingReceiptPdf,
   getReceiptDownloadFilename,
 } from "./booking-receipt";
 import { and, eq, ne } from "drizzle-orm";
@@ -2793,12 +2793,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "A receipt is available after a payment has been recorded." });
       }
 
-      const html = buildBookingReceiptHtml(booking);
+      const pdf = buildBookingReceiptPdf(booking);
       const filename = getReceiptDownloadFilename(booking.id);
-      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
       res.setHeader("Cache-Control", "private, no-store");
-      return res.send(html);
+      return res.send(pdf);
     } catch (error) {
       console.error("[BOOKING] Failed to generate receipt:", error);
       return res.status(500).json({ error: "Failed to generate receipt" });

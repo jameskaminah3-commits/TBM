@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Booking } from "../shared/schema.ts";
 import {
-  buildBookingReceiptHtml,
+  buildBookingReceiptPdf,
   getReceiptDownloadFilename,
 } from "./booking-receipt.ts";
 
@@ -35,20 +35,23 @@ function createBooking(overrides: Partial<Booking> = {}): Booking {
   } as Booking;
 }
 
-test("buildBookingReceiptHtml renders paid booking details safely", () => {
-  const html = buildBookingReceiptHtml(createBooking());
+test("buildBookingReceiptPdf renders paid booking details into a PDF", () => {
+  const pdf = buildBookingReceiptPdf(createBooking());
+  const pdfText = pdf.toString("latin1");
 
-  assert.match(html, /Payment Receipt/);
-  assert.match(html, /BOOKING-/);
-  assert.match(html, /Jane &lt;Guest&gt;/);
-  assert.match(html, /PAY-&amp;-12345/);
-  assert.match(html, /USD 400/);
-  assert.match(html, /Balance remaining: USD 400/);
+  assert.ok(Buffer.isBuffer(pdf));
+  assert.equal(pdf.subarray(0, 8).toString("ascii"), "%PDF-1.4");
+  assert.match(pdfText, /Payment Receipt/);
+  assert.match(pdfText, /BOOKING-/);
+  assert.match(pdfText, /Jane <Guest>/);
+  assert.match(pdfText, /PAY-&-12345/);
+  assert.match(pdfText, /USD 400/);
+  assert.match(pdfText, /BALANCE REMAINING/);
 });
 
 test("getReceiptDownloadFilename uses the short booking reference", () => {
   assert.equal(
     getReceiptDownloadFilename("550e8400-e29b-41d4-a716-446655440000"),
-    "tembea-bila-matata-receipt-550E8400.html",
+    "tembea-bila-matata-receipt-550E8400.pdf",
   );
 });
