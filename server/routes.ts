@@ -70,6 +70,10 @@ import {
   sendBookingCreatedNotificationEmails,
   sendBookingPaymentNotificationEmails,
 } from "./notifications";
+import {
+  buildBookingReceiptHtml,
+  getReceiptDownloadFilename,
+} from "./booking-receipt";
 import { and, eq, ne } from "drizzle-orm";
 import {
   calculateBookingDepositAmount,
@@ -2773,6 +2777,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(await attachBookingMarketingAttribution(decorateBookingWithOperationalStatus(access.booking)));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch booking" });
+    }
+  });
+
+  app.get("/api/bookings/:id/receipt", isAuthenticated, async (req: any, res) => {
+    try {
+      const booking = await storage.getBooking(req.params.id);
+      const currentUserId = req.user?.claims?.sub;
+      const currentUserRole = req.user?.claims?.role;
+      if (!booking || (currentUserRole !== "admin" && booking.userId !== currentUserId)) {
+        return res.status(404).json({ error: "Booking not found" });
+      }
+
+      if (getBookingAmountPaid(booking) <= 0) {
+        return res.status(400).json({ error: "A receipt is available after a payment has been recorded." });
+      }
+
+      const html = buildBookingReceiptHtml(booking);
+      const filename = getReceiptDownloadFilename(booking.id);
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.send(html);
+    } catch (error) {
+      console.error("[BOOKING] Failed to generate receipt:", error);
+      return res.status(500).json({ error: "Failed to generate receipt" });
     }
   });
 

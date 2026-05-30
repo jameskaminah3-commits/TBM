@@ -21,7 +21,6 @@ import { BookingServiceDetails } from "@/components/booking-service-details";
 import { RequestBriefAccordion } from "@/components/request-brief-accordion";
 import { CheckoutPaymentPreview, CheckoutPaymentSheet, getPaymentChoiceForProvider } from "@/components/payment-provider-picker";
 import { useAuth } from "@/hooks/useAuth";
-import { CONTACT_EMAIL, CONTACT_PHONE_DISPLAY } from "@/lib/contact-info";
 import { cn } from "@/lib/utils";
 import {
   getBookingAmountPaid,
@@ -99,21 +98,6 @@ const getBookingDueLabel = (booking: Booking) => {
   return "Amount due";
 };
 
-const formatReceiptTimestamp = (value?: string | null) => {
-  if (!value) {
-    return "Pending confirmation";
-  }
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.valueOf())) {
-    return value;
-  }
-
-  return parsed.toLocaleString("en-KE", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
-};
 const getBookingStatusLabel = (status: string) => status === "late"
   ? "Needs attention"
   : status === "in-progress"
@@ -592,62 +576,13 @@ export default function Bookings() {
     }
 
     const bookingReference = booking.id.slice(0, 8).toUpperCase();
-    const outstandingAmount = getBookingOutstandingAmount(booking);
-    const receiptHtml = [
-      "<!doctype html>",
-      "<html lang=\"en\">",
-      "<head>",
-      "<meta charset=\"utf-8\" />",
-      `<title>Receipt ${bookingReference}</title>`,
-      "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />",
-      "<style>",
-      "body{font-family:Arial,sans-serif;background:#f6f8fb;color:#0f172a;margin:0;padding:32px;}",
-      ".sheet{max-width:760px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:24px;padding:32px;box-shadow:0 24px 60px -40px rgba(15,23,42,.35);}",
-      ".eyebrow{font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:#64748b;font-weight:700;}",
-      "h1{font-size:28px;margin:8px 0 4px;}",
-      "p{line-height:1.6;color:#475569;}",
-      ".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:24px 0;}",
-      ".card{border:1px solid #e2e8f0;border-radius:18px;padding:16px;background:#f8fafc;}",
-      ".label{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#64748b;font-weight:700;}",
-      ".value{margin-top:8px;font-size:18px;font-weight:700;color:#0f172a;}",
-      "ul{padding-left:18px;line-height:1.8;color:#334155;}",
-      ".footer{margin-top:24px;padding-top:20px;border-top:1px solid #e2e8f0;font-size:14px;color:#475569;}",
-      "</style>",
-      "</head>",
-      "<body>",
-      "<div class=\"sheet\">",
-      "<div class=\"eyebrow\">Tembea Bila Matata</div>",
-      `<h1>Payment Receipt</h1>`,
-      `<p>Booking reference ${bookingReference}</p>`,
-      "<div class=\"grid\">",
-      `<div class=\"card\"><div class=\"label\">Guest</div><div class=\"value\">${booking.guestName || booking.guestEmail}</div></div>`,
-      `<div class=\"card\"><div class=\"label\">Receipt amount</div><div class=\"value\">${formatAmount(amountPaid)}</div></div>`,
-      `<div class=\"card\"><div class=\"label\">Payment status</div><div class=\"value\">${getBookingPaymentStatusLabel(booking)}</div></div>`,
-      `<div class=\"card\"><div class=\"label\">Paid at</div><div class=\"value\">${formatReceiptTimestamp(booking.paidAt)}</div></div>`,
-      "</div>",
-      "<ul>",
-      `<li>Booking dates: ${formatDate(booking.checkIn)}${booking.checkOut !== booking.checkIn ? ` to ${formatDate(booking.checkOut)}` : ""}</li>`,
-      `<li>Total booking value: ${formatAmount(booking.totalPrice)}</li>`,
-      `<li>Total paid so far: ${formatAmount(amountPaid)}</li>`,
-      `${outstandingAmount > 0 ? `<li>Balance remaining: ${formatAmount(outstandingAmount)}</li>` : "<li>Balance remaining: Fully settled</li>"}`,
-      `<li>Payment provider: ${booking.paymentProvider === "mpesa-manual" ? "Temporary M-Pesa" : booking.paymentProvider || "Not specified"}</li>`,
-      `<li>Payment reference: ${booking.paymentReference || "Pending confirmation"}</li>`,
-      "</ul>",
-      `<div class=\"footer\">Need help? Contact ${CONTACT_EMAIL} or ${CONTACT_PHONE_DISPLAY}.</div>`,
-      "</div>",
-      "</body>",
-      "</html>",
-    ].join("");
-
-    const blob = new Blob([receiptHtml], { type: "text/html;charset=utf-8" });
-    const url = window.URL.createObjectURL(blob);
+    const receiptUrl = `/api/bookings/${encodeURIComponent(booking.id)}/receipt`;
     const link = document.createElement("a");
-    link.href = url;
+    link.href = receiptUrl;
     link.download = `tembea-bila-matata-receipt-${bookingReference}.html`;
     document.body.appendChild(link);
     link.click();
     link.remove();
-    window.URL.revokeObjectURL(url);
   };
 
   useEffect(() => {
