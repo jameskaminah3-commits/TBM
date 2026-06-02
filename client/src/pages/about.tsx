@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import {
   BUSINESS_REGISTRATION_NAME,
   CONTACT_EMAIL,
@@ -82,6 +83,70 @@ function ContactDetails() {
     </div>
   );
 }
+
+const faqItems: Array<{ question: string; answer: ReactNode }> = [
+  {
+    question: "Do I need an account to make a booking?",
+    answer: (
+      <p>
+        Yes. Creating an account allows you to manage bookings, receive updates, communicate with our team, and access your reservation history in one place.
+      </p>
+    ),
+  },
+  {
+    question: "Do I need to be staying in a villa or apartment to use your services?",
+    answer: (
+      <>
+        <p>No. Many of our services can be booked independently of accommodation.</p>
+        <p>
+          Whether you're a tourist, resident, expat, business traveler, or local family, you can book services such as chauffeur transport, airport transfers,
+          car hire, childcare support, shopping assistance, housekeeping, private chefs, errands, and curated experiences without booking a stay.
+        </p>
+      </>
+    ),
+  },
+  {
+    question: "Can I book only a service without accommodation?",
+    answer: <p>Yes. Most of our services are available as standalone bookings, subject to availability and location.</p>,
+  },
+  {
+    question: "Who are your services designed for?",
+    answer: (
+      <>
+        <p>Our services are available to both visitors and local residents.</p>
+        <p>
+          We assist holidaymakers, business travelers, families, digital nomads, expats, professionals, and anyone looking for convenient hospitality,
+          concierge, lifestyle, or support services along the Kenyan coast.
+        </p>
+      </>
+    ),
+  },
+  {
+    question: "How do custom offers work?",
+    answer: (
+      <>
+        <p>Some services, such as private dining experiences, group transportation, special events, or tailored experiences, may require custom pricing.</p>
+        <p>
+          In such cases, Tembea Bila Matata may provide a personalized quotation based on your requirements. Once approved, your booking can proceed at the
+          agreed price.
+        </p>
+      </>
+    ),
+  },
+  {
+    question: "How do I pay for a booking?",
+    answer: (
+      <p>
+        Available payment methods may include card payments, mobile money, bank transfers, and other approved payment options depending on the service and
+        location.
+      </p>
+    ),
+  },
+  {
+    question: "How can I get help before booking?",
+    answer: <p>You can contact our team via WhatsApp, phone, or email for assistance with recommendations, availability, pricing, and custom requests.</p>,
+  },
+];
 
 export function AboutPage() {
   return (
@@ -209,57 +274,20 @@ export function FaqPage() {
       title="Frequently Asked Questions"
       intro="Quick answers to common questions about bookings, services, and how Tembea Bila Matata works."
     >
-      <section className="space-y-3">
-        <h2 className="font-serif text-xl font-medium text-foreground">Do I need an account to make a booking?</h2>
-        <p>
-          Yes. Creating an account allows you to manage bookings, receive updates, communicate with our team, and access your reservation history in one place.
-        </p>
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="font-serif text-xl font-medium text-foreground">Do I need to be staying in a villa or apartment to use your services?</h2>
-        <p>No. Many of our services can be booked independently of accommodation.</p>
-        <p>
-          Whether you're a tourist, resident, expat, business traveler, or local family, you can book services such as chauffeur transport, airport transfers,
-          car hire, childcare support, shopping assistance, housekeeping, private chefs, errands, and curated experiences without booking a stay.
-        </p>
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="font-serif text-xl font-medium text-foreground">Can I book only a service without accommodation?</h2>
-        <p>Yes. Most of our services are available as standalone bookings, subject to availability and location.</p>
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="font-serif text-xl font-medium text-foreground">Who are your services designed for?</h2>
-        <p>Our services are available to both visitors and local residents.</p>
-        <p>
-          We assist holidaymakers, business travelers, families, digital nomads, expats, professionals, and anyone looking for convenient hospitality,
-          concierge, lifestyle, or support services along the Kenyan coast.
-        </p>
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="font-serif text-xl font-medium text-foreground">How do custom offers work?</h2>
-        <p>Some services, such as private dining experiences, group transportation, special events, or tailored experiences, may require custom pricing.</p>
-        <p>
-          In such cases, Tembea Bila Matata may provide a personalized quotation based on your requirements. Once approved, your booking can proceed at the
-          agreed price.
-        </p>
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="font-serif text-xl font-medium text-foreground">How do I pay for a booking?</h2>
-        <p>
-          Available payment methods may include card payments, mobile money, bank transfers, and other approved payment options depending on the service and
-          location.
-        </p>
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="font-serif text-xl font-medium text-foreground">How can I get help before booking?</h2>
-        <p>You can contact our team via WhatsApp, phone, or email for assistance with recommendations, availability, pricing, and custom requests.</p>
-      </section>
+      <Accordion type="single" collapsible className="space-y-3">
+        {faqItems.map((item) => (
+          <AccordionItem
+            key={item.question}
+            value={item.question}
+            className="rounded-md border border-border/70 bg-background/80 px-4 shadow-[0_12px_30px_-24px_rgba(15,23,42,0.45)] transition-colors data-[state=open]:border-primary/30 data-[state=open]:bg-primary/5 sm:px-5"
+          >
+            <AccordionTrigger className="min-h-16 py-4 text-left font-serif text-base font-medium leading-snug text-foreground hover:no-underline sm:text-lg">
+              {item.question}
+            </AccordionTrigger>
+            <AccordionContent className="space-y-3 pb-5 text-sm leading-7 text-muted-foreground sm:text-base">{item.answer}</AccordionContent>
+          </AccordionItem>
+        ))}
+      </Accordion>
     </PageShell>
   );
 }
