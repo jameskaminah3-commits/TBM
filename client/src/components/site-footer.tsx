@@ -1,11 +1,14 @@
 import { Facebook, Mail, MapPin, MessageCircle, Phone } from "lucide-react";
 import { Link } from "wouter";
 import {
+  BUSINESS_REGISTRATION_NAME,
   CONTACT_EMAIL,
   CONTACT_LOCATION,
   CONTACT_PHONE,
   CONTACT_PHONE_DISPLAY,
   FACEBOOK_URL,
+  GOOGLE_MAPS_URL,
+  SERVICE_AREA,
   WHATSAPP_URL,
 } from "@/lib/contact-info";
 
@@ -24,6 +27,7 @@ const companyLinks = [
   { href: "/faq", label: "FAQ" },
   { href: "/privacy", label: "Privacy Policy" },
   { href: "/terms", label: "Terms of Service" },
+  { href: "/refund-cancellation", label: "Refund & Cancellation Policy" },
 ];
 
 export function SiteFooter() {
@@ -39,6 +43,7 @@ export function SiteFooter() {
             <p className="text-sm leading-6 text-muted-foreground">
               Curated stays, transport, dining, errands, and experiences designed for smooth travel in Kenya.
             </p>
+            <p className="text-sm leading-6 text-muted-foreground">{SERVICE_AREA}</p>
           </div>
 
           <div>
@@ -83,10 +88,15 @@ export function SiteFooter() {
                 <Mail className="h-4 w-4" />
                 <span>{CONTACT_EMAIL}</span>
               </a>
-              <div className="flex items-start gap-2">
+              <a
+                href={GOOGLE_MAPS_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-start gap-2 transition-colors hover:text-primary"
+              >
                 <MapPin className="mt-0.5 h-4 w-4" />
                 <span>{CONTACT_LOCATION}</span>
-              </div>
+              </a>
             </div>
 
             <div className="mt-5 flex items-center gap-3">
@@ -109,10 +119,18 @@ export function SiteFooter() {
                 <Facebook className="h-5 w-5" />
               </a>
             </div>
+            <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-sm text-muted-foreground">
+              <a href={FACEBOOK_URL} target="_blank" rel="noreferrer" className="transition-colors hover:text-primary">
+                Facebook
+              </a>
+              <span>Instagram</span>
+              <span>TikTok</span>
+            </div>
           </div>
         </div>
 
-        <div className="mt-10 border-t pt-6 text-sm text-muted-foreground">
+        <div className="mt-10 space-y-2 border-t pt-6 text-sm text-muted-foreground">
+          <p>Business registration name: {BUSINESS_REGISTRATION_NAME}</p>
           <p>&copy; {new Date().getFullYear()} Tembea Bila Matata. All rights reserved.</p>
         </div>
       </div>

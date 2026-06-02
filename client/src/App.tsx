@@ -49,6 +49,7 @@ const ContactPage = lazy(async () => ({ default: (await import("@/pages/about"))
 const FaqPage = lazy(async () => ({ default: (await import("@/pages/about")).FaqPage }));
 const PrivacyPage = lazy(async () => ({ default: (await import("@/pages/about")).PrivacyPage }));
 const TermsPage = lazy(async () => ({ default: (await import("@/pages/about")).TermsPage }));
+const RefundCancellationPage = lazy(async () => ({ default: (await import("@/pages/about")).RefundCancellationPage }));
 const AuthPage = lazy(() => import("@/pages/auth"));
 const InboxPage = lazy(() => import("@/pages/inbox"));
 const ProviderDashboard = lazy(() => import("@/pages/provider/dashboard"));
@@ -100,6 +101,7 @@ function Router() {
         <AppRoute path="/faq" element={<FaqPage />} />
         <AppRoute path="/privacy" element={<PrivacyPage />} />
         <AppRoute path="/terms" element={<TermsPage />} />
+        <AppRoute path="/refund-cancellation" element={<RefundCancellationPage />} />
         <AppRoute path="/admin/dashboard" element={<AdminDashboard />} />
         <AppRoute path="/admin/bookings" element={<AdminBookings />} />
         <AppRoute path="/admin/clients" element={<AdminClients />} />
