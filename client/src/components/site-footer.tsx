@@ -50,7 +50,7 @@ export function SiteFooter() {
             <h4 className="mb-4 text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-foreground/80">Explore</h4>
             <div className="space-y-3 text-sm">
               {exploreLinks.map((link) => (
-                <Link key={link.href} href={link.href} className="block text-muted-foreground transition-colors hover:text-primary">
+                <Link key={link.href} href={link.href} className="block py-1 text-muted-foreground transition-colors hover:text-primary">
                   {link.label}
                 </Link>
               ))}
@@ -61,7 +61,7 @@ export function SiteFooter() {
             <h4 className="mb-4 text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-foreground/80">Important</h4>
             <div className="space-y-3 text-sm">
               {companyLinks.map((link) => (
-                <Link key={link.href} href={link.href} className="block text-muted-foreground transition-colors hover:text-primary">
+                <Link key={link.href} href={link.href} className="block py-1 text-muted-foreground transition-colors hover:text-primary">
                   {link.label}
                 </Link>
               ))}
@@ -71,31 +71,31 @@ export function SiteFooter() {
           <div>
             <h4 className="mb-4 text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-foreground/80">Contact</h4>
             <div className="space-y-3 text-sm text-muted-foreground">
-              <a href={`tel:${CONTACT_PHONE}`} className="flex items-center gap-2 transition-colors hover:text-primary">
-                <Phone className="h-4 w-4" />
-                <span>{CONTACT_PHONE_DISPLAY}</span>
+              <a href={`tel:${CONTACT_PHONE}`} className="flex min-h-9 items-center gap-2 transition-colors hover:text-primary">
+                <Phone className="h-4 w-4 shrink-0" />
+                <span className="min-w-0 break-words">{CONTACT_PHONE_DISPLAY}</span>
               </a>
               <a
                 href={WHATSAPP_URL}
                 target="_blank"
                 rel="noreferrer"
-                className="flex items-center gap-2 transition-colors hover:text-primary"
+                className="flex min-h-9 items-center gap-2 transition-colors hover:text-primary"
               >
-                <MessageCircle className="h-4 w-4" />
-                <span>WhatsApp: {CONTACT_PHONE_DISPLAY}</span>
+                <MessageCircle className="h-4 w-4 shrink-0" />
+                <span className="min-w-0 break-words">WhatsApp: {CONTACT_PHONE_DISPLAY}</span>
               </a>
-              <a href={`mailto:${CONTACT_EMAIL}`} className="flex items-center gap-2 transition-colors hover:text-primary">
-                <Mail className="h-4 w-4" />
-                <span>{CONTACT_EMAIL}</span>
+              <a href={`mailto:${CONTACT_EMAIL}`} className="flex min-h-9 items-center gap-2 transition-colors hover:text-primary">
+                <Mail className="h-4 w-4 shrink-0" />
+                <span className="min-w-0 break-all">{CONTACT_EMAIL}</span>
               </a>
               <a
                 href={GOOGLE_MAPS_URL}
                 target="_blank"
                 rel="noreferrer"
-                className="flex items-start gap-2 transition-colors hover:text-primary"
+                className="flex min-h-9 items-start gap-2 transition-colors hover:text-primary"
               >
-                <MapPin className="mt-0.5 h-4 w-4" />
-                <span>{CONTACT_LOCATION}</span>
+                <MapPin className="mt-0.5 h-4 w-4 shrink-0" />
+                <span className="min-w-0 break-words">{CONTACT_LOCATION}</span>
               </a>
             </div>
 

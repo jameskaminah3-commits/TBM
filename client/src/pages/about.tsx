@@ -5,7 +5,6 @@ import {
   CONTACT_LOCATION,
   CONTACT_PHONE,
   CONTACT_PHONE_DISPLAY,
-  FACEBOOK_URL,
   GOOGLE_MAPS_URL,
   SERVICE_AREA,
   WHATSAPP_URL,
@@ -21,13 +20,13 @@ function PageShell({
   children: ReactNode;
 }) {
   return (
-    <div className="min-h-screen py-12">
+    <div className="min-h-screen py-10 sm:py-12">
       <div className="container mx-auto max-w-4xl px-4 md:px-8">
-        <div className="mb-10">
+        <div className="mb-8 sm:mb-10">
           <h1 className="font-serif text-3xl font-medium leading-tight sm:text-4xl md:text-5xl">{title}</h1>
           <p className="mt-4 text-base leading-7 text-muted-foreground sm:text-lg">{intro}</p>
         </div>
-        <div className="space-y-8 text-muted-foreground">{children}</div>
+        <div className="space-y-8 text-base leading-7 text-muted-foreground sm:space-y-10 sm:leading-8">{children}</div>
       </div>
     </div>
   );
@@ -42,7 +41,7 @@ function LegalSection({
 }) {
   return (
     <section className="space-y-3">
-      <h2 className="font-serif text-2xl font-medium text-foreground">{title}</h2>
+      <h2 className="font-serif text-xl font-medium leading-snug text-foreground sm:text-2xl">{title}</h2>
       {children}
     </section>
   );
@@ -50,7 +49,7 @@ function LegalSection({
 
 function LegalList({ items }: { items: string[] }) {
   return (
-    <ul className="list-disc space-y-2 pl-5">
+    <ul className="list-disc space-y-2 pl-5 marker:text-primary">
       {items.map((item) => (
         <li key={item}>{item}</li>
       ))}
@@ -64,7 +63,7 @@ function ContactDetails() {
       <p>Tembea Bila Matata</p>
       <p>
         Email:{" "}
-        <a href={`mailto:${CONTACT_EMAIL}`} className="text-primary underline-offset-4 hover:underline">
+        <a href={`mailto:${CONTACT_EMAIL}`} className="break-all text-primary underline-offset-4 hover:underline">
           {CONTACT_EMAIL}
         </a>
       </p>
@@ -76,7 +75,7 @@ function ContactDetails() {
       </p>
       <p>
         Website:{" "}
-        <a href="https://tembeabilamatata.com" target="_blank" rel="noreferrer" className="text-primary underline-offset-4 hover:underline">
+        <a href="https://tembeabilamatata.com" target="_blank" rel="noreferrer" className="break-all text-primary underline-offset-4 hover:underline">
           https://tembeabilamatata.com
         </a>
       </p>
@@ -152,7 +151,7 @@ export function ContactPage() {
         <div className="grid gap-5 sm:grid-cols-2">
           <div className="space-y-1">
             <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-foreground/80">Email</h3>
-            <a href={`mailto:${CONTACT_EMAIL}`} className="text-primary underline-offset-4 hover:underline">
+            <a href={`mailto:${CONTACT_EMAIL}`} className="break-all text-primary underline-offset-4 hover:underline">
               {CONTACT_EMAIL}
             </a>
           </div>
@@ -177,7 +176,7 @@ export function ContactPage() {
           href={WHATSAPP_URL}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex min-h-11 items-center justify-center rounded-full bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+          className="inline-flex min-h-11 w-full items-center justify-center rounded-full bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 sm:w-auto"
         >
           Message us on WhatsApp
         </a>
@@ -199,18 +198,6 @@ export function ContactPage() {
       <section className="space-y-3">
         <h2 className="font-serif text-2xl font-medium text-foreground">Response Time</h2>
         <p>We aim to respond to most inquiries within a few hours during business hours.</p>
-        <p>Thank you for choosing Tembea Bila Matata.</p>
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="font-serif text-2xl font-medium text-foreground">Social</h2>
-        <div className="flex flex-wrap gap-x-5 gap-y-2">
-          <a href={FACEBOOK_URL} target="_blank" rel="noreferrer" className="text-primary underline-offset-4 hover:underline">
-            Facebook
-          </a>
-          <span>Instagram</span>
-          <span>TikTok</span>
-        </div>
       </section>
     </PageShell>
   );
@@ -220,19 +207,58 @@ export function FaqPage() {
   return (
     <PageShell
       title="Frequently Asked Questions"
-      intro="Quick answers to the questions guests and partners ask most often."
+      intro="Quick answers to common questions about bookings, services, and how Tembea Bila Matata works."
     >
       <section className="space-y-3">
-        <h2 className="font-serif text-xl font-medium text-foreground">Do I need an account to book?</h2>
-        <p>Yes. An account helps you manage bookings, messages, and booking updates in one place.</p>
+        <h2 className="font-serif text-xl font-medium text-foreground">Do I need an account to make a booking?</h2>
+        <p>
+          Yes. Creating an account allows you to manage bookings, receive updates, communicate with our team, and access your reservation history in one place.
+        </p>
       </section>
+
       <section className="space-y-3">
-        <h2 className="font-serif text-xl font-medium text-foreground">Can I book only a service without a stay?</h2>
-        <p>Yes. Depending on the service, you can book transport, chef services, errands, or experiences as standalone reservations.</p>
+        <h2 className="font-serif text-xl font-medium text-foreground">Do I need to be staying in a villa or apartment to use your services?</h2>
+        <p>No. Many of our services can be booked independently of accommodation.</p>
+        <p>
+          Whether you're a tourist, resident, expat, business traveler, or local family, you can book services such as chauffeur transport, airport transfers,
+          car hire, childcare support, shopping assistance, housekeeping, private chefs, errands, and curated experiences without booking a stay.
+        </p>
       </section>
+
+      <section className="space-y-3">
+        <h2 className="font-serif text-xl font-medium text-foreground">Can I book only a service without accommodation?</h2>
+        <p>Yes. Most of our services are available as standalone bookings, subject to availability and location.</p>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="font-serif text-xl font-medium text-foreground">Who are your services designed for?</h2>
+        <p>Our services are available to both visitors and local residents.</p>
+        <p>
+          We assist holidaymakers, business travelers, families, digital nomads, expats, professionals, and anyone looking for convenient hospitality,
+          concierge, lifestyle, or support services along the Kenyan coast.
+        </p>
+      </section>
+
       <section className="space-y-3">
         <h2 className="font-serif text-xl font-medium text-foreground">How do custom offers work?</h2>
-        <p>For tailored chef or experience requests, the partner or admin can send an offer for review. Once you accept it, the booking moves forward at the agreed amount.</p>
+        <p>Some services, such as private dining experiences, group transportation, special events, or tailored experiences, may require custom pricing.</p>
+        <p>
+          In such cases, Tembea Bila Matata may provide a personalized quotation based on your requirements. Once approved, your booking can proceed at the
+          agreed price.
+        </p>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="font-serif text-xl font-medium text-foreground">How do I pay for a booking?</h2>
+        <p>
+          Available payment methods may include card payments, mobile money, bank transfers, and other approved payment options depending on the service and
+          location.
+        </p>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="font-serif text-xl font-medium text-foreground">How can I get help before booking?</h2>
+        <p>You can contact our team via WhatsApp, phone, or email for assistance with recommendations, availability, pricing, and custom requests.</p>
       </section>
     </PageShell>
   );
