@@ -1638,37 +1638,45 @@ export default function ServiceBooking() {
                 )}
 
                 {serviceType === "experience" && "inclusions" in service && (service.inclusions.length > 0 || service.exclusions.length > 0 || service.meetingPoint) && (
-                  <div className="mb-6 rounded-lg border bg-muted/30 p-4">
+                  <div className="mb-6 rounded-lg border bg-muted/30 p-3 sm:p-4">
                     <h2 className="mb-3 text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                       Experience Details
                     </h2>
-                    <div className="space-y-3 text-sm">
+                    <div className="space-y-4 text-sm">
                       {service.meetingPoint ? (
-                        <div>
+                        <div className="rounded-md bg-background/70 p-3">
                           <div className="font-medium text-foreground">Meeting Point</div>
-                          <div className="text-muted-foreground">{service.meetingPoint}</div>
+                          <div className="mt-1 break-words leading-5 text-muted-foreground">{service.meetingPoint}</div>
                         </div>
                       ) : null}
-                      {service.inclusions.length > 0 ? (
-                        <div>
-                          <div className="font-medium text-foreground">Included</div>
-                          <div className="mt-1 flex flex-wrap gap-2">
-                            {service.inclusions.map((item) => (
-                              <Badge key={item} variant="secondary">{item}</Badge>
-                            ))}
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {service.inclusions.length > 0 ? (
+                          <div className="rounded-md bg-background/70 p-3">
+                            <div className="font-medium text-foreground">Included</div>
+                            <div className="mt-2 space-y-2">
+                              {service.inclusions.map((item) => (
+                                <div key={item} className="flex min-w-0 items-start gap-2 text-muted-foreground">
+                                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                                  <span className="break-words leading-5">{item}</span>
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      ) : null}
-                      {service.exclusions.length > 0 ? (
-                        <div>
-                          <div className="font-medium text-foreground">Not Included</div>
-                          <div className="mt-1 flex flex-wrap gap-2">
-                            {service.exclusions.map((item) => (
-                              <Badge key={item} variant="outline">{item}</Badge>
-                            ))}
+                        ) : null}
+                        {service.exclusions.length > 0 ? (
+                          <div className="rounded-md bg-background/70 p-3">
+                            <div className="font-medium text-foreground">Not Included</div>
+                            <div className="mt-2 space-y-2">
+                              {service.exclusions.map((item) => (
+                                <div key={item} className="flex min-w-0 items-start gap-2 text-muted-foreground">
+                                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/60" />
+                                  <span className="break-words leading-5">{item}</span>
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      ) : null}
+                        ) : null}
+                      </div>
                     </div>
                   </div>
                 )}
@@ -1883,45 +1891,72 @@ export default function ServiceBooking() {
                           <FormItem className="space-y-3">
                             <FormLabel>Booking Option</FormLabel>
                             <FormControl>
-                              <RadioGroup value={field.value ?? undefined} onValueChange={field.onChange} className="space-y-3">
+                              <RadioGroup value={field.value ?? undefined} onValueChange={field.onChange} className="space-y-2 sm:space-y-3">
                                 {service.privateEnabled ? (
-                                  <label className="flex items-start gap-3 rounded-lg border p-4 cursor-pointer">
-                                    <RadioGroupItem value="experience-private" className="mt-1" />
-                                    <div>
-                                      <div className="font-medium">Book Private (Flexible Date)</div>
-                                      <div className="text-sm text-muted-foreground">
-                                        {formatAmount(service.privatePricePerPerson)} per person for your own private group
+                                  <label
+                                    className={cn(
+                                      "flex min-w-0 cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors sm:p-4",
+                                      field.value === "experience-private" ? "border-primary bg-primary/5" : "border-border hover:border-primary/50",
+                                    )}
+                                  >
+                                    <RadioGroupItem value="experience-private" className="mt-1 shrink-0" />
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+                                        <div className="font-medium leading-5">Private trip</div>
+                                        <div className="shrink-0 text-sm font-semibold text-foreground">
+                                          {formatAmount(service.privatePricePerPerson)} / person
+                                        </div>
                                       </div>
-                                      <div className="mt-1 text-xs text-muted-foreground">
-                                        Minimum {service.privateMinimumGuests} guests ? up to {service.maxGuests} guests
+                                      <div className="mt-1 text-sm leading-5 text-muted-foreground">
+                                        Flexible date for your own group.
+                                      </div>
+                                      <div className="mt-1 text-xs leading-5 text-muted-foreground">
+                                        Minimum {service.privateMinimumGuests} guests, up to {service.maxGuests} guests
                                       </div>
                                     </div>
                                   </label>
                                 ) : null}
                                 {service.sharedEnabled ? (
-                                  <label className="flex items-start gap-3 rounded-lg border p-4 cursor-pointer">
-                                    <RadioGroupItem value="experience-shared" className="mt-1" />
-                                    <div>
-                                      <div className="font-medium">Join a Shared Group (Fixed Dates)</div>
-                                      <div className="text-sm text-muted-foreground">
-                                        {formatAmount(service.sharedPricePerPerson)} per person on scheduled departures
+                                  <label
+                                    className={cn(
+                                      "flex min-w-0 cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors sm:p-4",
+                                      field.value === "experience-shared" ? "border-primary bg-primary/5" : "border-border hover:border-primary/50",
+                                    )}
+                                  >
+                                    <RadioGroupItem value="experience-shared" className="mt-1 shrink-0" />
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+                                        <div className="font-medium leading-5">Shared departure</div>
+                                        <div className="shrink-0 text-sm font-semibold text-foreground">
+                                          {formatAmount(service.sharedPricePerPerson)} / person
+                                        </div>
                                       </div>
-                                      <div className="mt-1 text-xs text-muted-foreground">
-                                        Trip runs from {service.sharedMinimumGuests} guests ? up to {service.sharedMaxCapacity} spots
+                                      <div className="mt-1 text-sm leading-5 text-muted-foreground">
+                                        Join one of the scheduled group dates.
+                                      </div>
+                                      <div className="mt-1 text-xs leading-5 text-muted-foreground">
+                                        Runs from {service.sharedMinimumGuests} guests, up to {service.sharedMaxCapacity} spots
                                       </div>
                                     </div>
                                   </label>
                                 ) : null}
                                 {service.customQuoteEnabled ? (
-                                  <label className="flex items-start gap-3 rounded-lg border p-4 cursor-pointer">
-                                    <RadioGroupItem value="experience-custom-offer" className="mt-1" />
-                                    <div>
-                                      <div className="font-medium">Request a Custom Offer</div>
-                                      <div className="text-sm text-muted-foreground">
-                                        Share your ideal plan and receive a tailored quote from the host
+                                  <label
+                                    className={cn(
+                                      "flex min-w-0 cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors sm:p-4",
+                                      field.value === "experience-custom-offer" ? "border-primary bg-primary/5" : "border-border hover:border-primary/50",
+                                    )}
+                                  >
+                                    <RadioGroupItem value="experience-custom-offer" className="mt-1 shrink-0" />
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+                                        <div className="font-medium leading-5">Custom offer</div>
+                                        <div className="shrink-0 text-sm font-semibold text-foreground">
+                                          Request quote
+                                        </div>
                                       </div>
-                                      <div className="mt-1 text-xs text-muted-foreground">
-                                        Perfect for a custom route, special occasion, or a more personalized experience
+                                      <div className="mt-1 text-sm leading-5 text-muted-foreground">
+                                        Share your preferred route, occasion, timing, and group needs.
                                       </div>
                                     </div>
                                   </label>
@@ -1942,15 +1977,21 @@ export default function ServiceBooking() {
                           <FormItem className="space-y-3">
                             <FormLabel>Choose a Shared Departure</FormLabel>
                             <FormControl>
-                              <RadioGroup value={field.value ?? undefined} onValueChange={field.onChange} className="space-y-3">
+                              <RadioGroup value={field.value ?? undefined} onValueChange={field.onChange} className="space-y-2 sm:space-y-3">
                                 {experienceSharedDepartures.map((departure) => (
-                                  <label key={departure.id} className="flex items-start gap-3 rounded-lg border p-4 cursor-pointer">
-                                    <RadioGroupItem value={departure.id} className="mt-1" />
-                                    <div>
-                                      <div className="font-medium">
+                                  <label
+                                    key={departure.id}
+                                    className={cn(
+                                      "flex min-w-0 cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors sm:p-4",
+                                      field.value === departure.id ? "border-primary bg-primary/5" : "border-border hover:border-primary/50",
+                                    )}
+                                  >
+                                    <RadioGroupItem value={departure.id} className="mt-1 shrink-0" />
+                                    <div className="min-w-0 flex-1">
+                                      <div className="break-words font-medium leading-5">
                                         {new Date(departure.departureDateTime).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
                                       </div>
-                                      <div className="text-sm text-muted-foreground">
+                                      <div className="mt-1 text-sm leading-5 text-muted-foreground">
                                         {departure.spotsLeft} spots left out of {departure.maxCapacity}
                                       </div>
                                     </div>
@@ -1976,7 +2017,7 @@ export default function ServiceBooking() {
                               <FormLabel>{serviceMode === "experience-private" ? "Private Add-Ons" : "Shared Trip Add-Ons"}</FormLabel>
                               <div className="space-y-3">
                                 {addons.map((addon) => (
-                                  <label key={addon.id} className="flex items-start gap-3 rounded-lg border p-4 cursor-pointer">
+                                  <label key={addon.id} className="flex min-w-0 cursor-pointer items-start gap-3 rounded-lg border p-3 sm:p-4">
                                     <Checkbox
                                       checked={selectedValues.includes(addon.id)}
                                       onCheckedChange={(checked) => {
@@ -1986,10 +2027,10 @@ export default function ServiceBooking() {
                                         field.onChange(next);
                                       }}
                                     />
-                                    <div className="flex-1">
-                                      <div className="flex items-center justify-between gap-3">
-                                        <span className="font-medium">{addon.name}</span>
-                                        <span className="text-sm text-muted-foreground">{formatAmount(addon.price)}</span>
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                                        <span className="break-words font-medium leading-5">{addon.name}</span>
+                                        <span className="shrink-0 text-sm font-medium text-muted-foreground">{formatAmount(addon.price)}</span>
                                       </div>
                                     </div>
                                   </label>
