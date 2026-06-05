@@ -18,6 +18,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { CurrencyAmount } from "@/components/currency-amount";
 import { CheckoutPaymentPreview, bookingCheckoutPreviewCopy, customRequestCheckoutPreviewCopy } from "@/components/payment-provider-picker";
 import { useCurrency } from "@/lib/currency";
+import { cn } from "@/lib/utils";
 import {
   calculateCookInclusivePrice,
   calculateCookInclusiveTotal,
@@ -64,6 +65,7 @@ import type {
   Car as CarType,
   Cook as CookType,
   Errand as ErrandType,
+  ExperienceAddon,
   Experience as ExperienceType,
   MarketingAttributionPayload,
   MarketingPromoPreviewResult,
@@ -488,15 +490,31 @@ function supportsChildcareErrand(service: ErrandType): boolean {
   return hasHelpMamaPricing(service) || /\b(childcare|child care|children|kids|baby|babies|infant|mama|mother|family|clinic|supervision|nanny|carer)\b/.test(text);
 }
 
+function normalizeStringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
+}
+
+function normalizeExperienceAddons(value: unknown): ExperienceAddon[] {
+  return Array.isArray(value)
+    ? value.filter((addon): addon is ExperienceAddon => (
+        !!addon
+        && typeof addon === "object"
+        && typeof (addon as ExperienceAddon).id === "string"
+        && typeof (addon as ExperienceAddon).name === "string"
+        && typeof (addon as ExperienceAddon).price === "number"
+      ))
+    : [];
+}
+
 function getExperienceAddonTotal(
   service: ExperienceType,
   serviceMode: ExperienceServiceMode | undefined,
   addonSelections: string[],
 ) {
   const addons = serviceMode === "experience-private"
-    ? service.privateAddons || []
+    ? normalizeExperienceAddons(service.privateAddons)
     : serviceMode === "experience-shared"
-      ? service.sharedAddons || []
+      ? normalizeExperienceAddons(service.sharedAddons)
       : [];
   return addons
     .filter((addon) => addonSelections.includes(addon.id))
@@ -1385,7 +1403,11 @@ export default function ServiceBooking() {
   const showSelfDriveOption = serviceType === "car" && "pricePerDay" in service && !!service.pricePerDay;
   const showZoneSelector = serviceType === "car" && "chauffeurZones" in service && service.chauffeurZones.length > 0;
   const showCookCustomMenu = serviceType === "cook" && "customMenuEnabled" in service && service.customMenuEnabled;
-  const serviceFeatureBadges = "features" in service ? service.features.filter(Boolean).slice(0, 4) : [];
+  const serviceFeatureBadges = "features" in service ? normalizeStringList(service.features).slice(0, 4) : [];
+  const experienceInclusions = "experienceType" in service ? normalizeStringList(service.inclusions) : [];
+  const experienceExclusions = "experienceType" in service ? normalizeStringList(service.exclusions) : [];
+  const experiencePrivateAddons = "experienceType" in service ? normalizeExperienceAddons(service.privateAddons) : [];
+  const experienceSharedAddons = "experienceType" in service ? normalizeExperienceAddons(service.sharedAddons) : [];
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-background">
@@ -1637,7 +1659,7 @@ export default function ServiceBooking() {
                   </div>
                 )}
 
-                {serviceType === "experience" && "inclusions" in service && (service.inclusions.length > 0 || service.exclusions.length > 0 || service.meetingPoint) && (
+                {serviceType === "experience" && "inclusions" in service && (experienceInclusions.length > 0 || experienceExclusions.length > 0 || service.meetingPoint) && (
                   <div className="mb-6 rounded-lg border bg-muted/30 p-3 sm:p-4">
                     <h2 className="mb-3 text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                       Experience Details
@@ -1650,11 +1672,11 @@ export default function ServiceBooking() {
                         </div>
                       ) : null}
                       <div className="grid gap-3 sm:grid-cols-2">
-                        {service.inclusions.length > 0 ? (
+                        {experienceInclusions.length > 0 ? (
                           <div className="rounded-md bg-background/70 p-3">
                             <div className="font-medium text-foreground">Included</div>
                             <div className="mt-2 space-y-2">
-                              {service.inclusions.map((item) => (
+                              {experienceInclusions.map((item) => (
                                 <div key={item} className="flex min-w-0 items-start gap-2 text-muted-foreground">
                                   <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
                                   <span className="break-words leading-5">{item}</span>
@@ -1663,11 +1685,11 @@ export default function ServiceBooking() {
                             </div>
                           </div>
                         ) : null}
-                        {service.exclusions.length > 0 ? (
+                        {experienceExclusions.length > 0 ? (
                           <div className="rounded-md bg-background/70 p-3">
                             <div className="font-medium text-foreground">Not Included</div>
                             <div className="mt-2 space-y-2">
-                              {service.exclusions.map((item) => (
+                              {experienceExclusions.map((item) => (
                                 <div key={item} className="flex min-w-0 items-start gap-2 text-muted-foreground">
                                   <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/60" />
                                   <span className="break-words leading-5">{item}</span>
@@ -2005,12 +2027,12 @@ export default function ServiceBooking() {
                       />
                     )}
 
-                    {serviceType === "experience" && "experienceType" in service && ((serviceMode === "experience-private" && service.privateAddons.length > 0) || (serviceMode === "experience-shared" && service.sharedAddons.length > 0)) && (
+                    {serviceType === "experience" && "experienceType" in service && ((serviceMode === "experience-private" && experiencePrivateAddons.length > 0) || (serviceMode === "experience-shared" && experienceSharedAddons.length > 0)) && (
                       <FormField
                         control={form.control}
                         name="serviceAddonSelections"
                         render={({ field }) => {
-                          const addons = serviceMode === "experience-private" ? service.privateAddons : service.sharedAddons;
+                          const addons = serviceMode === "experience-private" ? experiencePrivateAddons : experienceSharedAddons;
                           const selectedValues = field.value || [];
                           return (
                             <FormItem className="space-y-3">
