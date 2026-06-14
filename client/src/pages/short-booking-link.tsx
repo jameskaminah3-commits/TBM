@@ -2,19 +2,12 @@ import * as React from "react";
 import { useMemo } from "react";
 import { useLocation, useParams } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, BedDouble, CarFront, ChefHat, ChevronLeft, ChevronRight, Compass, MapPin, ShoppingBag, Star, Users } from "lucide-react";
+import { ArrowRight, BedDouble, CarFront, ChefHat, Compass, MapPin, ShoppingBag, Star, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import {
-  Carousel,
-  CarouselApi,
-  CarouselContent,
-  CarouselItem,
-} from "@/components/ui/carousel";
 import { CurrencyAmount } from "@/components/currency-amount";
-import { ListingMedia } from "@/components/listing-media";
-import { cn } from "@/lib/utils";
+import { PremiumMediaGallery } from "@/components/premium-media-gallery";
 import {
   getCanonicalBookingPath,
   serviceByShortType,
@@ -49,12 +42,6 @@ const serviceIconByType = {
   errand: ShoppingBag,
   experience: Compass,
 } satisfies Record<ShareServiceType, React.ComponentType<{ className?: string }>>;
-
-function getListingGalleryImages(listing: PublicListing) {
-  return [listing.imageUrl, ...(listing.galleryUrls ?? [])].filter(
-    (imageUrl, index, allImages): imageUrl is string => !!imageUrl && allImages.indexOf(imageUrl) === index,
-  );
-}
 
 function getListingTitle(serviceType: ShareServiceType, listing: PublicListing) {
   if (serviceType === "car") return (listing as Car).model;
@@ -173,126 +160,14 @@ function ListingGallery({
   listing: PublicListing;
   title: string;
 }) {
-  const galleryImages = getListingGalleryImages(listing);
-  const [carouselApi, setCarouselApi] = React.useState<CarouselApi>();
-  const [activeIndex, setActiveIndex] = React.useState(0);
-  const thumbnailRefs = React.useRef<Array<HTMLButtonElement | null>>([]);
-
-  React.useEffect(() => {
-    if (!carouselApi) {
-      return;
-    }
-
-    carouselApi.scrollTo(0, true);
-    setActiveIndex(0);
-
-    const syncSelection = () => {
-      setActiveIndex(carouselApi.selectedScrollSnap());
-    };
-
-    syncSelection();
-    carouselApi.on("select", syncSelection);
-    carouselApi.on("reInit", syncSelection);
-
-    return () => {
-      carouselApi.off("select", syncSelection);
-      carouselApi.off("reInit", syncSelection);
-    };
-  }, [carouselApi, galleryImages.length]);
-
-  React.useEffect(() => {
-    thumbnailRefs.current[activeIndex]?.scrollIntoView({
-      behavior: "smooth",
-      block: "nearest",
-      inline: "center",
-    });
-  }, [activeIndex]);
-
-  if (galleryImages.length === 0) {
-    return (
-      <div className="flex aspect-[16/10] items-center justify-center bg-muted text-sm text-muted-foreground">
-        Photos coming soon
-      </div>
-    );
-  }
-
   return (
-    <div className="bg-background">
-      <div className="relative overflow-hidden bg-muted">
-        <Carousel className="overflow-hidden" opts={{ loop: galleryImages.length > 1 }} setApi={setCarouselApi}>
-          <CarouselContent className="ml-0">
-            {galleryImages.map((imageUrl, index) => (
-              <CarouselItem key={`${listing.id}-share-image-${index}`} className="pl-0">
-                <div className="aspect-[16/10] overflow-hidden bg-muted">
-                  <ListingMedia
-                    src={imageUrl}
-                    alt={`${title} photo ${index + 1}`}
-                    mediaType={listing.mediaType}
-                    className="h-full w-full object-cover"
-                    loading={index === 0 ? "eager" : "lazy"}
-                  />
-                </div>
-              </CarouselItem>
-            ))}
-          </CarouselContent>
-        </Carousel>
-
-        {galleryImages.length > 1 ? (
-          <>
-            <button
-              type="button"
-              aria-label="Previous listing photo"
-              className="absolute left-3 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/35 text-white backdrop-blur-md transition hover:bg-black/50"
-              onClick={(event) => {
-                event.stopPropagation();
-                carouselApi?.scrollPrev();
-              }}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              aria-label="Next listing photo"
-              className="absolute right-3 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/35 text-white backdrop-blur-md transition hover:bg-black/50"
-              onClick={(event) => {
-                event.stopPropagation();
-                carouselApi?.scrollNext();
-              }}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </>
-        ) : null}
-      </div>
-
-      {galleryImages.length > 1 ? (
-        <div className="space-y-3 border-t border-border/60 bg-background p-4">
-          <p className="text-sm font-medium text-foreground">Browse photos</p>
-          <div className="flex gap-3 overflow-x-auto pb-1">
-            {galleryImages.map((imageUrl, index) => (
-              <button
-                key={`${listing.id}-share-thumb-${index}`}
-                ref={(node) => {
-                  thumbnailRefs.current[index] = node;
-                }}
-                type="button"
-                aria-label={`View photo ${index + 1}`}
-                aria-current={activeIndex === index ? "true" : undefined}
-                className={cn(
-                  "h-20 w-28 flex-shrink-0 overflow-hidden rounded-lg border bg-muted shadow-sm transition",
-                  activeIndex === index
-                    ? "border-primary ring-2 ring-primary/20"
-                    : "border-border/60 opacity-80 hover:opacity-100",
-                )}
-                onClick={() => carouselApi?.scrollTo(index)}
-              >
-                <img src={imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" />
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : null}
-    </div>
+    <PremiumMediaGallery
+      item={listing}
+      title={title}
+      aspectClassName="aspect-[16/10]"
+      thumbnailPlacement="below"
+      zoomLabel="View listing photo"
+    />
   );
 }
 

@@ -1,29 +1,15 @@
-import React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CurrencyAmount } from "@/components/currency-amount";
-import { ListingMedia } from "@/components/listing-media";
-import {
-  Carousel,
-  CarouselApi,
-  CarouselContent,
-  CarouselItem,
-} from "@/components/ui/carousel";
-import { cn } from "@/lib/utils";
 import { filterExperiences, useConciergeSearch } from "@/lib/concierge-search";
 import { CustomServiceCta } from "@/components/custom-service-cta";
 import { PublicReviewPreview } from "@/components/public-review-preview";
-import { ChevronLeft, ChevronRight, Clock3, Compass, MapPin, Star, Users } from "lucide-react";
+import { Clock3, Compass, MapPin, Star, Users } from "lucide-react";
+import { PremiumMediaGallery } from "@/components/premium-media-gallery";
 import type { Experience } from "@shared/schema";
-
-function getExperienceGalleryImages(experience: Experience) {
-  return [experience.imageUrl, ...(experience.galleryUrls ?? [])].filter(
-    (imageUrl, index, allImages): imageUrl is string => !!imageUrl && allImages.indexOf(imageUrl) === index,
-  );
-}
 
 function getLowestExperiencePrice(experience: Experience) {
   const prices = [
@@ -41,105 +27,16 @@ function ExperienceCard({
   experience: Experience;
   onOpen: () => void;
 }) {
-  const galleryImages = getExperienceGalleryImages(experience);
-  const [carouselApi, setCarouselApi] = React.useState<CarouselApi>();
-  const [activeIndex, setActiveIndex] = React.useState(0);
-  const visibleThumbs = galleryImages.slice(0, 3);
   const lowestPrice = getLowestExperiencePrice(experience);
-
-  React.useEffect(() => {
-    if (!carouselApi) {
-      return;
-    }
-
-    const syncSelection = () => {
-      setActiveIndex(carouselApi.selectedScrollSnap());
-    };
-
-    syncSelection();
-    carouselApi.on("select", syncSelection);
-    carouselApi.on("reInit", syncSelection);
-
-    return () => {
-      carouselApi.off("select", syncSelection);
-    };
-  }, [carouselApi]);
 
   return (
     <Card className="group overflow-hidden border-border/60 bg-gradient-to-b from-background via-background to-muted/10 shadow-[0_14px_34px_-24px_rgba(15,23,42,0.42)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_22px_44px_-28px_rgba(15,23,42,0.55)]">
-      {galleryImages.length > 0 ? (
-        <div className="relative overflow-hidden bg-muted">
-          <Carousel className="overflow-hidden" opts={{ loop: galleryImages.length > 1 }} setApi={setCarouselApi}>
-            <CarouselContent className="ml-0">
-              {galleryImages.map((imageUrl, index) => (
-                <CarouselItem key={`${experience.id}-image-${index}`} className="pl-0">
-                  <div className="aspect-[16/10] overflow-hidden bg-muted">
-                    <ListingMedia
-                      src={imageUrl}
-                      alt={`${experience.title} photo ${index + 1}`}
-                      mediaType={experience.mediaType}
-                      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
-                    />
-                  </div>
-                </CarouselItem>
-              ))}
-            </CarouselContent>
-          </Carousel>
-
-          {galleryImages.length > 1 ? (
-            <>
-              <button
-                type="button"
-                aria-label="Previous experience photo"
-                className="absolute left-3 top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/35 text-white backdrop-blur-md transition hover:bg-black/50"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  carouselApi?.scrollPrev();
-                }}
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                aria-label="Next experience photo"
-                className="absolute right-3 top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/35 text-white backdrop-blur-md transition hover:bg-black/50"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  carouselApi?.scrollNext();
-                }}
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
-              <div className="absolute inset-x-0 bottom-0 flex items-end justify-end p-4">
-                <div className="flex items-center gap-2">
-                  {visibleThumbs.map((imageUrl, index) => (
-                    <button
-                      key={`${experience.id}-thumb-${index}`}
-                      type="button"
-                      aria-label={`View experience photo ${index + 1}`}
-                      className={cn(
-                        "h-11 w-11 overflow-hidden rounded-2xl border border-white/15 shadow-lg backdrop-blur-md transition",
-                        activeIndex === index ? "scale-105 border-white/70" : "opacity-80 hover:opacity-100",
-                      )}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        carouselApi?.scrollTo(index);
-                      }}
-                    >
-                      <img src={imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" />
-                    </button>
-                  ))}
-                  {galleryImages.length > visibleThumbs.length ? (
-                    <div className="flex h-11 min-w-11 items-center justify-center rounded-2xl border border-white/15 bg-black/35 px-3 text-xs font-semibold text-white backdrop-blur-md">
-                      +{galleryImages.length - visibleThumbs.length}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            </>
-          ) : null}
-        </div>
-      ) : null}
+      <PremiumMediaGallery
+        item={experience}
+        title={experience.title}
+        aspectClassName="aspect-[16/10]"
+        zoomLabel="View experience photo"
+      />
 
       <div className="space-y-3 p-4">
         <div className="flex items-start gap-3">

@@ -1,8 +1,11 @@
+import type React from "react";
+
 type ListingMediaProps = {
   src?: string | null;
   alt: string;
   mediaType?: string | null;
   className?: string;
+  style?: React.CSSProperties;
   loading?: "eager" | "lazy";
   decoding?: "async" | "auto" | "sync";
 };
@@ -12,6 +15,7 @@ export function ListingMedia({
   alt,
   mediaType = "image",
   className,
+  style,
   loading = "lazy",
   decoding = "async",
 }: ListingMediaProps) {
@@ -24,6 +28,7 @@ export function ListingMedia({
       <video
         src={src}
         className={className}
+        style={style}
         controls
         preload="metadata"
         playsInline
@@ -31,5 +36,5 @@ export function ListingMedia({
     );
   }
 
-  return <img src={src} alt={alt} className={className} loading={loading} decoding={decoding} />;
+  return <img src={src} alt={alt} className={className} style={style} loading={loading} decoding={decoding} />;
 }

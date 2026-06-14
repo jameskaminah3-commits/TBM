@@ -1,22 +1,14 @@
-import React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ListingMedia } from "@/components/listing-media";
 import { CurrencyAmount } from "@/components/currency-amount";
-import {
-  Carousel,
-  CarouselApi,
-  CarouselContent,
-  CarouselItem,
-} from "@/components/ui/carousel";
-import { Car, ChevronLeft, ChevronRight, MapPin, Star } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Car, MapPin, Star } from "lucide-react";
 import { filterCars, useConciergeSearch } from "@/lib/concierge-search";
 import { CustomServiceCta } from "@/components/custom-service-cta";
 import { PublicReviewPreview } from "@/components/public-review-preview";
+import { PremiumMediaGallery } from "@/components/premium-media-gallery";
 import type { Car as CarType } from "@shared/schema";
 
 function getLeadPrice(car: CarType) {
@@ -29,70 +21,8 @@ function getLeadPrice(car: CarType) {
   return options.reduce((lowest, current) => (current.amount < lowest.amount ? current : lowest));
 }
 
-function getGalleryImages(car: CarType) {
-  return [car.imageUrl, ...(car.galleryUrls ?? [])].filter(
-    (imageUrl, index, allImages): imageUrl is string => !!imageUrl && allImages.indexOf(imageUrl) === index,
-  );
-}
-
 const detailChipClassName =
   "surface-subtle rounded-full border px-2.5 py-1 text-[11px] font-medium text-foreground/78 shadow-none";
-
-function isRenderableMediaValue(value: string | null | undefined) {
-  if (!value) {
-    return false;
-  }
-
-  const normalized = value.trim();
-  if (!normalized) {
-    return false;
-  }
-
-  return normalized.startsWith("http://")
-    || normalized.startsWith("https://")
-    || normalized.startsWith("/")
-    || normalized.startsWith("data:")
-    || normalized.startsWith("blob:");
-}
-
-function DriveMedia({
-  src,
-  className,
-  fallbackClassName,
-}: {
-  src?: string | null;
-  className?: string;
-  fallbackClassName?: string;
-}) {
-  const [hasError, setHasError] = React.useState(!isRenderableMediaValue(src));
-
-  React.useEffect(() => {
-    setHasError(!isRenderableMediaValue(src));
-  }, [src]);
-
-  if (hasError) {
-    return (
-      <div
-        className={cn(
-          "bg-[linear-gradient(180deg,rgba(255,248,240,0.98),rgba(232,239,239,0.9),rgba(34,44,63,0.72))]",
-          fallbackClassName,
-          className,
-        )}
-        aria-hidden="true"
-      />
-    );
-  }
-
-  return (
-    <img
-      src={src ?? ""}
-      alt=""
-      className={className}
-      loading="lazy"
-      onError={() => setHasError(true)}
-    />
-  );
-}
 
 function CarShowcaseCard({
   car,
@@ -101,36 +31,7 @@ function CarShowcaseCard({
   car: CarType;
   onOpen: () => void;
 }) {
-  const [carouselApi, setCarouselApi] = React.useState<CarouselApi>();
-  const [activeIndex, setActiveIndex] = React.useState(0);
   const leadPrice = getLeadPrice(car);
-  const galleryImages = getGalleryImages(car);
-  const visibleThumbs = galleryImages.slice(0, 3);
-
-  React.useEffect(() => {
-    if (!carouselApi) {
-      return;
-    }
-
-    const syncSelection = () => {
-      setActiveIndex(carouselApi.selectedScrollSnap());
-    };
-
-    syncSelection();
-    carouselApi.on("select", syncSelection);
-    carouselApi.on("reInit", syncSelection);
-
-    return () => {
-      carouselApi.off("select", syncSelection);
-    };
-  }, [carouselApi]);
-
-  const handleCardKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      onOpen();
-    }
-  };
 
   return (
     <Card
@@ -140,88 +41,12 @@ function CarShowcaseCard({
       <div className="absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-primary/55 to-transparent opacity-80" />
 
       <div className="relative">
-        <Carousel
-          className="overflow-hidden"
-          opts={{ loop: galleryImages.length > 1 }}
-          setApi={setCarouselApi}
-        >
-          <CarouselContent className="ml-0">
-            {galleryImages.map((imageUrl, index) => (
-              <CarouselItem key={`${car.id}-image-${index}`} className="pl-0">
-                <div className="relative aspect-[16/10] overflow-hidden bg-muted">
-                  {car.mediaType === "video" ? (
-                    <ListingMedia
-                      src={imageUrl}
-                      alt={`${car.model} photo ${index + 1}`}
-                      mediaType={car.mediaType}
-                      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
-                    />
-                  ) : (
-                    <DriveMedia
-                      src={imageUrl}
-                      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
-                    />
-                  )}
-                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-slate-900/10 to-transparent" />
-                </div>
-              </CarouselItem>
-            ))}
-          </CarouselContent>
-        </Carousel>
-
-        {galleryImages.length > 1 ? (
-          <>
-            <button
-              type="button"
-              aria-label="Previous car photo"
-              className="absolute left-4 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/35 text-white backdrop-blur-md transition hover:bg-black/50"
-              onClick={(event) => {
-                event.stopPropagation();
-                carouselApi?.scrollPrev();
-              }}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              aria-label="Next car photo"
-              className="absolute right-4 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/35 text-white backdrop-blur-md transition hover:bg-black/50"
-              onClick={(event) => {
-                event.stopPropagation();
-                carouselApi?.scrollNext();
-              }}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </>
-        ) : null}
-
-        <div className="absolute inset-x-0 bottom-0 flex items-end justify-end gap-3 p-3">
-          <div className="flex items-center gap-2">
-            {visibleThumbs.map((imageUrl, index) => (
-              <button
-                key={`${car.id}-thumb-${index}`}
-                type="button"
-                aria-label={`View photo ${index + 1}`}
-                className={cn(
-                  "h-11 w-11 overflow-hidden rounded-2xl border border-white/15 shadow-lg backdrop-blur-md transition",
-                  activeIndex === index ? "scale-105 border-white/70" : "opacity-80 hover:opacity-100",
-                )}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  carouselApi?.scrollTo(index);
-                }}
-              >
-                <DriveMedia src={imageUrl} className="h-full w-full object-cover" fallbackClassName="bg-muted/70" />
-              </button>
-            ))}
-            {galleryImages.length > visibleThumbs.length ? (
-              <div className="flex h-11 min-w-11 items-center justify-center rounded-2xl border border-white/15 bg-black/35 px-3 text-xs font-semibold text-white backdrop-blur-md">
-                +{galleryImages.length - visibleThumbs.length}
-              </div>
-            ) : null}
-          </div>
-        </div>
+        <PremiumMediaGallery
+          item={car}
+          title={car.model}
+          aspectClassName="aspect-[16/10]"
+          zoomLabel="View car photo"
+        />
       </div>
 
       <div className="space-y-3 p-4">
