@@ -1,8 +1,7 @@
 import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { ChevronLeft, ChevronRight, Maximize2, Minus, Plus, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Maximize2, RotateCcw, X } from "lucide-react";
 import { Carousel, CarouselApi, CarouselContent, CarouselItem } from "@/components/ui/carousel";
-import { Slider } from "@/components/ui/slider";
 import { ListingMedia } from "@/components/listing-media";
 import { cn } from "@/lib/utils";
 
@@ -30,10 +29,6 @@ function getGalleryImages(item: GallerySource) {
   );
 }
 
-function formatZoomPercent(zoom: number) {
-  return `${Math.round(zoom * 100)}%`;
-}
-
 export function PremiumMediaGallery({
   item,
   title,
@@ -50,6 +45,7 @@ export function PremiumMediaGallery({
   const [lightboxOpen, setLightboxOpen] = React.useState(false);
   const [lightboxIndex, setLightboxIndex] = React.useState(0);
   const [zoom, setZoom] = React.useState(1);
+  const lastTapRef = React.useRef(0);
   const thumbnailRefs = React.useRef<Array<HTMLButtonElement | null>>([]);
   const visibleThumbs = thumbnailPlacement === "overlay" ? galleryImages.slice(0, 3) : galleryImages;
   const showZoomControls = item.mediaType !== "video";
@@ -108,11 +104,20 @@ export function PremiumMediaGallery({
     setLightboxOpen(true);
   };
 
-  const stepZoom = (direction: 1 | -1) => {
-    setZoom((current) => {
-      const next = direction === 1 ? current + 0.25 : current - 0.25;
-      return Math.min(2.5, Math.max(1, Number(next.toFixed(2))));
-    });
+  const toggleZoom = () => {
+    if (!showZoomControls) {
+      return;
+    }
+
+    setZoom((current) => (current > 1 ? 1 : 1.85));
+  };
+
+  const handleImageTap = () => {
+    const now = Date.now();
+    if (now - lastTapRef.current < 280) {
+      toggleZoom();
+    }
+    lastTapRef.current = now;
   };
 
   return (
@@ -319,16 +324,21 @@ export function PremiumMediaGallery({
                   </>
                 ) : null}
 
-                <div className="flex flex-1 items-center justify-center overflow-auto px-3 py-4 sm:px-6 sm:py-6">
+                <div className="relative flex flex-1 items-center justify-center overflow-auto px-3 py-4 sm:px-6 sm:py-6">
+                  {showZoomControls && zoom > 1 ? (
+                    <button
+                      type="button"
+                      aria-label="Reset zoom"
+                      className="absolute bottom-4 right-4 z-10 flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/40 text-white shadow-[0_14px_40px_rgba(0,0,0,0.35)] backdrop-blur-md transition hover:bg-black/55"
+                      onClick={() => setZoom(1)}
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                    </button>
+                  ) : null}
+
                   <div
                     className="flex min-h-full min-w-full items-center justify-center"
-                    onDoubleClick={() => {
-                      if (!showZoomControls) {
-                        return;
-                      }
-
-                      setZoom((current) => (current > 1 ? 1 : 1.75));
-                    }}
+                    onClick={handleImageTap}
                   >
                     <div className="flex max-w-full items-center justify-center overflow-auto rounded-[1.5rem]">
                       <ListingMedia
@@ -344,7 +354,7 @@ export function PremiumMediaGallery({
                             : undefined
                         }
                         className={cn(
-                          "block max-h-[72vh] select-none",
+                          "block max-h-[72vh] select-none transition-[width] duration-200 ease-out",
                           showZoomControls ? "max-w-none touch-pan-x touch-pan-y" : "max-w-full object-contain",
                         )}
                         loading="eager"
@@ -353,56 +363,6 @@ export function PremiumMediaGallery({
                     </div>
                   </div>
                 </div>
-
-                {showZoomControls ? (
-                  <div className="border-t border-white/10 bg-black/35 px-4 py-4 backdrop-blur-xl sm:px-6">
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white transition hover:bg-white/10"
-                          aria-label="Zoom out"
-                          onClick={() => stepZoom(-1)}
-                        >
-                          <Minus className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          className="flex h-10 min-w-20 items-center justify-center rounded-full border border-white/10 bg-white/5 px-4 text-sm font-medium text-white transition hover:bg-white/10"
-                          onClick={() => setZoom(1)}
-                        >
-                          Fit
-                        </button>
-                        <button
-                          type="button"
-                          className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white transition hover:bg-white/10"
-                          aria-label="Zoom in"
-                          onClick={() => stepZoom(1)}
-                        >
-                          <Plus className="h-4 w-4" />
-                        </button>
-                        <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-white/80">
-                          {formatZoomPercent(zoom)}
-                        </div>
-                      </div>
-
-                      <div className="space-y-2 lg:min-w-[18rem] lg:flex-1">
-                        <div className="flex items-center justify-between text-xs text-white/60">
-                          <span>Zoom</span>
-                          <span>Tap to zoom, double tap to reset</span>
-                        </div>
-                        <Slider
-                          min={1}
-                          max={2.5}
-                          step={0.05}
-                          value={[zoom]}
-                          onValueChange={([value]) => setZoom(value)}
-                          className="[&>span:first-child]:bg-white/20 [&_[data-radix-slider-thumb]]:border-white [&_[data-radix-slider-thumb]]:bg-white"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
 
                 {galleryImages.length > 1 ? (
                   <div className="border-t border-white/10 bg-black/25 px-3 py-3 backdrop-blur-xl sm:px-4">
