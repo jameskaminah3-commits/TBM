@@ -16,11 +16,13 @@ type PremiumMediaGalleryProps = {
   item: GallerySource;
   title: string;
   className?: string;
+  containerClassName?: string;
   aspectClassName?: string;
   imageClassName?: string;
   thumbnailPlacement?: "overlay" | "below";
   eagerFirstImage?: boolean;
   zoomLabel?: string;
+  showArrows?: boolean;
 };
 
 function getGalleryImages(item: GallerySource) {
@@ -33,11 +35,13 @@ export function PremiumMediaGallery({
   item,
   title,
   className,
+  containerClassName,
   aspectClassName = "aspect-[16/10]",
   imageClassName,
   thumbnailPlacement = "overlay",
   eagerFirstImage = true,
   zoomLabel = "Tap to zoom",
+  showArrows = true,
 }: PremiumMediaGalleryProps) {
   const galleryImages = React.useMemo(() => getGalleryImages(item), [item]);
   const [carouselApi, setCarouselApi] = React.useState<CarouselApi>();
@@ -122,7 +126,7 @@ export function PremiumMediaGallery({
 
   return (
     <div className={cn("space-y-4", className)}>
-      <div className="relative overflow-hidden rounded-[1.6rem] bg-muted">
+      <div className={containerClassName ?? "relative overflow-hidden rounded-[1.6rem] bg-muted"}>
         {galleryImages.length > 0 ? (
           <Carousel className="overflow-hidden" opts={{ loop: galleryImages.length > 1 }} setApi={setCarouselApi}>
             <CarouselContent className="ml-0">
@@ -150,17 +154,19 @@ export function PremiumMediaGallery({
                         {index + 1}/{galleryImages.length}
                       </div>
                     </div>
-                    <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between gap-3">
-                      <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/35 px-3 py-2 text-xs font-medium text-white backdrop-blur-md">
-                        <Maximize2 className="h-3.5 w-3.5" />
-                        {zoomLabel}
-                      </div>
-                      {galleryImages.length > 1 ? (
-                        <div className="hidden rounded-full border border-white/15 bg-black/35 px-3 py-2 text-xs font-medium text-white backdrop-blur-md sm:inline-flex">
-                          Swipe for more
+                    {!(thumbnailPlacement === "overlay" && galleryImages.length > 1) ? (
+                      <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between gap-3">
+                        <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/35 px-3 py-2 text-xs font-medium text-white backdrop-blur-md">
+                          <Maximize2 className="h-3.5 w-3.5" />
+                          {zoomLabel}
                         </div>
-                      ) : null}
-                    </div>
+                        {galleryImages.length > 1 ? (
+                          <div className="inline-flex rounded-full border border-white/15 bg-black/35 px-3 py-2 text-xs font-medium text-white backdrop-blur-md sm:hidden">
+                            Swipe for more
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </button>
                 </CarouselItem>
               ))}
@@ -172,7 +178,7 @@ export function PremiumMediaGallery({
           </div>
         )}
 
-        {galleryImages.length > 1 ? (
+        {galleryImages.length > 1 && showArrows ? (
           <>
             <button
               type="button"
@@ -237,27 +243,30 @@ export function PremiumMediaGallery({
               {activeIndex + 1} of {galleryImages.length}
             </p>
           </div>
-          <div className="flex gap-3 overflow-x-auto pb-1">
-            {visibleThumbs.map((imageUrl, index) => (
-              <button
-                key={`${item.id}-detail-thumb-${index}`}
-                ref={(node) => {
-                  thumbnailRefs.current[index] = node;
-                }}
-                type="button"
-                aria-label={`View photo ${index + 1}`}
-                aria-current={activeIndex === index ? "true" : undefined}
-                className={cn(
-                  "h-20 w-28 flex-shrink-0 overflow-hidden rounded-2xl border bg-muted shadow-sm transition",
-                  activeIndex === index
-                    ? "border-primary ring-2 ring-primary/20"
-                    : "border-border/60 opacity-80 hover:opacity-100",
-                )}
-                onClick={() => carouselApi?.scrollTo(index)}
-              >
-                <img src={imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" />
-              </button>
-            ))}
+          <div className="relative">
+            <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-hide">
+              {visibleThumbs.map((imageUrl, index) => (
+                <button
+                  key={`${item.id}-detail-thumb-${index}`}
+                  ref={(node) => {
+                    thumbnailRefs.current[index] = node;
+                  }}
+                  type="button"
+                  aria-label={`View photo ${index + 1}`}
+                  aria-current={activeIndex === index ? "true" : undefined}
+                  className={cn(
+                    "h-20 w-28 flex-shrink-0 overflow-hidden rounded-2xl border bg-muted shadow-sm transition",
+                    activeIndex === index
+                      ? "border-primary ring-2 ring-primary/20"
+                      : "border-border/60 opacity-80 hover:opacity-100",
+                  )}
+                  onClick={() => carouselApi?.scrollTo(index)}
+                >
+                  <img src={imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" />
+                </button>
+              ))}
+            </div>
+            <div className="pointer-events-none absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-background to-transparent" />
           </div>
         </div>
       ) : null}
