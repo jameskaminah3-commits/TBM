@@ -12,19 +12,23 @@ type StayMediaCarouselProps = {
     mediaType?: string | null;
   };
   className?: string;
+  containerClassName?: string;
   aspectClassName?: string;
   imageClassName?: string;
   thumbnailPlacement?: "overlay" | "below";
   eagerFirstImage?: boolean;
+  showArrows?: boolean;
 };
 
 export function StayMediaCarousel({
   stay,
   className,
+  containerClassName,
   aspectClassName = "aspect-[16/10]",
   imageClassName,
   thumbnailPlacement = "overlay",
   eagerFirstImage = true,
+  showArrows,
 }: StayMediaCarouselProps) {
   const item = React.useMemo(() => {
     const hasGalleryMedia = Boolean(stay.imageUrl || (stay.galleryUrls && stay.galleryUrls.length > 0));
@@ -41,11 +45,13 @@ export function StayMediaCarousel({
       item={item}
       title={stay.title}
       className={className}
+      containerClassName={containerClassName}
       aspectClassName={aspectClassName}
       imageClassName={imageClassName}
       thumbnailPlacement={thumbnailPlacement}
       eagerFirstImage={eagerFirstImage}
       zoomLabel="Tap to zoom"
+      showArrows={showArrows}
     />
   );
 }
