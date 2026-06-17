@@ -17,7 +17,7 @@ const SERVICES = [
 type ServiceId = (typeof SERVICES)[number]["id"];
 
 function buildWhatsAppMessage(selected: Set<ServiceId>): string {
-  const lines = SERVICES.filter((s) => selected.has(s.id)).map((s) => `✅ ${s.label}`);
+ const lines = SERVICES.filter((s) => selected.has(s.id)).map((s) => `${s.emoji} ${s.label}`);
   let msg = `Hi Tembea Bila Matata 👋\n\nI'd like assistance with:\n${lines.join("\n")}`;
   if (selected.has("custom")) {
     msg += `\n\nI'm interested in your Concierge Planning & Coordination Service.`;
