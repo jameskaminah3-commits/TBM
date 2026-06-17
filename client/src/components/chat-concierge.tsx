@@ -9,7 +9,7 @@ const SERVICES = [
   { id: "accommodation", label: "Accommodation", emoji: "🏠" },
   { id: "transport", label: "Transport", emoji: "🚗" },
   { id: "experiences", label: "Experiences", emoji: "🧭" },
-  { id: "private-chef", label: "Private Chef", emoji: "👨‍🍳" },
+    { id: "private-chef", label: "Private Chef", emoji: "🍽️" },
   { id: "errands", label: "Errands & Support", emoji: "🛒" },
   { id: "custom", label: "Custom Request", emoji: "⭐" },
 ] as const;
