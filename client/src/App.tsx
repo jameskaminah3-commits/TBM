@@ -185,6 +185,7 @@ function AppShell() {
       {shouldShowSiteChrome ? <MobileTabBar /> : null}
       <Toaster />
     </TooltipProvider>
+      </NavSheetProvider>
   );
 }
 
