@@ -14,6 +14,6 @@ export function NavSheetProvider({ children }: { children: ReactNode }) {
 
 export function useNavSheet() {
   const ctx = useContext(NavSheetContext);
-  if (!ctx) throw new Error("useNavSheet must be used within NavSheetProvider");
+  if (!ctx) return { open: false, setOpen: (_: boolean) => {} };
   return ctx;
 }
