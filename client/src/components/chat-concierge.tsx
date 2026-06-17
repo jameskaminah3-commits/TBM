@@ -56,8 +56,11 @@ export function ChatConcierge() {
         className="bottom-above-tab fixed right-4 z-40 flex items-center gap-2 rounded-full bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground shadow-[0_8px_30px_-8px_rgba(13,148,136,0.65)] transition-all duration-200 hover:bg-primary/90 hover:shadow-[0_12px_36px_-8px_rgba(13,148,136,0.75)] active:scale-95"
         aria-label="Open chat concierge"
       >
+                {/* Pulse rings */}
+        <span className="animate-concierge-ring absolute inset-0 rounded-full border-2 border-primary/50" />
+        <span className="animate-concierge-ring-delayed absolute inset-0 rounded-full border-2 border-primary/35" />
         <MessageCircle className="h-4 w-4 shrink-0" strokeWidth={2} />
-        <span>Chat Concierge</span>
+        <span>Ask Our Concierge</span>
       </button>
 
       {/* Backdrop */}
