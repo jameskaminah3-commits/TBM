@@ -545,6 +545,15 @@
     text-wrap: balance;
   }
 
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
   .app-shell {
     background-image:
       radial-gradient(circle at top left, hsl(var(--accent) / 0.16), transparent 30%),
