@@ -17,10 +17,11 @@ const TABS = [
     match: (loc: string) => loc === "/accommodations" || loc.startsWith("/accommodation/"),
   },
   {
-    href: "/services/experience",
+    href: "/services",
     label: "Explore",
     icon: Compass,
     match: (loc: string) =>
+      loc === "/services" ||
       loc.startsWith("/services/") ||
       loc.startsWith("/book/experience/") ||
       loc.startsWith("/book/drive/") ||
