@@ -554,6 +554,17 @@
     display: none;
   }
 
+    /* Floating button sits above the mobile tab bar, falls back to bottom-6 on desktop */
+  .bottom-above-tab {
+    bottom: calc(4rem + env(safe-area-inset-bottom) + 0.875rem);
+  }
+
+  @media (min-width: 1280px) {
+    .bottom-above-tab {
+      bottom: 1.5rem;
+    }
+  }
+
   .app-shell {
     background-image:
       radial-gradient(circle at top left, hsl(var(--accent) / 0.16), transparent 30%),
