@@ -6,12 +6,14 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Header } from "@/components/header";
+import { MobileTabBar } from "@/components/mobile-tab-bar";
 import { ConciergeSearchBar } from "@/components/concierge-search-bar";
 import { SiteFooter } from "@/components/site-footer";
 import { TembeaLoader } from "@/components/tembea-loader";
 import { CurrencyProvider } from "@/lib/currency";
 import { ConciergeSearchProvider, getSectionFromPath } from "@/lib/concierge-search";
 import { useRouteMediaReady } from "@/hooks/use-route-media-ready";
+import { NavSheetProvider } from "@/hooks/use-nav-sheet";
 import Home from "@/pages/home";
 
 const Accommodations = lazy(() => import("@/pages/accommodations"));
@@ -158,7 +160,8 @@ function AppShell() {
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
   }, [location]);
 
-  return (
+    return (
+    <NavSheetProvider>
     <TooltipProvider>
       <div className="min-h-screen flex flex-col">
         {shouldShowHeader ? <Header /> : null}
@@ -175,7 +178,11 @@ function AppShell() {
           ) : null}
         </main>
         {!isDashboardRoute && !isAuthRoute ? <SiteFooter /> : null}
+               {shouldShowSiteChrome ? (
+            <div className="xl:hidden" style={{ height: "calc(4rem + env(safe-area-inset-bottom))" }} aria-hidden="true" />
+          ) : null}
       </div>
+      {shouldShowSiteChrome ? <MobileTabBar /> : null}
       <Toaster />
     </TooltipProvider>
   );
