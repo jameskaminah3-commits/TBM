@@ -34,7 +34,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useState } from "react";
+import { useNavSheet } from "@/hooks/use-nav-sheet";
 import { useAuth } from "@/hooks/useAuth";
 import { useInbox } from "@/hooks/use-inbox";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -43,7 +43,7 @@ import { supabase } from "@/lib/supabase";
 
 export function Header() {
   const [location] = useLocation();
-  const [open, setOpen] = useState(false);
+  const { open, setOpen } = useNavSheet();
   const isMobile = useIsMobile();
   const { user, isAuthenticated, isLoading, isAdmin, isProvider } = useAuth();
   const { selectedCurrency, setSelectedCurrency } = useCurrency();
