@@ -202,7 +202,7 @@ export default function Accommodations() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <Card key={i} className="overflow-hidden">
-                <Skeleton className="w-full aspect-[4/3]" />
+                <Skeleton className="w-full aspect-[16/10]" />
                 <div className="p-4 space-y-3">
                   <Skeleton className="h-6 w-3/4" />
                   <Skeleton className="h-4 w-1/2" />
@@ -410,14 +410,14 @@ export default function Accommodations() {
               className="group overflow-hidden border-border/60 bg-gradient-to-b from-background via-background to-muted/20 shadow-[0_18px_50px_-30px_rgba(15,23,42,0.5)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_70px_-32px_rgba(15,23,42,0.65)]"
               data-testid={`card-accommodation-${accommodation.id}`}
             >
-              <div className="p-3 pb-0">
-                <StayMediaCarousel
-                  stay={accommodation}
-                  aspectClassName="aspect-[16/10]"
-                  imageClassName="transition-transform duration-500 group-hover:scale-[1.03]"
-                  eagerFirstImage={index < 4}
-                />
-              </div>
+              <StayMediaCarousel
+                stay={accommodation}
+                aspectClassName="aspect-[16/10]"
+                containerClassName="relative overflow-hidden bg-muted"
+                imageClassName="transition-transform duration-500 group-hover:scale-[1.03]"
+                eagerFirstImage={index < 4}
+                showArrows={false}
+              />
               
               <div className="p-5">
                 <div className="flex items-start justify-between gap-2 mb-2">
