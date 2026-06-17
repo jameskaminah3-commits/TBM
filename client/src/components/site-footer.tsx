@@ -1,4 +1,4 @@
-import { Facebook, Mail, MapPin, MessageCircle, Phone } from "lucide-react";
+import { Facebook, Mail, MapPin, Phone } from "lucide-react";
 import { Link } from "wouter";
 import {
   BUSINESS_REGISTRATION_NAME,
@@ -9,7 +9,6 @@ import {
   FACEBOOK_URL,
   GOOGLE_MAPS_URL,
   SERVICE_AREA,
-  WHATSAPP_URL,
 } from "@/lib/contact-info";
 
 const exploreLinks = [
@@ -32,7 +31,7 @@ const companyLinks = [
 
 export function SiteFooter() {
   return (
-    <footer className="border-t bg-muted/30 py-12">
+    <footer className="border-t bg-muted/30 pt-12" style={{ paddingBottom: "max(3rem, calc(8rem + env(safe-area-inset-bottom)))" }}>
       <div className="container mx-auto px-4 md:px-8">
         <div className="grid gap-10 md:grid-cols-2 xl:grid-cols-4">
           <div className="space-y-4">
@@ -75,15 +74,6 @@ export function SiteFooter() {
                 <Phone className="h-4 w-4 shrink-0" />
                 <span className="min-w-0 break-words">{CONTACT_PHONE_DISPLAY}</span>
               </a>
-              <a
-                href={WHATSAPP_URL}
-                target="_blank"
-                rel="noreferrer"
-                className="flex min-h-9 items-center gap-2 transition-colors hover:text-primary"
-              >
-                <MessageCircle className="h-4 w-4 shrink-0" />
-                <span className="min-w-0 break-words">WhatsApp: {CONTACT_PHONE_DISPLAY}</span>
-              </a>
               <a href={`mailto:${CONTACT_EMAIL}`} className="flex min-h-9 items-center gap-2 transition-colors hover:text-primary">
                 <Mail className="h-4 w-4 shrink-0" />
                 <span className="min-w-0 break-all">{CONTACT_EMAIL}</span>
@@ -100,15 +90,6 @@ export function SiteFooter() {
             </div>
 
             <div className="mt-5 flex items-center gap-3">
-              <a
-                href={WHATSAPP_URL}
-                target="_blank"
-                rel="noreferrer"
-                aria-label="WhatsApp"
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary transition-colors hover:bg-primary/20"
-              >
-                <MessageCircle className="h-5 w-5" />
-              </a>
               <a
                 href={FACEBOOK_URL}
                 target="_blank"
