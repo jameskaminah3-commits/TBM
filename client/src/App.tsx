@@ -7,6 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Header } from "@/components/header";
 import { MobileTabBar } from "@/components/mobile-tab-bar";
+import { ChatConcierge } from "@/components/chat-concierge";
 import { ConciergeSearchBar } from "@/components/concierge-search-bar";
 import { SiteFooter } from "@/components/site-footer";
 import { TembeaLoader } from "@/components/tembea-loader";
@@ -185,6 +186,7 @@ function AppShell() {
           ) : null}
       </div>
       {shouldShowSiteChrome ? <MobileTabBar /> : null}
+      {shouldShowSiteChrome ? <ChatConcierge /> : null}
       <Toaster />
     </TooltipProvider>
       </NavSheetProvider>
