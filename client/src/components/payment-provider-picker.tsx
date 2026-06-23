@@ -32,7 +32,7 @@ export const paymentChoiceOptions: Record<CustomerPaymentChoice, PaymentChoiceOp
     title: "Card and Apple Pay",
     description: "Visa, Mastercard, and Apple Pay.",
     helper: "For card and wallet checkout.",
-    tone: "border-sky-200 bg-[linear-gradient(135deg,rgba(239,246,255,0.96),rgba(255,255,255,0.98))] text-sky-950",
+    tone: "border-sky-200 bg-[linear-gradient(135deg,rgba(239,246,255,0.96),rgba(255,255,255,0.98))] text-sky-950 dark:border-sky-800/50 dark:bg-sky-950/30 dark:text-sky-200",
     badge: "Travel-ready",
   },
   mpesa: {
@@ -40,7 +40,7 @@ export const paymentChoiceOptions: Record<CustomerPaymentChoice, PaymentChoiceOp
     title: "M-Pesa",
     description: "Fast mobile-money checkout.",
     helper: "For local phone payments.",
-    tone: "border-emerald-200 bg-[linear-gradient(135deg,rgba(236,253,245,0.96),rgba(255,255,255,0.98))] text-emerald-950",
+    tone: "border-emerald-200 bg-[linear-gradient(135deg,rgba(236,253,245,0.96),rgba(255,255,255,0.98))] text-emerald-950 dark:border-emerald-800/50 dark:bg-emerald-950/30 dark:text-emerald-200",
     badge: "Local favorite",
   },
 };
@@ -68,15 +68,15 @@ function PaymentBrandMarks({ choice, className }: { choice?: CustomerPaymentChoi
     <div className={cn("flex flex-wrap gap-2", className)}>
       {(choice === undefined || choice === "card") ? (
         <>
-          <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-[0_12px_24px_-22px_rgba(15,23,42,0.28)]">
+          <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-card px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-[0_12px_24px_-22px_rgba(15,23,42,0.28)] dark:border-border/60 dark:text-foreground">
             <FaCcVisa className="h-4 w-4 text-sky-700" />
             Visa
           </span>
-          <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-[0_12px_24px_-22px_rgba(15,23,42,0.28)]">
+          <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-card px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-[0_12px_24px_-22px_rgba(15,23,42,0.28)] dark:border-border/60 dark:text-foreground">
             <FaCcMastercard className="h-4 w-4 text-rose-500" />
             Mastercard
           </span>
-          <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-[0_12px_24px_-22px_rgba(15,23,42,0.28)]">
+          <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-card px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-[0_12px_24px_-22px_rgba(15,23,42,0.28)] dark:border-border/60 dark:text-foreground">
             <FaApplePay className="h-5 w-5 text-slate-950" />
             Apple Pay
           </span>
@@ -84,7 +84,7 @@ function PaymentBrandMarks({ choice, className }: { choice?: CustomerPaymentChoi
       ) : null}
 
       {(choice === undefined || choice === "mpesa") ? (
-        <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700 shadow-[0_12px_24px_-22px_rgba(5,150,105,0.28)]">
+        <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-card px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700 shadow-[0_12px_24px_-22px_rgba(5,150,105,0.28)] dark:border-emerald-800/50 dark:text-emerald-400">
           <Smartphone className="h-3.5 w-3.5" />
           M-Pesa
         </span>
@@ -103,7 +103,7 @@ export function CheckoutPaymentPreview({
   description?: string;
 }) {
   return (
-    <div className={cn("overflow-hidden rounded-[26px] border border-border/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(246,248,251,0.94))] p-4 shadow-[0_18px_36px_-30px_rgba(15,23,42,0.24)]", className)}>
+    <div className={cn("overflow-hidden rounded-[26px] border border-border/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(246,248,251,0.94))] p-4 shadow-[0_18px_36px_-30px_rgba(15,23,42,0.24)] dark:bg-card/90", className)}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">Checkout</div>
