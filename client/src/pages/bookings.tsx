@@ -287,17 +287,17 @@ function BookingReviewSection({ booking, targets }: { booking: Booking; targets:
   const activeRating = Math.min(5, Math.max(1, hoverRating ?? (Number(rating) || 5)));
 
   return (
-    <div className="mt-4 overflow-hidden rounded-[28px] border border-amber-200/60 bg-[linear-gradient(135deg,rgba(255,251,235,0.92),rgba(255,255,255,0.96),rgba(245,247,250,0.92))] p-5 shadow-[0_22px_50px_-34px_rgba(120,53,15,0.24)]">
+    <div className="mt-4 overflow-hidden rounded-[28px] border border-amber-200/60 bg-[linear-gradient(135deg,rgba(255,251,235,0.92),rgba(255,255,255,0.96),rgba(245,247,250,0.92))] p-5 shadow-[0_22px_50px_-34px_rgba(120,53,15,0.24)] dark:border-border/60 dark:bg-card">
       <div className="mb-3 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-amber-700/80">Feedback</div>
-          <div className="mt-1 text-lg font-semibold tracking-tight text-stone-950">Reviews</div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-amber-700/80 dark:text-primary/80">Feedback</div>
+          <div className="mt-1 text-lg font-semibold tracking-tight text-foreground">Reviews</div>
         </div>
-        <Badge variant={allTargetsRated ? "secondary" : "outline"} className="rounded-full border-amber-200 bg-white/80">
+        <Badge variant={allTargetsRated ? "secondary" : "outline"} className="rounded-full border-amber-200 bg-white/80 dark:border-border/60 dark:bg-background/80">
           {completedReviewCount}/{targets.length} submitted
         </Badge>
       </div>
-      <p className="mb-4 text-sm leading-6 text-stone-600">
+      <p className="mb-4 text-sm leading-6 text-muted-foreground">
         Each completed item can be reviewed once.
       </p>
       <div className="mb-3 flex flex-wrap gap-2">
@@ -326,15 +326,15 @@ function BookingReviewSection({ booking, targets }: { booking: Booking; targets:
       {targets.filter((target) => target.targetId === openTargetId).map((target) => {
         const existingReview = reviews.find((review) => review.targetType === target.targetType && review.targetId === target.targetId);
         return (
-          <div key={target.targetId} className="space-y-4 rounded-[24px] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(255,252,247,0.92))] p-5 shadow-[0_18px_36px_-30px_rgba(28,25,23,0.2)]">
+          <div key={target.targetId} className="space-y-4 rounded-[24px] border border-border/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(255,252,247,0.92))] p-5 shadow-[0_18px_36px_-30px_rgba(28,25,23,0.2)] dark:bg-card/80">
             {existingReview ? (
               <>
                 <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <div className="text-sm font-medium text-stone-950">{target.label}</div>
-                    <div className="text-sm text-stone-500">Review saved</div>
+                    <div className="text-sm font-medium text-foreground">{target.label}</div>
+                    <div className="text-sm text-muted-foreground">Review saved</div>
                   </div>
-                  <div className="flex items-center gap-3 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5">
+                  <div className="flex items-center gap-3 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 dark:border-border/60 dark:bg-muted">
                     <div className="flex items-center gap-1">
                       {Array.from({ length: 5 }).map((_, index) => (
                         <Star
@@ -343,10 +343,10 @@ function BookingReviewSection({ booking, targets }: { booking: Booking; targets:
                         />
                       ))}
                     </div>
-                    <span className="text-sm font-medium text-amber-900">{getReviewTone(existingReview.rating)}</span>
+                    <span className="text-sm font-medium text-amber-900 dark:text-amber-400">{getReviewTone(existingReview.rating)}</span>
                   </div>
                 </div>
-                <div className="rounded-2xl bg-stone-50 px-4 py-3 text-sm leading-6 text-stone-600">
+                <div className="rounded-2xl bg-muted/50 px-4 py-3 text-sm leading-6 text-muted-foreground">
                   {existingReview.comment?.trim() ? existingReview.comment : "No comment added."}
                 </div>
               </>
@@ -354,14 +354,14 @@ function BookingReviewSection({ booking, targets }: { booking: Booking; targets:
               <>
                 <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <div className="text-sm font-medium text-stone-950">Review {target.label}</div>
-                    <div className="mt-1 text-sm text-stone-500">Share what stood out.</div>
+                    <div className="text-sm font-medium text-foreground">Review {target.label}</div>
+                    <div className="mt-1 text-sm text-muted-foreground">Share what stood out.</div>
                   </div>
-                  <div className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-900">
+                  <div className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-900 dark:border-border/60 dark:bg-muted dark:text-amber-400">
                     {getReviewTone(activeRating)}
                   </div>
                 </div>
-                <div className="rounded-[22px] border border-amber-100 bg-[linear-gradient(180deg,rgba(255,251,235,0.76),rgba(255,255,255,0.94))] p-4">
+                <div className="rounded-[22px] border border-amber-100 bg-[linear-gradient(180deg,rgba(255,251,235,0.76),rgba(255,255,255,0.94))] p-4 dark:border-border/50 dark:bg-muted/50">
                   <div
                     className="flex flex-wrap items-center gap-2"
                     onMouseLeave={() => setHoverRating(null)}
@@ -383,8 +383,8 @@ function BookingReviewSection({ booking, targets }: { booking: Booking; targets:
                           aria-label={`Rate ${value} star${value === 1 ? "" : "s"}`}
                         >
                           <div className="flex items-center gap-2">
-                            <Star className={`h-5 w-5 ${isActive ? "fill-amber-400 text-amber-400" : "text-stone-300 group-hover:text-amber-300"}`} />
-                            <span className={`text-sm font-medium ${isActive ? "text-stone-950" : "text-stone-500"}`}>{value}</span>
+                            <Star className={`h-5 w-5 ${isActive ? "fill-amber-400 text-amber-400" : "text-muted-foreground/50 group-hover:text-amber-300"}`} />
+                            <span className={`text-sm font-medium ${isActive ? "text-foreground" : "text-muted-foreground"}`}>{value}</span>
                           </div>
                         </button>
                       );
@@ -392,13 +392,13 @@ function BookingReviewSection({ booking, targets }: { booking: Booking; targets:
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <div className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">Comment</div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">Comment</div>
                   <Textarea
                     rows={4}
                     value={comment}
                     onChange={(e) => setComment(e.target.value)}
                     placeholder="What worked well? What should improve?"
-                    className="rounded-[20px] border-stone-200 bg-white/90"
+                    className="rounded-[20px] border-border/60 bg-background/90"
                   />
                 </div>
                 <Button
@@ -828,15 +828,15 @@ export default function Bookings() {
         className={cn(
           "overflow-hidden rounded-[28px] border border-border/60 shadow-[0_22px_50px_-34px_rgba(15,23,42,0.45)] transition-all duration-300 data-[state=open]:shadow-[0_28px_58px_-34px_rgba(15,23,42,0.52)]",
           isHistoryBookingStatus(booking.status)
-            ? "bg-[linear-gradient(180deg,rgba(250,250,249,0.98),rgba(244,244,245,0.92))]"
-            : "bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(246,248,250,0.92))]",
+            ? "bg-[linear-gradient(180deg,rgba(250,250,249,0.98),rgba(244,244,245,0.92))] dark:bg-card/80"
+            : "bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(246,248,250,0.92))] dark:bg-card/90",
         )}
         data-testid={`booking-${booking.id}`}
       >
         <AccordionTrigger className="items-start gap-3 px-4 py-4 text-left hover:no-underline sm:gap-4 sm:px-5 sm:py-4 lg:px-6">
           <div className="flex min-w-0 flex-1 flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex min-w-0 items-start gap-3 sm:gap-4">
-              <div className="relative h-20 w-24 shrink-0 overflow-hidden rounded-[20px] border border-black/5 bg-stone-950 shadow-[0_16px_30px_-24px_rgba(15,23,42,0.45)] sm:h-28 sm:w-36 sm:rounded-[22px]">
+              <div className="relative h-20 w-24 shrink-0 overflow-hidden rounded-[20px] border border-border/20 bg-stone-950 shadow-[0_16px_30px_-24px_rgba(15,23,42,0.45)] sm:h-28 sm:w-36 sm:rounded-[22px]">
                 {renderHero()}
                 {stay ? <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(12,10,9,0.04),rgba(12,10,9,0.42))]" /> : null}
               </div>
@@ -1161,9 +1161,9 @@ export default function Bookings() {
               </div>
             </div>
             {canRetryBookingPayment(booking) ? (
-              <div className="rounded-[24px] border border-amber-200/70 bg-[linear-gradient(180deg,rgba(255,251,235,0.96),rgba(255,255,255,0.95))] p-4 shadow-[0_16px_36px_-30px_rgba(146,64,14,0.24)]">
-                <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.24em] text-amber-700">Payment</div>
-                <div className="text-sm leading-6 text-stone-700">
+              <div className="rounded-[24px] border border-amber-200/70 bg-[linear-gradient(180deg,rgba(255,251,235,0.96),rgba(255,255,255,0.95))] p-4 shadow-[0_16px_36px_-30px_rgba(146,64,14,0.24)] dark:border-border/60 dark:bg-card">
+                <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.24em] text-amber-700 dark:text-primary/80">Payment</div>
+                <div className="text-sm leading-6 text-muted-foreground">
                   {manualMpesaPending
                     ? "We have your temporary M-Pesa submission and are confirming it now. If you need to, you can still reopen secure checkout below."
                     : hasLockedInBookingDeposit(booking)
@@ -1343,7 +1343,7 @@ export default function Bookings() {
         {items.map(renderBookingCard)}
       </Accordion>
     </div>
-  ) : <Card className="border-border/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,249,251,0.9))] p-8 text-center shadow-[0_18px_44px_-32px_rgba(15,23,42,0.35)] sm:p-12"><div className="mx-auto max-w-md"><div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted"><Calendar className="h-8 w-8 text-muted-foreground" /></div><h3 className="mb-2 text-xl font-semibold">{emptyTitle}</h3><p className="text-muted-foreground">{emptyDescription}</p></div></Card>;
+  ) : <Card className="border-border/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,249,251,0.9))] p-8 text-center shadow-[0_18px_44px_-32px_rgba(15,23,42,0.35)] sm:p-12 dark:bg-card/90"><div className="mx-auto max-w-md"><div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted"><Calendar className="h-8 w-8 text-muted-foreground" /></div><h3 className="mb-2 text-xl font-semibold">{emptyTitle}</h3><p className="text-muted-foreground">{emptyDescription}</p></div></Card>;
 
   if (isLoading) {
     return <div className="min-h-screen py-12"><div className="container mx-auto max-w-6xl px-4 md:px-8"><Skeleton className="mb-8 h-12 w-64" /><div className="space-y-4">{[1, 2, 3].map((i) => <Card key={i} className="p-6"><Skeleton className="h-32 w-full" /></Card>)}</div></div></div>;
@@ -1354,9 +1354,9 @@ export default function Bookings() {
   }
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(13,148,136,0.12),transparent_26%),radial-gradient(circle_at_85%_12%,rgba(251,146,60,0.12),transparent_22%),linear-gradient(180deg,rgba(255,252,248,0.95),rgba(246,248,250,1))] py-12">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(13,148,136,0.12),transparent_26%),radial-gradient(circle_at_85%_12%,rgba(251,146,60,0.12),transparent_22%),linear-gradient(180deg,rgba(255,252,248,0.95),rgba(246,248,250,1))] py-12 dark:bg-none dark:bg-background">
       <div className="container mx-auto max-w-6xl px-4 md:px-8">
-        <div className="relative mb-8 overflow-hidden rounded-[32px] border border-border/60 bg-[linear-gradient(135deg,rgba(255,255,255,0.98),rgba(245,247,250,0.94))] p-6 shadow-[0_24px_60px_-34px_rgba(15,23,42,0.55)] md:p-8">
+        <div className="relative mb-8 overflow-hidden rounded-[32px] border border-border/60 bg-[linear-gradient(135deg,rgba(255,255,255,0.98),rgba(245,247,250,0.94))] p-6 shadow-[0_24px_60px_-34px_rgba(15,23,42,0.55)] md:p-8 dark:bg-card/90">
           <div className="pointer-events-none absolute -right-14 -top-14 h-40 w-40 rounded-full bg-primary/10 blur-2xl" />
           <div className="pointer-events-none absolute -left-8 bottom-0 h-28 w-28 rounded-full bg-accent/10 blur-2xl" />
           <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
