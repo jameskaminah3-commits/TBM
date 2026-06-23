@@ -697,7 +697,7 @@ export default function ProviderDashboard() {
   const { unreadCount: unreadNotificationCount } = useInbox({ enabled: isProvider || isAdmin });
   const { data: providerPaymentData } = useQuery<ProviderPaymentData>({
     queryKey: ["/api/provider/payments"],
-    enabled: !isAdmin,
+      enabled: !isAdmin,
   });
   const orderedStayBookings = sortProviderBookings(providerBookingAssignments.filter((item) => item.assignment.providerCategory === "stays"));
   const orderedCarBookings = sortProviderBookings(providerBookingAssignments.filter((item) => item.assignment.providerCategory === "cars"));
@@ -1243,10 +1243,10 @@ export default function ProviderDashboard() {
 
   return (
     <ProviderLayout>
-      <div className="min-h-full bg-[radial-gradient(circle_at_top_left,_rgba(20,184,166,0.12),_transparent_32%),radial-gradient(circle_at_top_right,_rgba(245,158,11,0.12),_transparent_28%),linear-gradient(180deg,_rgba(255,251,245,0.92),_rgba(255,255,255,1))]">
+      <div className="min-h-full bg-[radial-gradient(circle_at_top_left,_rgba(20,184,166,0.12),_transparent_32%),radial-gradient(circle_at_top_right,_rgba(245,158,11,0.12),_transparent_28%),linear-gradient(180deg,_rgba(255,251,245,0.92),_rgba(255,255,255,1))] dark:bg-none dark:bg-background">
         <div className="container mx-auto space-y-6 px-4 py-5 sm:px-5 md:space-y-8 md:px-6 md:py-8">
           <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "overview" | "listings" | "custom-requests" | "bookings")} className="space-y-6 md:space-y-8">
-          <section className="overflow-hidden rounded-[2rem] border border-stone-200/70 bg-white/82 shadow-[0_36px_90px_-48px_rgba(92,73,47,0.38)] backdrop-blur">
+          <section className="overflow-hidden rounded-[2rem] border border-border/60 bg-card/85 shadow-[0_36px_90px_-48px_rgba(92,73,47,0.38)] supports-[backdrop-filter]:backdrop-blur dark:bg-card/90 dark:supports-[backdrop-filter]:backdrop-blur-none">
             <div className="px-4 py-5 sm:px-6 md:px-8 md:py-8">
               <div className="space-y-5">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -1397,7 +1397,7 @@ export default function ProviderDashboard() {
 
                 <Card className="border-stone-200/70 bg-white/82 shadow-[0_20px_60px_-42px_rgba(92,73,47,0.34)]">
                   <CardHeader>
-                    <CardTitle>Performance</CardTitle>
+                                    <CardTitle>Performance</CardTitle>
                   </CardHeader>
                   <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                     <div className="rounded-[1.5rem] border border-amber-200 bg-amber-50/70 p-4"><div className="flex items-center gap-2 text-amber-800"><Star className="h-4 w-4 fill-amber-400 text-amber-400" /><span className="text-xs font-semibold uppercase tracking-[0.18em]">Rating</span></div><div className="mt-3 text-3xl font-semibold tracking-tight text-stone-950">{averageRating ? averageRating.toFixed(1) : "New"}</div><p className="mt-1 text-sm text-stone-600">{totalReviewCount ? `${totalReviewCount} review${totalReviewCount === 1 ? "" : "s"}` : "No reviews"}</p></div>
@@ -2097,7 +2097,7 @@ export default function ProviderDashboard() {
                         booking.booking.guestName,
                         getAssignmentDateRange(booking),
                         getAssignmentLocation(booking),
-                        getAssignmentPickupLocation(booking) ? `Pickup ${getAssignmentPickupLocation(booking)}` : null,
+                                                getAssignmentPickupLocation(booking) ? `Pickup ${getAssignmentPickupLocation(booking)}` : null,
                         getAssignmentReturnLocation(booking) ? `Return ${getAssignmentReturnLocation(booking)}` : null,
                         booking.assignment.serviceConfig.serviceZone ? `Zone ${booking.assignment.serviceConfig.serviceZone}` : null,
                       ])}
@@ -2547,6 +2547,6 @@ export default function ProviderDashboard() {
           </Tabs>
       </div>
       </div>
-    </ProviderLayout>
+       </ProviderLayout>
   );
 }
