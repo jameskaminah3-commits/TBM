@@ -47,7 +47,7 @@ export function Header() {
   const isMobile = useIsMobile();
   const { user, isAuthenticated, isLoading, isAdmin, isProvider } = useAuth();
   const { selectedCurrency, setSelectedCurrency } = useCurrency();
-  const { unreadCount } = useInbox({ enabled: isAuthenticated, refetchInterval: 15000 });
+  const { unreadCount } = useInbox({ enabled: isAuthenticated, refetchInterval: 60000 });
   const isInboxRoute = location === "/inbox";
 
   const handleLogout = async () => {
