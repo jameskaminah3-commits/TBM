@@ -169,7 +169,7 @@ export default function DinePage() {
   }
 
   return (
-    <div className="min-h-screen py-12">
+    <div className="app-shell min-h-screen py-12">
       <div className="container mx-auto px-4 md:px-8">
         <div className="mb-12">
           <h1 className="mb-4 font-serif text-3xl font-medium leading-tight sm:text-4xl md:text-5xl">
