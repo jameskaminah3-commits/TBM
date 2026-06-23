@@ -1218,7 +1218,7 @@ export default function Bookings() {
                   disabled={startPaymentMutation.isPending}
                   onClick={() => openRetryCheckout(booking)}
                 >
-                                    {manualMpesaPending
+                  {manualMpesaPending
                     ? "Open secure payment options"
                     : hasLockedInBookingDeposit(booking)
                     ? "Pay remaining balance"
@@ -1343,7 +1343,7 @@ export default function Bookings() {
         {items.map(renderBookingCard)}
       </Accordion>
     </div>
-  ) : <Card className="border-border/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,249,251,0.9))] p-8 text-center shadow-[0_18px_44px_-32px_rgba(15,23,42,0.35)] sm:p-12 dark:bg-card/90"><div className="mx-auto max-w-md"><div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted"><Calendar className="h-8 w-8 text-muted-foreground" /></div><h3 className="mb-2 text-xl font-semibold">{emptyTitle}</h3><p className="text-muted-foreground">{emptyDescription}</p></div></Card>;
+  ) : <Card className="border-border/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,249,251,0.9))] p-8 text-center shadow-[0_18px_44px_-32px_rgba(15,23,42,0.35)] sm:p-12 dark:bg-none dark:bg-card/90"><div className="mx-auto max-w-md"><div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted"><Calendar className="h-8 w-8 text-muted-foreground" /></div><h3 className="mb-2 text-xl font-semibold">{emptyTitle}</h3><p className="text-muted-foreground">{emptyDescription}</p></div></Card>;
 
   if (isLoading) {
     return <div className="min-h-screen py-12"><div className="container mx-auto max-w-6xl px-4 md:px-8"><Skeleton className="mb-8 h-12 w-64" /><div className="space-y-4">{[1, 2, 3].map((i) => <Card key={i} className="p-6"><Skeleton className="h-32 w-full" /></Card>)}</div></div></div>;
@@ -1356,7 +1356,7 @@ export default function Bookings() {
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(13,148,136,0.12),transparent_26%),radial-gradient(circle_at_85%_12%,rgba(251,146,60,0.12),transparent_22%),linear-gradient(180deg,rgba(255,252,248,0.95),rgba(246,248,250,1))] py-12 dark:bg-none dark:bg-background">
       <div className="container mx-auto max-w-6xl px-4 md:px-8">
-        <div className="relative mb-8 overflow-hidden rounded-[32px] border border-border/60 bg-[linear-gradient(135deg,rgba(255,255,255,0.98),rgba(245,247,250,0.94))] p-6 shadow-[0_24px_60px_-34px_rgba(15,23,42,0.55)] md:p-8 dark:bg-card/90">
+        <div className="relative mb-8 overflow-hidden rounded-[32px] border border-border/60 bg-[linear-gradient(135deg,rgba(255,255,255,0.98),rgba(245,247,250,0.94))] p-6 shadow-[0_24px_60px_-34px_rgba(15,23,42,0.55)] md:p-8 dark:bg-none dark:bg-card/90">
           <div className="pointer-events-none absolute -right-14 -top-14 h-40 w-40 rounded-full bg-primary/10 blur-2xl" />
           <div className="pointer-events-none absolute -left-8 bottom-0 h-28 w-28 rounded-full bg-accent/10 blur-2xl" />
           <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
