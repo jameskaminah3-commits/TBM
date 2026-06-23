@@ -92,7 +92,7 @@ function ServiceShowcaseCard({
 
   return (
     <Card
-      className="group h-full cursor-pointer overflow-hidden rounded-[1.75rem] border border-black/5 bg-white/95 shadow-[0_18px_40px_-30px_rgba(15,23,42,0.38)] transition-all duration-300 hover:-translate-y-2 hover:shadow-[0_28px_60px_-32px_rgba(15,23,42,0.5)]"
+      className="group h-full cursor-pointer overflow-hidden rounded-[1.75rem] border border-border/60 bg-card shadow-[0_18px_40px_-30px_rgba(15,23,42,0.38)] transition-[transform,box-shadow] duration-300 hover:-translate-y-2 hover:shadow-[0_28px_60px_-32px_rgba(15,23,42,0.5)]"
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
       onTouchStart={() => setIsPaused(true)}
