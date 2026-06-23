@@ -209,12 +209,18 @@
       linear-gradient(180deg, rgba(255, 250, 244, 0.98), rgba(247, 241, 231, 0.95) 56%, rgba(240, 233, 223, 0.92));
   }
 
+  .dark .tembea-loader-shell {
+    background-image:
+      radial-gradient(circle at 12% 14%, hsl(var(--primary) / 0.10), transparent 30%),
+      radial-gradient(circle at 84% 18%, hsl(var(--accent) / 0.08), transparent 24%),
+      linear-gradient(180deg, hsl(var(--surface-shell-start) / 0.98), hsl(var(--surface-shell-end)) 56%);
+  }
+
   .tembea-loader-glow {
     position: absolute;
     width: min(30rem, 68vw);
     aspect-ratio: 1;
     border-radius: 9999px;
-    filter: blur(34px);
     opacity: 0.72;
     animation: tembea-loader-drift 15s ease-in-out infinite;
   }
@@ -684,6 +690,17 @@
   .dark .surface-subtle {
     background-image: linear-gradient(180deg, hsl(var(--background) / 0.62), hsl(var(--muted) / 0.7));
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  }
+
+  /* Disable backdrop-blur on surface cards for mobile to prevent GPU overload.
+     Header and tab bar keep their blur as they are design-critical. */
+  @media (max-width: 767px) {
+    .surface-panel,
+    .surface-soft-card,
+    .surface-badge,
+    .surface-drawer {
+      backdrop-filter: none;
+    }
   }
 
   /* Hide ugly search cancel button in Chrome until we can style it properly */
