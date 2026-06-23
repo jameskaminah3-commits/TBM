@@ -697,7 +697,7 @@ export default function ProviderDashboard() {
   const { unreadCount: unreadNotificationCount } = useInbox({ enabled: isProvider || isAdmin });
   const { data: providerPaymentData } = useQuery<ProviderPaymentData>({
     queryKey: ["/api/provider/payments"],
-      enabled: !isAdmin,
+    enabled: !isAdmin,
   });
   const orderedStayBookings = sortProviderBookings(providerBookingAssignments.filter((item) => item.assignment.providerCategory === "stays"));
   const orderedCarBookings = sortProviderBookings(providerBookingAssignments.filter((item) => item.assignment.providerCategory === "cars"));
@@ -1397,7 +1397,7 @@ export default function ProviderDashboard() {
 
                 <Card className="border-stone-200/70 bg-white/82 shadow-[0_20px_60px_-42px_rgba(92,73,47,0.34)]">
                   <CardHeader>
-                                    <CardTitle>Performance</CardTitle>
+                    <CardTitle>Performance</CardTitle>
                   </CardHeader>
                   <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                     <div className="rounded-[1.5rem] border border-amber-200 bg-amber-50/70 p-4"><div className="flex items-center gap-2 text-amber-800"><Star className="h-4 w-4 fill-amber-400 text-amber-400" /><span className="text-xs font-semibold uppercase tracking-[0.18em]">Rating</span></div><div className="mt-3 text-3xl font-semibold tracking-tight text-stone-950">{averageRating ? averageRating.toFixed(1) : "New"}</div><p className="mt-1 text-sm text-stone-600">{totalReviewCount ? `${totalReviewCount} review${totalReviewCount === 1 ? "" : "s"}` : "No reviews"}</p></div>
@@ -2097,7 +2097,7 @@ export default function ProviderDashboard() {
                         booking.booking.guestName,
                         getAssignmentDateRange(booking),
                         getAssignmentLocation(booking),
-                                                getAssignmentPickupLocation(booking) ? `Pickup ${getAssignmentPickupLocation(booking)}` : null,
+                        getAssignmentPickupLocation(booking) ? `Pickup ${getAssignmentPickupLocation(booking)}` : null,
                         getAssignmentReturnLocation(booking) ? `Return ${getAssignmentReturnLocation(booking)}` : null,
                         booking.assignment.serviceConfig.serviceZone ? `Zone ${booking.assignment.serviceConfig.serviceZone}` : null,
                       ])}
@@ -2547,6 +2547,6 @@ export default function ProviderDashboard() {
           </Tabs>
       </div>
       </div>
-       </ProviderLayout>
+    </ProviderLayout>
   );
 }
