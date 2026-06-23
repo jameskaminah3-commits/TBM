@@ -15,7 +15,7 @@ import { CurrencyProvider } from "@/lib/currency";
 import { ConciergeSearchProvider, getSectionFromPath } from "@/lib/concierge-search";
 import { useRouteMediaReady } from "@/hooks/use-route-media-ready";
 import { NavSheetProvider } from "@/hooks/use-nav-sheet";
-import Home from "@/pages/home";
+const Home = lazy(() => import("@/pages/home"));
 
 const Accommodations = lazy(() => import("@/pages/accommodations"));
 const AccommodationDetail = lazy(() => import("@/pages/accommodation-detail"));
@@ -175,7 +175,7 @@ function AppShell() {
           </div>
 
           {!isRouteMediaReady ? (
-            <div className="fixed inset-0 z-[140] bg-[rgba(255,250,244,0.94)] backdrop-blur-[2px]">
+            <div className="fixed inset-0 z-[140] bg-background/94 backdrop-blur-[2px]">
               <TembeaLoader className="min-h-screen" />
             </div>
           ) : null}
