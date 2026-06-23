@@ -112,7 +112,7 @@ function ServiceShowcaseCard({
             {safeItems.map((item, index) => (
               <div
                 key={item.id}
-                className={`absolute inset-0 transition-all duration-700 ${index === activeIndex ? "opacity-100 scale-100" : "pointer-events-none opacity-0 scale-[1.03]"}`}
+                className={`absolute inset-0 transition-[opacity,transform] duration-700 ${index === activeIndex ? "opacity-100 scale-100" : "pointer-events-none opacity-0 scale-[1.03]"}`}
               >
                 {item.imageUrl ? (
                   <ListingMedia
@@ -575,7 +575,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="bg-[linear-gradient(180deg,rgba(249,245,239,0.95)_0%,rgba(246,240,231,0.95)_100%)] py-20 md:py-24">
+      <section className="bg-[linear-gradient(180deg,rgba(249,245,239,0.95)_0%,rgba(246,240,231,0.95)_100%)] py-20 dark:bg-none dark:bg-muted/20 md:py-24">
         <div className="container mx-auto px-4 md:px-8">
           <div className="mb-16 text-center">
             <h2 className="mb-4 font-serif text-[2rem] font-medium leading-tight sm:text-4xl lg:text-5xl">
@@ -592,7 +592,7 @@ export default function Home() {
                 key={story.title}
                 className="group"
               >
-                <div className="grid items-center gap-5 overflow-hidden rounded-[2rem] border border-black/5 bg-white/85 p-4 shadow-[0_20px_45px_-36px_rgba(15,23,42,0.2)] backdrop-blur-sm transition-all duration-500 ease-out group-hover:-translate-y-2 group-hover:shadow-[0_28px_58px_-36px_rgba(15,23,42,0.28)] md:p-5 lg:grid-cols-[minmax(0,1.02fr)_minmax(0,0.98fr)] lg:gap-8">
+                <div className="grid items-center gap-5 overflow-hidden rounded-[2rem] border border-black/5 bg-white/85 p-4 shadow-[0_20px_45px_-36px_rgba(15,23,42,0.2)] backdrop-blur-sm transition-[transform,box-shadow] duration-500 ease-out group-hover:-translate-y-2 group-hover:shadow-[0_28px_58px_-36px_rgba(15,23,42,0.28)] dark:border-border/40 dark:bg-card/80 dark:backdrop-blur-none md:p-5 lg:grid-cols-[minmax(0,1.02fr)_minmax(0,0.98fr)] lg:gap-8">
                   <div className={index % 2 === 1 ? "lg:order-2" : ""}>
                     <div className="relative overflow-hidden rounded-[1.5rem] bg-muted">
                       {story.visual === "photo" ? (
@@ -616,11 +616,11 @@ export default function Home() {
                           </div>
                         </div>
                       ) : story.visual === "app" ? (
-                        <div className="relative aspect-[4/3] overflow-hidden bg-[linear-gradient(145deg,#f7efe4_0%,#f2e4d2_42%,#e6f5f2_100%)] p-6 md:aspect-[16/10]">
-                          <div className="absolute inset-x-0 top-0 h-24 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.7),transparent_70%)]" />
+                        <div className="relative aspect-[4/3] overflow-hidden bg-[linear-gradient(145deg,#f7efe4_0%,#f2e4d2_42%,#e6f5f2_100%)] p-6 dark:bg-none dark:bg-muted/30 md:aspect-[16/10]">
+                          <div className="absolute inset-x-0 top-0 h-24 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.7),transparent_70%)] dark:opacity-0" />
                           <div className="mx-auto flex h-full max-w-[18rem] items-center justify-center">
-                            <div className="relative w-full rounded-[2rem] border border-black/8 bg-[#fffdf8] p-3 shadow-[0_30px_60px_-32px_rgba(15,23,42,0.35)]">
-                              <div className="mx-auto mb-3 h-1.5 w-14 rounded-full bg-stone-200" />
+                            <div className="relative w-full rounded-[2rem] border border-black/8 bg-[#fffdf8] p-3 shadow-[0_30px_60px_-32px_rgba(15,23,42,0.35)] dark:border-border/40 dark:bg-card">
+                              <div className="mx-auto mb-3 h-1.5 w-14 rounded-full bg-stone-200 dark:bg-muted/60" />
                               <div className="rounded-[1.4rem] bg-[linear-gradient(135deg,#0b7b87,#13a3a5)] p-4 text-white">
                                 <div className="text-xs uppercase tracking-[0.24em] text-white/75">Tembea Dashboard</div>
                                 <div className="mt-2 font-serif text-2xl">
@@ -634,8 +634,8 @@ export default function Home() {
                                   "Airport pickup confirmed",
                                   "Welcome shopping handled",
                                 ].map((line) => (
-                                  <div key={line} className="flex items-center justify-between rounded-2xl bg-stone-50 px-3 py-2.5">
-                                    <span className="text-sm text-stone-700">{line}</span>
+                                  <div key={line} className="flex items-center justify-between rounded-2xl bg-stone-50 px-3 py-2.5 dark:bg-muted/50">
+                                    <span className="text-sm text-stone-700 dark:text-foreground/80">{line}</span>
                                     <span className="rounded-full bg-primary/10 px-2 py-1 text-[11px] font-medium text-primary">Ready</span>
                                   </div>
                                 ))}
@@ -644,11 +644,11 @@ export default function Home() {
                           </div>
                         </div>
                       ) : (
-                        <div className="relative overflow-hidden bg-[linear-gradient(145deg,#f7efe4_0%,#f4eadf_40%,#eff7f6_100%)] p-5 min-h-[36rem] md:aspect-[16/10] md:min-h-0">
+                        <div className="relative overflow-hidden bg-[linear-gradient(145deg,#f7efe4_0%,#f4eadf_40%,#eff7f6_100%)] p-5 dark:bg-none dark:bg-muted/20 min-h-[36rem] md:aspect-[16/10] md:min-h-0">
                           <div className="grid gap-4 md:h-full md:grid-cols-2">
-                            <div className="relative overflow-hidden rounded-[1.5rem] border border-[#d8c4b3] bg-[linear-gradient(145deg,#efe3d6_0%,#e5d6c6_100%)] p-4 shadow-[0_14px_32px_-24px_rgba(15,23,42,0.22)]">
-                              <div className="relative mb-3 text-xs uppercase tracking-[0.24em] text-stone-500">Older way</div>
-                              <div className="relative overflow-hidden rounded-[1.2rem] bg-[#d9cabd]">
+                            <div className="relative overflow-hidden rounded-[1.5rem] border border-[#d8c4b3] bg-[linear-gradient(145deg,#efe3d6_0%,#e5d6c6_100%)] p-4 shadow-[0_14px_32px_-24px_rgba(15,23,42,0.22)] dark:border-border/50 dark:bg-muted/40">
+                              <div className="relative mb-3 text-xs uppercase tracking-[0.24em] text-stone-500 dark:text-muted-foreground">Older way</div>
+                              <div className="relative overflow-hidden rounded-[1.2rem] bg-[#d9cabd] dark:bg-muted/50">
                                 <img
                                   src={messyWhatsappImage}
                                   alt="Multiple WhatsApp chats coordinating travel services"
@@ -661,7 +661,7 @@ export default function Home() {
                                 />
                               </div>
                             </div>
-                            <div className="rounded-[1.5rem] border border-primary/10 bg-white p-4 shadow-[0_14px_32px_-24px_rgba(15,23,42,0.22)]">
+                            <div className="rounded-[1.5rem] border border-primary/10 bg-white p-4 shadow-[0_14px_32px_-24px_rgba(15,23,42,0.22)] dark:border-border/40 dark:bg-card">
                               <div className="mb-3 text-xs uppercase tracking-[0.24em] text-primary/70">Bila Matata Bundle</div>
                               <div className="rounded-[1.2rem] bg-[linear-gradient(135deg,#0b7b87,#1ba8a3)] p-4 text-white">
                                 <div className="font-serif text-xl">
@@ -669,14 +669,14 @@ export default function Home() {
                                 </div>
                                 <div className="mt-2 text-sm text-white/80">One itinerary. One confirmation. One calm arrival.</div>
                               </div>
-                              <div className="mt-3 space-y-2 text-sm text-stone-700">
-                                <div className="flex items-center justify-between rounded-2xl bg-stone-50 px-3 py-2.5">
+                              <div className="mt-3 space-y-2 text-sm text-stone-700 dark:text-foreground/80">
+                                <div className="flex items-center justify-between rounded-2xl bg-stone-50 px-3 py-2.5 dark:bg-muted/40">
                                   <span>Bundle savings</span>
                                   <span className="font-semibold text-primary">12% off</span>
                                 </div>
-                                <div className="flex items-center justify-between rounded-2xl bg-stone-50 px-3 py-2.5">
+                                <div className="flex items-center justify-between rounded-2xl bg-stone-50 px-3 py-2.5 dark:bg-muted/40">
                                   <span>Arrival support</span>
-                                  <span className="font-semibold text-stone-900">Included</span>
+                                  <span className="font-semibold text-stone-900 dark:text-foreground">Included</span>
                                 </div>
                               </div>
                             </div>
