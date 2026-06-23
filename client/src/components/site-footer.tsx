@@ -31,7 +31,7 @@ const companyLinks = [
 
 export function SiteFooter() {
   return (
-    <footer className="border-t bg-muted/30 pt-12" style={{ paddingBottom: "max(3rem, calc(8rem + env(safe-area-inset-bottom)))" }}>
+    <footer className="border-t border-border/60 bg-muted/30 pt-12 dark:bg-card/80" style={{ paddingBottom: "max(3rem, calc(8rem + env(safe-area-inset-bottom)))" }}>
       <div className="container mx-auto px-4 md:px-8">
         <div className="grid gap-10 md:grid-cols-2 xl:grid-cols-4">
           <div className="space-y-4">
