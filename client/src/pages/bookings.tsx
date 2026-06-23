@@ -1218,7 +1218,7 @@ export default function Bookings() {
                   disabled={startPaymentMutation.isPending}
                   onClick={() => openRetryCheckout(booking)}
                 >
-                  {manualMpesaPending
+                                    {manualMpesaPending
                     ? "Open secure payment options"
                     : hasLockedInBookingDeposit(booking)
                     ? "Pay remaining balance"
