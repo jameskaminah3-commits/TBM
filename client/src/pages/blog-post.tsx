@@ -378,7 +378,8 @@ export default function BlogPostDetail() {
               </div>
             </header>
 
-            <div className="prose max-w-none dark:prose-invert prose-headings:font-serif prose-headings:text-foreground prose-p:text-foreground prose-p:leading-7 prose-a:text-primary prose-blockquote:border-l-primary prose-blockquote:text-muted-foreground sm:prose-lg sm:prose-p:leading-8" data-testid="content-markdown">              {renderedFaqSection?.beforeMarkdown ? (
+            <div className="prose max-w-none dark:prose-invert prose-headings:font-serif prose-headings:text-foreground prose-p:text-foreground prose-p:leading-7 prose-a:text-primary prose-blockquote:border-l-primary prose-blockquote:text-muted-foreground sm:prose-lg sm:prose-p:leading-8" data-testid="content-markdown">
+              {renderedFaqSection?.beforeMarkdown ? (
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                   {renderedFaqSection.beforeMarkdown}
                 </ReactMarkdown>
@@ -393,7 +394,8 @@ export default function BlogPostDetail() {
                         <AccordionTrigger className="py-5 text-left text-base font-medium hover:no-underline">
                           {item.question}
                         </AccordionTrigger>
-                                                  <div className="prose prose-sm max-w-none dark:prose-invert prose-headings:text-foreground prose-p:text-foreground prose-a:text-primary prose-p:leading-7 sm:prose-base">
+                        <AccordionContent className="pb-5">
+                          <div className="prose prose-sm max-w-none dark:prose-invert prose-headings:text-foreground prose-p:text-foreground prose-a:text-primary prose-p:leading-7 sm:prose-base">
                             <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                               {item.answerMarkdown}
                             </ReactMarkdown>
