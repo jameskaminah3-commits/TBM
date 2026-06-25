@@ -1,14 +1,15 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+=import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format } from "date-fns";
-import { Bold, Calendar, Edit, Heading2, Heading3, ImagePlus, Italic, Link2, List, ListOrdered, Plus, Quote, Search, Sparkles, Trash2, User } from "lucide-react";
+import { Bold, Calendar, Edit, FolderOpen, Heading2, Heading3, ImagePlus, Italic, Link2, List, ListOrdered, Plus, Quote, Search, Sparkles, Trash2, User } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { useLocation } from "wouter";
 import { z } from "zod";
 import { insertBlogPostSchema, type BlogPost, type InsertBlogPost } from "@shared/schema";
 import { AdminLayout } from "@/components/admin-layout";
 import { AdminMediaField } from "@/components/admin-media-field";
+import { MediaLibraryPicker } from "@/components/media-library-picker";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -151,6 +152,7 @@ function BlogPostForm({ post, onSuccess }: { post?: BlogPost; onSuccess: () => v
   const [inlineImageUrl, setInlineImageUrl] = useState("");
   const [inlineImageAlt, setInlineImageAlt] = useState("");
   const [inlineImageCaption, setInlineImageCaption] = useState("");
+  const [inlineLibraryOpen, setInlineLibraryOpen] = useState(false);
   const [linkLabel, setLinkLabel] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
 
@@ -336,6 +338,13 @@ function BlogPostForm({ post, onSuccess }: { post?: BlogPost; onSuccess: () => v
     } finally {
       setImageUploadPending(false);
       event.target.value = "";
+    }
+  };
+
+  const handleInlineLibrarySelect = (urls: string[]) => {
+    const url = urls[0];
+    if (url) {
+      setInlineImageUrl(url);
     }
   };
 
@@ -668,7 +677,24 @@ function BlogPostForm({ post, onSuccess }: { post?: BlogPost; onSuccess: () => v
                   </p>
                   <div className="grid gap-3 md:grid-cols-2">
                     <div className="space-y-2">
-                      <Input type="file" accept="image/jpeg,image/png,image/webp" onChange={handleInlineImageUpload} />
+                      <div className="flex gap-2">
+                        <label className="flex-1 cursor-pointer">
+                          <div className="flex items-center justify-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium shadow-sm transition hover:bg-accent hover:text-accent-foreground">
+                            <ImagePlus className="h-4 w-4" />
+                            Upload new
+                          </div>
+                          <input type="file" accept="image/jpeg,image/png,image/webp" onChange={handleInlineImageUpload} className="sr-only" />
+                        </label>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="flex-1"
+                          onClick={() => setInlineLibraryOpen(true)}
+                        >
+                          <FolderOpen className="mr-2 h-4 w-4" />
+                          From library
+                        </Button>
+                      </div>
                       <Input value={inlineImageAlt} onChange={(e) => setInlineImageAlt(e.target.value)} placeholder="Image alt text" />
                       <Input value={inlineImageCaption} onChange={(e) => setInlineImageCaption(e.target.value)} placeholder="Caption" />
                     </div>
@@ -677,7 +703,7 @@ function BlogPostForm({ post, onSuccess }: { post?: BlogPost; onSuccess: () => v
                         <img src={inlineImageUrl} alt={inlineImageAlt || "Inline article"} className="aspect-[4/3] w-full rounded-lg object-cover" />
                       ) : (
                         <div className="flex aspect-[4/3] items-center justify-center rounded-lg bg-muted text-sm text-muted-foreground">
-                          Upload an article image
+                          Upload or choose an article image
                         </div>
                       )}
                       <Button type="button" variant="outline" onClick={handleInsertInlineImage} disabled={imageUploadPending}>
@@ -685,6 +711,13 @@ function BlogPostForm({ post, onSuccess }: { post?: BlogPost; onSuccess: () => v
                       </Button>
                     </div>
                   </div>
+                  <MediaLibraryPicker
+                    open={inlineLibraryOpen}
+                    onOpenChange={setInlineLibraryOpen}
+                    onSelect={handleInlineLibrarySelect}
+                    mode="single"
+                    title="Choose Article Image"
+                  />
                 </div>
 
                 <FormField
