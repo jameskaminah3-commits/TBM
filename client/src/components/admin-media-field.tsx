@@ -2,8 +2,9 @@ import { useMemo, useState, type ChangeEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ListingMedia } from "@/components/listing-media";
+import { MediaLibraryPicker } from "@/components/media-library-picker";
 import { apiRequest } from "@/lib/queryClient";
-import { ImagePlus, Images, Star, Trash2, UploadCloud, Video } from "lucide-react";
+import { FolderOpen, ImagePlus, Images, Star, Trash2, UploadCloud, Video } from "lucide-react";
 
 type AdminMediaFieldProps = {
   value?: string | null;
@@ -78,6 +79,7 @@ async function optimizeImage(file: File) {
 
 export function AdminMediaField({ value, galleryUrls = [], mediaType = "image", onChange, onMediaTypeChange }: AdminMediaFieldProps) {
   const [uploading, setUploading] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const imageGallery = value
     ? [value, ...galleryUrls.filter((url) => url && url !== value)]
     : galleryUrls.filter(Boolean);
@@ -186,6 +188,13 @@ export function AdminMediaField({ value, galleryUrls = [], mediaType = "image", 
     }
   };
 
+  const handleLibrarySelect = (urls: string[]) => {
+    const newUrls = urls.filter((url) => !imageGallery.includes(url));
+    if (newUrls.length === 0) return;
+    const combinedGallery = [...imageGallery, ...newUrls];
+    commitImageGallery(combinedGallery);
+  };
+
   return (
     <div className="space-y-3">
       <div className="rounded-2xl border border-border/70 bg-gradient-to-br from-[#fbf7ef] via-background to-[#eef7f5] p-4">
@@ -202,17 +211,28 @@ export function AdminMediaField({ value, galleryUrls = [], mediaType = "image", 
               </p>
             </div>
           </div>
-          <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-full bg-[#138c8c] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#0f7777]">
-            <UploadCloud className="h-4 w-4" />
-            <span>{hasMedia ? "Add or replace media" : "Upload photos"}</span>
-            <Input
-              className="hidden"
-              type="file"
-              multiple
-              accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime"
-              onChange={handleFileChange}
-            />
-          </label>
+          <div className="flex flex-wrap gap-2">
+            <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-full bg-[#138c8c] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#0f7777]">
+              <UploadCloud className="h-4 w-4" />
+              <span>{hasMedia ? "Add or replace media" : "Upload photos"}</span>
+              <Input
+                className="hidden"
+                type="file"
+                multiple
+                accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime"
+                onChange={handleFileChange}
+              />
+            </label>
+            <Button
+              type="button"
+              variant="outline"
+              className="rounded-full"
+              onClick={() => setLibraryOpen(true)}
+            >
+              <FolderOpen className="mr-2 h-4 w-4" />
+              Choose from library
+            </Button>
+          </div>
         </div>
         <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
           <span>Images can be uploaded in batches.</span>
@@ -287,6 +307,12 @@ export function AdminMediaField({ value, galleryUrls = [], mediaType = "image", 
         </div>
       ) : null}
       {uploading ? <Button type="button" disabled className="w-full">Uploading...</Button> : null}
+      <MediaLibraryPicker
+        open={libraryOpen}
+        onOpenChange={setLibraryOpen}
+        onSelect={handleLibrarySelect}
+        mode="multi"
+      />
     </div>
   );
 }
