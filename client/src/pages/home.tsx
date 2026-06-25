@@ -521,7 +521,7 @@ export default function Home() {
             </p>
           </div>
 
-          <div className="mx-auto grid max-w-7xl grid-cols-1 gap-6 md:grid-cols-2 md:gap-8 xl:grid-cols-5">
+          <div className="mx-auto grid max-w-7xl grid-cols-1 gap-6 md:grid-cols-2 md:gap-8 lg:grid-cols-3 xl:grid-cols-5">
             <Link href="/accommodations" data-testid="service-card-stay">
               <ServiceShowcaseCard
                 icon={HomeIcon}
@@ -606,7 +606,7 @@ export default function Home() {
                             height={story.image.height}
                             className="absolute inset-0 h-full w-full scale-100 object-cover transition-transform duration-700 ease-out group-hover:scale-[1.03]"
                             style={{ objectPosition: story.position }}
-                            loading="eager"
+                            loading={index < 2 ? "eager" : "lazy"}
                             decoding="async"
                           />
                           <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(87,56,31,0.06)_0%,rgba(87,56,31,0.14)_36%,rgba(26,18,12,0.36)_100%)]" />
@@ -655,7 +655,6 @@ export default function Home() {
                                   width={420}
                                   height={568}
                                   className="w-full object-contain"
-                                  style={{ aspectRatio: "728 / 1192" }}
                                   loading="eager"
                                   decoding="async"
                                 />
