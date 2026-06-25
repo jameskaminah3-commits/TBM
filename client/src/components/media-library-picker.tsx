@@ -44,7 +44,7 @@ export function MediaLibraryPicker({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
 
-  const { data: items = [], isLoading } = useQuery({
+  const { data: items = [], isLoading, isError } = useQuery({
     queryKey: ["/api/admin/media"],
     queryFn: fetchMediaLibrary,
     enabled: open,
@@ -127,6 +127,10 @@ export function MediaLibraryPicker({
             <div className="flex h-48 items-center justify-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="h-5 w-5 animate-spin" />
               Loading media library…
+            </div>
+          ) : isError ? (
+            <div className="flex h-48 items-center justify-center text-sm text-destructive">
+              Could not load media library. Check your connection and try again.
             </div>
           ) : imageItems.length === 0 ? (
             <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
