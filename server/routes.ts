@@ -49,7 +49,7 @@ import {
   type BookingServiceAssignmentStatus,
   type ProviderBookingAssignmentView,
 } from "@shared/schema";
-import { saveBase64Upload } from "./media";
+import { listUploads, saveBase64Upload } from "./media";
 import { db } from "./db";
 import { users } from "@shared/schema";
 import { calculateCookInclusiveTotal, calculateCookServiceTotal, getCookMinimumGuests } from "@shared/cook-pricing";
@@ -2487,6 +2487,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("[CURRENCY] Failed to provide exchange rates:", error);
       res.status(500).json({ error: "Failed to fetch currency rates" });
+    }
+  });
+
+  app.get("/api/admin/media", requireProviderOrAdmin, async (_req, res) => {
+    try {
+      const items = await listUploads(200);
+      res.json({ items });
+    } catch (error) {
+      console.error("[MEDIA] List failed:", error);
+      res.status(500).json({ error: "Failed to list media" });
     }
   });
 
