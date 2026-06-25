@@ -51,7 +51,7 @@ import {
 } from "@shared/schema";
 import { listUploads, saveBase64Upload } from "./media";
 import { db } from "./db";
-import { users } from "@shared/schema";
+import { users, stays, cars, cooks, errands, experiences, listings, blogPosts } from "@shared/schema";
 import { calculateCookInclusiveTotal, calculateCookServiceTotal, getCookMinimumGuests } from "@shared/cook-pricing";
 import { customServiceRequestFeeUsd } from "@shared/custom-service";
 import { calculateHelpMamaPackagePrice, calculateHouseCleaningPackagePrice, getHouseCleaningBedroomCount, HELP_MAMA_HOURLY_MINIMUM_HOURS, getHelpMamaAgeBandId, getHelpMamaRateId, hasHelpMamaPricing, isHelpMamaHourlyRate } from "@shared/errand-pricing";
@@ -2492,7 +2492,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/admin/media", requireProviderOrAdmin, async (_req, res) => {
     try {
-      const items = await listUploads(200);
+      const [stayRows, carRows, cookRows, errandRows, experienceRows, listingRows, blogRows] = await Promise.all([
+        db.select({ imageUrl: stays.imageUrl, galleryUrls: stays.galleryUrls }).from(stays),
+        db.select({ imageUrl: cars.imageUrl, galleryUrls: cars.galleryUrls }).from(cars),
+        db.select({ imageUrl: cooks.imageUrl, galleryUrls: cooks.galleryUrls }).from(cooks),
+        db.select({ imageUrl: errands.imageUrl, galleryUrls: errands.galleryUrls }).from(errands),
+        db.select({ imageUrl: experiences.imageUrl, galleryUrls: experiences.galleryUrls }).from(experiences),
+        db.select({ imageUrl: listings.imageUrl, galleryUrls: listings.galleryUrls }).from(listings),
+        db.select({ featuredImage: blogPosts.featuredImage }).from(blogPosts),
+      ]);
+
+      const seen = new Set<string>();
+      const addUrl = (url: string | null | undefined) => {
+        if (url && !url.includes("unsplash.com")) seen.add(url);
+      };
+      const addRows = (rows: { imageUrl?: string | null; galleryUrls?: string[] | null }[]) => {
+        for (const row of rows) {
+          addUrl(row.imageUrl);
+          for (const u of row.galleryUrls ?? []) addUrl(u);
+        }
+      };
+
+      addRows(stayRows);
+      addRows(carRows);
+      addRows(cookRows);
+      addRows(errandRows);
+      addRows(experienceRows);
+      addRows(listingRows);
+      for (const row of blogRows) addUrl(row.featuredImage);
+
+      // Also include recently uploaded files not yet attached to any listing
+      try {
+        const storageItems = await listUploads(200);
+        for (const item of storageItems) {
+          if (item.type === "image") addUrl(item.url);
+        }
+      } catch { /* best-effort */ }
+
+      const items = Array.from(seen).map((url) => ({
+        url,
+        type: "image" as const,
+        uploadedAt: new Date(0).toISOString(),
+      }));
+
       res.json({ items });
     } catch (error) {
       console.error("[MEDIA] List failed:", error);
