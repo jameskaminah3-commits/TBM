@@ -235,6 +235,105 @@ export function buildLegacyUploadRedirectUrl(uploadPath: string) {
   return buildSupabaseMediaUrl(`legacy/${normalizedUploadPath}`);
 }
 
+const mediaFileExtensions = ["jpg", "jpeg", "png", "webp", "mp4", "webm", "mov"];
+
+function isMediaFilename(filename: string) {
+  const ext = path.extname(filename).toLowerCase().slice(1);
+  return mediaFileExtensions.includes(ext);
+}
+
+function mediaTypeFromFilename(filename: string): "image" | "video" {
+  const ext = path.extname(filename).toLowerCase().slice(1);
+  return ["mp4", "webm", "mov"].includes(ext) ? "video" : "image";
+}
+
+async function listLocalUploads(limit: number) {
+  const dir = getUploadDir();
+  let filenames: string[];
+  try {
+    filenames = await fs.promises.readdir(dir);
+  } catch {
+    return [];
+  }
+
+  const items = await Promise.all(
+    filenames.filter(isMediaFilename).map(async (filename) => {
+      let mtime = new Date(0);
+      try {
+        const stat = await fs.promises.stat(path.join(dir, filename));
+        mtime = stat.mtime;
+      } catch { /* ignore */ }
+      return {
+        url: `/uploads/${filename}`,
+        type: mediaTypeFromFilename(filename),
+        uploadedAt: mtime.toISOString(),
+      };
+    }),
+  );
+
+  return items.sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt)).slice(0, limit);
+}
+
+async function listSupabaseUploads(limit: number) {
+  const { bucket } = getSupabaseMediaStorageConfig();
+  const client = getSupabaseStorageClient();
+  const allItems: Array<{ url: string; type: "image" | "video"; uploadedAt: string }> = [];
+
+  const { data: rootItems } = await client.storage.from(bucket).list("", {
+    limit: 500,
+    sortBy: { column: "name", order: "desc" },
+  });
+
+  if (!rootItems) return allItems;
+
+  const rootFiles = rootItems.filter((item) => item.id != null);
+  const rootFolders = rootItems.filter((item) => item.id == null);
+
+  for (const file of rootFiles) {
+    if (!isMediaFilename(file.name)) continue;
+    allItems.push({
+      url: buildSupabaseMediaUrl(file.name),
+      type: mediaTypeFromFilename(file.name),
+      uploadedAt: file.created_at ?? new Date(0).toISOString(),
+    });
+  }
+
+  const dateFolders = rootFolders
+    .filter((f) => /^\d{4}-\d{2}-\d{2}$/.test(f.name))
+    .sort((a, b) => b.name.localeCompare(a.name))
+    .slice(0, 10);
+
+  const legacyFolder = rootFolders.find((f) => f.name === "legacy");
+  const foldersToScan = legacyFolder ? [...dateFolders, legacyFolder] : dateFolders;
+
+  for (const folder of foldersToScan) {
+    if (allItems.length >= limit) break;
+    const { data: files } = await client.storage.from(bucket).list(folder.name, {
+      limit: 1000,
+      sortBy: { column: "created_at", order: "desc" },
+    });
+    if (!files) continue;
+
+    for (const file of files.filter((f) => f.id != null)) {
+      if (!isMediaFilename(file.name)) continue;
+      allItems.push({
+        url: buildSupabaseMediaUrl(`${folder.name}/${file.name}`),
+        type: mediaTypeFromFilename(file.name),
+        uploadedAt: file.created_at ?? new Date(0).toISOString(),
+      });
+    }
+  }
+
+  return allItems.sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt)).slice(0, limit);
+}
+
+export async function listUploads(limit = 200): Promise<Array<{ url: string; type: "image" | "video"; uploadedAt: string }>> {
+  if (usesLocalUploadStorage()) {
+    return listLocalUploads(limit);
+  }
+  return listSupabaseUploads(limit);
+}
+
 export async function saveBase64Upload(dataUrl: string, mimeType: string) {
   const matches = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
   if (!matches) {
