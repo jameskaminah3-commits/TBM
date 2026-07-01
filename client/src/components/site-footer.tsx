@@ -18,6 +18,7 @@ const exploreLinks = [
   { href: "/services/relax", label: "Relax" },
   { href: "/services/experience", label: "Experiences" },
   { href: "/blog", label: "Concierge Articles" },
+  { href: "/partner", label: "Partner With Us" },
 ];
 
 const companyLinks = [
