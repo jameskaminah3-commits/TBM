@@ -2685,7 +2685,52 @@ export class DatabaseStorage implements IStorage {
     await this.createPartnerAdminMessageInboxItems(message);
     return message;
   }
+  async getFleetApplications(status?: FleetApplicationStatus): Promise<FleetApplication[]> {
+    const query = db.select().from(fleetApplications).orderBy(desc(fleetApplications.createdAt));
+    if (status) {
+      return await query.where(eq(fleetApplications.status, status));
+    }
+    return await query;
+  }
 
+  async getFleetApplication(id: string): Promise<FleetApplication | undefined> {
+    const [application] = await db.select().from(fleetApplications).where(eq(fleetApplications.id, id));
+    return application;
+  }
+
+  async createFleetApplication(data: InsertFleetApplication): Promise<FleetApplication> {
+    const now = new Date().toISOString();
+    const [application] = await db.insert(fleetApplications).values({
+      ...data,
+      agreementAcceptedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    }).returning();
+    return application;
+  }
+
+  async updateFleetApplication(
+    id: string,
+    data: Partial<Pick<FleetApplication, "status" | "reviewNote" | "reviewedBy" | "reviewedAt" | "createdUserId" | "createdCarId" | "agreementAcceptedAt">>,
+  ): Promise<FleetApplication | undefined> {
+    const [application] = await db.update(fleetApplications).set({
+      ...data,
+      updatedAt: new Date().toISOString(),
+    }).where(eq(fleetApplications.id, id)).returning();
+    return application;
+  }
+
+  async updateBookingServiceAssignmentResponse(
+    id: string,
+    response: BookingServiceAssignmentResponse,
+  ): Promise<BookingServiceAssignment | undefined> {
+    const [assignment] = await db.update(bookingServiceAssignments).set({
+      providerResponse: response,
+      providerRespondedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }).where(eq(bookingServiceAssignments.id, id)).returning();
+    return assignment;
+  }
   private async getProviderWorkflowCatalog(): Promise<ProviderFinancialCatalog> {
     const [allStays, allCars, allCooks, allErrands, allExperiences, providerUsers] = await Promise.all([
       this.getStays(),
