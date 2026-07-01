@@ -15,6 +15,7 @@ import {
   Compass,
   Wallet,
   Megaphone,
+  UserPlus,
 } from "lucide-react";
 import {
   Sidebar,
@@ -62,6 +63,11 @@ const menuItems = [
     title: "Providers",
     url: "/admin/providers",
     icon: Handshake,
+  },
+  {
+    title: "Fleet Applications",
+    url: "/admin/fleet-applications",
+    icon: UserPlus,
   },
   {
     title: "Listings",
