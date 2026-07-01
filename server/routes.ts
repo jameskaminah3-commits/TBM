@@ -33,6 +33,11 @@ import {
   marketingAttributionPayloadSchema,
   marketingPromoCostAbsorptions,
   providerCategories,
+  insertFleetApplicationSchema,
+  fleetApplicationStatuses,
+  fleetOwnershipTypes,
+  fleetChauffeurArrangements,
+  fleetAvailabilityPreferences,
   insertUserPushDeviceSchema,
   insertReviewSchema,
   updateUserPushPreferencesSchema,
@@ -2680,6 +2685,192 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: error.message });
       }
       return res.status(500).json({ error: "Failed to create custom service request" });
+    }
+  });
+  app.post("/api/fleet-applications/upload", async (req, res) => {
+    try {
+      const { dataUrl, mimeType } = req.body ?? {};
+      if (typeof dataUrl !== "string" || typeof mimeType !== "string") {
+        return res.status(400).json({ error: "Media payload is required" });
+      }
+
+      const isSupported = ["image/jpeg", "image/png", "image/webp", "application/pdf"].includes(mimeType);
+      if (!isSupported) {
+        return res.status(400).json({ error: "Only JPG, PNG, WEBP, and PDF files are supported." });
+      }
+
+      const uploadUrl = await saveBase64Upload(dataUrl, mimeType);
+      res.status(201).json({ uploadUrl });
+    } catch (error) {
+      console.error("[FLEET_APPLICATIONS] Upload failed:", error);
+      res.status(400).json({
+        error: error instanceof Error ? error.message : "Failed to upload file",
+      });
+    }
+  });
+
+  app.post("/api/provider/documents/upload", requireProviderOrAdmin, async (req, res) => {
+    try {
+      const { dataUrl, mimeType } = req.body ?? {};
+      if (typeof dataUrl !== "string" || typeof mimeType !== "string") {
+        return res.status(400).json({ error: "Media payload is required" });
+      }
+
+      const isSupported = ["image/jpeg", "image/png", "image/webp", "application/pdf"].includes(mimeType);
+      if (!isSupported) {
+        return res.status(400).json({ error: "Only JPG, PNG, WEBP, and PDF files are supported." });
+      }
+
+      const uploadUrl = await saveBase64Upload(dataUrl, mimeType);
+      res.status(201).json({ uploadUrl });
+    } catch (error) {
+      console.error("[PROVIDER_DOCUMENTS] Upload failed:", error);
+      res.status(400).json({
+        error: error instanceof Error ? error.message : "Failed to upload file",
+      });
+    }
+  });
+
+  app.post("/api/fleet-applications", async (req, res) => {
+    try {
+      const payload = insertFleetApplicationSchema.parse(req.body ?? {});
+      const application = await storage.createFleetApplication({
+        ...payload,
+        email: payload.email.trim().toLowerCase(),
+        phone: payload.phone.trim(),
+      });
+      res.status(201).json(application);
+    } catch (error) {
+      if (error instanceof Error) {
+        return res.status(400).json({ error: error.message });
+      }
+      res.status(500).json({ error: "Failed to submit fleet application" });
+    }
+  });
+
+  app.get("/api/admin/fleet-applications", requireAdmin, async (req, res) => {
+    try {
+      const statusParam = typeof req.query.status === "string" ? req.query.status : undefined;
+      const status = statusParam && fleetApplicationStatuses.includes(statusParam as typeof fleetApplicationStatuses[number])
+        ? (statusParam as typeof fleetApplicationStatuses[number])
+        : undefined;
+      const applications = await storage.getFleetApplications(status);
+      res.json(applications);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch fleet applications" });
+    }
+  });
+
+  app.get("/api/admin/fleet-applications/:id", requireAdmin, async (req, res) => {
+    try {
+      const application = await storage.getFleetApplication(req.params.id);
+      if (!application) {
+        return res.status(404).json({ error: "Fleet application not found" });
+      }
+      res.json(application);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch fleet application" });
+    }
+  });
+
+  app.patch("/api/admin/fleet-applications/:id", requireAdmin, async (req: any, res) => {
+    try {
+      const existing = await storage.getFleetApplication(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ error: "Fleet application not found" });
+      }
+
+      const { status, reviewNote } = req.body ?? {};
+      if (status !== "rejected") {
+        return res.status(400).json({ error: "This endpoint only rejects applications. Use the approve endpoint to approve." });
+      }
+
+      const updated = await storage.updateFleetApplication(req.params.id, {
+        status: "rejected",
+        reviewNote: typeof reviewNote === "string" ? reviewNote : existing.reviewNote,
+        reviewedBy: req.user.claims.sub,
+        reviewedAt: new Date().toISOString(),
+      });
+
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update fleet application" });
+    }
+  });
+
+  app.post("/api/admin/fleet-applications/:id/approve", requireAdmin, async (req: any, res) => {
+    try {
+      const existing = await storage.getFleetApplication(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ error: "Fleet application not found" });
+      }
+
+      if (existing.status !== "pending") {
+        return res.status(409).json({ error: "This application has already been reviewed." });
+      }
+
+      const { password } = req.body ?? {};
+      if (typeof password !== "string" || password.length < 8) {
+        return res.status(400).json({ error: "Password must be at least 8 characters" });
+      }
+
+      const normalizedEmail = existing.email.trim().toLowerCase();
+      const existingUser = await storage.getUserByEmail(normalizedEmail);
+      if (existingUser) {
+        return res.status(409).json({ error: "A user with that email already exists" });
+      }
+
+      const nameParts = existing.fullName.trim().split(/\s+/).filter(Boolean);
+      const [createdUser] = await db.insert(users).values({
+        email: normalizedEmail,
+        phone: existing.phone,
+        firstName: nameParts[0] ?? null,
+        lastName: nameParts.length > 1 ? nameParts.slice(1).join(" ") : null,
+        passwordHash: hashPassword(password),
+        role: "provider",
+        providerType: "cars",
+      }).returning();
+
+      const [frontPhoto, ...restPhotos] = existing.photoUrls;
+      const createdCar = await storage.createCar({
+        model: existing.model,
+        location: existing.town ? `${existing.town}, ${existing.county}` : existing.county,
+        priceWithDriver: 0,
+        seats: existing.seats,
+        transmission: existing.transmission,
+        description: `${existing.year ? `${existing.year} ` : ""}${existing.make} ${existing.model}`.trim(),
+        features: [],
+        imageUrl: frontPhoto?.url,
+        galleryUrls: restPhotos.map((photo) => photo.url),
+        mediaType: "image",
+        isPublic: false,
+        managerUserId: createdUser.id,
+        make: existing.make,
+        year: existing.year,
+        colour: existing.colour,
+        registrationNumber: existing.registrationNumber,
+        fuelType: existing.fuelType,
+        mileage: existing.mileage,
+        ownershipType: existing.ownershipType as typeof fleetOwnershipTypes[number],
+        chauffeurArrangement: existing.chauffeurArrangement as typeof fleetChauffeurArrangements[number],
+        suitableServices: existing.suitableServices,
+        availabilityPreference: existing.availabilityPreference as typeof fleetAvailabilityPreferences[number],
+        availabilityStatus: "available",
+        documents: existing.documentUrls,
+      });
+
+      const updated = await storage.updateFleetApplication(req.params.id, {
+        status: "approved",
+        createdUserId: createdUser.id,
+        createdCarId: createdCar.id,
+        reviewedBy: req.user.claims.sub,
+        reviewedAt: new Date().toISOString(),
+      });
+
+      res.json({ application: updated, user: sanitizeUserRecord(createdUser), car: createdCar });
+    } catch (error) {
+      console.error("[FLEET_APPLICATIONS] Approve failed:", error);
+      res.status(500).json({ error: "Failed to approve fleet application" });
     }
   });
 
@@ -5600,6 +5791,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: "Failed to update provider assignment" });
     }
   });
+  app.patch("/api/provider/booking-assignments/:id/response", requireProviderOrAdmin, async (req: any, res) => {
+    try {
+      const access = await getVisibleProviderAssignment(req, req.params.id);
+      if ("error" in access) {
+        return res.status(access.error!.status).json(access.error!.body);
+      }
+
+      const response = req.body?.response;
+      if (response !== "accepted" && response !== "declined") {
+        return res.status(400).json({ error: "Response must be 'accepted' or 'declined'." });
+      }
+
+      const updated = await storage.updateBookingServiceAssignmentResponse(req.params.id, response);
+      res.json(updated);
+    } catch (error) {
+      console.error("[PROVIDER] Failed to update assignment response:", error);
+      res.status(500).json({ error: "Failed to update assignment response" });
+    }
+  });
 
   app.patch("/api/provider/booking-assignments/:id/custom-menu-proposal", requireProviderOrAdmin, async (req: any, res) => {
     try {
@@ -6244,6 +6454,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         galleryUrls,
         mediaType,
         features,
+                make,
+        year,
+        colour,
+        registrationNumber,
+        fuelType,
+        mileage,
+        ownershipType,
+        chauffeurArrangement,
+        suitableServices,
+        availabilityPreference,
+        availabilityStatus,
+        documents,
       } = parsed;
 
       const updatedCar = await storage.updateCar(req.params.id, {
@@ -6259,6 +6481,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         galleryUrls,
         mediaType,
         features,
+        make,
+        year,
+        colour,
+        registrationNumber,
+        fuelType,
+        mileage,
+        ownershipType,
+        chauffeurArrangement,
+        suitableServices,
+        availabilityPreference,
+        availabilityStatus,
+        documents,
         isPublic: false,
       });
 
