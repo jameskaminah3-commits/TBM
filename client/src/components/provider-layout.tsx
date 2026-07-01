@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { Bell, BriefcaseBusiness, CalendarRange } from "lucide-react";
+import { Bell, CalendarClock, Car, ClipboardList, FileText, Home, LifeBuoy } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -34,12 +34,37 @@ function ProviderSidebar() {
 
   const menuItems = [
     {
-      title: "Dashboard",
+      title: "Home",
       url: "/provider/dashboard",
-      icon: BriefcaseBusiness,
+      icon: Home,
     },
     {
-      title: "Inbox",
+      title: "My Vehicles",
+      url: "/provider/dashboard#provider-cars",
+      icon: Car,
+    },
+    {
+      title: "Availability",
+      url: "/provider/availability",
+      icon: CalendarClock,
+    },
+    {
+      title: "Service Requests",
+      url: "/provider/service-requests",
+      icon: ClipboardList,
+    },
+    {
+      title: "Documents",
+      url: "/provider/documents",
+      icon: FileText,
+    },
+    {
+      title: "Support",
+      url: "/provider/support",
+      icon: LifeBuoy,
+    },
+    {
+      title: "Messages",
       url: "/inbox",
       icon: Bell,
     },
@@ -50,10 +75,10 @@ function ProviderSidebar() {
       <SidebarHeader>
         <div className="flex items-center gap-2 px-2 py-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <CalendarRange className="h-4 w-4" />
+            <Car className="h-4 w-4" />
           </div>
           <div className="flex flex-col">
-            <span className="text-sm font-semibold">Partner</span>
+            <span className="text-sm font-semibold">Fleet Hub</span>
             <span className="text-xs text-muted-foreground">
               {isAdmin || providerTypes.length === 0 ? "Assigned work" : `${providerTypes.length} workspace${providerTypes.length === 1 ? "" : "s"}`}
             </span>
