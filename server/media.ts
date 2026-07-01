@@ -14,6 +14,7 @@ const maxUploadBytesByMimeType: Record<string, number> = {
   "video/mp4": 15 * megabyte,
   "video/webm": 15 * megabyte,
   "video/quicktime": 15 * megabyte,
+  "application/pdf": 10 * megabyte,
 };
 
 let supabaseStorageClient: SupabaseClient | null = null;
@@ -144,6 +145,8 @@ export function getFileExtension(mimeType: string) {
       return "webm";
     case "video/quicktime":
       return "mov";
+    case "application/pdf":
+      return "pdf";
     default:
       return null;
   }
@@ -177,6 +180,8 @@ function isValidUploadSignature(buffer: Buffer, mimeType: string) {
       return buffer.length >= 12
         && buffer.toString("ascii", 4, 8) === "ftyp"
         && buffer.toString("ascii", 8, 12) === "qt  ";
+    case "application/pdf":
+      return hasPrefix(buffer, [0x25, 0x50, 0x44, 0x46]);
     default:
       return false;
   }
