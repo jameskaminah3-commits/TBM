@@ -419,7 +419,110 @@ export const partnerAdminMessages = pgTable("partner_admin_messages", {
   message: text("message").notNull(),
   createdAt: text("created_at").notNull(),
 });
+export const fleetApplicationStatuses = ["pending", "approved", "rejected"] as const;
+export type FleetApplicationStatus = typeof fleetApplicationStatuses[number];
 
+export const fleetOwnershipRoles = ["personally_owned", "company_owned", "authorized_representative"] as const;
+export type FleetOwnershipRole = typeof fleetOwnershipRoles[number];
+
+export const fleetOwnershipTypes = ["personally_owned", "company_owned", "fleet_owned", "investor_owned"] as const;
+export type FleetOwnershipType = typeof fleetOwnershipTypes[number];
+
+export const fleetAvailabilityPreferences = ["occasional", "weekends_only", "part_time", "full_time"] as const;
+export type FleetAvailabilityPreference = typeof fleetAvailabilityPreferences[number];
+
+export const fleetSuitableServices = [
+  "airport_transfers",
+  "chauffeur_services",
+  "self_drive_rentals",
+  "corporate_transport",
+  "wedding_transport",
+  "tours_excursions",
+  "safari_transport",
+  "vip_travel",
+  "any_suitable_service",
+] as const;
+export type FleetSuitableService = typeof fleetSuitableServices[number];
+
+export const fleetChauffeurArrangements = [
+  "owner_provides_driver",
+  "owner_has_multiple_drivers",
+  "tbm_arranges_chauffeur",
+  "self_drive_only",
+] as const;
+export type FleetChauffeurArrangement = typeof fleetChauffeurArrangements[number];
+
+export const vehicleAvailabilityStatuses = ["available", "busy", "unavailable", "maintenance"] as const;
+export type VehicleAvailabilityStatus = typeof vehicleAvailabilityStatuses[number];
+
+export const fleetMediaItemSchema = z.object({
+  label: z.string().min(1),
+  url: z.string().min(1),
+});
+export type FleetMediaItem = z.infer<typeof fleetMediaItemSchema>;
+
+export const fleetApplications = pgTable("fleet_applications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  fullName: text("full_name").notNull(),
+  phone: varchar("phone").notNull(),
+  email: varchar("email").notNull(),
+  county: text("county").notNull(),
+  town: text("town"),
+  preferredContactMethod: varchar("preferred_contact_method"),
+  make: text("make").notNull(),
+  model: text("model").notNull(),
+  year: varchar("year"),
+  colour: text("colour"),
+  registrationNumber: varchar("registration_number").notNull(),
+  transmission: varchar("transmission").notNull(),
+  fuelType: varchar("fuel_type"),
+  seats: integer("seats").notNull(),
+  mileage: integer("mileage"),
+  ownershipRole: varchar("ownership_role").notNull(),
+  ownershipType: varchar("ownership_type").notNull(),
+  availabilityPreference: varchar("availability_preference").notNull(),
+  suitableServices: jsonb("suitable_services").$type<FleetSuitableService[]>().notNull().default(sql`'[]'::jsonb`),
+  chauffeurArrangement: varchar("chauffeur_arrangement").notNull(),
+  photoUrls: jsonb("photo_urls").$type<FleetMediaItem[]>().notNull().default(sql`'[]'::jsonb`),
+  documentUrls: jsonb("document_urls").$type<FleetMediaItem[]>().notNull().default(sql`'[]'::jsonb`),
+  agreementAccepted: boolean("agreement_accepted").notNull().default(false),
+  agreementAcceptedAt: text("agreement_accepted_at"),
+  status: varchar("status").notNull().default("pending"),
+  reviewNote: text("review_note"),
+  reviewedBy: varchar("reviewed_by"),
+  reviewedAt: text("reviewed_at"),
+  createdUserId: varchar("created_user_id"),
+  createdCarId: varchar("created_car_id"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const insertFleetApplicationSchema = createInsertSchema(fleetApplications).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  agreementAcceptedAt: true,
+  status: true,
+  reviewNote: true,
+  reviewedBy: true,
+  reviewedAt: true,
+  createdUserId: true,
+  createdCarId: true,
+}).extend({
+  ownershipRole: z.enum(fleetOwnershipRoles),
+  ownershipType: z.enum(fleetOwnershipTypes),
+  availabilityPreference: z.enum(fleetAvailabilityPreferences),
+  suitableServices: z.array(z.enum(fleetSuitableServices)).min(1, "Choose at least one suitable service"),
+  chauffeurArrangement: z.enum(fleetChauffeurArrangements),
+  photoUrls: z.array(fleetMediaItemSchema).optional().default([]),
+  documentUrls: z.array(fleetMediaItemSchema).optional().default([]),
+  agreementAccepted: z.literal(true, {
+    message: "You must accept the partnership agreement",
+  }),
+});
+
+export type InsertFleetApplication = z.infer<typeof insertFleetApplicationSchema>;
+export type FleetApplication = typeof fleetApplications.$inferSelect;
 // Client-side booking schema - omits fields that backend injects from session
 export const insertBookingSchema = createInsertSchema(bookings).omit({
   id: true,
@@ -497,6 +600,8 @@ export const bookingPaymentSessionRequestSchema = z.object({
 export type BookingPaymentSessionRequest = z.infer<typeof bookingPaymentSessionRequestSchema>;
 export const bookingServiceAssignmentStatuses = ["upcoming", "in-progress", "completed", "cancelled"] as const;
 export type BookingServiceAssignmentStatus = typeof bookingServiceAssignmentStatuses[number];
+export const bookingServiceAssignmentResponses = ["pending", "accepted", "declined"] as const;
+export type BookingServiceAssignmentResponse = typeof bookingServiceAssignmentResponses[number];
 export const bookingServiceAssignments = pgTable("booking_service_assignments", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   bookingId: varchar("booking_id").notNull(),
@@ -507,6 +612,8 @@ export const bookingServiceAssignments = pgTable("booking_service_assignments", 
   serviceConfig: jsonb("service_config").$type<BookingAssignmentConfig>().notNull(),
   grossAmount: integer("gross_amount").notNull().default(0),
   status: varchar("status").notNull().default("upcoming"),
+  providerResponse: varchar("provider_response"),
+  providerRespondedAt: text("provider_responded_at"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
@@ -1237,6 +1344,18 @@ export const cars = pgTable("cars", {
   isPublic: boolean("is_public").notNull().default(false),
   managerUserId: varchar("manager_user_id"),
   features: text("features").array().notNull(),
+    make: text("make"),
+  year: varchar("year"),
+  colour: text("colour"),
+  registrationNumber: varchar("registration_number"),
+  fuelType: varchar("fuel_type"),
+  mileage: integer("mileage"),
+  ownershipType: varchar("ownership_type"),
+  chauffeurArrangement: varchar("chauffeur_arrangement"),
+  suitableServices: jsonb("suitable_services").$type<FleetSuitableService[]>().notNull().default(sql`'[]'::jsonb`),
+  availabilityPreference: varchar("availability_preference"),
+  availabilityStatus: varchar("availability_status").notNull().default("available"),
+  documents: jsonb("documents").$type<FleetMediaItem[]>().notNull().default(sql`'[]'::jsonb`),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
@@ -1248,6 +1367,12 @@ export const insertCarSchema = createInsertSchema(cars).omit({
 }).extend({
   chauffeurZones: z.array(carZoneRateSchema).optional(),
   managerUserId: optionalManagerUserId,
+    ownershipType: z.enum(fleetOwnershipTypes).optional().nullable(),
+  chauffeurArrangement: z.enum(fleetChauffeurArrangements).optional().nullable(),
+  suitableServices: z.array(z.enum(fleetSuitableServices)).optional(),
+  availabilityPreference: z.enum(fleetAvailabilityPreferences).optional().nullable(),
+  availabilityStatus: z.enum(vehicleAvailabilityStatuses).optional(),
+  documents: z.array(fleetMediaItemSchema).optional(),
 });
 
 export type InsertCar = z.infer<typeof insertCarSchema>;
