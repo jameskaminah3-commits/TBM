@@ -46,6 +46,10 @@ const AdminErrandsEdit = lazy(() => import("@/pages/admin/errands-edit"));
 const AdminExperiencesNew = lazy(() => import("@/pages/admin/experiences-new"));
 const AdminExperiencesEdit = lazy(() => import("@/pages/admin/experiences-edit"));
 const AdminBlog = lazy(() => import("@/pages/admin/blog"));
+const AdminFleetApplications = lazy(() => import("@/pages/admin/fleet-applications"));
+const AdminFleetApplicationDetail = lazy(() => import("@/pages/admin/fleet-application-detail"));
+const PartnerLanding = lazy(() => import("@/pages/partner/index"));
+const PartnerApply = lazy(() => import("@/pages/partner/apply"));
 const Blog = lazy(() => import("@/pages/blog"));
 const BlogPost = lazy(() => import("@/pages/blog-post"));
 const AboutPage = lazy(async () => ({ default: (await import("@/pages/about")).AboutPage }));
@@ -67,6 +71,10 @@ const ProviderErrandNew = lazy(() => import("@/pages/provider/errand-new"));
 const ProviderErrandEdit = lazy(() => import("@/pages/provider/errand-edit"));
 const ProviderExperienceNew = lazy(() => import("@/pages/provider/experience-new"));
 const ProviderExperienceEdit = lazy(() => import("@/pages/provider/experience-edit"));
+const ProviderAvailability = lazy(() => import("@/pages/provider/availability"));
+const ProviderServiceRequests = lazy(() => import("@/pages/provider/service-requests"));
+const ProviderDocuments = lazy(() => import("@/pages/provider/documents"));
+const ProviderSupport = lazy(() => import("@/pages/provider/support"));
 const CustomServiceRequestPage = lazy(() => import("@/pages/custom-service-request"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
@@ -107,6 +115,8 @@ function Router() {
         <AppRoute path="/privacy" element={<PrivacyPage />} />
         <AppRoute path="/terms" element={<TermsPage />} />
         <AppRoute path="/refund-cancellation" element={<RefundCancellationPage />} />
+        <AppRoute path="/partner" element={<PartnerLanding />} />
+        <AppRoute path="/partner/apply" element={<PartnerApply />} />
         <AppRoute path="/admin/dashboard" element={<AdminDashboard />} />
         <AppRoute path="/admin/bookings" element={<AdminBookings />} />
         <AppRoute path="/admin/clients" element={<AdminClients />} />
@@ -125,6 +135,8 @@ function Router() {
         <AppRoute path="/admin/listings" element={<AdminListings />} />
         <AppRoute path="/admin/marketing" element={<AdminMarketing />} />
         <AppRoute path="/admin/blog" element={<AdminBlog />} />
+        <AppRoute path="/admin/fleet-applications" element={<AdminFleetApplications />} />
+        <AppRoute path="/admin/fleet-applications/:id" element={<AdminFleetApplicationDetail />} />
         <AppRoute path="/provider/dashboard" element={<ProviderDashboard />} />
         <AppRoute path="/provider/stays/new" element={<ProviderStayNew />} />
         <AppRoute path="/provider/stays/:id/availability" element={<ProviderStayAvailability />} />
@@ -136,6 +148,10 @@ function Router() {
         <AppRoute path="/provider/errands/:id/edit" element={<ProviderErrandEdit />} />
         <AppRoute path="/provider/experiences/new" element={<ProviderExperienceNew />} />
         <AppRoute path="/provider/experiences/:id/edit" element={<ProviderExperienceEdit />} />
+        <AppRoute path="/provider/availability" element={<ProviderAvailability />} />
+        <AppRoute path="/provider/service-requests" element={<ProviderServiceRequests />} />
+        <AppRoute path="/provider/documents" element={<ProviderDocuments />} />
+        <AppRoute path="/provider/support" element={<ProviderSupport />} />
         <AppRoute element={<NotFound />} />
       </Switch>
     </Suspense>
