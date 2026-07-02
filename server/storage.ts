@@ -1328,6 +1328,12 @@ export interface IStorage {
   createBookingMessage(message: InsertBookingMessage & { userId: string; senderRole: string }): Promise<BookingMessage>;
   getPartnerAdminMessages(providerUserId: string): Promise<PartnerAdminMessage[]>;
   createPartnerAdminMessage(message: InsertPartnerAdminMessage & { providerUserId: string; userId: string; senderRole: string }): Promise<PartnerAdminMessage>;
+    getFleetApplications(status?: FleetApplicationStatus): Promise<FleetApplication[]>;
+  getFleetApplication(id: string): Promise<FleetApplication | undefined>;
+  createFleetApplication(data: InsertFleetApplication): Promise<FleetApplication>;
+  updateFleetApplication(id: string, data: Partial<Pick<FleetApplication, "status" | "reviewNote" | "reviewedBy" | "reviewedAt" | "createdUserId" | "createdCarId" | "agreementAcceptedAt">>): Promise<FleetApplication | undefined>;
+  updateBookingServiceAssignmentResponse(id: string, response: BookingServiceAssignmentResponse): Promise<BookingServiceAssignment | undefined>;
+  
   syncBookingServiceAssignments(options?: { bookingIds?: string[]; notifyProviders?: boolean }): Promise<{ created: number; updated: number; cancelled: number }>;
   getBookingServiceAssignments(): Promise<BookingServiceAssignment[]>;
   getBookingServiceAssignmentsByBookingId(bookingId: string): Promise<BookingServiceAssignment[]>;
@@ -1576,6 +1582,20 @@ export class DatabaseStorage implements IStorage {
       columns.has("is_public") ? 'is_public AS "isPublic"' : 'false AS "isPublic"',
       columns.has("manager_user_id") ? 'manager_user_id AS "managerUserId"' : 'NULL::varchar AS "managerUserId"',
       columns.has("features") ? "features" : '\'{}\'::text[] AS features',
+      columns.has("created_at") ? 'created_at AS "createdAt"' : 'NULL::text AS "createdAt"',
+      columns.has("features") ? "features" : '\'{}\'::text[] AS features',
+      columns.has("make") ? "make" : "NULL::text AS make",
+      columns.has("year") ? "year" : "NULL::varchar AS year",
+      columns.has("colour") ? "colour" : "NULL::text AS colour",
+      columns.has("registration_number") ? 'registration_number AS "registrationNumber"' : 'NULL::varchar AS "registrationNumber"',
+      columns.has("fuel_type") ? 'fuel_type AS "fuelType"' : 'NULL::varchar AS "fuelType"',
+      columns.has("mileage") ? "mileage" : "NULL::integer AS mileage",
+      columns.has("ownership_type") ? 'ownership_type AS "ownershipType"' : 'NULL::varchar AS "ownershipType"',
+      columns.has("chauffeur_arrangement") ? 'chauffeur_arrangement AS "chauffeurArrangement"' : 'NULL::varchar AS "chauffeurArrangement"',
+      columns.has("suitable_services") ? 'suitable_services AS "suitableServices"' : '\'[]\'::jsonb AS "suitableServices"',
+      columns.has("availability_preference") ? 'availability_preference AS "availabilityPreference"' : 'NULL::varchar AS "availabilityPreference"',
+      columns.has("availability_status") ? 'availability_status AS "availabilityStatus"' : '\'available\'::varchar AS "availabilityStatus"',
+      columns.has("documents") ? "documents" : "'[]'::jsonb AS documents",
       columns.has("created_at") ? 'created_at AS "createdAt"' : 'NULL::text AS "createdAt"',
       columns.has("updated_at") ? 'updated_at AS "updatedAt"' : 'NULL::text AS "updatedAt"',
     ];
