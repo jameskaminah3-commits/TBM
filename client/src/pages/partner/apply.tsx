@@ -14,7 +14,6 @@ import {
 } from "lucide-react";
 import {
   fleetOwnershipRoles,
-  fleetOwnershipTypes,
   fleetAvailabilityPreferences,
   fleetSuitableServices,
   fleetChauffeurArrangements,
@@ -41,13 +40,6 @@ const ownershipRoleLabels: Record<(typeof fleetOwnershipRoles)[number], string> 
   personally_owned: "I personally own it",
   company_owned: "Company-owned",
   authorized_representative: "Authorized representative",
-};
-
-const ownershipTypeLabels: Record<(typeof fleetOwnershipTypes)[number], string> = {
-  personally_owned: "Personally Owned",
-  company_owned: "Company Owned",
-  fleet_owned: "Fleet Owned (Multiple Vehicles)",
-  investor_owned: "Investor-Owned",
 };
 
 const availabilityPreferenceLabels: Record<(typeof fleetAvailabilityPreferences)[number], string> = {
@@ -105,7 +97,6 @@ const applyFormSchema = z.object({
     z.coerce.number().min(0).optional(),
   ),
   ownershipRole: z.enum(fleetOwnershipRoles, { message: "Choose an option" }),
-  ownershipType: z.enum(fleetOwnershipTypes, { message: "Choose an option" }),
   availabilityPreference: z.enum(fleetAvailabilityPreferences, { message: "Choose an option" }),
   suitableServices: z.array(z.enum(fleetSuitableServices)).min(1, "Choose at least one service"),
   chauffeurArrangement: z.enum(fleetChauffeurArrangements, { message: "Choose an option" }),
@@ -131,7 +122,7 @@ const steps = [
 const stepFields: Record<number, Array<keyof ApplyFormData>> = {
   0: ["fullName", "phone", "email", "county"],
   1: ["make", "model", "registrationNumber", "transmission", "seats"],
-  2: ["ownershipRole", "ownershipType"],
+  2: ["ownershipRole"],
   3: ["availabilityPreference"],
   4: ["suitableServices"],
   5: ["chauffeurArrangement"],
@@ -253,7 +244,6 @@ export default function PartnerApply() {
       seats: undefined,
       mileage: undefined,
       ownershipRole: undefined,
-      ownershipType: undefined,
       availabilityPreference: undefined,
       suitableServices: [],
       chauffeurArrangement: undefined,
@@ -275,6 +265,7 @@ export default function PartnerApply() {
     try {
       await apiRequest("POST", "/api/fleet-applications", {
         ...values,
+        ownershipType: values.ownershipRole === "company_owned" ? "company_owned" : "personally_owned",
         seats: Number(values.seats),
         mileage: values.mileage != null ? Number(values.mileage) : undefined,
         photoUrls: photos,
@@ -578,50 +569,27 @@ export default function PartnerApply() {
             ) : null}
 
             {stepIndex === 2 ? (
-              <div className="space-y-8">
-                <FormField
-                  control={form.control}
-                  name="ownershipRole"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Who owns this vehicle?</FormLabel>
-                      <RadioGroup value={field.value} onValueChange={field.onChange} className="mt-2 space-y-2">
-                        {fleetOwnershipRoles.map((value) => (
-                          <label
-                            key={value}
-                            className="flex items-center gap-3 rounded-xl border border-border/60 p-4 text-sm font-medium text-foreground hover:bg-muted"
-                          >
-                            <RadioGroupItem value={value} />
-                            {ownershipRoleLabels[value]}
-                          </label>
-                        ))}
-                      </RadioGroup>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="ownershipType"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Vehicle Ownership Type</FormLabel>
-                      <RadioGroup value={field.value} onValueChange={field.onChange} className="mt-2 space-y-2">
-                        {fleetOwnershipTypes.map((value) => (
-                          <label
-                            key={value}
-                            className="flex items-center gap-3 rounded-xl border border-border/60 p-4 text-sm font-medium text-foreground hover:bg-muted"
-                          >
-                            <RadioGroupItem value={value} />
-                            {ownershipTypeLabels[value]}
-                          </label>
-                        ))}
-                      </RadioGroup>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
+              <FormField
+                control={form.control}
+                name="ownershipRole"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Who owns this vehicle?</FormLabel>
+                    <RadioGroup value={field.value} onValueChange={field.onChange} className="mt-2 space-y-2">
+                      {fleetOwnershipRoles.map((value) => (
+                        <label
+                          key={value}
+                          className="flex items-center gap-3 rounded-xl border border-border/60 p-4 text-sm font-medium text-foreground hover:bg-muted"
+                        >
+                          <RadioGroupItem value={value} />
+                          {ownershipRoleLabels[value]}
+                        </label>
+                      ))}
+                    </RadioGroup>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             ) : null}
 
             {stepIndex === 3 ? (
