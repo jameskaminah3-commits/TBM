@@ -1424,7 +1424,7 @@ export default function ServiceBooking() {
           </Button>
 
           <div className="grid gap-6 lg:grid-cols-3 lg:gap-8">
-            <div className="lg:col-span-2">
+            <div className="min-w-0 lg:col-span-2">
               <Card className="min-w-0 p-4 sm:p-6">
                 <div className="mb-6">
                   <div className="mb-4 flex items-start gap-3 sm:gap-4">
@@ -1558,13 +1558,13 @@ export default function ServiceBooking() {
                         {service.seats} seats
                       </Badge>
                     )}
-                    {"location" in service && service.location && (
-                      <Badge variant="outline">
+                                        {"location" in service && service.location && (
+                      <Badge variant="outline" className="max-w-full whitespace-normal break-words text-left">
                         {"experienceType" in service ? `Host base: ${service.location}` : service.location}
                       </Badge>
                     )}
                     {"experienceType" in service && service.experienceLocation && (
-                      <Badge variant="outline">
+                      <Badge variant="outline" className="max-w-full whitespace-normal break-words text-left">
                         Destination: {service.experienceLocation}
                       </Badge>
                     )}
