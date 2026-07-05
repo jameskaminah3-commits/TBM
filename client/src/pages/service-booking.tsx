@@ -1411,7 +1411,7 @@ export default function ServiceBooking() {
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-background">
-      <div className="container mx-auto px-4 py-8 pb-28 lg:pb-8">
+      <div className="container mx-auto px-4 py-8 pb-[calc(9.5rem_+_env(safe-area-inset-bottom))] lg:pb-8">
         <div className="max-w-4xl mx-auto">
           <Button
             variant="ghost"
@@ -3068,8 +3068,7 @@ export default function ServiceBooking() {
           </div>
         </div>
       </div>
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border/70 bg-background/95 px-4 py-3 shadow-[0_-18px_40px_rgba(15,23,42,0.16)] backdrop-blur lg:hidden">
-        <div className="mx-auto flex w-full max-w-4xl items-center gap-3">
+      <div className="fixed inset-x-0 bottom-[calc(4rem_+_env(safe-area-inset-bottom))] z-40 border-t border-border/70 bg-background/95 px-4 py-3 shadow-[0_-18px_40px_rgba(15,23,42,0.16)] backdrop-blur lg:hidden">        <div className="mx-auto flex w-full max-w-4xl items-center gap-3">
           <div className="min-w-0 flex-1">
             <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
               {discountedTotalPrice > 0 ? "Total" : "Booking"}
