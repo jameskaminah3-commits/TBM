@@ -40,12 +40,15 @@ const suitableFor = [
 ];
 
 export default function PartnerLanding() {
-  const heroContent = (
+  const badge = (
+    <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-1.5 text-xs font-medium uppercase tracking-wide text-white/90 backdrop-blur-sm">
+      <Car className="h-3.5 w-3.5" />
+      Trusted Fleet Network
+    </span>
+  );
+
+  const heroBody = (
     <>
-      <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-1.5 text-xs font-medium uppercase tracking-wide text-white/90 backdrop-blur-sm">
-        <Car className="h-3.5 w-3.5" />
-        Trusted Fleet Network
-      </span>
       <h1 className="mt-6 font-serif text-[2.35rem] font-medium leading-[1.05] text-white sm:text-5xl lg:text-6xl">
         Put Your Vehicle to Work with Tembea Bila Matata
       </h1>
@@ -78,12 +81,14 @@ export default function PartnerLanding() {
   return (
     <div className="bg-background">
       <section className="relative overflow-hidden bg-foreground">
-        {/* Mobile: image shown at its own aspect ratio so the full fleet lineup is visible, content below on a solid background */}
+        {/* Mobile: image kept at its own aspect ratio so the full fleet lineup stays visible, with the same dark-photo look as desktop via a gradient that fades into the solid block below */}
         <div className="sm:hidden">
-          <div className="aspect-[3/2] w-full overflow-hidden">
+          <div className="relative aspect-[3/2] w-full overflow-hidden">
             <img src={heroImage} alt="Sedan, SUV, van, and safari vehicle lineup" className="h-full w-full object-cover" />
+            <div className="absolute inset-0 bg-gradient-to-b from-foreground/10 via-foreground/40 to-foreground" />
+            <div className="absolute inset-x-0 bottom-0 px-4 pb-5 text-center">{badge}</div>
           </div>
-          <div className="px-4 py-10 text-center">{heroContent}</div>
+          <div className="px-4 pb-10 pt-1 text-center">{heroBody}</div>
         </div>
 
         {/* sm and up: full-bleed background image with overlay */}
@@ -92,7 +97,10 @@ export default function PartnerLanding() {
             <img src={heroImage} alt="" className="h-full w-full object-cover" />
             <div className="absolute inset-0 bg-gradient-to-b from-foreground/80 via-foreground/60 to-foreground/85" />
           </div>
-          <div className="relative mx-auto max-w-5xl px-4 py-24 text-center sm:py-32 md:px-8">{heroContent}</div>
+          <div className="relative mx-auto max-w-5xl px-4 py-24 text-center sm:py-32 md:px-8">
+            {badge}
+            {heroBody}
+          </div>
         </div>
       </section>
 
