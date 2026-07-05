@@ -49,29 +49,29 @@ export default function PartnerLanding() {
 
   const heroBody = (
     <>
-      <h1 className="mt-6 font-serif text-[2.35rem] font-medium leading-[1.05] text-white sm:text-5xl lg:text-6xl">
+      <h1 className="mt-4 font-serif text-[1.85rem] font-medium leading-[1.1] text-white sm:mt-6 sm:text-[2.35rem] sm:leading-[1.05] md:text-5xl lg:text-6xl">
         Put Your Vehicle to Work with Tembea Bila Matata
       </h1>
-      <p className="mx-auto mt-6 max-w-2xl text-balance text-base leading-7 text-white/85 sm:text-lg">
+      <p className="mx-auto mt-4 max-w-2xl text-balance text-sm leading-6 text-white/85 sm:mt-6 sm:text-base sm:leading-7 md:text-lg">
         Own a vehicle? Join our trusted fleet network and let Tembea Bila Matata connect your vehicle with
         airport transfers, chauffeur services, self-drive rentals, tours, and other premium travel
         opportunities across the Kenyan Coast.
       </p>
-      <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
+      <div className="mt-6 flex flex-col items-center justify-center gap-3 sm:mt-10 sm:flex-row">
         <Link href="/partner/apply">
-          <Button size="lg" className="h-12 rounded-full px-8 text-base">
+          <Button size="lg" className="h-11 rounded-full px-7 text-sm sm:h-12 sm:px-8 sm:text-base">
             Join the Fleet
             <ArrowRight className="ml-2 h-4 w-4" />
           </Button>
         </Link>
       </div>
-      <div className="mt-8 grid grid-cols-1 divide-y divide-white/10 rounded-2xl border border-white/10 bg-foreground/40 text-left backdrop-blur-sm sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+      <div className="mt-6 grid grid-cols-3 gap-2 rounded-2xl border border-white/10 bg-foreground/40 p-2 text-center backdrop-blur-sm sm:mt-8 sm:grid-cols-3 sm:gap-0 sm:divide-x sm:divide-white/10 sm:p-0 sm:text-left">
         {trustPoints.map((point) => (
-          <div key={point.label} className="flex items-center gap-3 px-5 py-4">
-            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-primary/60 bg-white/5">
-              <point.icon className="h-4 w-4 text-primary" />
+          <div key={point.label} className="flex flex-col items-center gap-1.5 px-1.5 py-2 sm:flex-row sm:gap-3 sm:px-5 sm:py-4">
+            <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full border border-primary/60 bg-white/5 sm:h-9 sm:w-9">
+              <point.icon className="h-3.5 w-3.5 text-primary sm:h-4 sm:w-4" />
             </div>
-            <span className="text-sm font-medium leading-5 text-white/90">{point.label}</span>
+            <span className="text-[0.68rem] font-medium leading-tight text-white/90 sm:text-sm sm:leading-5">{point.label}</span>
           </div>
         ))}
       </div>
@@ -80,27 +80,14 @@ export default function PartnerLanding() {
 
   return (
     <div className="bg-background">
-      <section className="relative overflow-hidden bg-foreground">
-        {/* Mobile: image kept at its own aspect ratio so the full fleet lineup stays visible, with the same dark-photo look as desktop via a gradient that fades into the solid block below */}
-        <div className="sm:hidden">
-          <div className="relative aspect-[3/2] w-full overflow-hidden">
-            <img src={heroImage} alt="Sedan, SUV, van, and safari vehicle lineup" className="h-full w-full object-cover" />
-            <div className="absolute inset-0 bg-gradient-to-b from-foreground/10 via-foreground/40 to-foreground" />
-            <div className="absolute inset-x-0 bottom-0 px-4 pb-5 text-center">{badge}</div>
-          </div>
-          <div className="px-4 pb-10 pt-1 text-center">{heroBody}</div>
+      <section className="relative overflow-hidden">
+        <div className="absolute inset-0">
+          <img src={heroImage} alt="" className="h-full w-full object-cover" />
+          <div className="absolute inset-0 bg-gradient-to-b from-foreground/80 via-foreground/60 to-foreground/85" />
         </div>
-
-        {/* sm and up: full-bleed background image with overlay */}
-        <div className="relative hidden sm:block">
-          <div className="absolute inset-0">
-            <img src={heroImage} alt="" className="h-full w-full object-cover" />
-            <div className="absolute inset-0 bg-gradient-to-b from-foreground/80 via-foreground/60 to-foreground/85" />
-          </div>
-          <div className="relative mx-auto max-w-5xl px-4 py-24 text-center sm:py-32 md:px-8">
-            {badge}
-            {heroBody}
-          </div>
+        <div className="relative mx-auto max-w-5xl px-4 py-14 text-center sm:py-24 md:px-8 lg:py-32">
+          {badge}
+          {heroBody}
         </div>
       </section>
 
