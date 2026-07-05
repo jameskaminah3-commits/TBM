@@ -168,6 +168,7 @@ function AppShell() {
   const isProviderRoute = location.startsWith("/provider/");
   const isDashboardRoute = isAdminRoute || isProviderRoute;
   const isAuthRoute = location.startsWith("/auth");
+  const isBookingRoute = location.startsWith("/book/");
   const shouldShowHeader = !isAuthRoute && !isProviderRoute;
   const shouldShowSiteChrome = !isAuthRoute && !isDashboardRoute;
 
@@ -202,7 +203,7 @@ function AppShell() {
           ) : null}
       </div>
       {shouldShowSiteChrome ? <MobileTabBar /> : null}
-      {shouldShowSiteChrome ? <ChatConcierge /> : null}
+      {shouldShowSiteChrome && !isBookingRoute ? <ChatConcierge /> : null}
       <Toaster />
     </TooltipProvider>
       </NavSheetProvider>
