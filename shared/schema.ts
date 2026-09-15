@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, boolean, jsonb, index } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, boolean, jsonb, index, bigserial } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -1778,3 +1778,91 @@ export type ProviderAccountSummary = {
   assignedExperienceIds: string[];
   assignedExperienceTitles: string[];
 };
+// ═══════════════════════════════════════════════════════════════════
+// Zaina — AI Concierge
+// ═══════════════════════════════════════════════════════════════════
+
+export const chatSessions = pgTable(
+  "chat_sessions",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    userIdentifier: varchar("user_identifier"),
+    managedBy: varchar("managed_by").notNull().default("AI"),
+    assignedAgentId: varchar("assigned_agent_id"),
+    handoffReason: text("handoff_reason"),
+    handoffTimestamp: text("handoff_timestamp"),
+    displayCurrency: varchar("display_currency").notNull().default("USD"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    index("idx_chat_sessions_state").on(table.managedBy),
+  ],
+);
+export type ChatSession = typeof chatSessions.$inferSelect;
+export type InsertChatSession = typeof chatSessions.$inferInsert;
+
+export const zainaAuditLogs = pgTable(
+  "zaina_audit_logs",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    sessionId: varchar("session_id").notNull(),
+    timestamp: timestamp("timestamp", { withTimezone: true }).defaultNow().notNull(),
+    actor: varchar("actor").notNull(),
+    messageContent: text("message_content"),
+    toolName: varchar("tool_name"),
+    toolArguments: jsonb("tool_arguments"),
+    toolResponse: jsonb("tool_response"),
+  },
+  (table) => [
+    index("idx_audit_session").on(table.sessionId, table.timestamp),
+  ],
+);
+export type ZainaAuditLog = typeof zainaAuditLogs.$inferSelect;
+export type InsertZainaAuditLog = typeof zainaAuditLogs.$inferInsert;
+
+export const customOffers = pgTable(
+  "custom_offers",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    sessionId: varchar("session_id"),
+    customerName: text("customer_name"),
+    customerEmail: text("customer_email"),
+    customerPhone: varchar("customer_phone"),
+    offerType: varchar("offer_type").notNull(),
+    requestDetails: text("request_details").notNull(),
+    budgetUsd: integer("budget_usd"),
+    travelDates: text("travel_dates"),
+    status: varchar("status").notNull().default("new"),
+    feeTier: varchar("fee_tier").notNull().default("intake"),
+    feeUsd: integer("fee_usd"),
+    displayCurrency: varchar("display_currency").notNull().default("USD"),
+    quoteAmountUsd: integer("quote_amount_usd"),
+    feePaid: boolean("fee_paid").notNull().default(false),
+    feeCredited: boolean("fee_credited").notNull().default(false),
+    paymentReference: varchar("payment_reference"),
+    notes: text("notes"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    index("idx_custom_offers_status").on(table.status, table.createdAt),
+    index("idx_custom_offers_session").on(table.sessionId),
+  ],
+);
+export type CustomOffer = typeof customOffers.$inferSelect;
+export type InsertCustomOffer = typeof customOffers.$inferInsert;
+
+export const aiLeads = pgTable("ai_leads", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  email: text("email"),
+  phone: varchar("phone"),
+  interest: text("interest"),
+  notes: text("notes"),
+  source: varchar("source").default("zaina"),
+  sessionId: varchar("session_id"),
+  createdAt: text("created_at").notNull(),
+});
+export type AiLead = typeof aiLeads.$inferSelect;
+export type InsertAiLead = typeof aiLeads.$inferInsert;
