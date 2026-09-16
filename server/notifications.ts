@@ -552,3 +552,75 @@ export async function sendBookingPaymentNotificationEmails(
   await Promise.allSettled(tasks);
   return true;
 }
+// ─────────────────────────────────────────────────────────────────
+// Zaina AI Concierge — ops alerts
+// ─────────────────────────────────────────────────────────────────
+
+export type ZainaOpsAlertKind =
+  | "handoff-requested"
+  | "custom-offer"
+  | "system-error"
+  | "new-lead";
+
+export type ZainaOpsAlert = {
+  kind: ZainaOpsAlertKind;
+  sessionId: string;
+  summary: string;
+  details?: Record<string, unknown>;
+  customerName?: string | null;
+  customerContact?: string | null;
+};
+
+const zainaAlertLabels: Record<ZainaOpsAlertKind, string> = {
+  "handoff-requested": "Zaina handoff",
+  "custom-offer": "Zaina custom offer",
+  "system-error": "Zaina system error",
+  "new-lead": "Zaina new lead",
+};
+
+export async function sendOpsAlertEmail(alert: ZainaOpsAlert): Promise<boolean> {
+  const recipients = getNotificationRecipientEmails();
+  if (recipients.length === 0) {
+    console.warn("[ZAINA] No ops recipients configured (set NOTIFICATION_EMAILS or ADMIN_EMAILS).");
+    return false;
+  }
+
+  const label = zainaAlertLabels[alert.kind];
+  const subject = `[${label}] ${alert.summary}`.slice(0, 160);
+
+  const detailLines = alert.details
+    ? Object.entries(alert.details)
+        .filter(([, value]) => value != null && value !== "")
+        .map(([key, value]) => {
+          const rendered = typeof value === "object" ? JSON.stringify(value) : String(value);
+          return `${key}: ${rendered}`;
+        })
+    : [];
+
+  const text = [
+    alert.summary,
+    `Session: ${alert.sessionId}`,
+    alert.customerName ? `Customer: ${alert.customerName}` : null,
+    alert.customerContact ? `Contact: ${alert.customerContact}` : null,
+    ...detailLines,
+  ].filter(Boolean).join("\n");
+
+  const html = [
+    '<div style="font-family:Arial,sans-serif;line-height:1.6;color:#0f172a;">',
+    `<p><strong>${escapeHtml(label)}</strong></p>`,
+    `<p>${escapeHtml(alert.summary)}</p>`,
+    "<ul>",
+    `<li><strong>Session:</strong> ${escapeHtml(alert.sessionId)}</li>`,
+    alert.customerName
+      ? `<li><strong>Customer:</strong> ${escapeHtml(alert.customerName)}</li>`
+      : "",
+    alert.customerContact
+      ? `<li><strong>Contact:</strong> ${escapeHtml(alert.customerContact)}</li>`
+      : "",
+    ...detailLines.map((line) => `<li>${escapeHtml(line)}</li>`),
+    "</ul>",
+    "</div>",
+  ].filter(Boolean).join("");
+
+  return await sendEmailMessage({ to: recipients, subject, text, html });
+}
