@@ -13,6 +13,7 @@ import { SiteFooter } from "@/components/site-footer";
 import { TembeaLoader } from "@/components/tembea-loader";
 import { CurrencyProvider } from "@/lib/currency";
 import { ConciergeSearchProvider, getSectionFromPath } from "@/lib/concierge-search";
+import { ZainaWidget } from "@/components/ZainaWidget";
 import { useRouteMediaReady } from "@/hooks/use-route-media-ready";
 import { NavSheetProvider } from "@/hooks/use-nav-sheet";
 const Home = lazy(() => import("@/pages/home"));
@@ -203,7 +204,8 @@ function AppShell() {
           ) : null}
       </div>
       {shouldShowSiteChrome ? <MobileTabBar /> : null}
-      {shouldShowSiteChrome && !isBookingRoute ? <ChatConcierge /> : null}
+            {shouldShowSiteChrome && !isBookingRoute ? <ChatConcierge /> : null}
+      {shouldShowSiteChrome ? <ZainaWidget /> : null}
       <Toaster />
     </TooltipProvider>
       </NavSheetProvider>
