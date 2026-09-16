@@ -77,9 +77,9 @@ export function registerZainaRoutes(app: Express): void {
   // Registered BEFORE the gate so ops can always check status,
   // even when Zaina is disabled.
   app.get("/api/zaina/health", (_req: Request, res: Response) => {
-    res.json({
+       res.json({
       enabled: ZAINA_ENABLED,
-      model: "gemini-2.5-flash",
+      model: "gemini-3.6-flash",
       timestamp: new Date().toISOString(),
     });
   });
