@@ -223,7 +223,6 @@ Example — MamaCare overnight booking:
     idempotency_key: <new UUID v4>
 
 ═══════════════════════════════════════════════════════════════════════
-═══════════════════════════════════════════════════════════════════════
 CUSTOM OFFERS — decision tree
 ═══════════════════════════════════════════════════════════════════════
 
@@ -577,7 +576,8 @@ const toolDeclarations = [
           },
           required: ["reason"],
         },
-              {
+      },
+      {
         name: "create_service_booking",
         description:
           "Create a draft booking for a ONE-OFF SERVICE where the customer is " +
@@ -665,7 +665,6 @@ const toolDeclarations = [
           ],
         },
       },
-      },
     ],
   },
 ];
@@ -684,7 +683,8 @@ async function executeTool(name: string, args: any, sessionId: string): Promise<
     case "check_stay_availability":  return checkStayAvailability(args, sessionId);
     case "calculate_chef_price":     return calculateChefPrice(args, sessionId);
     case "calculate_mamacare_price": return calculateMamaCarePrice(args, sessionId);
-    case "compose_trip_package":     return composeTripPackage(args, sessionId);
+      case "compose_trip_package":     return composeTripPackage(args, sessionId);
+    case "create_draft_booking":     return createDraftBooking(args, sessionId);
     case "create_service_booking":   return createServiceBooking(args, sessionId);
     case "create_custom_offer":      return createCustomOffer(args, sessionId);
     case "create_lead":              return createLead(args, sessionId);
