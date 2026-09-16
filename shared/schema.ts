@@ -396,8 +396,9 @@ export const bookings = pgTable("bookings", {
   paymentHoldExpiresAt: text("payment_hold_expires_at"),
   paidAt: text("paid_at"),
   paymentFailedAt: text("payment_failed_at"),
-  totalPrice: integer("total_price").notNull(),
+export const insertBookingSchema = createInsertSchema(bookings).omit({
   status: text("status").notNull().default("upcoming"),
+  idempotencyKey: varchar("idempotency_key"),
   createdAt: text("created_at").notNull(),
   bookingType: text("booking_type").notNull().default("accommodation"), // "accommodation" or "service"
 });
@@ -529,6 +530,7 @@ export const insertBookingSchema = createInsertSchema(bookings).omit({
   createdAt: true,
   userId: true, // Backend injects from session
   guestEmail: true, // Backend injects from session
+  idempotencyKey: true,
   paymentStatus: true,
   paymentProvider: true,
   paymentReference: true,
@@ -1388,6 +1390,9 @@ export const cooks = pgTable("cooks", {
   maxGuests: integer("max_guests").notNull().default(2),
   minimumGuests: integer("minimum_guests").notNull().default(2),
   pricePerSession: integer("price_per_session").notNull(),
+  pricePerPlate: integer("price_per_plate"),
+  priceSingleMeal: integer("price_single_meal"),
+  minPlates: integer("min_plates").notNull().default(4),
   serviceFee: integer("service_fee").notNull().default(0),
   inclusivePrice: integer("inclusive_price").notNull().default(0),
   extraGuestServiceFee: integer("extra_guest_service_fee").notNull().default(0),
