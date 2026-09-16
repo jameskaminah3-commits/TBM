@@ -566,7 +566,6 @@ export const INVENTORY_CATALOG = {
     ],
     fee_creditable: true,
     intake_disclosure:
-      intake_disclosure:
       "There's a small intake fee to get this started — it comes off your final " +
       "booking if you go ahead. If the team recommends a deeper verification or " +
       "a site visit, they'll quote that separately before proceeding.",
