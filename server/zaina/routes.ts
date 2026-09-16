@@ -6,6 +6,11 @@
 //   ZAINA_ENABLED env var controls whether Zaina is live.
 //   Default: false. Set to "true" to enable.
 //   When disabled, every Zaina route (except /health) returns 503.
+//
+// CURRENCY SYNC:
+//   The widget sends x-zaina-currency on every chat message. If it differs
+//   from the session's stored display_currency, we update the session so
+//   the next tool call formats prices in the customer's current currency.
 
 import type { Express, Request, Response } from "express";
 import { db } from "../db";
@@ -13,7 +18,20 @@ import { chatSessions } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { handleZainaMessage } from "./router";
 
+// ═══════════════════════════════════════════════════════════════════
+// FEATURE FLAG
+// ═══════════════════════════════════════════════════════════════════
+
 const ZAINA_ENABLED = process.env.ZAINA_ENABLED === "true";
+
+// ═══════════════════════════════════════════════════════════════════
+// RATE LIMITING (in-memory, per-instance)
+//
+// Guards against a single session hammering the endpoint.
+// If you later run multiple server instances behind a load balancer,
+// switch to Redis-backed rate limiting — this in-memory version is
+// per-process only.
+// ═══════════════════════════════════════════════════════════════════
 
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX_MESSAGES = 20;
@@ -50,8 +68,14 @@ if (typeof (cleanupTimer as any).unref === "function") {
   (cleanupTimer as any).unref();
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// ROUTES
+// ═══════════════════════════════════════════════════════════════════
+
 export function registerZainaRoutes(app: Express): void {
-  // Health check — always available
+  // ─── Health check ─────────────────────────────────────────────
+  // Registered BEFORE the gate so ops can always check status,
+  // even when Zaina is disabled.
   app.get("/api/zaina/health", (_req: Request, res: Response) => {
     res.json({
       enabled: ZAINA_ENABLED,
@@ -60,7 +84,9 @@ export function registerZainaRoutes(app: Express): void {
     });
   });
 
-  // Feature flag gate for all other routes
+  // ─── Feature flag gate ────────────────────────────────────────
+  // Applies to every route below. When Zaina is off, the customer's
+  // widget gets a clean 503 and can hide itself.
   app.use("/api/zaina", (_req: Request, res: Response, next) => {
     if (!ZAINA_ENABLED) {
       res.status(503).json({ error: "Zaina is not currently available." });
@@ -69,7 +95,7 @@ export function registerZainaRoutes(app: Express): void {
     next();
   });
 
-  // Create session
+  // ─── Create session ───────────────────────────────────────────
   app.post("/api/zaina/session", async (req: Request, res: Response) => {
     try {
       const requested = req.body?.display_currency;
@@ -96,10 +122,11 @@ export function registerZainaRoutes(app: Express): void {
     }
   });
 
-  // Chat
+  // ─── Chat ─────────────────────────────────────────────────────
   app.post("/api/zaina/chat", async (req: Request, res: Response) => {
     const sessionId = req.header("x-zaina-session");
     const message = req.body?.message;
+    const requestedCurrency = req.header("x-zaina-currency");
 
     if (!sessionId || typeof sessionId !== "string" || sessionId.length > 64) {
       res.status(400).json({ error: "Missing or invalid session header." });
@@ -118,6 +145,27 @@ export function registerZainaRoutes(app: Express): void {
       return;
     }
 
+    // Sync session currency if the customer changed it on the site since
+    // the session was created. Best-effort — a failure here doesn't block
+    // the chat.
+    if (requestedCurrency === "USD" || requestedCurrency === "KES") {
+      try {
+        const [existing] = await db
+          .select({ displayCurrency: chatSessions.displayCurrency })
+          .from(chatSessions)
+          .where(eq(chatSessions.id, sessionId))
+          .limit(1);
+        if (existing && existing.displayCurrency !== requestedCurrency) {
+          await db
+            .update(chatSessions)
+            .set({ displayCurrency: requestedCurrency, updatedAt: new Date().toISOString() })
+            .where(eq(chatSessions.id, sessionId));
+        }
+      } catch (err) {
+        console.error("[zaina] failed to sync session currency:", err);
+      }
+    }
+
     try {
       const result = await handleZainaMessage(sessionId, message);
 
@@ -127,6 +175,8 @@ export function registerZainaRoutes(app: Express): void {
       }
 
       if (result.status === "ignored") {
+        // Session is being handled by a human — tell the client cleanly
+        // so the widget can stop showing AI replies.
         res.json({
           reply: null,
           status: "human_managed",
@@ -135,6 +185,7 @@ export function registerZainaRoutes(app: Express): void {
         return;
       }
 
+      // result.status === "error"
       res.status(500).json({
         error: result.error,
         message: result.message,
@@ -148,7 +199,10 @@ export function registerZainaRoutes(app: Express): void {
     }
   });
 
-  // Session status
+  // ─── Session status ───────────────────────────────────────────
+  // Used by the widget to verify the cached session ID is still alive
+  // on the server (e.g. after a handoff deleted state, or after a very
+  // long inactivity). Returns only non-sensitive fields.
   app.get("/api/zaina/session/:id", async (req: Request, res: Response) => {
     try {
       const [row] = await db
