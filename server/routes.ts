@@ -56,7 +56,7 @@ import {
 } from "@shared/schema";
 import { listUploads, saveBase64Upload } from "./media";
 import { db } from "./db";
-import { users, stays, cars, cooks, errands, experiences, listings, blogPosts } from "@shared/schema";
+import { bookings, users, stays, cars, cooks, errands, experiences, listings, blogPosts } from "@shared/schema";
 import { calculateCookInclusiveTotal, calculateCookServiceTotal, getCookMinimumGuests } from "@shared/cook-pricing";
 import { customServiceRequestFeeUsd } from "@shared/custom-service";
 import { calculateHelpMamaPackagePrice, calculateHouseCleaningPackagePrice, getHouseCleaningBedroomCount, HELP_MAMA_HOURLY_MINIMUM_HOURS, getHelpMamaAgeBandId, getHelpMamaRateId, hasHelpMamaPricing, isHelpMamaHourlyRate } from "@shared/errand-pricing";
@@ -2161,10 +2161,36 @@ async function assertCanAccessBookingThread(req: any, bookingId: string) {
   const currentUserId = req.user?.claims?.sub;
   const currentUserRole = req.user?.claims?.role;
 
-  if (currentUserRole === "admin" || booking.userId === currentUserId) {
+  // Admins have full access.
+  if (currentUserRole === "admin") {
     return { booking } as const;
   }
 
+  // Direct owner.
+  if (booking.userId && booking.userId === currentUserId) {
+    return { booking } as const;
+  }
+
+  // Anonymous booking (created via Zaina) — match by *verified* email
+  // and claim it. This mirrors storage.getBookingsByUserId so the
+  // customer is recognised whether they enter via the list page or
+  // land directly on a booking detail URL.
+  if (!booking.userId && currentUserId) {
+    const user = await storage.getUser(currentUserId);
+    const userEmail = user?.email?.toLowerCase();
+    const bookingEmail = booking.guestEmail?.toLowerCase();
+    const emailIsVerified = Boolean(user?.emailVerifiedAt);
+    if (emailIsVerified && userEmail && bookingEmail && userEmail === bookingEmail) {
+      try {
+        await db.update(bookings).set({ userId: currentUserId }).where(eq(bookings.id, booking.id));
+        return { booking: { ...booking, userId: currentUserId } } as const;
+      } catch (err) {
+        console.error(`[BOOKING] Failed to claim booking ${booking.id}:`, err);
+      }
+    }
+  }
+
+  // Assigned provider.
   const assignments = await storage.getBookingServiceAssignmentsByBookingId(bookingId);
   if (assignments.some((assignment) => assignment.providerUserId === currentUserId)) {
     return { booking } as const;
@@ -3757,9 +3783,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/bookings/:id/payments/session", isAuthenticated, async (req: any, res) => {
     try {
-      const booking = await storage.getBooking(req.params.id);
-      if (!booking || booking.userId !== req.user.claims.sub) {
-        return res.status(404).json({ error: "Booking not found" });
+      const access = await assertCanAccessBookingThread(req, req.params.id);
+      if ("error" in access) {
+        return res.status(access.error!.status).json(access.error!.body);
+      }
+
+      const booking = access.booking;
+      const currentUserId = req.user.claims.sub;
+      const currentUserRole = req.user.claims.role;
+
+      if (currentUserRole !== "admin" && booking.userId !== currentUserId) {
+        return res.status(403).json({ error: "Only the booking owner can start a payment session." });
       }
 
       if (booking.status === "cancelled" || booking.status === "completed") {
