@@ -837,7 +837,13 @@ export async function createDraftBooking(
   // 1. Validate dates — fail closed
   const nights = validateAndGetNights(args.check_in, args.check_out);
   if (nights === null) {
-    return { ok: false, error: "invalid_dates" };
+    return {
+      ok: false,
+      error: "invalid_dates",
+      hint:
+        "For a one-off service booking (no stay), use create_service_booking " +
+        "instead — it accepts a single date.",
+    };
   }
 
   // 2. Validate stay
@@ -1040,7 +1046,273 @@ export async function createDraftBooking(
     total: await formatPrice(totalUsd, sessionId),
   };
 }
+// ═══════════════════════════════════════════════════════════════════
+// SERVICE BOOKINGS — standalone, no stay required
+// ═══════════════════════════════════════════════════════════════════
+//
+// Use this for one-off services where the customer is NOT booking a stay:
+// MamaCare, private chefs (session mode), standalone experiences, base errands.
+//
+// Unlike createDraftBooking, this accepts a single `date` (check_in and
+// check_out are the same day) and prices the service from its own row.
 
+export async function createServiceBooking(
+  args: {
+    customer_name: string;
+    customer_email: string;
+    customer_phone: string;
+    service_id: string;
+    date: string;
+    mode: string;
+    guests?: number;
+    service_location?: string;
+    service_start_time?: string;
+    service_end_time?: string;
+    service_request_details?: string;
+    mamacare_children?: Array<{ age_band_id: string; count: number }>;
+    mamacare_care_mode?: "hourly_daytime" | "hourly_evening" | "overnight" | "full_day";
+    mamacare_hours?: number;
+    quantity?: number;
+    idempotency_key: string;
+  },
+  sessionId: string,
+) {
+  // 0. Idempotency
+  const existing = await db
+    .select()
+    .from(bookings)
+    .where(eq(bookings.idempotencyKey, args.idempotency_key))
+    .limit(1);
+  if (existing[0]) {
+    return {
+      ok: true,
+      booking_id: existing[0].id,
+      idempotent_replay: true,
+      payment_link: `/bookings?bookingId=${existing[0].id}`,
+      total: await formatPrice(existing[0].totalPrice, sessionId),
+    };
+  }
+
+  // 1. Validate date
+  if (!args.date || !/^\d{4}-\d{2}-\d{2}$/.test(args.date)) {
+    return { ok: false, error: "invalid_date", hint: "Date must be YYYY-MM-DD." };
+  }
+
+  // 2. Look up the service across all tables
+  const [cook] = await db.select().from(cooks).where(eq(cooks.id, args.service_id)).limit(1);
+  const [errand] = await db.select().from(errands).where(eq(errands.id, args.service_id)).limit(1);
+  const [experience] = await db.select().from(experiences).where(eq(experiences.id, args.service_id)).limit(1);
+
+  if (!cook && !errand && !experience) {
+    return { ok: false, error: "service_not_found" };
+  }
+
+  let totalUsd = 0;
+  const serviceAddonSelections: string[] = [];
+
+  // ─── Errand: MamaCare ─────────────────────────────────────────
+  if (errand && args.mode === "errand-childcare") {
+    if (!errand.isPublic || !errand.managerUserId) {
+      return { ok: false, error: "service_not_bookable" };
+    }
+    const pricing = errand.helpMamaPricing;
+    if (!pricing?.enabled) {
+      return { ok: false, error: "mamacare_not_configured" };
+    }
+    const children = args.mamacare_children ?? [];
+    if (!children.length) {
+      return {
+        ok: false,
+        error: "no_children_specified",
+        hint: "Provide mamacare_children with each child's age_band_id and count.",
+      };
+    }
+    const careMode = args.mamacare_care_mode ?? "overnight";
+    const careHours = args.mamacare_hours ?? HELP_MAMA_HOURLY_MINIMUM_HOURS;
+    const isHourly = careMode === "hourly_daytime" || careMode === "hourly_evening";
+    if (isHourly && careHours < HELP_MAMA_HOURLY_MINIMUM_HOURS) {
+      return {
+        ok: false,
+        error: "below_minimum_hours",
+        minimum_hours: HELP_MAMA_HOURLY_MINIMUM_HOURS,
+      };
+    }
+
+    const bands = pricing.ageBands ?? [];
+    for (const child of children) {
+      const band = bands.find((b: any) => b.id === child.age_band_id);
+      if (!band) {
+        return {
+          ok: false,
+          error: "age_band_not_found",
+          age_band_id: child.age_band_id,
+          available_bands: bands.map((b: any) => ({ id: b.id, label: b.label })),
+        };
+      }
+      const rate = {
+        hourly_daytime: band.hourlyDaytimePrice,
+        hourly_evening: band.hourlyEveningPrice,
+        overnight: band.overnightPrice,
+        full_day: band.fullDayPrice,
+      }[careMode];
+      if (!rate) {
+        return {
+          ok: false,
+          error: "rate_not_configured",
+          age_band_id: child.age_band_id,
+          mode: careMode,
+        };
+      }
+      const qty = isHourly ? Math.max(HELP_MAMA_HOURLY_MINIMUM_HOURS, careHours) : 1;
+      totalUsd += rate * child.count * qty;
+      serviceAddonSelections.push(band.id);
+    }
+
+    const rateIdMap: Record<string, string> = {
+      hourly_daytime: "help-mama-hourly-daytime",
+      hourly_evening: "help-mama-hourly-evening",
+      overnight: "help-mama-overnight",
+      full_day: "help-mama-full-day",
+    };
+    serviceAddonSelections.push(rateIdMap[careMode]);
+  }
+  // ─── Errand: base ─────────────────────────────────────────────
+  else if (errand && args.mode === "errand-base") {
+    if (!errand.isPublic || !errand.managerUserId) {
+      return { ok: false, error: "service_not_bookable" };
+    }
+    totalUsd = errand.basePrice * (args.quantity ?? 1);
+  }
+  // ─── Errand: other modes → ops ────────────────────────────────
+  else if (errand) {
+    return {
+      ok: false,
+      error: "requires_manual_quote",
+      reason: `${args.mode} bookings need details the team will confirm. Route to ops.`,
+    };
+  }
+  // ─── Cook ─────────────────────────────────────────────────────
+  else if (cook) {
+    if (!cook.isPublic || !cook.managerUserId) {
+      return { ok: false, error: "service_not_bookable" };
+    }
+    if (args.mode === "cook-service-fee") {
+      const sessionRate = cook.serviceFee || cook.pricePerSession;
+      if (!sessionRate) return { ok: false, error: "no_pricing_configured" };
+      totalUsd = sessionRate * (args.quantity ?? 1);
+    } else if (args.mode === "cook-inclusive") {
+      const inclusiveRate = cook.inclusivePrice || cook.serviceFee || cook.pricePerSession;
+      if (!inclusiveRate) return { ok: false, error: "no_pricing_configured" };
+      totalUsd = inclusiveRate * (args.quantity ?? 1);
+    } else {
+      return {
+        ok: false,
+        error: "requires_manual_quote",
+        reason: "This chef booking mode needs a custom quote.",
+      };
+    }
+  }
+  // ─── Experience ───────────────────────────────────────────────
+  else if (experience) {
+    if (!experience.isPublic || !experience.managerUserId) {
+      return { ok: false, error: "service_not_bookable" };
+    }
+    if (args.mode === "experience-private") {
+      totalUsd = experience.privatePricePerPerson * (args.guests ?? 2);
+    } else {
+      return {
+        ok: false,
+        error: "requires_manual_quote",
+        reason: "This experience mode needs a custom quote.",
+      };
+    }
+  }
+
+  if (totalUsd <= 0) {
+    return { ok: false, error: "could_not_price" };
+  }
+
+  // 3. Create the booking
+  const now = new Date().toISOString();
+  const booking = await storage.createBooking({
+    userId: null,
+    accommodationId: null,
+    guestName: args.customer_name,
+    guestEmail: args.customer_email,
+    guestPhone: args.customer_phone,
+    checkIn: args.date,
+    checkOut: args.date,
+    guests: args.guests ?? 1,
+    selectedServices: [args.service_id],
+    serviceMode: args.mode,
+    serviceHours: args.mamacare_hours ?? null,
+    serviceLocation: args.service_location ?? null,
+    servicePickupLocation: null,
+    serviceReturnLocation: null,
+    serviceZone: null,
+    serviceStartTime: args.service_start_time ?? null,
+    serviceEndTime: args.service_end_time ?? null,
+    serviceBudgetAmount: null,
+    serviceLaundryWeightKg: null,
+    serviceAddonSelections,
+    serviceScheduleSlots: [],
+    serviceDepartureId: null,
+    serviceRequestFee: null,
+    serviceRequestDetails: args.service_request_details ?? null,
+    serviceResponseMessage: null,
+    serviceRequestFeeKes: null,
+    stayServiceSelections: [],
+    customMenuProposalStatus: "pending",
+    customMenuProposedAmount: null,
+    customMenuProposalMessage: null,
+    customMenuDeclineReason: null,
+    customMenuClientDecision: "pending",
+    customMenuClientRespondedAt: null,
+    customMenuCreditCode: null,
+    customMenuCreditAmount: null,
+    customMenuReviewedByUserId: null,
+    customMenuReviewedAt: null,
+    experienceCustomOfferStatus: "pending",
+    experienceCustomOfferAmount: null,
+    experienceCustomOfferMessage: null,
+    experienceCustomOfferDeclineReason: null,
+    experienceCustomOfferClientDecision: "pending",
+    experienceCustomOfferClientRespondedAt: null,
+    experienceCustomOfferReviewedByUserId: null,
+    experienceCustomOfferReviewedAt: null,
+    providerStatusRequest: null,
+    providerStatusRequestNote: null,
+    providerStatusRequestedByUserId: null,
+    providerStatusRequestedAt: null,
+    providerStatusReviewedByUserId: null,
+    providerStatusReviewedAt: null,
+    paymentStatus: "pending",
+    paymentProvider: null,
+    paymentReference: null,
+    paymentSessionId: null,
+    paymentCurrency: "USD",
+    paymentAmount: null,
+    paymentCheckoutAmount: null,
+    paymentDepositAmount: null,
+    paymentAmountPaid: 0,
+    paymentHoldExpiresAt: null,
+    paidAt: null,
+    paymentFailedAt: null,
+    totalPrice: Math.round(totalUsd),
+    status: "upcoming",
+    bookingType: "service",
+    createdAt: now,
+    idempotencyKey: args.idempotency_key,
+  } as any);
+
+  return {
+    ok: true,
+    booking_id: booking.id,
+    payment_link: `/bookings?bookingId=${booking.id}`,
+    status: "draft",
+    total: await formatPrice(totalUsd, sessionId),
+  };
+}
 // ═══════════════════════════════════════════════════════════════════
 // CUSTOM OFFERS
 // ═══════════════════════════════════════════════════════════════════
