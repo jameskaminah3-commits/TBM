@@ -32,6 +32,7 @@ import {
   calculateMamaCarePrice,
   composeTripPackage,
   createDraftBooking,
+  createServiceBooking,
   createCustomOffer,
   createLead,
   escalateToHuman,
@@ -179,7 +180,49 @@ When a customer mentions they already have a stay arranged, acknowledge
 that first, then offer complementary services. One offer, warmly.
 The 12% stay+chef bundle discount applies whether the stay was booked
 with TBM or not — mention it if a chef is relevant.
+═══════════════════════════════════════════════════════════════════════
+BOOKING TOOLS — which one to call
+═══════════════════════════════════════════════════════════════════════
 
+You have two booking tools. Choosing correctly matters.
+
+• create_draft_booking
+    Use when the customer is booking a STAY (a villa, apartment, etc.)
+    — with or without add-on services. Requires a stay_id and a real
+    check-in/check-out range (check-out must be after check-in).
+
+• create_service_booking
+    Use when the customer is booking a ONE-OFF SERVICE without a stay:
+    MamaCare (childcare), a private chef session, a standalone
+    experience, or a base errand. Takes a SINGLE date (not a range).
+
+Common mistake to avoid: trying to book MamaCare with create_draft_booking.
+MamaCare is a service, not a stay — always use create_service_booking,
+with mamacare_children, mamacare_care_mode, and (for hourly modes)
+mamacare_hours.
+
+If create_draft_booking returns error "invalid_dates", it means the booking
+is a same-day service — switch to create_service_booking.
+
+Example — MamaCare overnight booking:
+
+  Customer: "2 kids, ages 5 and 2, October 20, 6pm to 6am"
+  You call create_service_booking with:
+    service_id: <the MamaCare errand id you found earlier>
+    date: "2026-10-20"
+    mode: "errand-childcare"
+    mamacare_care_mode: "overnight"
+    mamacare_children: [
+      { age_band_id: "help-mama-toddler", count: 1 },
+      { age_band_id: "help-mama-child", count: 1 }
+    ]
+    service_start_time: "18:00"
+    service_end_time: "06:00"
+    service_location: "Nyali 5th Avenue"
+    customer_name / email / phone from the conversation
+    idempotency_key: <new UUID v4>
+
+═══════════════════════════════════════════════════════════════════════
 ═══════════════════════════════════════════════════════════════════════
 CUSTOM OFFERS — decision tree
 ═══════════════════════════════════════════════════════════════════════
@@ -534,6 +577,94 @@ const toolDeclarations = [
           },
           required: ["reason"],
         },
+              {
+        name: "create_service_booking",
+        description:
+          "Create a draft booking for a ONE-OFF SERVICE where the customer is " +
+          "NOT booking a stay. Use this for MamaCare/childcare, private chefs " +
+          "(session mode), standalone experiences, or base errands. " +
+          "Takes a single date (not check-in/check-out). The server calculates " +
+          "the total — never pass a price.",
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            customer_name: { type: Type.STRING },
+            customer_email: { type: Type.STRING },
+            customer_phone: { type: Type.STRING },
+            service_id: {
+              type: Type.STRING,
+              description: "The ID of the errand, cook, or experience being booked.",
+            },
+            date: {
+              type: Type.STRING,
+              description: "ISO date for the service, e.g. 2026-10-20.",
+            },
+            mode: {
+              type: Type.STRING,
+              description:
+                "Service mode. For MamaCare use 'errand-childcare'. " +
+                "For chefs: 'cook-service-fee' or 'cook-inclusive'. " +
+                "For base errands: 'errand-base'. " +
+                "For private experiences: 'experience-private'.",
+            },
+            guests: {
+              type: Type.NUMBER,
+              description: "Number of guests (defaults to 1; used for experience-private).",
+            },
+            service_location: { type: Type.STRING },
+            service_start_time: {
+              type: Type.STRING,
+              description: "HH:MM format, e.g. 18:00.",
+            },
+            service_end_time: {
+              type: Type.STRING,
+              description: "HH:MM format, e.g. 06:00.",
+            },
+            service_request_details: { type: Type.STRING },
+            mamacare_children: {
+              type: Type.ARRAY,
+              description: "For MamaCare only. Each entry is one child's age band and count.",
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  age_band_id: {
+                    type: Type.STRING,
+                    description: "The age band id from the errand's helpMamaPricing (e.g. 'help-mama-toddler').",
+                  },
+                  count: { type: Type.NUMBER, description: "How many children in that band." },
+                },
+                required: ["age_band_id", "count"],
+              },
+            },
+            mamacare_care_mode: {
+              type: Type.STRING,
+              enum: ["hourly_daytime", "hourly_evening", "overnight", "full_day"],
+              description: "For MamaCare only. The type of care session.",
+            },
+            mamacare_hours: {
+              type: Type.NUMBER,
+              description: "For hourly MamaCare modes only. Minimum 3 hours.",
+            },
+            quantity: {
+              type: Type.NUMBER,
+              description: "Number of sessions/units (defaults to 1). Used for chef sessions and base errands.",
+            },
+            idempotency_key: {
+              type: Type.STRING,
+              description: "A UUID v4 you generate. Prevents duplicate bookings.",
+            },
+          },
+          required: [
+            "customer_name",
+            "customer_email",
+            "customer_phone",
+            "service_id",
+            "date",
+            "mode",
+            "idempotency_key",
+          ],
+        },
+      },
       },
     ],
   },
@@ -554,7 +685,7 @@ async function executeTool(name: string, args: any, sessionId: string): Promise<
     case "calculate_chef_price":     return calculateChefPrice(args, sessionId);
     case "calculate_mamacare_price": return calculateMamaCarePrice(args, sessionId);
     case "compose_trip_package":     return composeTripPackage(args, sessionId);
-    case "create_draft_booking":     return createDraftBooking(args, sessionId);
+    case "create_service_booking":   return createServiceBooking(args, sessionId);
     case "create_custom_offer":      return createCustomOffer(args, sessionId);
     case "create_lead":              return createLead(args, sessionId);
     case "escalate_to_human":        return escalateToHuman(args, sessionId);
