@@ -2601,7 +2601,41 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getBookingsByUserId(userId: string): Promise<Booking[]> {
-    return (await this.getBookingAnalyticsRows()).filter((booking) => booking.userId === userId);
+    const user = await this.getUser(userId);
+    const email = user?.email?.toLowerCase() ?? null;
+    const emailIsVerified = Boolean(user?.emailVerifiedAt);
+    const allBookings = await this.getBookingAnalyticsRows();
+
+    // Bridge anonymous Zaina bookings into the user's account.
+    //
+    // A booking created through Zaina has userId = null because the chat
+    // session is anonymous. When the customer logs in with the same
+    // *verified* email they gave Zaina, we claim the booking for them by
+    // setting userId. Idempotent — once claimed, the filter at the end
+    // excludes it from future claim attempts.
+    //
+    // The emailVerifiedAt guard enforces the invariant: email is only a
+    // valid identity key when it has been proven by OTP (or by Supabase
+    // for social login).
+    if (email && emailIsVerified) {
+      const orphanIds = allBookings
+        .filter((b) => b.userId === null && b.guestEmail?.toLowerCase() === email)
+        .map((b) => b.id);
+
+      for (const id of orphanIds) {
+        try {
+          await db.update(bookings).set({ userId }).where(eq(bookings.id, id));
+        } catch (err) {
+          console.error(`[BOOKING] Failed to claim orphaned booking ${id}:`, err);
+        }
+      }
+
+      return allBookings
+        .map((b) => (orphanIds.includes(b.id) ? { ...b, userId } : b))
+        .filter((b) => b.userId === userId);
+    }
+
+    return allBookings.filter((booking) => booking.userId === userId);
   }
 
   async getBookingsByAccommodationId(accommodationId: string): Promise<Booking[]> {
