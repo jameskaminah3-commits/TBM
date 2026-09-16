@@ -394,9 +394,9 @@ export const bookings = pgTable("bookings", {
   paymentDepositAmount: integer("payment_deposit_amount"),
   paymentAmountPaid: integer("payment_amount_paid").notNull().default(0),
   paymentHoldExpiresAt: text("payment_hold_expires_at"),
-  paidAt: text("paid_at"),
+    paidAt: text("paid_at"),
   paymentFailedAt: text("payment_failed_at"),
-export const insertBookingSchema = createInsertSchema(bookings).omit({
+  totalPrice: integer("total_price").notNull(),
   status: text("status").notNull().default("upcoming"),
   idempotencyKey: varchar("idempotency_key"),
   createdAt: text("created_at").notNull(),
