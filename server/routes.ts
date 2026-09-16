@@ -91,6 +91,7 @@ import {
 } from "@shared/booking-payments";
 import { z } from "zod";
 import { sanitizeUserRecord } from "./user-sanitizer";
+import { registerZainaRoutes } from "./zaina/routes";
 import { getUsdToKesRate } from "./currency";
 
 function normalizeDateOnly(value: string) {
@@ -2384,6 +2385,7 @@ async function buildSitemapXml() {
 export async function registerRoutes(app: Express): Promise<Server> {
   setupAuth(app);
   registerAuthRoutes(app);
+  registerZainaRoutes(app);
 
   app.get("/robots.txt", (_req, res) => {
     const baseUrl = getPublicSiteBaseUrl();
