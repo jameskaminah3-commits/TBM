@@ -8,6 +8,13 @@
 //   3. Run the agentic loop: model → tool call(s) → tool results → model.
 //   4. Log every user message, tool call, and assistant reply.
 //   5. Fail safe: any error flips the session to HUMAN and alerts ops.
+//
+// GEMINI 3.X NOTE:
+//   The API attaches a thoughtSignature to every functionCall part. It must
+//   be echoed back verbatim in the follow-up turn. We therefore push the
+//   raw `candidate.content` back into the conversation rather than
+//   reconstructing it from the normalized `functionCalls` accessor (which
+//   drops the signature).
 
 import { GoogleGenAI, Type } from "@google/genai";
 import { db } from "../db";
@@ -79,6 +86,29 @@ VOICE
 - Never repeat the customer's question back to them.
 - Never apologize three times. Offer the next step instead.
 - Do not dump 20 options when 3 well-chosen ones would be better.
+
+═══════════════════════════════════════════════════════════════════════
+MATCH FIRST, EXPLAIN SECOND — the most important behavioral rule
+═══════════════════════════════════════════════════════════════════════
+
+If the customer has already told you what they want, ASK FOR WHAT YOU NEED
+TO HELP THEM. Do not open with a service description. Do not open with a
+fee disclosure. Do not recite policy.
+
+Example — customer clicks "Verify a listing I found":
+
+  ✗ Brochure opening (avoid this):
+    "We'd love to help you verify that listing — on-the-ground property
+     verification is one of our signature services..."
+
+  ✓ Helping opening (use this):
+    "Karibu 😊 Send me the listing link and I'll take a look. I can check
+     whether it matches what's being advertised and flag anything that
+     might need closer verification."
+
+Same for every other service. When the customer's intent is already clear,
+the first reply is a question that moves the conversation forward, not a
+paragraph that explains what TBM does.
 
 ═══════════════════════════════════════════════════════════════════════
 LEAD QUALIFICATION — read the room
@@ -157,7 +187,7 @@ CUSTOM OFFERS — decision tree
 Whenever a customer asks for something outside TBM's listed inventory,
 never say "we can't help". Offer the custom offer pathway.
 
-MATCH FIRST, EXPLAIN SECOND — this is the most important rule here.
+MATCH FIRST, EXPLAIN SECOND.
 If the customer has already told you what they want (for example they
 clicked "Verify a listing I found"), open by asking for what you need
 to help them. Do NOT open with a service description. Do NOT open with
@@ -563,6 +593,7 @@ export async function handleZainaMessage(
   sessionId: string,
   message: string,
 ): Promise<ZainaReply> {
+  // 1. State gate
   const [session] = await db
     .select({ managedBy: chatSessions.managedBy })
     .from(chatSessions)
@@ -576,6 +607,7 @@ export async function handleZainaMessage(
     return { status: "ignored", reason: "Session currently managed by a human agent." };
   }
 
+  // 2. Load recent history
   const historyRows = await db
     .select({
       actor: zainaAuditLogs.actor,
@@ -601,12 +633,14 @@ export async function handleZainaMessage(
     ];
   });
 
+  // 3. Log raw user message
   await db.insert(zainaAuditLogs).values({
     sessionId,
     actor: "USER",
     messageContent: message,
   });
 
+  // 4. Agentic loop
   const contents: any[] = [...history, { role: "user", parts: [{ text: message }] }];
   let finalText: string | null = null;
 
@@ -621,19 +655,25 @@ export async function handleZainaMessage(
         },
       });
 
-      const calls = response.functionCalls ?? [];
-      if (calls.length === 0) {
+      // Gemini 3.x attaches a thoughtSignature to every functionCall part.
+      // The API rejects any follow-up request that omits it. So we echo the
+      // model's raw content back verbatim instead of rebuilding the parts
+      // from the normalized functionCalls accessor, which drops the signature.
+      const candidate = response.candidates?.[0];
+      const modelContent = candidate?.content;
+      const rawParts = modelContent?.parts ?? [];
+      const functionCallParts = rawParts.filter((p: any) => p.functionCall);
+
+      if (functionCallParts.length === 0) {
         finalText = response.text ?? "";
         break;
       }
 
-      contents.push({
-        role: "model",
-        parts: calls.map((c: any) => ({ functionCall: c })),
-      });
+      contents.push(modelContent);
 
       const toolParts: any[] = [];
-      for (const call of calls) {
+      for (const part of functionCallParts) {
+        const call = part.functionCall;
         let toolResponseData: any;
         try {
           toolResponseData = await executeTool(call.name, call.args, sessionId);
