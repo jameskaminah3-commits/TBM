@@ -31,7 +31,7 @@ import {
 } from "./tools";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-const MODEL = "gemini-2.5-flash";
+const MODEL = "gemini-3.6-flash";
 const MAX_TOOL_ROUNDS = 4;
 const HISTORY_TURNS = 20;
 
