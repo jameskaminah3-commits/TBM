@@ -14,6 +14,7 @@ import { TembeaLoader } from "@/components/tembea-loader";
 import { CurrencyProvider } from "@/lib/currency";
 import { ConciergeSearchProvider, getSectionFromPath } from "@/lib/concierge-search";
 import { ZainaWidget } from "@/components/ZainaWidget";
+import { AdminZainaBubble } from "@/components/admin-zaina-bubble";
 import { useRouteMediaReady } from "@/hooks/use-route-media-ready";
 import { NavSheetProvider } from "@/hooks/use-nav-sheet";
 const Home = lazy(() => import("@/pages/home"));
@@ -206,8 +207,9 @@ function AppShell() {
           ) : null}
       </div>
       {shouldShowSiteChrome ? <MobileTabBar /> : null}
-            {shouldShowSiteChrome && !isBookingRoute ? <ChatConcierge /> : null}
+      {shouldShowSiteChrome && !isBookingRoute ? <ChatConcierge /> : null}
       {shouldShowSiteChrome ? <ZainaWidget /> : null}
+      {isAdminRoute ? <AdminZainaBubble /> : null}
       <Toaster />
     </TooltipProvider>
       </NavSheetProvider>
