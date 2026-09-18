@@ -15,10 +15,12 @@ import { storage } from "../storage";
 import {
   bookings, stays, cooks, cars, errands, experiences,
   aiLeads, chatSessions, customOffers,
+  users, userPushDevices,
 } from "@shared/schema";
 import { and, eq, ne, lt, gt, gte, lte, sql, isNotNull } from "drizzle-orm";
 import { getUsdToKesRate } from "../currency";
 import { HELP_MAMA_HOURLY_MINIMUM_HOURS } from "@shared/errand-pricing";
+import { sendWebPushNotification } from "../push";
 
 // ═══════════════════════════════════════════════════════════════════
 // HELPERS — currency, dates, notifications
@@ -1468,11 +1470,8 @@ export async function escalateToHuman(args: { reason: string }, sessionId: strin
     summary: `Handoff requested: ${args.reason}`,
     details: { Reason: args.reason },
   });
-  // ─── Notify all admins via push (fire-and-forget) ────────────
+   // ─── Notify all admins via push (fire-and-forget) ────────────
   try {
-    const { users, userPushDevices } = await import("@shared/schema");
-    const { sendWebPushNotification } = await import("../push");
-
     const admins = await db
       .select({ id: users.id })
       .from(users)
