@@ -40,7 +40,7 @@ import {
 } from "./tools";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-const MODEL = "gemini-3.6-flash";
+const MODEL = "gemini-3.5-flash-lite";
 const MAX_TOOL_ROUNDS = 4;
 const HISTORY_TURNS = 20;
 
