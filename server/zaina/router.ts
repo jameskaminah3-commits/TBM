@@ -731,14 +731,25 @@ export async function handleZainaMessage(
     .where(eq(chatSessions.id, sessionId))
     .limit(1);
 
-  if (!session) {
+   if (!session) {
     return { status: "error", error: "session_not_found", message: "Session not found." };
   }
+
+  // 2. Log the raw user message first — even if a human is handling it.
+  //    The admin panel reads from this same log so the agent can see what
+  //    the customer just typed.
+  await db.insert(zainaAuditLogs).values({
+    sessionId,
+    actor: "USER",
+    messageContent: message,
+  });
+
+  // 3. State gate
   if (session.managedBy !== "AI") {
     return { status: "ignored", reason: "Session currently managed by a human agent." };
   }
 
-  // 2. Load recent history
+  // 4. Load recent history
   const historyRows = await db
     .select({
       actor: zainaAuditLogs.actor,
@@ -764,14 +775,7 @@ export async function handleZainaMessage(
     ];
   });
 
-  // 3. Log raw user message
-  await db.insert(zainaAuditLogs).values({
-    sessionId,
-    actor: "USER",
-    messageContent: message,
-  });
-
-  // 4. Agentic loop
+  // 5. Agentic loop
   const contents: any[] = [...history, { role: "user", parts: [{ text: message }] }];
   let finalText: string | null = null;
   let escalated = false;
