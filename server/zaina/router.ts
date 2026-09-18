@@ -16,6 +16,7 @@
 //   reconstructing it from the normalized `functionCalls` accessor (which
 //   drops the signature).
 
+import { sendOpsAlertEmail } from "../notifications";
 import { GoogleGenAI, Type } from "@google/genai";
 import { db } from "../db";
 import { chatSessions, zainaAuditLogs } from "@shared/schema";
@@ -924,15 +925,12 @@ export async function handleZainaMessage(
 
     if (claimed.length > 0) {
       try {
-        const mod: any = await import("../notifications");
-        if (typeof mod.sendOpsAlertEmail === "function") {
-          await mod.sendOpsAlertEmail({
-            kind: "system-error",
-            sessionId,
-            summary: `Zaina system error: ${err.message}`,
-            details: { Error: err.message },
-          });
-        }
+        await sendOpsAlertEmail({
+          kind: "system-error",
+          sessionId,
+          summary: `Zaina system error: ${err.message}`,
+          details: { Error: err.message },
+        });
       } catch (alertErr) {
         console.error("[zaina] fail-safe alert failed:", alertErr);
       }
