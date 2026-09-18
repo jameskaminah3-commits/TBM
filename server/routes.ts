@@ -92,6 +92,7 @@ import {
 import { z } from "zod";
 import { sanitizeUserRecord } from "./user-sanitizer";
 import { registerZainaRoutes } from "./zaina/routes";
+import { registerZainaAgentRoutes } from "./zaina/agent-routes";
 import { getUsdToKesRate } from "./currency";
 
 function normalizeDateOnly(value: string) {
@@ -2386,6 +2387,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   setupAuth(app);
   registerAuthRoutes(app);
   registerZainaRoutes(app);
+  registerZainaAgentRoutes(app);
 
   app.get("/robots.txt", (_req, res) => {
     const baseUrl = getPublicSiteBaseUrl();
