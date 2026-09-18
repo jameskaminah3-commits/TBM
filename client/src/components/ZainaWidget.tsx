@@ -223,7 +223,61 @@ export function ZainaWidget() {
       setTimeout(() => inputRef.current?.focus(), 200);
     }
   }, [open, widgetState]);
+  // ─── Poll for agent messages when session is handed off ──────
+  useEffect(() => {
+    if (widgetState !== "handed_off" || !open) return;
 
+    const sessionId = localStorage.getItem(SESSION_KEY);
+    if (!sessionId) return;
+
+    let cancelled = false;
+
+    async function fetchNewMessages() {
+      try {
+        const res = await fetch(`/api/admin/zaina/sessions/${sessionId}`);
+        // This is an admin endpoint — the widget can't call it.
+        // Instead we use the public /messages endpoint below.
+      } catch {
+        // ignore
+      }
+    }
+
+    async function tick() {
+      if (cancelled) return;
+      try {
+        const res = await fetch(`/api/zaina/session/${sessionId}/messages`);
+        if (res.ok) {
+          const data = await res.json();
+          const incoming: Msg[] = (data.messages ?? [])
+            .filter((m: any) => m.actor === "AGENT")
+            .map((m: any) => ({ role: "assistant" as const, content: m.messageContent }));
+
+          if (incoming.length > 0) {
+            setMsgs((current) => {
+              // Only append agent messages we don't already have
+              const existing = new Set(current.map((m) => m.content));
+              const toAdd = incoming.filter((m) => !existing.has(m.content));
+              if (toAdd.length === 0) return current;
+              setSpeakingPulse((n) => n + 1);
+              return [...current, ...toAdd];
+            });
+          }
+        }
+      } catch {
+        // transient network issue — next tick will retry
+      }
+    }
+
+    const interval = setInterval(tick, 4000);
+    tick(); // fire immediately
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [widgetState, open]);
+
+  // ─── Avatar state driver ─────────────────────────────────────
   // ─── Avatar state driver ─────────────────────────────────────
   useEffect(() => {
     if (busy) {
@@ -358,8 +412,11 @@ export function ZainaWidget() {
 
       // Session is already in human mode (subsequent messages after handoff).
       if (data.status === "human_managed") {
+        // Session is in HUMAN mode. The user's message was already logged
+        // by the backend (router.ts logs it before the state gate), so the
+        // agent will see it. Don't add another handoff message — that
+        // would be noisy every time the customer sends something.
         setWidgetState("handed_off");
-        setMsgs((m) => [...m, { role: "assistant", content: HANDOFF_COPY }]);
         setBusy(false);
         return;
       }
@@ -622,18 +679,44 @@ export function ZainaWidget() {
 
           {/* Input or handed-off notice */}
           {widgetState === "handed_off" ? (
-            <div className="border-t border-gray-200 bg-gray-50 px-4 py-3">
-              <p className="mb-2 text-center text-xs text-gray-600">
-                A team member is now handling this conversation.
-              </p>
-              <a
-                href={buildWhatsAppHandoffUrl(msgs)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-800"
-              >
-                Continue on WhatsApp →
-              </a>
+            <div className="border-t border-gray-200 bg-white">
+              <div className="flex items-center gap-2 px-4 pt-2 text-[11px] text-emerald-700">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                Team member is replying here
+              </div>
+              <div className="flex items-center gap-2 p-3 pt-1">
+                <input
+                  ref={inputRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSend();
+                    }
+                  }}
+                  placeholder="Reply to the team…"
+                  disabled={busy}
+                  className="flex-1 border-none px-2 py-2 text-sm outline-none disabled:opacity-50"
+                />
+                <button
+                  onClick={handleSend}
+                  disabled={busy || !input.trim()}
+                  className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-800 disabled:opacity-50"
+                >
+                  Send
+                </button>
+              </div>
+              <div className="border-t border-gray-100 px-4 py-2">
+                <a
+                  href={buildWhatsAppHandoffUrl(msgs)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-emerald-700 underline hover:text-emerald-800"
+                >
+                  Prefer WhatsApp? Continue there →
+                </a>
+              </div>
             </div>
           ) : (
             <div className="flex items-center gap-2 border-t border-gray-200 bg-white p-3">
