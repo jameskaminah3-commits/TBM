@@ -170,7 +170,11 @@ export function registerZainaRoutes(app: Express): void {
       const result = await handleZainaMessage(sessionId, message);
 
       if (result.status === "ok") {
-        res.json({ reply: result.reply, status: "ok" });
+        res.json({
+          reply: result.reply,
+          status: "ok",
+          escalated: result.escalated === true,
+        });
         return;
       }
 
