@@ -81,7 +81,7 @@ export function registerZainaRoutes(app: Express): void {
   app.get("/api/zaina/health", (_req: Request, res: Response) => {
        res.json({
       enabled: ZAINA_ENABLED,
-      model: "gemini-3.6-flash",
+      model: "gemini-3.5-flash-lite",
       timestamp: new Date().toISOString(),
     });
   });
