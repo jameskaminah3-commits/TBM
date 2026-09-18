@@ -782,14 +782,62 @@ export async function handleZainaMessage(
 
   try {
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      const response = await ai.models.generateContent({
-        model: MODEL,
-        contents,
-        config: {
-          systemInstruction: SYSTEM_PROMPT,
-          tools: toolDeclarations,
-        },
-      });
+      // Retry transient provider errors (503 high demand, 429 rate limit,
+      // 500 internal). These are the LLM equivalent of a busy signal —
+      // retrying usually succeeds within a few seconds. Escalating to a
+      // human on a 503 is wrong: it burns ops time and locks a session
+      // over a hiccup.
+      let response: any = null;
+      let lastError: any = null;
+      const MAX_ATTEMPTS = 3;
+
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        try {
+          response = await ai.models.generateContent({
+            model: MODEL,
+            contents,
+            config: {
+              systemInstruction: SYSTEM_PROMPT,
+              tools: toolDeclarations,
+            },
+          });
+          lastError = null;
+          break;
+        } catch (err: any) {
+          lastError = err;
+
+          // Extract the HTTP status from the SDK error. The shape varies
+          // between error types, so we check a few common locations.
+          const status =
+            err?.status ??
+            err?.code ??
+            err?.error?.code ??
+            err?.response?.status;
+
+          const isTransient =
+            status === 503 ||
+            status === 429 ||
+            status === 500 ||
+            status === 502 ||
+            status === 504;
+
+          if (!isTransient || attempt === MAX_ATTEMPTS - 1) {
+            throw err;
+          }
+
+          // Exponential backoff: 1s, 2s. Long enough to ride out a
+          // spike, short enough that the customer barely notices.
+          const delayMs = 1000 * Math.pow(2, attempt);
+          console.warn(
+            `[zaina] transient model error (status ${status}), retrying in ${delayMs}ms (attempt ${attempt + 1}/${MAX_ATTEMPTS})`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+        }
+      }
+
+      if (!response) {
+        throw lastError ?? new Error("Model call failed after retries");
+      }
 
       // Gemini 3.x attaches a thoughtSignature to every functionCall part.
       // The API rejects any follow-up request that omits it. So we echo the
@@ -893,7 +941,8 @@ export async function handleZainaMessage(
     return {
       status: "error",
       error: "routing_failure",
-      message: "Handing context over to a human assistant.",
+      message:
+        "I'm having trouble reaching our systems right now — give me a moment and try again, or reach us on WhatsApp if it's urgent.",
     };
   }
 }
