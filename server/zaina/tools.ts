@@ -11,6 +11,7 @@
 //   6. Notifications to ops are best-effort. If they fail, they log — the tool still returns.
 
 import { db } from "../db";
+import { sendOpsAlertEmail } from "../notifications";
 import { storage } from "../storage";
 import {
   bookings, stays, cooks, cars, errands, experiences,
@@ -74,10 +75,7 @@ async function sendOpsAlert(payload: {
   customerContact?: string | null;
 }): Promise<void> {
   try {
-    const mod: any = await import("../notifications");
-    if (typeof mod.sendOpsAlertEmail === "function") {
-      await mod.sendOpsAlertEmail(payload);
-    }
+    await sendOpsAlertEmail(payload);
   } catch (err) {
     console.error("[zaina] ops alert failed:", err);
   }
