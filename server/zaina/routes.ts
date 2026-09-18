@@ -16,6 +16,8 @@ import type { Express, Request, Response } from "express";
 import { db } from "../db";
 import { chatSessions } from "@shared/schema";
 import { eq } from "drizzle-orm";
+import { chatSessions, zainaAuditLogs } from "@shared/schema";
+import { and, asc, eq } from "drizzle-orm";
 import { handleZainaMessage } from "./router";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -232,6 +234,44 @@ export function registerZainaRoutes(app: Express): void {
     } catch (error) {
       console.error("[zaina] session status failed:", error);
       res.status(500).json({ error: "Failed to fetch session." });
+    }
+  });
+    // ─── Session messages (customer-facing) ───────────────────────
+  // Used by the widget to poll for agent replies after handoff.
+  // Only returns messages from AGENT actors so the customer's own
+  // message log stays clean.
+  app.get("/api/zaina/session/:id/messages", async (req: Request, res: Response) => {
+    try {
+      const [session] = await db
+        .select()
+        .from(chatSessions)
+        .where(eq(chatSessions.id, req.params.id))
+        .limit(1);
+
+      if (!session) {
+        res.status(404).json({ error: "Session not found." });
+        return;
+      }
+
+      const rows = await db
+        .select({
+          actor: zainaAuditLogs.actor,
+          messageContent: zainaAuditLogs.messageContent,
+          timestamp: zainaAuditLogs.timestamp,
+        })
+        .from(zainaAuditLogs)
+        .where(
+          and(
+            eq(zainaAuditLogs.sessionId, req.params.id),
+            eq(zainaAuditLogs.actor, "AGENT"),
+          ),
+        )
+        .orderBy(asc(zainaAuditLogs.timestamp));
+
+      res.json({ messages: rows });
+    } catch (error) {
+      console.error("[zaina] session messages failed:", error);
+      res.status(500).json({ error: "Failed to load messages." });
     }
   });
 }
