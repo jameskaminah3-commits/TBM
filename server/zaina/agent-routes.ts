@@ -8,7 +8,7 @@
 import type { Express, Request, Response } from "express";
 import { db } from "../db";
 import { chatSessions, zainaAuditLogs } from "@shared/schema";
-import { and, asc, desc, eq, inArray, ne } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, isNull, ne } from "drizzle-orm";
 import { requireAdmin } from "../middleware/auth";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -19,9 +19,9 @@ export function registerZainaAgentRoutes(app: Express): void {
   // ─── List sessions ──────────────────────────────────────────────
   // Query: ?filter=waiting | active | all  (default: waiting)
   //
-  //   waiting → managed_by = 'HUMAN' AND assigned_agent_id IS NULL
-  //   active  → managed_by = 'HUMAN' AND assigned_agent_id IS NOT NULL
-  //   all     → any HANDLED session (HUMAN or CLOSED)
+  //   waiting → managed_by != 'AI' AND assigned_agent_id IS NULL
+  //   active  → managed_by != 'AI' AND assigned_agent_id IS NOT NULL
+  //   all     → any non-AI session
   app.get(
     "/api/admin/zaina/sessions",
     requireAdmin,
@@ -29,25 +29,25 @@ export function registerZainaAgentRoutes(app: Express): void {
       try {
         const filter = String(req.query.filter ?? "waiting");
 
-        const baseConditions = [ne(chatSessions.managedBy, "AI")];
+        // Base: session has been pulled out of AI mode.
+        const conditions = [ne(chatSessions.managedBy, "AI")];
 
+        // SQL gotcha: `column = NULL` is never true — must use IS NULL / IS NOT NULL.
         if (filter === "waiting") {
-          baseConditions.push(eq(chatSessions.assignedAgentId, null as any));
+          conditions.push(isNull(chatSessions.assignedAgentId));
         } else if (filter === "active") {
-          // assignedAgentId is not null
-          baseConditions.push(
-            require("drizzle-orm").isNotNull(chatSessions.assignedAgentId),
-          );
+          conditions.push(isNotNull(chatSessions.assignedAgentId));
         }
+        // 'all' → no extra filter
 
         const rows = await db
           .select()
           .from(chatSessions)
-          .where(and(...baseConditions))
+          .where(and(...conditions))
           .orderBy(desc(chatSessions.updatedAt))
           .limit(100);
 
-        // Last message preview for each session (one query per row is fine at this scale)
+        // Last message preview for each session
         const withPreviews = await Promise.all(
           rows.map(async (row) => {
             const [last] = await db
@@ -172,8 +172,8 @@ export function registerZainaAgentRoutes(app: Express): void {
           return;
         }
 
-        // Auto-claim if not already claimed by this agent
-        if (!session.assignedAgentId || session.assignedAgentId === null) {
+        // Auto-claim if not already claimed
+        if (!session.assignedAgentId) {
           await db
             .update(chatSessions)
             .set({
