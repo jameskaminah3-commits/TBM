@@ -411,12 +411,25 @@ export function ZainaWidget() {
       const data = await res.json();
 
       // Session is already in human mode (subsequent messages after handoff).
+      // Session was previously handed off to a human — keep it that way.
       if (data.status === "human_managed") {
-        // Session is in HUMAN mode. The user's message was already logged
-        // by the backend (router.ts logs it before the state gate), so the
-        // agent will see it. Don't add another handoff message — that
-        // would be noisy every time the customer sends something.
         setWidgetState("handed_off");
+        setBusy(false);
+        return;
+      }
+
+      // Transient backend error — do NOT lock the widget. Let the
+      // customer try again without losing the session.
+      if (res.status === 500 && data.error === "routing_failure") {
+        setMsgs((m) => [
+          ...m,
+          {
+            role: "assistant",
+            content:
+              data.message ??
+              "I'm having trouble reaching our systems — give me a moment and try again.",
+          },
+        ]);
         setBusy(false);
         return;
       }
