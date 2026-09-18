@@ -225,4 +225,28 @@ export function registerZainaAgentRoutes(app: Express): void {
       }
     },
   );
+    // ─── Pending count (for the admin bubble badge) ─────────────────
+  app.get(
+    "/api/admin/zaina/pending-count",
+    requireAdmin,
+    async (_req: Request, res: Response) => {
+      try {
+        const rows = await db
+          .select({ id: chatSessions.id, updatedAt: chatSessions.updatedAt })
+          .from(chatSessions)
+          .where(
+            and(
+              ne(chatSessions.managedBy, "AI"),
+              ne(chatSessions.managedBy, "CLOSED"),
+              isNull(chatSessions.assignedAgentId),
+            ),
+          );
+
+        res.json({ pending: rows.length });
+      } catch (error) {
+        console.error("[zaina-agent] pending count failed:", error);
+        res.status(500).json({ error: "Failed to count pending sessions." });
+      }
+    },
+  );
 }
