@@ -19,6 +19,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ZainaAvatar } from "./ZainaAvatar";
+import { WHATSAPP_URL } from "@/lib/contact-info";
 
 type Msg = { role: "user" | "assistant"; content: string };
 type Chip = { emoji: string; label: string };
@@ -32,7 +33,11 @@ const TOOLTIP_SEEN_KEY = "zaina_tooltip_seen";
 const CHIP_SELECTION_KEY = "zaina_chip_selection_v2";
 
 // Conversations older than this are abandoned and a fresh session begins.
-const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+// Sessions expire after 8 hours of inactivity. This is a sliding window —
+// every message refreshes the clock. A customer planning a trip across
+// one day keeps their conversation; a customer who comes back tomorrow
+// gets a fresh greeting.
+const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const MAX_RESTORED_MESSAGES = 40;
 
 // ─── Copy ─────────────────────────────────────────────────────────────
@@ -89,6 +94,23 @@ function selectChips(): Chip[] {
   }
 
   return selection;
+}
+function buildWhatsAppHandoffUrl(msgs: Msg[]): string {
+  const userMessages = msgs
+    .filter((m) => m.role === "user")
+    .slice(-4)
+    .map((m) => `• ${m.content}`)
+    .join("\n");
+
+  const summary = [
+    "Hi, I was chatting with Zaina on tembeabilamatata.com and would like to continue here.",
+    "",
+    "What we discussed:",
+    userMessages || "• (no previous messages)",
+  ].join("\n");
+
+  const separator = WHATSAPP_URL.includes("?") ? "&" : "?";
+  return `${WHATSAPP_URL}${separator}text=${encodeURIComponent(summary)}`;
 }
 
 type WidgetState = "loading" | "ready" | "disabled" | "handed_off";
@@ -178,12 +200,18 @@ export function ZainaWidget() {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
   }, [msgs, open]);
 
-  // ─── Persist conversation to localStorage ─────────────────────
+   // ─── Persist conversation to localStorage ─────────────────────
   // Trimmed to the last N messages so we don't grow unbounded.
+  // Also refreshes the activity timestamp — this makes the TTL a
+  // sliding window (8h since last message) rather than a fixed
+  // window from session creation.
   useEffect(() => {
     try {
       const trimmed = msgs.slice(-MAX_RESTORED_MESSAGES);
       localStorage.setItem(SESSION_MSGS_KEY, JSON.stringify(trimmed));
+      if (msgs.length > 1) {
+        localStorage.setItem(SESSION_CREATED_KEY, String(Date.now()));
+      }
     } catch {
       // localStorage can be unavailable in some private-browsing modes
     }
@@ -328,6 +356,7 @@ export function ZainaWidget() {
 
       const data = await res.json();
 
+      // Session is already in human mode (subsequent messages after handoff).
       if (data.status === "human_managed") {
         setWidgetState("handed_off");
         setMsgs((m) => [...m, { role: "assistant", content: HANDOFF_COPY }]);
@@ -342,6 +371,13 @@ export function ZainaWidget() {
 
       setMsgs((m) => [...m, { role: "assistant", content: reply }]);
       setSpeakingPulse((n) => n + 1);
+
+      // Zaina just escalated during this turn — lock the widget into
+      // handed-off mode right away so the customer sees the WhatsApp
+      // handoff option without needing to send another message.
+      if (data.escalated) {
+        setWidgetState("handed_off");
+      }
     } catch {
       setMsgs((m) => [
         ...m,
@@ -490,6 +526,25 @@ export function ZainaWidget() {
                 </div>
               </div>
               <button
+                onClick={() => {
+                  clearLocalSession();
+                  try {
+                    sessionStorage.removeItem(CHIP_SELECTION_KEY);
+                  } catch {
+                    // ignore
+                  }
+                  setMsgs([{ role: "assistant", content: GREETING }]);
+                  setHasUserMessaged(false);
+                  setWidgetState("ready");
+                  setChips(selectChips());
+                }}
+                aria-label="Start a new chat"
+                title="Start a new chat"
+                className="rounded p-1 text-lg leading-none opacity-70 hover:bg-emerald-800 hover:opacity-100"
+              >
+                ↻
+              </button>
+              <button
                 onClick={() => setOpen(false)}
                 aria-label="Close chat"
                 className="rounded p-1 text-xl leading-none opacity-80 hover:bg-emerald-800 hover:opacity-100"
@@ -567,8 +622,18 @@ export function ZainaWidget() {
 
           {/* Input or handed-off notice */}
           {widgetState === "handed_off" ? (
-            <div className="border-t border-gray-200 bg-gray-50 px-4 py-3 text-center text-xs text-gray-600">
-              A team member is now handling this conversation.
+            <div className="border-t border-gray-200 bg-gray-50 px-4 py-3">
+              <p className="mb-2 text-center text-xs text-gray-600">
+                A team member is now handling this conversation.
+              </p>
+              <a
+                href={buildWhatsAppHandoffUrl(msgs)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-800"
+              >
+                Continue on WhatsApp →
+              </a>
             </div>
           ) : (
             <div className="flex items-center gap-2 border-t border-gray-200 bg-white p-3">
