@@ -716,7 +716,7 @@ function maskPII(value: any): any {
 // ═══════════════════════════════════════════════════════════════════
 
 export type ZainaReply =
-  | { status: "ok"; reply: string }
+  | { status: "ok"; reply: string; escalated?: boolean }
   | { status: "ignored"; reason: string }
   | { status: "error"; error: string; message: string };
 
@@ -774,6 +774,7 @@ export async function handleZainaMessage(
   // 4. Agentic loop
   const contents: any[] = [...history, { role: "user", parts: [{ text: message }] }];
   let finalText: string | null = null;
+  let escalated = false;
 
   try {
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -817,6 +818,10 @@ export async function handleZainaMessage(
           };
         }
 
+        if (call.name === "escalate_to_human" && toolResponseData?.status === "escalated") {
+          escalated = true;
+        }
+
         await db.insert(zainaAuditLogs).values({
           sessionId,
           actor: "SYSTEM_TOOL",
@@ -846,7 +851,7 @@ export async function handleZainaMessage(
       messageContent: finalText,
     });
 
-    return { status: "ok", reply: finalText };
+    return { status: "ok", reply: finalText, escalated: escalated || undefined };
   } catch (err: any) {
     const now = new Date().toISOString();
     const claimed = await db
