@@ -435,8 +435,8 @@ export function ZainaWidget() {
 
       {/* Floating tooltip — once per session */}
       {showTooltip && !open && (
-        <div
-          className="zaina-tooltip-enter fixed bottom-44 right-6 z-[9999] max-w-[240px]
+ <div
+          className="zaina-tooltip-enter fixed bottom-60 right-4 sm:bottom-44 sm:right-6 z-[9999] max-w-[240px]
                      rounded-2xl rounded-br-sm bg-white px-4 py-3 text-sm text-gray-800 shadow-xl"
         >
           {TOOLTIP_COPY}
@@ -457,7 +457,7 @@ export function ZainaWidget() {
           setShowTooltip(false);
         }}
         aria-label={open ? "Close Zaina" : "Open Zaina"}
-        className="fixed bottom-24 right-6 z-[9999] flex h-16 w-16 items-center justify-center rounded-full bg-emerald-700 shadow-xl transition-transform hover:scale-105"
+        className="fixed bottom-40 right-4 sm:bottom-24 sm:right-6 z-[9999] flex h-16 w-16 items-center justify-center rounded-full bg-emerald-700 shadow-xl transition-transform hover:scale-105"
       >
         {open ? (
           <span className="text-2xl font-light text-white">✕</span>
