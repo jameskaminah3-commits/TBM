@@ -1468,6 +1468,47 @@ export async function escalateToHuman(args: { reason: string }, sessionId: strin
     summary: `Handoff requested: ${args.reason}`,
     details: { Reason: args.reason },
   });
+  // ─── Notify all admins via push (fire-and-forget) ────────────
+  try {
+    const { users, userPushDevices } = await import("@shared/schema");
+    const { sendWebPushNotification } = await import("../push");
 
+    const admins = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.role, "admin"));
+
+    for (const admin of admins) {
+      const devices = await db
+        .select()
+        .from(userPushDevices)
+        .where(and(eq(userPushDevices.userId, admin.id), eq(userPushDevices.isActive, true)));
+
+      for (const device of devices) {
+        try {
+          await sendWebPushNotification(device.subscription as any, {
+            id: `zaina-handoff-${sessionId}`,
+            userId: admin.id,
+            type: "assignment-created",
+            title: "Zaina handoff — customer waiting",
+            body: `${args.reason.slice(0, 120)}`,
+            actionUrl: "/admin/zaina",
+            priority: "high",
+            channels: ["push"],
+            deliveryState: {},
+            metadata: { sessionId },
+            isRead: false,
+            readAt: null,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          } as any);
+        } catch (pushErr) {
+          console.error(`[zaina] push failed for admin ${admin.id}:`, pushErr);
+        }
+      }
+    }
+  } catch (pushSetupErr) {
+    console.error("[zaina] push fanout failed:", pushSetupErr);
+  }
   return { ok: true, status: "escalated" };
 }
