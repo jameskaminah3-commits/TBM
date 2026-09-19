@@ -307,13 +307,27 @@ export const INVENTORY_CATALOG = {
   },
 
   booking_rules: {
-    min_advance_hours: 24,
+    // Per-service advance windows. Same-day bookings are never allowed via
+    // Zaina; anything landing on today's Kenya date is rejected and the
+    // customer is routed to the team. Beyond that, the rule is:
+    // ceil(advance_hours / 24) days from today.
+    min_advance_hours: {
+      stays: 24,          // Cleaning, linen, key handover
+      cooks: 12,          // Shopping, prep, travel
+      cars: 6,            // Driver assignment, vehicle prep
+      errands: 6,         // Dispatch, coordination
+      mamacare: 6,        // Caregiver availability check
+      experiences: 12,    // Guide booking, logistics
+    },
     deposit_percent: 30,
     maximum_group_size: { stays: 12, experiences: 12, chefs: 20 },
     date_rules: [
-      "Bookings must start at least 24 hours from now.",
-      "Same-day bookings are not possible through Zaina — the customer must contact the team directly.",
-      "Past dates cannot be booked.",
+      "Stays require 24 hours advance notice ( 1 day).",
+      "Cooks and experiences require 12 hours advance notice (1 day).",
+      "Cars, errands, and MamaCare require 6 hours advance notice (1 day minimum on the calendar).",
+      "Same-day bookings are never allowed through Zaina — route to the team.",
+      "Past dates are always rejected.",
+      "All dates are computed in Kenya time (Africa/Nairobi, UTC+3).",
     ],
   },
 
