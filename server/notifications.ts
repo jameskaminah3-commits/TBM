@@ -624,3 +624,139 @@ export async function sendOpsAlertEmail(alert: ZainaOpsAlert): Promise<boolean> 
 
   return await sendEmailMessage({ to: recipients, subject, text, html });
 }
+// ═══════════════════════════════════════════════════════════════════
+// Zaina admin notifications
+// ═══════════════════════════════════════════════════════════════════
+
+export type ZainaTranscriptEntry = {
+  actor: string;
+  text: string;
+  timestamp: string;
+};
+
+function renderTranscriptText(entries: ZainaTranscriptEntry[]): string {
+  return entries
+    .map((e) => {
+      const label =
+        e.actor === "USER" ? "Customer" :
+        e.actor === "ZAINA_REASONING" ? "Zaina" :
+        e.actor === "AGENT" ? "Agent" :
+        e.actor;
+      return `[${e.timestamp}] ${label}: ${e.text}`;
+    })
+    .join("\n\n");
+}
+
+function renderTranscriptHtml(entries: ZainaTranscriptEntry[]): string {
+  return entries
+    .map((e) => {
+      const label =
+        e.actor === "USER" ? "Customer" :
+        e.actor === "ZAINA_REASONING" ? "Zaina" :
+        e.actor === "AGENT" ? "Agent" :
+        e.actor;
+      return `<div style="margin:8px 0;padding:8px 12px;border-radius:8px;background:${e.actor === "USER" ? "#f3f4f6" : "#ecfdf5"};"><strong>${escapeHtml(label)}</strong><br>${escapeHtml(e.text).replace(/\n/g, "<br>")}<br><small style="color:#6b7280;">${escapeHtml(e.timestamp)}</small></div>`;
+    })
+    .join("");
+}
+
+export async function sendZainaConversationStartedEmail(args: {
+  sessionId: string;
+  firstMessage: string;
+  timestamp: string;
+}): Promise<boolean> {
+  const recipients = getNotificationRecipientEmails();
+  if (recipients.length === 0) return false;
+
+  const short = args.sessionId.slice(0, 8);
+  const subject = `[Zaina] New conversation — ${short}`;
+  const adminUrl = `${process.env.APP_BASE_URL?.trim() || "https://tembeabilamatata.com"}/admin/zaina`;
+
+  const text = [
+    "A new conversation with Zaina has started.",
+    "",
+    `Session: ${args.sessionId}`,
+    `Started: ${args.timestamp}`,
+    "",
+    "First message from the customer:",
+    `"${args.firstMessage}"`,
+    "",
+    `Open the admin console: ${adminUrl}`,
+  ].join("\n");
+
+  const html = [
+    '<div style="font-family:Arial,sans-serif;line-height:1.6;color:#0f172a;">',
+    "<h2>New Zaina conversation</h2>",
+    `<p><strong>Session:</strong> ${escapeHtml(args.sessionId)}</p>`,
+    `<p><strong>Started:</strong> ${escapeHtml(args.timestamp)}</p>`,
+    "<p><strong>First message:</strong></p>",
+    `<blockquote style="border-left:3px solid #10b981;padding-left:12px;color:#374151;">${escapeHtml(args.firstMessage)}</blockquote>`,
+    `<p><a href="${escapeHtml(adminUrl)}">Open admin console →</a></p>`,
+    "</div>",
+  ].join("");
+
+  return await sendEmailMessage({ to: recipients, subject, text, html });
+}
+
+export async function sendZainaBookingCreatedEmail(args: {
+  bookingId: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string;
+  kind: "stay" | "service";
+  summary: string;
+  totalDisplay: string;
+  paymentLink: string;
+  sessionId: string;
+  transcript: ZainaTranscriptEntry[];
+}): Promise<boolean> {
+  const recipients = getNotificationRecipientEmails();
+  if (recipients.length === 0) return false;
+
+  const ref = args.bookingId.slice(0, 8).toUpperCase();
+  const adminUrl = `${process.env.APP_BASE_URL?.trim() || "https://tembeabilamatata.com"}/admin/bookings`;
+
+  const subject = `[Zaina] ${args.kind === "stay" ? "Stay" : "Service"} booking — ${ref}`;
+
+  const header = [
+    "A booking was created via Zaina.",
+    "",
+    `Booking reference: ${ref}`,
+    `Booking ID: ${args.bookingId}`,
+    `Type: ${args.kind === "stay" ? "Stay booking" : "Service booking"}`,
+    `Summary: ${args.summary}`,
+    `Total: ${args.totalDisplay}`,
+    "",
+    `Customer: ${args.customerName}`,
+    `Email: ${args.customerEmail}`,
+    `Phone: ${args.customerPhone}`,
+    "",
+    `Payment link sent to customer: ${args.paymentLink}`,
+    `Admin console: ${adminUrl}`,
+    "",
+    "─── FULL TRANSCRIPT ───",
+    "",
+  ].join("\n");
+
+  const text = header + renderTranscriptText(args.transcript);
+
+  const html = [
+    '<div style="font-family:Arial,sans-serif;line-height:1.6;color:#0f172a;">',
+    `<h2>Zaina booking — ${escapeHtml(ref)}</h2>`,
+    "<ul>",
+    `<li><strong>Booking ID:</strong> ${escapeHtml(args.bookingId)}</li>`,
+    `<li><strong>Type:</strong> ${args.kind === "stay" ? "Stay" : "Service"}</li>`,
+    `<li><strong>Summary:</strong> ${escapeHtml(args.summary)}</li>`,
+    `<li><strong>Total:</strong> ${escapeHtml(args.totalDisplay)}</li>`,
+    `<li><strong>Customer:</strong> ${escapeHtml(args.customerName)}</li>`,
+    `<li><strong>Email:</strong> ${escapeHtml(args.customerEmail)}</li>`,
+    `<li><strong>Phone:</strong> ${escapeHtml(args.customerPhone)}</li>`,
+    "</ul>",
+    `<p><a href="${escapeHtml(args.paymentLink)}">Customer payment link</a> · <a href="${escapeHtml(adminUrl)}">Admin console</a></p>`,
+    "<h3>Full transcript</h3>",
+    renderTranscriptHtml(args.transcript),
+    "</div>",
+  ].join("");
+
+  return await sendEmailMessage({ to: recipients, subject, text, html });
+}
