@@ -851,6 +851,10 @@ export async function handleZainaMessage(
   const contents: any[] = [...history, { role: "user", parts: [{ text: message }] }];
   let finalText: string | null = null;
   let escalated = false;
+  // Tracks whether a state-mutating tool (create_*) returned ok: false.
+  // If it did, and the model gave up without escalating itself, we
+  // auto-escalate so the customer always lands with a human.
+  let sawFailedWrite = false;
 
   try {
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -952,6 +956,16 @@ export async function handleZainaMessage(
           escalated = true;
         }
 
+        // Track write-tool failures. If a create_* call fails and the
+        // model gives up gracefully without escalating, we force it.
+        if (
+          call.name.startsWith("create_") &&
+          toolResponseData &&
+          toolResponseData.ok === false
+        ) {
+          sawFailedWrite = true;
+        }
+
         await db.insert(zainaAuditLogs).values({
           sessionId,
           actor: "SYSTEM_TOOL",
@@ -970,14 +984,27 @@ export async function handleZainaMessage(
 
       contents.push({ role: "user", parts: toolParts });
     }
-
     if (finalText === null) {
-      // Should never fire now that the final round has no tools, but keep
-      // a safe text fallback as a belt-and-suspenders.
       finalText =
         "Karibu! I'm having a little trouble pulling up the right options right now. " +
         "Let me connect you with someone from our team who can help directly — " +
         "they'll reach out shortly.";
+    }
+
+    // If the model tried to book/offer something and failed, then gave up
+    // with a friendly "let me connect you" message, we now actually do it.
+    // Otherwise the customer hears a handoff promise that never lands.
+    if (sawFailedWrite && !escalated) {
+      try {
+        await escalateToHuman(
+          { reason: "Booking flow failed after tool errors — auto-escalated." },
+          sessionId,
+        );
+        escalated = true;
+        console.warn(`[zaina] auto-escalated session ${sessionId} after failed write`);
+      } catch (escErr) {
+        console.error("[zaina] auto-escalation failed:", escErr);
+      }
     }
 
     await db.insert(zainaAuditLogs).values({
