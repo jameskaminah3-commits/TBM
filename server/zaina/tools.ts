@@ -22,6 +22,7 @@ import { and, eq, ne, lt, gt, gte, lte, sql, isNotNull } from "drizzle-orm";
 import { getUsdToKesRate } from "../currency";
 import { HELP_MAMA_HOURLY_MINIMUM_HOURS } from "@shared/errand-pricing";
 import { sendWebPushNotification } from "../push";
+import { INVENTORY_CATALOG } from "./catalog";
 
 // ═══════════════════════════════════════════════════════════════════
 // HELPERS — currency, dates, notifications
@@ -51,19 +52,79 @@ async function formatPrice(amountUsd: number, sessionId: string): Promise<string
  */
 function validateAndGetNights(checkIn: string, checkOut: string): number | null {
   if (typeof checkIn !== "string" || typeof checkOut !== "string") return null;
-  const start = new Date(`${checkIn}T00:00:00.000Z`).getTime();
-  const end = new Date(`${checkOut}T00:00:00.000Z`).getTime();
+  const start = new Date(`${checkIn}T00:00:00+03:00`).getTime();
+  const end = new Date(`${checkOut}T00:00:00+03:00`).getTime();
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
   return Math.max(1, Math.ceil((end - start) / (1000 * 60 * 60 * 24)));
 }
 
 function occupiedEndDate(checkIn: string, checkOut: string): string {
-  const start = new Date(`${checkIn}T00:00:00.000Z`).getTime();
-  const end = new Date(`${checkOut}T00:00:00.000Z`).getTime();
+  // Uses +03:00 so day arithmetic is anchored to Kenya midnight. Using UTC
+  // midnight shifts the effective date by 3 hours, which matters for
+  // same-day classification and multi-day boundary math.
+  const start = new Date(`${checkIn}T00:00:00+03:00`).getTime();
+  const end = new Date(`${checkOut}T00:00:00+03:00`).getTime();
   if (end === start) return checkOut;
   const d = new Date(end);
   d.setUTCDate(d.getUTCDate() - 1);
   return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Returns today's date in Kenya (YYYY-MM-DD). This is the reference point
+ * for all booking-window checks. Using UTC here would misclassify bookings
+ * made between 21:00 and 00:00 Kenya as "yesterday".
+ */
+function todayInKenya(): string {
+  return new Date().toLocaleDateString("en-CA", {
+    timeZone: "Africa/Nairobi",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+}
+
+/**
+ * Whole days between two YYYY-MM-DD strings, anchored to Kenya midnight.
+ */
+function daysBetween(startDate: string, endDate: string): number {
+  const start = new Date(`${startDate}T00:00:00+03:00`).getTime();
+  const end = new Date(`${endDate}T00:00:00+03:00`).getTime();
+  return Math.round((end - start) / (24 * 60 * 60 * 1000));
+}
+
+/**
+ * Checks whether a booking lands far enough in the future.
+ *
+ * Rules:
+ *   • Past dates are always rejected.
+ *   • Same-day (today in Kenya) is always rejected — per policy, same-day
+ *     requests go through the team directly.
+ *   • Beyond that, the booking must land on or after
+ *     today + ceil(advance_hours / 24) days.
+ *
+ * Returns a discriminated union so callers can build their own error payloads.
+ */
+function isBookingWindowSufficient(
+  checkInDate: string,
+  advanceHours: number,
+): { ok: true } | { ok: false; reason: string; today: string; required_days: number } {
+  const today = todayInKenya();
+
+  if (checkInDate < today) {
+    return { ok: false, reason: "date_in_past", today, required_days: 1 };
+  }
+  if (checkInDate === today) {
+    return { ok: false, reason: "same_day_not_allowed", today, required_days: 1 };
+  }
+
+  const daysOut = daysBetween(today, checkInDate);
+  const requiredDays = Math.max(1, Math.ceil(advanceHours / 24));
+  if (daysOut < requiredDays) {
+    return { ok: false, reason: "not_enough_advance", today, required_days: requiredDays };
+  }
+
+  return { ok: true };
 }
 
 async function sendOpsAlert(payload: {
@@ -834,7 +895,7 @@ export async function createDraftBooking(
     };
   }
 
-  // 1. Validate dates — fail closed
+    // 1. Validate dates — fail closed
   const nights = validateAndGetNights(args.check_in, args.check_out);
   if (nights === null) {
     return {
@@ -846,25 +907,22 @@ export async function createDraftBooking(
     };
   }
 
-  // Reject dates in the past or inside the 24-hour advance window.
-  // This guards against model hallucination of stale dates.
-  const MIN_ADVANCE_MS = 24 * 60 * 60 * 1000;
-  const checkInMs = new Date(`${args.check_in}T00:00:00.000Z`).getTime();
-  const nowMs = Date.now();
-  if (!Number.isFinite(checkInMs) || checkInMs < nowMs + MIN_ADVANCE_MS) {
-    const today = new Date().toLocaleDateString("en-CA", {
-      timeZone: "Africa/Nairobi",
-    });
+  // 2. Enforce the per-service advance window (stays need 24h).
+  //    Uses Kenya-local dates so a booking made at 22:00 Nairobi isn't
+  //    misclassified as "yesterday" by UTC arithmetic.
+  const advanceHours = INVENTORY_CATALOG.booking_rules.min_advance_hours.stays;
+  const window = isBookingWindowSufficient(args.check_in, advanceHours);
+  if (!window.ok) {
     return {
       ok: false,
-      error: "date_too_soon_or_in_past",
-      today_in_kenya: today,
+      error: window.reason,
+      today_in_kenya: window.today,
       requested_check_in: args.check_in,
-      minimum_advance_hours: 24,
+      required_days_ahead: window.required_days,
       hint:
-        `Today in Kenya is ${today}. The requested check-in (${args.check_in}) ` +
-        `is in the past or less than 24 hours from now. Ask the customer to ` +
-        `confirm a new date, or offer to connect them with the team for a ` +
+        `Stays require ${window.required_days} day(s) advance notice. ` +
+        `Today in Kenya is ${window.today}. Ask the customer to pick a date ` +
+        `on or after that, or offer to connect them with the team for a ` +
         `rush request.`,
     };
   }
@@ -1116,29 +1174,38 @@ export async function createServiceBooking(
     };
   }
 
-    // 1. Validate date
+     // 1. Validate date format
   if (!args.date || !/^\d{4}-\d{2}-\d{2}$/.test(args.date)) {
     return { ok: false, error: "invalid_date", hint: "Date must be YYYY-MM-DD." };
   }
 
-  // Reject dates in the past or inside the 24-hour advance window.
-  const MIN_ADVANCE_MS = 24 * 60 * 60 * 1000;
-  const serviceDateMs = new Date(`${args.date}T00:00:00.000Z`).getTime();
-  const nowMs = Date.now();
-  if (!Number.isFinite(serviceDateMs) || serviceDateMs < nowMs + MIN_ADVANCE_MS) {
-    const today = new Date().toLocaleDateString("en-CA", {
-      timeZone: "Africa/Nairobi",
-    });
+  // 2. Look up the advance window for this service type, then validate.
+  const advanceMap = INVENTORY_CATALOG.booking_rules.min_advance_hours;
+  let advanceHours = 6; // safe default
+  if (args.mode.startsWith("cook")) {
+    advanceHours = advanceMap.cooks;
+  } else if (args.mode.startsWith("car")) {
+    advanceHours = advanceMap.cars;
+  } else if (args.mode === "errand-childcare") {
+    advanceHours = advanceMap.mamacare;
+  } else if (args.mode.startsWith("errand")) {
+    advanceHours = advanceMap.errands;
+  } else if (args.mode.startsWith("experience")) {
+    advanceHours = advanceMap.experiences;
+  }
+
+  const window = isBookingWindowSufficient(args.date, advanceHours);
+  if (!window.ok) {
     return {
       ok: false,
-      error: "date_too_soon_or_in_past",
-      today_in_kenya: today,
+      error: window.reason,
+      today_in_kenya: window.today,
       requested_date: args.date,
-      minimum_advance_hours: 24,
+      required_days_ahead: window.required_days,
       hint:
-        `Today in Kenya is ${today}. The requested date (${args.date}) is in ` +
-        `the past or less than 24 hours from now. Ask the customer to confirm ` +
-        `a new date, or offer to connect them with the team for a rush request.`,
+        `This service requires ${window.required_days} day(s) advance notice. ` +
+        `Today in Kenya is ${window.today}. Ask the customer to confirm a ` +
+        `later date, or offer to connect them with the team for a rush request.`,
     };
   }
   // 2. Look up the service across all tables
