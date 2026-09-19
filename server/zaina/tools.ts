@@ -846,6 +846,29 @@ export async function createDraftBooking(
     };
   }
 
+  // Reject dates in the past or inside the 24-hour advance window.
+  // This guards against model hallucination of stale dates.
+  const MIN_ADVANCE_MS = 24 * 60 * 60 * 1000;
+  const checkInMs = new Date(`${args.check_in}T00:00:00.000Z`).getTime();
+  const nowMs = Date.now();
+  if (!Number.isFinite(checkInMs) || checkInMs < nowMs + MIN_ADVANCE_MS) {
+    const today = new Date().toLocaleDateString("en-CA", {
+      timeZone: "Africa/Nairobi",
+    });
+    return {
+      ok: false,
+      error: "date_too_soon_or_in_past",
+      today_in_kenya: today,
+      requested_check_in: args.check_in,
+      minimum_advance_hours: 24,
+      hint:
+        `Today in Kenya is ${today}. The requested check-in (${args.check_in}) ` +
+        `is in the past or less than 24 hours from now. Ask the customer to ` +
+        `confirm a new date, or offer to connect them with the team for a ` +
+        `rush request.`,
+    };
+  }
+
   // 2. Validate stay
   const [stay] = await db.select().from(stays).where(eq(stays.id, args.stay_id)).limit(1);
   if (!stay) return { ok: false, error: "stay_not_found" };
@@ -1093,11 +1116,31 @@ export async function createServiceBooking(
     };
   }
 
-  // 1. Validate date
+    // 1. Validate date
   if (!args.date || !/^\d{4}-\d{2}-\d{2}$/.test(args.date)) {
     return { ok: false, error: "invalid_date", hint: "Date must be YYYY-MM-DD." };
   }
 
+  // Reject dates in the past or inside the 24-hour advance window.
+  const MIN_ADVANCE_MS = 24 * 60 * 60 * 1000;
+  const serviceDateMs = new Date(`${args.date}T00:00:00.000Z`).getTime();
+  const nowMs = Date.now();
+  if (!Number.isFinite(serviceDateMs) || serviceDateMs < nowMs + MIN_ADVANCE_MS) {
+    const today = new Date().toLocaleDateString("en-CA", {
+      timeZone: "Africa/Nairobi",
+    });
+    return {
+      ok: false,
+      error: "date_too_soon_or_in_past",
+      today_in_kenya: today,
+      requested_date: args.date,
+      minimum_advance_hours: 24,
+      hint:
+        `Today in Kenya is ${today}. The requested date (${args.date}) is in ` +
+        `the past or less than 24 hours from now. Ask the customer to confirm ` +
+        `a new date, or offer to connect them with the team for a rush request.`,
+    };
+  }
   // 2. Look up the service across all tables
   const [cook] = await db.select().from(cooks).where(eq(cooks.id, args.service_id)).limit(1);
   const [errand] = await db.select().from(errands).where(eq(errands.id, args.service_id)).limit(1);
