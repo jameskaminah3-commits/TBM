@@ -12,6 +12,9 @@
 
 import { db } from "../db";
 import { sendOpsAlertEmail } from "../notifications";
+import { sendOpsAlertEmail, sendZainaBookingCreatedEmail, sendZainaConversationStartedEmail } from "../notifications";
+import { chatSessions, zainaAuditLogs } from "@shared/schema";
+import { asc } from "drizzle-orm";
 import { storage } from "../storage";
 import {
   bookings, stays, cooks, cars, errands, experiences,
@@ -28,6 +31,13 @@ import { INVENTORY_CATALOG } from "./catalog";
 // HELPERS — currency, dates, notifications
 // ═══════════════════════════════════════════════════════════════════
 
+/**
+ * Public site base URL. Used to build absolute links that customers can
+ * click — payment links, listing pages, etc.
+ */
+function appBaseUrl(): string {
+  return (process.env.APP_BASE_URL?.trim() || "https://tembeabilamatata.com").replace(/\/+$/, "");
+}
 async function getSessionCurrency(sessionId: string): Promise<"USD" | "KES"> {
   const [sess] = await db
     .select({ displayCurrency: chatSessions.displayCurrency })
@@ -247,7 +257,8 @@ export async function searchStays(
       rating: s.rating,
       review_count: s.reviewCount,
       image_url: s.imageUrl,
-      gallery_urls: (s.galleryUrls ?? []).slice(0, 3),
+      gallery_urls: (s.galleryUrls ?? []).slice(0, 4),
+      public_url: `${appBaseUrl()}/accommodation/${s.id}`,
       features: s.features,
     })),
   );
@@ -1170,10 +1181,53 @@ export async function createDraftBooking(
     idempotencyKey: args.idempotency_key,
   } as any);
 
+  const paymentLink = `${appBaseUrl()}/bookings?bookingId=${booking.id}`;
+
+  // Fire an admin notification with the full transcript. Best-effort;
+  // failure here doesn't block the booking.
+  try {
+    const { sendZainaBookingCreatedEmail } = await import("../notifications");
+    const { zainaAuditLogs } = await import("@shared/schema");
+    const { asc } = await import("drizzle-orm");
+
+    const transcriptRows = await db
+      .select({
+        actor: zainaAuditLogs.actor,
+        messageContent: zainaAuditLogs.messageContent,
+        timestamp: zainaAuditLogs.timestamp,
+      })
+      .from(zainaAuditLogs)
+      .where(eq(zainaAuditLogs.sessionId, sessionId))
+      .orderBy(asc(zainaAuditLogs.timestamp));
+
+    const transcript = transcriptRows
+      .filter((r) => r.messageContent)
+      .map((r) => ({
+        actor: r.actor,
+        text: r.messageContent as string,
+        timestamp: String(r.timestamp),
+      }));
+
+    await sendZainaBookingCreatedEmail({
+      bookingId: booking.id,
+      customerName: args.customer_name,
+      customerEmail: args.customer_email,
+      customerPhone: args.customer_phone,
+      kind: "stay",
+      summary: `${nights} night${nights === 1 ? "" : "s"} at ${stay.title} (${args.check_in} → ${args.check_out}, ${args.guests} guest${args.guests === 1 ? "" : "s"})`,
+      totalDisplay: await formatPrice(totalUsd, sessionId),
+      paymentLink,
+      sessionId,
+      transcript,
+    });
+  } catch (notifyErr) {
+    console.error("[zaina] booking-created email failed:", notifyErr);
+  }
+
   return {
     ok: true,
     booking_id: booking.id,
-    payment_link: `/bookings?bookingId=${booking.id}`,
+    payment_link: paymentLink,
     status: "draft",
     nights,
     stay: {
@@ -1471,11 +1525,53 @@ export async function createServiceBooking(
     createdAt: now,
     idempotencyKey: args.idempotency_key,
   } as any);
+  const paymentLink = `${appBaseUrl()}/bookings?bookingId=${booking.id}`;
+
+  try {
+    const { sendZainaBookingCreatedEmail } = await import("../notifications");
+    const { zainaAuditLogs } = await import("@shared/schema");
+    const { asc } = await import("drizzle-orm");
+
+    const transcriptRows = await db
+      .select({
+        actor: zainaAuditLogs.actor,
+        messageContent: zainaAuditLogs.messageContent,
+        timestamp: zainaAuditLogs.timestamp,
+      })
+      .from(zainaAuditLogs)
+      .where(eq(zainaAuditLogs.sessionId, sessionId))
+      .orderBy(asc(zainaAuditLogs.timestamp));
+
+    const transcript = transcriptRows
+      .filter((r) => r.messageContent)
+      .map((r) => ({
+        actor: r.actor,
+        text: r.messageContent as string,
+        timestamp: String(r.timestamp),
+      }));
+
+    const serviceLabel = errand?.serviceName ?? cook?.title ?? experience?.title ?? "Service";
+
+    await sendZainaBookingCreatedEmail({
+      bookingId: booking.id,
+      customerName: args.customer_name,
+      customerEmail: args.customer_email,
+      customerPhone: args.customer_phone,
+      kind: "service",
+      summary: `${serviceLabel} on ${args.date} (${args.mode})`,
+      totalDisplay: await formatPrice(totalUsd, sessionId),
+      paymentLink,
+      sessionId,
+      transcript,
+    });
+  } catch (notifyErr) {
+    console.error("[zaina] booking-created email failed:", notifyErr);
+  }
 
   return {
     ok: true,
     booking_id: booking.id,
-    payment_link: `/bookings?bookingId=${booking.id}`,
+    payment_link: paymentLink,
     status: "draft",
     total: await formatPrice(totalUsd, sessionId),
   };
