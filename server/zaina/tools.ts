@@ -173,6 +173,7 @@ export async function searchStays(
       rating: stays.rating,
       reviewCount: stays.reviewCount,
       imageUrl: stays.imageUrl,
+      galleryUrls: stays.galleryUrls,
       features: stays.features,
     })
     .from(stays)
@@ -192,6 +193,7 @@ export async function searchStays(
       rating: s.rating,
       review_count: s.reviewCount,
       image_url: s.imageUrl,
+      gallery_urls: (s.galleryUrls ?? []).slice(0, 3),
       features: s.features,
     })),
   );
@@ -934,7 +936,16 @@ export async function createDraftBooking(
     return { ok: false, error: "stay_not_bookable" };
   }
   if (args.guests > stay.maxOccupancy) {
-    return { ok: false, error: "guest_count_exceeds_capacity", max_occupancy: stay.maxOccupancy };
+    return {
+      ok: false,
+      error: "guest_count_exceeds_capacity",
+      max_occupancy: stay.maxOccupancy,
+      requested_guests: args.guests,
+      hint:
+        `"${stay.title}" fits up to ${stay.maxOccupancy} guests but the customer ` +
+        `asked for ${args.guests}. Tell the customer the capacity and offer to ` +
+        `search for a larger stay, or connect them with the team.`,
+    };
   }
 
   // 3. Check stay availability
