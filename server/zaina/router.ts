@@ -49,13 +49,31 @@ const HISTORY_TURNS = 20;
 // ═══════════════════════════════════════════════════════════════════
 
 function buildSystemPrompt(): string {
-  // Kenya time — the date customers experience.
-  const today = new Date().toLocaleDateString("en-CA", {
+  const now = new Date();
+
+  const dateFmt = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Africa/Nairobi",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
   });
+  const timeFmt = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Africa/Nairobi",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const weekdayFmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Africa/Nairobi",
+    weekday: "long",
+  });
+
+  const todayIso = dateFmt.format(now);                    // 2026-09-19
+  const nowTime = timeFmt.format(now);                     // 14:35
+  const weekday = weekdayFmt.format(now);                  // Saturday
+  const tomorrowIso = dateFmt.format(
+    new Date(now.getTime() + 24 * 60 * 60 * 1000),
+  );
 
   return `
 You are Zaina, the AI concierge for Tembea Bila Matata (TBM), a Kenyan Coast
@@ -63,13 +81,26 @@ travel platform. You help travelers plan and book stays, chefs, transport,
 errands, MamaCare (childcare/family support), and experiences — and you also
 coordinate custom requests.
 
-TODAY IS ${today} (Kenya time, Africa/Nairobi). Never invent or guess a date.
-If the customer says "tomorrow", "next weekend", or "in 3 days", compute the
-actual ISO date from today. If you're unsure, ask them to confirm a specific
-date like "September 19".
+═══════════════════════════════════════════════════════════════════════
+CURRENT TIME — read carefully, never guess
+═══════════════════════════════════════════════════════════════════════
 
-All booking dates must be at least 24 hours in the future. Same-day bookings
-are not allowed through chat — offer to connect the customer with the team.
+Right now in Kenya (Africa/Nairobi, UTC+3): ${weekday}, ${todayIso} at ${nowTime}.
+Tomorrow in Kenya is ${tomorrowIso}.
+
+Rules for working with dates:
+
+1. Never invent a date. Compute it from the values above.
+2. When the customer says "tomorrow", "next weekend", or "in 3 days", convert
+   to an ISO date (YYYY-MM-DD) using Kenya time as the reference.
+3. Before passing a date to any tool, confirm it back to the customer with
+   the weekday: "Just to confirm, that's Saturday, ${tomorrowIso} — correct?"
+4. The customer may be in a different time zone. If they mention a time
+   (flight arrival, dinner start, pickup time), ask whether they mean Kenya
+   time or their local time. Most service times on the Coast are Kenya time.
+5. Same-day bookings are never allowed through you. If a customer asks for
+   today, say: "Same-day bookings go through the team directly — let me
+   connect you."
 
 You are warm, resourceful, professional, and honest. You speak like a
 knowledgeable local friend who happens to run a concierge service. You use
@@ -823,6 +854,10 @@ export async function handleZainaMessage(
 
   try {
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+      // On the final round, remove tools entirely. The model must produce
+      // a text reply — no more tool calls allowed. This converts a hard
+      // loop failure into a graceful handoff message.
+      const isFinalRound = round === MAX_TOOL_ROUNDS - 1;
       // Retry transient provider errors (503 high demand, 429 rate limit,
       // 500 internal). These are the LLM equivalent of a busy signal —
       // retrying usually succeeds within a few seconds. Escalating to a
@@ -837,10 +872,12 @@ export async function handleZainaMessage(
           response = await ai.models.generateContent({
             model: MODEL,
             contents,
-            config: {
-              systemInstruction: buildSystemPrompt(),
-              tools: toolDeclarations,
-            },
+            config: isFinalRound
+              ? { systemInstruction: buildSystemPrompt() } // no tools
+              : {
+                  systemInstruction: buildSystemPrompt(),
+                  tools: toolDeclarations,
+                },
           });
           lastError = null;
           break;
@@ -935,7 +972,12 @@ export async function handleZainaMessage(
     }
 
     if (finalText === null) {
-      throw new Error("Tool loop exceeded without resolution");
+      // Should never fire now that the final round has no tools, but keep
+      // a safe text fallback as a belt-and-suspenders.
+      finalText =
+        "Karibu! I'm having a little trouble pulling up the right options right now. " +
+        "Let me connect you with someone from our team who can help directly — " +
+        "they'll reach out shortly.";
     }
 
     await db.insert(zainaAuditLogs).values({
