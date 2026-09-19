@@ -85,6 +85,77 @@ export function registerZainaRoutes(app: Express): void {
       timestamp: new Date().toISOString(),
     });
   });
+    // ─── Diagnostic: create a test booking directly ─────────────
+  // TEMPORARY. Remove after verifying booking works.
+  // Requires ZAINA_ENABLED=true and admin auth.
+  app.post("/api/zaina/_test/booking", async (req: Request, res: Response) => {
+    try {
+      // Get an available public stay to book
+      const { db: dbImport } = await import("../db");
+      const { stays: staysImport } = await import("@shared/schema");
+      const { and, eq, isNotNull } = await import("drizzle-orm");
+
+      const [stay] = await dbImport
+        .select()
+        .from(staysImport)
+        .where(and(eq(staysImport.isPublic, true), isNotNull(staysImport.managerUserId)))
+        .limit(1);
+
+      if (!stay) {
+        res.status(404).json({ error: "No public stay found in the database." });
+        return;
+      }
+
+      // Tomorrow in Kenya, 3 nights
+      const formatter = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Africa/Nairobi",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      });
+      const today = formatter.format(new Date());
+      const tomorrow = formatter.format(new Date(Date.now() + 24 * 60 * 60 * 1000));
+      const threeNightsFromTomorrow = formatter.format(
+        new Date(Date.now() + 4 * 24 * 60 * 60 * 1000),
+      );
+
+      const { createDraftBooking } = await import("./tools");
+      const result = await createDraftBooking(
+        {
+          customer_name: "Zaina Test",
+          customer_email: "zaina-test@example.invalid",
+          customer_phone: "+254000000000",
+          guests: Math.min(2, stay.maxOccupancy),
+          check_in: tomorrow,
+          check_out: threeNightsFromTomorrow,
+          stay_id: stay.id,
+          idempotency_key: `test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        },
+        req.body?.session_id ?? (await (async () => {
+          const { db: d } = await import("../db");
+          const { chatSessions: cs } = await import("@shared/schema");
+          const now = new Date().toISOString();
+          const [row] = await d.insert(cs).values({
+            displayCurrency: "USD",
+            managedBy: "AI",
+            createdAt: now,
+            updatedAt: now,
+          }).returning();
+          return row.id;
+        })()),
+      );
+
+      res.json({
+        today_in_kenya: today,
+        booking_for: { check_in: tomorrow, check_out: threeNightsFromTomorrow },
+        stay_tested: { id: stay.id, title: stay.title },
+        result,
+      });
+    } catch (error: any) {
+      console.error("[zaina] _test/booking failed:", error);
+      res.status(500).json({ error: error?.message ?? "Unknown error" });
+    }
+  });
 
   // ─── Feature flag gate ────────────────────────────────────────
   // Applies to every route below. When Zaina is off, the customer's
