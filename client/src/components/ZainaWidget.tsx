@@ -19,6 +19,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ZainaAvatar } from "./ZainaAvatar";
+import ReactMarkdown from "react-markdown";
 import { WHATSAPP_URL } from "@/lib/contact-info";
 
 type Msg = { role: "user" | "assistant"; content: string };
@@ -631,16 +632,49 @@ export function ZainaWidget() {
                 key={i}
                 className={"zaina-msg-enter " + (m.role === "user" ? "text-right" : "text-left")}
               >
-                <span
+                <div
                   className={
-                    "inline-block max-w-[85%] whitespace-pre-wrap rounded-2xl px-3.5 py-2 " +
+                    "zaina-markdown inline-block max-w-[85%] rounded-2xl px-3.5 py-2 " +
                     (m.role === "user"
                       ? "rounded-br-sm bg-emerald-700 text-white"
                       : "rounded-bl-sm bg-white text-gray-800 shadow-sm")
                   }
                 >
-                  {m.content}
-                </span>
+                  {m.role === "user" ? (
+                    <span className="whitespace-pre-wrap">{m.content}</span>
+                  ) : (
+                    <ReactMarkdown
+                      components={{
+                        p: ({ children }) => (
+                          <p className="mb-2 last:mb-0 whitespace-pre-wrap">{children}</p>
+                        ),
+                        a: ({ href, children }) => (
+                          <a
+                            href={href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="underline text-emerald-700 hover:text-emerald-900"
+                          >
+                            {children}
+                          </a>
+                        ),
+                        img: ({ src, alt }) => (
+                          <img
+                            src={src}
+                            alt={alt ?? ""}
+                            loading="lazy"
+                            className="my-2 rounded-lg max-h-48 w-auto object-cover"
+                          />
+                        ),
+                        ul: ({ children }) => <ul className="list-disc pl-4 space-y-0.5">{children}</ul>,
+                        ol: ({ children }) => <ol className="list-decimal pl-4 space-y-0.5">{children}</ol>,
+                        strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                      }}
+                    >
+                      {m.content}
+                    </ReactMarkdown>
+                  )}
+                </div>
               </div>
             ))}
 
