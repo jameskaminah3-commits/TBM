@@ -75,6 +75,60 @@ function occupiedEndDate(checkIn: string, checkOut: string): string {
  * for all booking-window checks. Using UTC here would misclassify bookings
  * made between 21:00 and 00:00 Kenya as "yesterday".
  */
+/**
+ * Today's date in Kenya (YYYY-MM-DD). Using UTC here would misclassify
+ * bookings made between 21:00 and 00:00 Kenya as "yesterday."
+ */
+function todayInKenya(): string {
+  return new Date().toLocaleDateString("en-CA", {
+    timeZone: "Africa/Nairobi",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+}
+
+/**
+ * Whole days between two YYYY-MM-DD strings, anchored to Kenya midnight.
+ */
+function daysBetween(startDate: string, endDate: string): number {
+  const start = new Date(`${startDate}T00:00:00+03:00`).getTime();
+  const end = new Date(`${endDate}T00:00:00+03:00`).getTime();
+  return Math.round((end - start) / (24 * 60 * 60 * 1000));
+}
+
+/**
+ * Day-granularity advance window check.
+ *
+ *   • Past dates are rejected.
+ *   • Same-day (today in Kenya) is rejected — always.
+ *   • Otherwise, the booking must land on or after
+ *     today + max(1, ceil(advanceHours / 24)) days.
+ *
+ * Tomorrow always qualifies for any advance window up to 24 hours,
+ * because "tomorrow" is one full day out regardless of the hour.
+ */
+function isBookingWindowSufficient(
+  checkInDate: string,
+  advanceHours: number,
+): { ok: true } | { ok: false; reason: string; today: string; required_days: number } {
+  const today = todayInKenya();
+
+  if (checkInDate < today) {
+    return { ok: false, reason: "date_in_past", today, required_days: 1 };
+  }
+  if (checkInDate === today) {
+    return { ok: false, reason: "same_day_not_allowed", today, required_days: 1 };
+  }
+
+  const daysOut = daysBetween(today, checkInDate);
+  const requiredDays = Math.max(1, Math.ceil(advanceHours / 24));
+  if (daysOut < requiredDays) {
+    return { ok: false, reason: "not_enough_advance", today, required_days: requiredDays };
+  }
+
+  return { ok: true };
+}
 function todayInKenya(): string {
   return new Date().toLocaleDateString("en-CA", {
     timeZone: "Africa/Nairobi",
@@ -897,7 +951,7 @@ export async function createDraftBooking(
     };
   }
 
-    // 1. Validate dates — fail closed
+     // 1. Validate dates
   const nights = validateAndGetNights(args.check_in, args.check_out);
   if (nights === null) {
     return {
@@ -909,11 +963,9 @@ export async function createDraftBooking(
     };
   }
 
-  // 2. Enforce the per-service advance window (stays need 24h).
-  //    Uses Kenya-local dates so a booking made at 22:00 Nairobi isn't
-  //    misclassified as "yesterday" by UTC arithmetic.
-  const advanceHours = INVENTORY_CATALOG.booking_rules.min_advance_hours.stays;
-  const window = isBookingWindowSufficient(args.check_in, advanceHours);
+  // 2. Day-granularity advance window. With the user's current rule
+  //    (stays = 24h), this means "today is rejected, tomorrow onward is OK."
+  const window = isBookingWindowSufficient(args.check_in, 24);
   if (!window.ok) {
     return {
       ok: false,
@@ -922,10 +974,11 @@ export async function createDraftBooking(
       requested_check_in: args.check_in,
       required_days_ahead: window.required_days,
       hint:
-        `Stays require ${window.required_days} day(s) advance notice. ` +
-        `Today in Kenya is ${window.today}. Ask the customer to pick a date ` +
-        `on or after that, or offer to connect them with the team for a ` +
-        `rush request.`,
+        window.reason === "same_day_not_allowed"
+          ? `Same-day bookings go through the team directly. Today in Kenya is ${window.today}. Ask the customer to pick tomorrow or later, or connect them with the team.`
+          : window.reason === "date_in_past"
+            ? `The requested date (${args.check_in}) is in the past. Today in Kenya is ${window.today}. Ask for a future date.`
+            : `This needs ${window.required_days} day(s) advance notice. Today is ${window.today}. Ask for a later date.`,
     };
   }
 
@@ -1185,25 +1238,16 @@ export async function createServiceBooking(
     };
   }
 
-     // 1. Validate date format
+  // 1. Validate date format
   if (!args.date || !/^\d{4}-\d{2}-\d{2}$/.test(args.date)) {
     return { ok: false, error: "invalid_date", hint: "Date must be YYYY-MM-DD." };
   }
 
-  // 2. Look up the advance window for this service type, then validate.
-  const advanceMap = INVENTORY_CATALOG.booking_rules.min_advance_hours;
-  let advanceHours = 6; // safe default
-  if (args.mode.startsWith("cook")) {
-    advanceHours = advanceMap.cooks;
-  } else if (args.mode.startsWith("car")) {
-    advanceHours = advanceMap.cars;
-  } else if (args.mode === "errand-childcare") {
-    advanceHours = advanceMap.mamacare;
-  } else if (args.mode.startsWith("errand")) {
-    advanceHours = advanceMap.errands;
-  } else if (args.mode.startsWith("experience")) {
-    advanceHours = advanceMap.experiences;
-  }
+  // 2. Day-granularity advance window. Cars/errands/MamaCare use 6h → 1 day.
+  //    Cooks/experiences use 12h → 1 day. Same-day always rejected.
+  let advanceHours = 6;
+  if (args.mode.startsWith("cook")) advanceHours = 12;
+  else if (args.mode.startsWith("experience")) advanceHours = 12;
 
   const window = isBookingWindowSufficient(args.date, advanceHours);
   if (!window.ok) {
@@ -1214,9 +1258,11 @@ export async function createServiceBooking(
       requested_date: args.date,
       required_days_ahead: window.required_days,
       hint:
-        `This service requires ${window.required_days} day(s) advance notice. ` +
-        `Today in Kenya is ${window.today}. Ask the customer to confirm a ` +
-        `later date, or offer to connect them with the team for a rush request.`,
+        window.reason === "same_day_not_allowed"
+          ? `Same-day bookings go through the team directly. Today in Kenya is ${window.today}. Ask the customer to pick tomorrow or later, or connect them with the team.`
+          : window.reason === "date_in_past"
+            ? `The requested date (${args.date}) is in the past. Today in Kenya is ${window.today}. Ask for a future date.`
+            : `This needs ${window.required_days} day(s) advance notice. Today is ${window.today}. Ask for a later date.`,
     };
   }
   // 2. Look up the service across all tables
