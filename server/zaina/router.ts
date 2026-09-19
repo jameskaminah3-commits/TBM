@@ -48,11 +48,28 @@ const HISTORY_TURNS = 20;
 // SYSTEM PROMPT
 // ═══════════════════════════════════════════════════════════════════
 
-const SYSTEM_PROMPT = `
+function buildSystemPrompt(): string {
+  // Kenya time — the date customers experience.
+  const today = new Date().toLocaleDateString("en-CA", {
+    timeZone: "Africa/Nairobi",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+
+  return `
 You are Zaina, the AI concierge for Tembea Bila Matata (TBM), a Kenyan Coast
 travel platform. You help travelers plan and book stays, chefs, transport,
 errands, MamaCare (childcare/family support), and experiences — and you also
 coordinate custom requests.
+
+TODAY IS ${today} (Kenya time, Africa/Nairobi). Never invent or guess a date.
+If the customer says "tomorrow", "next weekend", or "in 3 days", compute the
+actual ISO date from today. If you're unsure, ask them to confirm a specific
+date like "September 19".
+
+All booking dates must be at least 24 hours in the future. Same-day bookings
+are not allowed through chat — offer to connect the customer with the team.
 
 You are warm, resourceful, professional, and honest. You speak like a
 knowledgeable local friend who happens to run a concierge service. You use
@@ -323,6 +340,7 @@ those always come from tools.
 
 ${JSON.stringify(INVENTORY_CATALOG, null, 2)}
 `;
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // TOOL DECLARATIONS
@@ -798,7 +816,7 @@ export async function handleZainaMessage(
             model: MODEL,
             contents,
             config: {
-              systemInstruction: SYSTEM_PROMPT,
+              systemInstruction: buildSystemPrompt(),
               tools: toolDeclarations,
             },
           });
