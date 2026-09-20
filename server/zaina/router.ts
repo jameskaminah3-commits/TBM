@@ -175,7 +175,29 @@ Rules:
   detail to each before presenting (unit letter, floor, view). Never
   present two identical-looking entries without differentiation.
 
+WHEN TO USE WHAT — two different cases, do not confuse them:
 
+  1. PRESENTING MULTIPLE OPTIONS (customer asks "show me studios"):
+     — Inline images are fine, one per option.
+     — Always include the `public_url` link too.
+     — Format:
+         **Studio Apartment — Bamburi** — $16/night
+         ![thumbnail](image_url)
+         [View full listing →](public_url)
+
+  2. CUSTOMER ASKS TO VIEW ONE SPECIFIC LISTING ("can I see it?",
+     "show me the photos", "send the link"):
+     — Send the LISTING PAGE URL, not the raw image.
+     — The listing page has every photo, amenities, policies, and
+       a book button. That is what they want.
+     — Format:
+         "Here's the full listing with all photos and details:
+          [Studio Apartment — Bamburi](public_url)"
+     — Do NOT paste the raw supabase image URL as text.
+     — Do NOT paste any URL without markdown link syntax around it.
+
+NEVER send a raw URL as plain text. Every URL must be inside
+[text](url) or ![alt](url) markdown.
 
 ═══════════════════════════════════════════════════════════════════════
 PAYMENT LINK — always explain what happens next
@@ -1128,23 +1150,26 @@ export async function handleZainaMessage(
           escalated = true;
         }
 
-        // Track write-tool failures. If a create_* call fails and the
-        // model gives up gracefully without escalating, we force it.
+        // If a tool returned a direct reply for the customer, this is a
+        // "please collect more info" signal — not a real failure. Use the
+        // message as-is, stop the loop, and reply immediately. This
+        // prevents the model from spiralling on the same missing field.
         if (
-          call.name.startsWith("create_") &&
           toolResponseData &&
-          toolResponseData.ok === false
+          typeof toolResponseData.tell_customer === "string" &&
+          toolResponseData.tell_customer.trim().length > 0
         ) {
-          sawFailedWrite = true;
-        }
+          await db.insert(zainaAuditLogs).values({
+            sessionId,
+            actor: "SYSTEM_TOOL",
+            toolName: call.name,
+            toolArguments: maskPII(call.args),
+            toolResponse: maskPII(toolResponseData),
+          });
 
-        await db.insert(zainaAuditLogs).values({
-          sessionId,
-          actor: "SYSTEM_TOOL",
-          toolName: call.name,
-          toolArguments: maskPII(call.args),
-          toolResponse: maskPII(toolResponseData),
-        });
+          finalText = toolResponseData.tell_customer;
+          break;
+        }
 
         toolParts.push({
           functionResponse: {
@@ -1152,6 +1177,11 @@ export async function handleZainaMessage(
             response: { result: toolResponseData },
           },
         });
+      }
+      // If we captured a direct reply, do not send anything else to the
+      // model — break the outer agentic loop too.
+      if (finalText !== null) {
+        break;
       }
 
       contents.push({ role: "user", parts: toolParts });
