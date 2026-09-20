@@ -986,17 +986,32 @@ export async function createDraftBooking(
     return {
       ok: false,
       error: "guests_required",
-      hint:
-        "You did not pass a guest count. Before creating this booking, " +
-        "ask the customer how many guests will be staying (and confirm " +
-        "the number makes sense for the property's capacity).",
+      hint: "Ask the customer how many guests will be staying.",
+      tell_customer: "Got it — and how many guests will be staying? I need that to make sure the place fits everyone comfortably.",
     };
   }
   if (typeof args.customer_name !== "string" || args.customer_name.trim().length < 2) {
     return {
       ok: false,
       error: "customer_name_required",
-      hint: "Ask the customer for their full name before booking.",
+      hint: "Ask the customer for their full name.",
+      tell_customer: "May I have your full name for the booking, please?",
+    };
+  }
+  if (typeof args.customer_email !== "string" || !args.customer_email.includes("@")) {
+    return {
+      ok: false,
+      error: "customer_email_required",
+      hint: "Ask the customer for their email address.",
+      tell_customer: "And what email should I use for your booking confirmation?",
+    };
+  }
+  if (typeof args.customer_phone !== "string" || args.customer_phone.trim().length < 7) {
+    return {
+      ok: false,
+      error: "customer_phone_required",
+      hint: "Ask the customer for their phone number.",
+      tell_customer: "One more — what's the best phone number to reach you on?",
     };
   }
   if (typeof args.customer_email !== "string" || !args.customer_email.includes("@")) {
@@ -1303,13 +1318,28 @@ export async function createServiceBooking(
 
   // 1. Required-field guards
   if (typeof args.customer_name !== "string" || args.customer_name.trim().length < 2) {
-    return { ok: false, error: "customer_name_required", hint: "Ask for the customer's full name before booking." };
+    return {
+      ok: false,
+      error: "customer_name_required",
+      hint: "Ask the customer for their full name.",
+      tell_customer: "May I have your full name for the booking, please?",
+    };
   }
   if (typeof args.customer_email !== "string" || !args.customer_email.includes("@")) {
-    return { ok: false, error: "customer_email_required", hint: "Ask for the customer's email before booking." };
+    return {
+      ok: false,
+      error: "customer_email_required",
+      hint: "Ask the customer for their email address.",
+      tell_customer: "And what email should I use for your booking confirmation?",
+    };
   }
   if (typeof args.customer_phone !== "string" || args.customer_phone.trim().length < 7) {
-    return { ok: false, error: "customer_phone_required", hint: "Ask for the customer's phone before booking." };
+    return {
+      ok: false,
+      error: "customer_phone_required",
+      hint: "Ask the customer for their phone number.",
+      tell_customer: "One more — what's the best phone number to reach you on?",
+    };
   }
 
   // 2. Validate date format
