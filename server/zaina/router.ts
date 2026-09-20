@@ -976,12 +976,30 @@ function redactMediaUrls(value: string): string {
   return value.replace(MEDIA_URL_PATTERN, "[image link omitted — use the public listing page link]");
 }
 
-function replaceMediaUrls(value: string, listingUrls: string[]): string {
-  let index = 0;
-  return value.replace(MEDIA_URL_PATTERN, () => {
-    const listingUrl = listingUrls[index++];
-    return listingUrl ?? "[public listing page link unavailable]";
-  });
+function redactMediaUrlsDeep(value: any): any {
+  if (typeof value === "string") return redactMediaUrls(value);
+  if (!value || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map(redactMediaUrlsDeep);
+  return Object.fromEntries(
+    Object.entries(value).map(([key, child]) => [key, redactMediaUrlsDeep(child)]),
+  );
+}
+
+function collectCustomerLinks(value: any, links: string[]): void {
+  if (!value || typeof value !== "object") return;
+  for (const [key, child] of Object.entries(value)) {
+    if ((key === "public_url" || key === "payment_link") && typeof child === "string") {
+      if (!links.includes(child)) links.push(child);
+    }
+    collectCustomerLinks(child, links);
+  }
+}
+
+function replaceMediaUrls(value: string, latestCustomerLink: string | undefined): string {
+  return value.replace(
+    MEDIA_URL_PATTERN,
+    latestCustomerLink ?? "[public listing or payment link unavailable]",
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1096,7 +1114,7 @@ export async function handleZainaMessage(
   const contents: any[] = [...history, { role: "user", parts: [{ text: message }] }];
   let finalText: string | null = null;
   let escalated = false;
-  const publicListingUrls: string[] = [];
+  const customerLinks: string[] = [];
   // Only actual tool/system failures should trigger an automatic human handoff.
   // Normal business outcomes (for example, a stay becoming unavailable) are
   // recoverable by searching again or asking the customer for another choice.
@@ -1177,7 +1195,7 @@ export async function handleZainaMessage(
       const functionCallParts = rawParts.filter((p: any) => p.functionCall);
 
       if (functionCallParts.length === 0) {
-        finalText = replaceMediaUrls(response.text ?? "", publicListingUrls);
+        finalText = replaceMediaUrls(response.text ?? "", customerLinks.at(-1));
         break;
       }
 
@@ -1200,14 +1218,7 @@ export async function handleZainaMessage(
           };
         }
 
-        const collectListingUrls = (value: any): void => {
-          if (!value || typeof value !== "object") return;
-          if (typeof value.public_url === "string" && value.public_url.startsWith("http")) {
-            publicListingUrls.push(value.public_url);
-          }
-          for (const child of Object.values(value)) collectListingUrls(child);
-        };
-        collectListingUrls(toolResponseData);
+        collectCustomerLinks(toolResponseData, customerLinks);
 
         // Business validation failures are recoverable and must not be treated
         // as infrastructure failures. Only explicit human-required responses
@@ -1248,7 +1259,7 @@ export async function handleZainaMessage(
         toolParts.push({
           functionResponse: {
             name: call.name,
-            response: { result: toolResponseData },
+            response: { result: redactMediaUrlsDeep(toolResponseData) },
           },
         });
       }
@@ -1267,7 +1278,7 @@ export async function handleZainaMessage(
         "they'll reach out shortly.";
     }
 
-    finalText = replaceMediaUrls(finalText, publicListingUrls);
+    finalText = replaceMediaUrls(finalText, customerLinks.at(-1));
 
     // If the model tried to book/offer something and failed, then gave up
     // with a friendly "let me connect you" message, we now actually do it.

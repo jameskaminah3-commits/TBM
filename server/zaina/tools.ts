@@ -293,8 +293,6 @@ export async function searchStays(
       bathrooms: stays.bathrooms,
       rating: stays.rating,
       reviewCount: stays.reviewCount,
-      imageUrl: stays.imageUrl,
-      galleryUrls: stays.galleryUrls,
       features: stays.features,
     })
     .from(stays)
