@@ -650,7 +650,18 @@ export function ZainaWidget() {
                   }
                 >
                   {m.role === "user" ? (
-                    <span className="whitespace-pre-wrap">{m.content}</span>
+                    <span className="whitespace-pre-wrap">{/* Simple markdown: renders [text](url) as clickable links, everything else as plain text */}
+{m.content.split(/(\[[^\]]+\]\([^)]+\))/g).map((part, idx) => {
+  const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+  if (linkMatch) {
+    return (
+      <a key={idx} href={linkMatch[2]} target="_blank" rel="noopener noreferrer" className="underline text-emerald-700">
+        {linkMatch[1]}
+      </a>
+    );
+  }
+  return <span key={idx}>{part}</span>;
+})}</span>
                   ) : (
                     <ReactMarkdown
                       components={{
@@ -680,7 +691,18 @@ export function ZainaWidget() {
                         strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
                       }}
                     >
-                      {m.content}
+                      {/* Simple markdown: renders [text](url) as clickable links, everything else as plain text */}
+{m.content.split(/(\[[^\]]+\]\([^)]+\))/g).map((part, idx) => {
+  const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+  if (linkMatch) {
+    return (
+      <a key={idx} href={linkMatch[2]} target="_blank" rel="noopener noreferrer" className="underline text-emerald-700">
+        {linkMatch[1]}
+      </a>
+    );
+  }
+  return <span key={idx}>{part}</span>;
+})}
                     </ReactMarkdown>
                   )}
                 </div>
