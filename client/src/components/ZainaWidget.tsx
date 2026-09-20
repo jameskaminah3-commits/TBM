@@ -19,7 +19,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ZainaAvatar } from "./ZainaAvatar";
-import ReactMarkdown from "react-markdown";
 import { WHATSAPP_URL } from "@/lib/contact-info";
 
 type Msg = { role: "user" | "assistant"; content: string };
