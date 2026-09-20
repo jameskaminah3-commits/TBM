@@ -202,7 +202,7 @@ async function notifyBookingCreated(args: {
 // ═══════════════════════════════════════════════════════════════════
 
 export async function searchStays(
-  args: { region?: string; guests?: number },
+  args: { region?: string; guests?: number; keyword?: string },
   sessionId: string,
 ) {
   const conditions: any[] = [
@@ -214,6 +214,9 @@ export async function searchStays(
   }
   if (args.guests && args.guests > 0) {
     conditions.push(gte(stays.maxOccupancy, args.guests));
+  }
+  if (args.keyword) {
+    conditions.push(sql`${stays.title} ILIKE ${"%" + args.keyword + "%"}`);
   }
 
   const rows = await db
@@ -249,8 +252,6 @@ export async function searchStays(
       bathrooms: s.bathrooms,
       rating: s.rating,
       review_count: s.reviewCount,
-      image_url: s.imageUrl,
-      gallery_urls: (s.galleryUrls ?? []).slice(0, 4),
       public_url: `${appBaseUrl()}/accommodation/${s.id}`,
       features: s.features,
     })),
