@@ -999,12 +999,18 @@ export async function createDraftBooking(
       tell_customer: "May I have your full name for the booking, please?",
     };
   }
-  if (typeof args.customer_email !== "string" || !args.customer_email.includes("@")) {
+  if (
+    typeof args.customer_email !== "string" ||
+    !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(args.customer_email)
+  ) {
     return {
       ok: false,
-      error: "customer_email_required",
-      hint: "Ask the customer for their email address.",
-      tell_customer: "And what email should I use for your booking confirmation?",
+      error: "customer_email_invalid",
+      hint: "The email looks invalid. Ask the customer to confirm it.",
+      tell_customer:
+        "Just to double-check, could you confirm your email address? " +
+        "It looks like it may have a typo — I want to make sure your " +
+        "confirmation reaches you.",
     };
   }
   if (typeof args.customer_phone !== "string" || args.customer_phone.trim().length < 7) {
@@ -1015,13 +1021,7 @@ export async function createDraftBooking(
       tell_customer: "One more — what's the best phone number to reach you on?",
     };
   }
-  if (typeof args.customer_email !== "string" || !args.customer_email.includes("@")) {
-    return {
-      ok: false,
-      error: "customer_email_required",
-      hint: "Ask the customer for their email address before booking.",
-    };
-  }
+
   if (typeof args.customer_phone !== "string" || args.customer_phone.trim().length < 7) {
     return {
       ok: false,
