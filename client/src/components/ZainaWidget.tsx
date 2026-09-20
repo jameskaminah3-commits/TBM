@@ -122,7 +122,70 @@ function buildWhatsAppHandoffUrl(msgs: Msg[]): string {
   const separator = WHATSAPP_URL.includes("?") ? "&" : "?";
   return `${WHATSAPP_URL}${separator}text=${encodeURIComponent(summary)}`;
 }
+// Renders Zaina's messages with lightweight markdown support:
+//   • [text](url) → clickable link
+//   • ![alt](url) → inline image
+//   • bare paths starting with /bookings, /accommodation, /book, /auth, /blog
+//     → auto-prefixed with https://tembeabilamatata.com so they're clickable
+//   • everything else → plain text
+function renderAssistantMessage(content: string): JSX.Element[] {
+  const SITE = "https://tembeabilamatata.com";
+  const parts = content.split(
+    /(!\[[^\]]*\]\([^)]+\)|\[[^\]]+\]\([^)]+\)|\/(?:bookings|accommodation|book|auth|blog|inbox|request-custom-service)(?:[/?][a-zA-Z0-9?=&%._\-\/]*)?)/g,
+  );
 
+  return parts.map((part, idx) => {
+    // Image: ![alt](url)
+    const img = part.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+    if (img) {
+      const src = img[2].startsWith("/") ? `${SITE}${img[2]}` : img[2];
+      return (
+        <img
+          key={idx}
+          src={src}
+          alt={img[1]}
+          loading="lazy"
+          className="my-2 rounded-lg max-h-48 w-auto object-cover"
+        />
+      );
+    }
+
+    // Link: [text](url)
+    const link = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+    if (link) {
+      const href = link[2].startsWith("/") ? `${SITE}${link[2]}` : link[2];
+      return (
+        <a
+          key={idx}
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline text-emerald-700 hover:text-emerald-900 break-all"
+        >
+          {link[1]}
+        </a>
+      );
+    }
+
+    // Bare path: /bookings?bookingId=... etc.
+    if (/^\/(?:bookings|accommodation|book|auth|blog|inbox|request-custom-service)/.test(part)) {
+      const href = `${SITE}${part}`;
+      return (
+        <a
+          key={idx}
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline text-emerald-700 hover:text-emerald-900 break-all"
+        >
+          {href}
+        </a>
+      );
+    }
+
+    return <span key={idx}>{part}</span>;
+  });
+}
 type WidgetState = "loading" | "ready" | "disabled" | "handed_off";
 type AvatarState = "idle" | "thinking" | "speaking";
 
@@ -650,60 +713,9 @@ export function ZainaWidget() {
                   }
                 >
                   {m.role === "user" ? (
-                    <span className="whitespace-pre-wrap">{/* Simple markdown: renders [text](url) as clickable links, everything else as plain text */}
-{m.content.split(/(\[[^\]]+\]\([^)]+\))/g).map((part, idx) => {
-  const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-  if (linkMatch) {
-    return (
-      <a key={idx} href={linkMatch[2]} target="_blank" rel="noopener noreferrer" className="underline text-emerald-700">
-        {linkMatch[1]}
-      </a>
-    );
-  }
-  return <span key={idx}>{part}</span>;
-})}</span>
+                    <span className="whitespace-pre-wrap">{m.content}</span>
                   ) : (
-                    <ReactMarkdown
-                      components={{
-                        p: ({ children }) => (
-                          <p className="mb-2 last:mb-0 whitespace-pre-wrap">{children}</p>
-                        ),
-                        a: ({ href, children }) => (
-                          <a
-                            href={href}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="underline text-emerald-700 hover:text-emerald-900"
-                          >
-                            {children}
-                          </a>
-                        ),
-                        img: ({ src, alt }) => (
-                          <img
-                            src={src}
-                            alt={alt ?? ""}
-                            loading="lazy"
-                            className="my-2 rounded-lg max-h-48 w-auto object-cover"
-                          />
-                        ),
-                        ul: ({ children }) => <ul className="list-disc pl-4 space-y-0.5">{children}</ul>,
-                        ol: ({ children }) => <ol className="list-decimal pl-4 space-y-0.5">{children}</ol>,
-                        strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-                      }}
-                    >
-                      {/* Simple markdown: renders [text](url) as clickable links, everything else as plain text */}
-{m.content.split(/(\[[^\]]+\]\([^)]+\))/g).map((part, idx) => {
-  const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-  if (linkMatch) {
-    return (
-      <a key={idx} href={linkMatch[2]} target="_blank" rel="noopener noreferrer" className="underline text-emerald-700">
-        {linkMatch[1]}
-      </a>
-    );
-  }
-  return <span key={idx}>{part}</span>;
-})}
-                    </ReactMarkdown>
+                    renderAssistantMessage(m.content)
                   )}
                 </div>
               </div>
