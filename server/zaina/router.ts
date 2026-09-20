@@ -986,25 +986,38 @@ export async function handleZainaMessage(
     .select({
       actor: zainaAuditLogs.actor,
       messageContent: zainaAuditLogs.messageContent,
+      toolName: zainaAuditLogs.toolName,
+      toolArguments: zainaAuditLogs.toolArguments,
+      toolResponse: zainaAuditLogs.toolResponse,
     })
     .from(zainaAuditLogs)
     .where(
       and(
         eq(zainaAuditLogs.sessionId, sessionId),
-        inArray(zainaAuditLogs.actor, ["USER", "ZAINA_REASONING"]),
+        inArray(zainaAuditLogs.actor, ["USER", "ZAINA_REASONING", "SYSTEM_TOOL"]),
       ),
     )
     .orderBy(desc(zainaAuditLogs.timestamp))
-    .limit(HISTORY_TURNS);
+    .limit(HISTORY_TURNS * 3);
 
   const history = historyRows.reverse().flatMap((row) => {
-    if (!row.messageContent) return [];
-    return [
-      {
-        role: row.actor === "USER" ? "user" : "model",
-        parts: [{ text: row.messageContent }],
-      },
-    ];
+    if (row.actor === "USER" && row.messageContent) {
+      return [{ role: "user" as const, parts: [{ text: row.messageContent }] }];
+    }
+    if (row.actor === "ZAINA_REASONING" && row.messageContent) {
+      return [{ role: "model" as const, parts: [{ text: row.messageContent }] }];
+    }
+    if (row.actor === "SYSTEM_TOOL" && row.toolName) {
+      const argsText = row.toolArguments ? JSON.stringify(row.toolArguments) : "{}";
+      const respText = row.toolResponse ? JSON.stringify(row.toolResponse) : "null";
+      const trimmed =
+        respText.length > 1500 ? respText.slice(0, 1500) + "…[truncated]" : respText;
+      return [{
+        role: "user" as const,
+        parts: [{ text: `[earlier tool] ${row.toolName}(${argsText}) → ${trimmed}` }],
+      }];
+    }
+    return [];
   });
   // 5. Agentic loop
   const contents: any[] = [...history, { role: "user", parts: [{ text: message }] }];
