@@ -961,7 +961,50 @@ export async function createDraftBooking(
       total: await formatPrice(existing[0].totalPrice, sessionId),
     };
   }
-
+  // 1. Required-field guard. The model sometimes skips fields that are
+  //    "required" in the declaration. Fail closed with a clear hint so it
+  //    asks the customer rather than crashing downstream.
+  if (typeof args.guests !== "number" || !Number.isFinite(args.guests) || args.guests < 1) {
+    return {
+      ok: false,
+      error: "guests_required",
+      hint:
+        "You did not pass a guest count. Before creating this booking, " +
+        "ask the customer how many guests will be staying (and confirm " +
+        "the number makes sense for the property's capacity).",
+    };
+  }
+  if (typeof args.customer_name !== "string" || args.customer_name.trim().length < 2) {
+    return {
+      ok: false,
+      error: "customer_name_required",
+      hint: "Ask the customer for their full name before booking.",
+    };
+  }
+  if (typeof args.customer_email !== "string" || !args.customer_email.includes("@")) {
+    return {
+      ok: false,
+      error: "customer_email_required",
+      hint: "Ask the customer for their email address before booking.",
+    };
+  }
+  if (typeof args.customer_phone !== "string" || args.customer_phone.trim().length < 7) {
+    return {
+      ok: false,
+      error: "customer_phone_required",
+      hint: "Ask the customer for their phone number before booking.",
+    };
+  }
+    // Required-field guard — fail closed with a hint the model can act on.
+  if (typeof args.customer_name !== "string" || args.customer_name.trim().length < 2) {
+    return { ok: false, error: "customer_name_required", hint: "Ask for the customer's full name before booking." };
+  }
+  if (typeof args.customer_email !== "string" || !args.customer_email.includes("@")) {
+    return { ok: false, error: "customer_email_required", hint: "Ask for the customer's email before booking." };
+  }
+  if (typeof args.customer_phone !== "string" || args.customer_phone.trim().length < 7) {
+    return { ok: false, error: "customer_phone_required", hint: "Ask for the customer's phone before booking." };
+  }
      // 1. Validate dates
   const nights = validateAndGetNights(args.check_in, args.check_out);
   if (nights === null) {
