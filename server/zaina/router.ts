@@ -305,6 +305,35 @@ When a customer mentions they already have a stay arranged, acknowledge
 that first, then offer complementary services. One offer, warmly.
 The 12% stay+chef bundle discount applies whether the stay was booked
 with TBM or not — mention it if a chef is relevant.
+
+═══════════════════════════════════════════════════════════════════════
+BEFORE YOU BOOK — the four required inputs
+═══════════════════════════════════════════════════════════════════════
+
+Before calling create_draft_booking or create_service_booking, you MUST
+have ALL FOUR of these from the customer:
+
+  1. Name (full)
+  2. Email
+  3. Phone number
+  4. Guest count (for stays, experiences, and chef bookings)
+
+If any of these are missing, ASK for the missing one before proceeding.
+Never guess. Never assume 2 guests because it's the default. Never book
+with partial details.
+
+For services where guest count doesn't apply (MamaCare, errands, laundry),
+the count field is still required by the tool — pass 1.
+
+If the customer provided name/email/phone but never said how many guests,
+say something like:
+
+  "Got it — and how many guests will be staying? I need that to make
+   sure the place fits everyone comfortably."
+
+Only then call the booking tool.
+
+═══════════════════════════════════════════════════════════════════════
 ═══════════════════════════════════════════════════════════════════════
 BOOKING TOOLS — which one to call
 ═══════════════════════════════════════════════════════════════════════
@@ -897,7 +926,22 @@ export async function handleZainaMessage(
     return { status: "error", error: "session_not_found", message: "Session not found." };
   }
 
-  // 2. Log the raw user message first — even if a human is handling it.
+    // 2. Detect first user message BEFORE logging the current one.
+  //    We count prior USER rows; if there are none, this is the opener.
+  const priorUserRows = await db
+    .select({ id: zainaAuditLogs.id })
+    .from(zainaAuditLogs)
+    .where(
+      and(
+        eq(zainaAuditLogs.sessionId, sessionId),
+        eq(zainaAuditLogs.actor, "USER"),
+      ),
+    )
+    .limit(1);
+
+  const isFirstMessage = priorUserRows.length === 0;
+
+  // 3. Log the raw user message — even if a human is handling it.
   //    The admin panel reads from this same log so the agent can see what
   //    the customer just typed.
   await db.insert(zainaAuditLogs).values({
@@ -906,12 +950,25 @@ export async function handleZainaMessage(
     messageContent: message,
   });
 
-  // 3. State gate
+  // 4. State gate
   if (session.managedBy !== "AI") {
     return { status: "ignored", reason: "Session currently managed by a human agent." };
   }
 
-  // 4. Load recent history
+  // 5. Fire the "conversation started" email on the opener.
+  if (isFirstMessage) {
+    queueNotificationTask(
+      `zaina conversation-started email for ${sessionId}`,
+      sendZainaConversationStartedEmail({
+        sessionId,
+        firstMessage: message,
+        timestamp: new Date().toISOString(),
+      }),
+    );
+  }
+
+  // 6. Load recent history (now includes the message we just logged,
+  //    which is fine — it's the model's newest context).
   const historyRows = await db
     .select({
       actor: zainaAuditLogs.actor,
@@ -936,21 +993,6 @@ export async function handleZainaMessage(
       },
     ];
   });
-
-  // Detect first user message of the session and notify admins.
-  // "First" means: no prior USER or ZAINA_REASONING entries in the log.
-  const isFirstMessage = historyRows.length === 0;
-  if (isFirstMessage) {
-    queueNotificationTask(
-      `zaina conversation-started email for ${sessionId}`,
-      sendZainaConversationStartedEmail({
-        sessionId,
-        firstMessage: message,
-        timestamp: new Date().toISOString(),
-      }),
-    );
-  }
-
   // 5. Agentic loop
   const contents: any[] = [...history, { role: "user", parts: [{ text: message }] }];
   let finalText: string | null = null;
