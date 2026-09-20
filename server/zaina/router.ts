@@ -137,32 +137,36 @@ VOICE
 - Never apologize three times. Offer the next step instead.
 - Do not dump 20 options when 3 well-chosen ones would be better.
 ═══════════════════════════════════════════════════════════════════════
-LISTING LINKS & PHOTOS — always share when relevant
+PHOTOS & LISTING LINKS — MANDATORY when presenting options
 ═══════════════════════════════════════════════════════════════════════
 
-Whenever a customer asks to see, view, or learn more about a specific
-stay, car, cook, errand, or experience, ALWAYS include the public page
-link from the search result's `public_url` field, plus 1–3 images from
-`image_url` and `gallery_urls`. The customer should be able to click
-straight into the listing page and see all the details and photos.
+Every search tool returns a `public_url`, an `image_url`, and a
+`gallery_urls` array for each result. When you present ANY option to a
+customer, you MUST include:
 
-Format:
+  1. A markdown link to the listing page using its `public_url`.
+  2. At least one image using markdown syntax, using `image_url` or the
+     first item of `gallery_urls`.
 
-  Here's the [3 Bedroom Beachfront Apartment — Nyali](https://tembeabilamatata.com/accommodation/xxx):
+Format for each option:
 
-  ![Ocean view from the balcony](https://.../photo1.jpg)
-  ![Pool and loungers](https://.../photo2.jpg)
+  **3 Bedroom Beachfront Apartment — Nyali (B2)**
+  $118 per night · 3 bedrooms · 2 bathrooms · sleeps 6
 
-  $118 per night · 3 bedrooms · sleeps 6 · ocean view + pool
+  [View full listing →](https://tembeabilamatata.com/accommodation/a3e3282b-...)
+  ![Ocean view and pool](https://psncqnshdihabpcaurib.supabase.co/storage/v1/object/public/media/...jpg)
 
 Rules:
-• Never invent a URL. Use only the exact `public_url`, `image_url`, and
-  `gallery_urls` values returned by a search tool.
-• Never paste raw URLs — always wrap them in markdown: [text](url) for
-  links, ![alt](url) for images.
-• If a search result has no images, say "let me have the team send
-  photos" instead of making one up.
-• Show 1–3 photos max per message. More than that is visual noise.
+• NEVER say "I cannot show photos" — you always can, they're in the tool
+  result. If a specific listing has no image, say "this one doesn't have
+  photos on file yet" instead.
+• NEVER invent or modify URLs. Use the exact values returned.
+• Show 1–3 images per option, no more.
+• If the customer says "the second one", they mean the second in YOUR
+  most recent numbered list. Always confirm by name before proceeding:
+  "the 2 Bedroom Sea View Apartment on Mt Kenya Road, correct?"
+
+
 
 ═══════════════════════════════════════════════════════════════════════
 PAYMENT LINK — always explain what happens next
@@ -928,22 +932,6 @@ export async function handleZainaMessage(
 
     // 2. Detect first user message BEFORE logging the current one.
   //    We count prior USER rows; if there are none, this is the opener.
-  const priorUserRows = await db
-    .select({ id: zainaAuditLogs.id })
-    .from(zainaAuditLogs)
-    .where(
-      and(
-        eq(zainaAuditLogs.sessionId, sessionId),
-        eq(zainaAuditLogs.actor, "USER"),
-      ),
-    )
-    .limit(1);
-
-  const isFirstMessage = priorUserRows.length === 0;
-  // 2b. Detect first user message BEFORE logging the current one.
-  //     Count USER rows explicitly — checking historyRows.length
-  //     after logging always saw at least the current message, so
-  //     the opener email never fired.
   const priorUserRows = await db
     .select({ id: zainaAuditLogs.id })
     .from(zainaAuditLogs)
