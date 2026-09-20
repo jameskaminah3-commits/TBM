@@ -97,17 +97,26 @@ function selectChips(): Chip[] {
   return selection;
 }
 function buildWhatsAppHandoffUrl(msgs: Msg[]): string {
-  const userMessages = msgs
-    .filter((m) => m.role === "user")
-    .slice(-4)
-    .map((m) => `• ${m.content}`)
-    .join("\n");
+  // Take a wider window so we don't lose the listing the customer was
+  // interested in. Interleave user + assistant messages so context is
+  // preserved — "the second one" only makes sense if we also include
+  // what "the second one" was.
+  const recent = msgs.slice(-10);
+
+  const lines = recent.map((m) => {
+    const speaker = m.role === "user" ? "Me" : "Zaina";
+    // Collapse long assistant messages to a single line so the WhatsApp
+    // prefill doesn't balloon past a few hundred characters.
+    const text = m.content.replace(/\s+/g, " ").trim();
+    const trimmed = text.length > 220 ? text.slice(0, 217) + "…" : text;
+    return `${speaker}: ${trimmed}`;
+  });
 
   const summary = [
     "Hi, I was chatting with Zaina on tembeabilamatata.com and would like to continue here.",
     "",
-    "What we discussed:",
-    userMessages || "• (no previous messages)",
+    "Recent context:",
+    ...lines,
   ].join("\n");
 
   const separator = WHATSAPP_URL.includes("?") ? "&" : "?";
