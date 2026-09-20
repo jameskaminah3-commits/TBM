@@ -11,17 +11,18 @@
 //   6. Notifications to ops are best-effort. If they fail, they log — the tool still returns.
 
 import { db } from "../db";
-import { sendOpsAlertEmail } from "../notifications";
-import { sendOpsAlertEmail, sendZainaBookingCreatedEmail, sendZainaConversationStartedEmail } from "../notifications";
-import { chatSessions, zainaAuditLogs } from "@shared/schema";
-import { asc } from "drizzle-orm";
+import {
+  sendOpsAlertEmail,
+  sendZainaBookingCreatedEmail,
+  sendZainaConversationStartedEmail,
+} from "../notifications";
 import { storage } from "../storage";
 import {
   bookings, stays, cooks, cars, errands, experiences,
-  aiLeads, chatSessions, customOffers,
+  aiLeads, chatSessions, customOffers, zainaAuditLogs,
   users, userPushDevices,
 } from "@shared/schema";
-import { and, eq, ne, lt, gt, gte, lte, sql, isNotNull } from "drizzle-orm";
+import { and, eq, ne, lt, gt, gte, lte, sql, isNotNull, asc } from "drizzle-orm";
 import { getUsdToKesRate } from "../currency";
 import { HELP_MAMA_HOURLY_MINIMUM_HOURS } from "@shared/errand-pricing";
 import { sendWebPushNotification } from "../push";
@@ -38,6 +39,7 @@ import { INVENTORY_CATALOG } from "./catalog";
 function appBaseUrl(): string {
   return (process.env.APP_BASE_URL?.trim() || "https://tembeabilamatata.com").replace(/\/+$/, "");
 }
+
 async function getSessionCurrency(sessionId: string): Promise<"USD" | "KES"> {
   const [sess] = await db
     .select({ displayCurrency: chatSessions.displayCurrency })
@@ -58,7 +60,7 @@ async function formatPrice(amountUsd: number, sessionId: string): Promise<string
 
 /**
  * Returns the number of nights between two ISO dates, or null if the dates
- * are invalid. Callers must treat null as a hard failure — no silent fallback.
+ * are invalid. Anchored to Kenya midnight (+03:00).
  */
 function validateAndGetNights(checkIn: string, checkOut: string): number | null {
   if (typeof checkIn !== "string" || typeof checkOut !== "string") return null;
@@ -69,9 +71,6 @@ function validateAndGetNights(checkIn: string, checkOut: string): number | null 
 }
 
 function occupiedEndDate(checkIn: string, checkOut: string): string {
-  // Uses +03:00 so day arithmetic is anchored to Kenya midnight. Using UTC
-  // midnight shifts the effective date by 3 hours, which matters for
-  // same-day classification and multi-day boundary math.
   const start = new Date(`${checkIn}T00:00:00+03:00`).getTime();
   const end = new Date(`${checkOut}T00:00:00+03:00`).getTime();
   if (end === start) return checkOut;
@@ -80,11 +79,6 @@ function occupiedEndDate(checkIn: string, checkOut: string): string {
   return d.toISOString().slice(0, 10);
 }
 
-/**
- * Returns today's date in Kenya (YYYY-MM-DD). This is the reference point
- * for all booking-window checks. Using UTC here would misclassify bookings
- * made between 21:00 and 00:00 Kenya as "yesterday".
- */
 /**
  * Today's date in Kenya (YYYY-MM-DD). Using UTC here would misclassify
  * bookings made between 21:00 and 00:00 Kenya as "yesterday."
@@ -114,60 +108,6 @@ function daysBetween(startDate: string, endDate: string): number {
  *   • Same-day (today in Kenya) is rejected — always.
  *   • Otherwise, the booking must land on or after
  *     today + max(1, ceil(advanceHours / 24)) days.
- *
- * Tomorrow always qualifies for any advance window up to 24 hours,
- * because "tomorrow" is one full day out regardless of the hour.
- */
-function isBookingWindowSufficient(
-  checkInDate: string,
-  advanceHours: number,
-): { ok: true } | { ok: false; reason: string; today: string; required_days: number } {
-  const today = todayInKenya();
-
-  if (checkInDate < today) {
-    return { ok: false, reason: "date_in_past", today, required_days: 1 };
-  }
-  if (checkInDate === today) {
-    return { ok: false, reason: "same_day_not_allowed", today, required_days: 1 };
-  }
-
-  const daysOut = daysBetween(today, checkInDate);
-  const requiredDays = Math.max(1, Math.ceil(advanceHours / 24));
-  if (daysOut < requiredDays) {
-    return { ok: false, reason: "not_enough_advance", today, required_days: requiredDays };
-  }
-
-  return { ok: true };
-}
-function todayInKenya(): string {
-  return new Date().toLocaleDateString("en-CA", {
-    timeZone: "Africa/Nairobi",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-}
-
-/**
- * Whole days between two YYYY-MM-DD strings, anchored to Kenya midnight.
- */
-function daysBetween(startDate: string, endDate: string): number {
-  const start = new Date(`${startDate}T00:00:00+03:00`).getTime();
-  const end = new Date(`${endDate}T00:00:00+03:00`).getTime();
-  return Math.round((end - start) / (24 * 60 * 60 * 1000));
-}
-
-/**
- * Checks whether a booking lands far enough in the future.
- *
- * Rules:
- *   • Past dates are always rejected.
- *   • Same-day (today in Kenya) is always rejected — per policy, same-day
- *     requests go through the team directly.
- *   • Beyond that, the booking must land on or after
- *     today + ceil(advance_hours / 24) days.
- *
- * Returns a discriminated union so callers can build their own error payloads.
  */
 function isBookingWindowSufficient(
   checkInDate: string,
@@ -203,6 +143,57 @@ async function sendOpsAlert(payload: {
     await sendOpsAlertEmail(payload);
   } catch (err) {
     console.error("[zaina] ops alert failed:", err);
+  }
+}
+
+/**
+ * Shared helper: reads the full audit transcript for a session and sends
+ * the "booking created" notification. Best-effort — logs on failure.
+ */
+async function notifyBookingCreated(args: {
+  bookingId: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string;
+  kind: "stay" | "service";
+  summary: string;
+  totalDisplay: string;
+  paymentLink: string;
+  sessionId: string;
+}): Promise<void> {
+  try {
+    const transcriptRows = await db
+      .select({
+        actor: zainaAuditLogs.actor,
+        messageContent: zainaAuditLogs.messageContent,
+        timestamp: zainaAuditLogs.timestamp,
+      })
+      .from(zainaAuditLogs)
+      .where(eq(zainaAuditLogs.sessionId, args.sessionId))
+      .orderBy(asc(zainaAuditLogs.timestamp));
+
+    const transcript = transcriptRows
+      .filter((r) => r.messageContent)
+      .map((r) => ({
+        actor: r.actor,
+        text: r.messageContent as string,
+        timestamp: String(r.timestamp),
+      }));
+
+    await sendZainaBookingCreatedEmail({
+      bookingId: args.bookingId,
+      customerName: args.customerName,
+      customerEmail: args.customerEmail,
+      customerPhone: args.customerPhone,
+      kind: args.kind,
+      summary: args.summary,
+      totalDisplay: args.totalDisplay,
+      paymentLink: args.paymentLink,
+      sessionId: args.sessionId,
+      transcript,
+    });
+  } catch (notifyErr) {
+    console.error("[zaina] booking-created email failed:", notifyErr);
   }
 }
 
@@ -319,6 +310,7 @@ export async function searchCooks(
       speciality: c.speciality,
       minimum_guests: c.minimumGuests,
       maximum_guests: c.maxGuests,
+      public_url: `${appBaseUrl()}/book/cook/${c.id}`,
       pricing: {
         per_plate: c.pricePerPlate
           ? { usd: c.pricePerPlate, display: await formatPrice(c.pricePerPlate, sessionId), minimum_plates: c.minPlates }
@@ -387,6 +379,7 @@ export async function searchCars(
       location: c.location,
       seats: c.seats,
       transmission: c.transmission,
+      public_url: `${appBaseUrl()}/book/car/${c.id}`,
       pricing: {
         self_drive_per_day: c.pricePerDay
           ? { usd: c.pricePerDay, display: await formatPrice(c.pricePerDay, sessionId) }
@@ -439,6 +432,7 @@ export async function searchErrands(
         id: e.id,
         service_name: e.serviceName,
         location: e.location,
+        public_url: `${appBaseUrl()}/book/errand/${e.id}`,
         base_price: {
           usd: e.basePrice,
           display: await formatPrice(e.basePrice, sessionId),
@@ -529,6 +523,7 @@ export async function searchExperiences(
       type: x.experienceType,
       duration_hours: x.durationHours,
       guests: { min: x.minGuests, max: x.maxGuests },
+      public_url: `${appBaseUrl()}/book/experience/${x.id}`,
       pricing: {
         private_per_person: x.privateEnabled && x.privatePricePerPerson
           ? { usd: x.privatePricePerPerson, display: await formatPrice(x.privatePricePerPerson, sessionId) }
@@ -926,10 +921,6 @@ export async function composeTripPackage(
  * The caller passes a configuration (stay_id, service_ids, dates, guests)
  * and the server re-fetches every entity, validates it, and calculates
  * the total itself. The model can never influence the final price.
- *
- * If a requested service requires pricing that isn't supported in v1
- * (chef plate/meal pricing, hourly cars, shared experiences, complex errands),
- * the tool returns `requires_manual_quote` and the conversation escalates.
  */
 export async function createDraftBooking(
   args: {
@@ -957,10 +948,11 @@ export async function createDraftBooking(
       ok: true,
       booking_id: existing[0].id,
       idempotent_replay: true,
-      payment_link: `/bookings?bookingId=${existing[0].id}`,
+      payment_link: `${appBaseUrl()}/bookings?bookingId=${existing[0].id}`,
       total: await formatPrice(existing[0].totalPrice, sessionId),
     };
   }
+
   // 1. Required-field guard. The model sometimes skips fields that are
   //    "required" in the declaration. Fail closed with a clear hint so it
   //    asks the customer rather than crashing downstream.
@@ -995,17 +987,8 @@ export async function createDraftBooking(
       hint: "Ask the customer for their phone number before booking.",
     };
   }
-    // Required-field guard — fail closed with a hint the model can act on.
-  if (typeof args.customer_name !== "string" || args.customer_name.trim().length < 2) {
-    return { ok: false, error: "customer_name_required", hint: "Ask for the customer's full name before booking." };
-  }
-  if (typeof args.customer_email !== "string" || !args.customer_email.includes("@")) {
-    return { ok: false, error: "customer_email_required", hint: "Ask for the customer's email before booking." };
-  }
-  if (typeof args.customer_phone !== "string" || args.customer_phone.trim().length < 7) {
-    return { ok: false, error: "customer_phone_required", hint: "Ask for the customer's phone before booking." };
-  }
-     // 1. Validate dates
+
+  // 2. Validate dates
   const nights = validateAndGetNights(args.check_in, args.check_out);
   if (nights === null) {
     return {
@@ -1017,8 +1000,7 @@ export async function createDraftBooking(
     };
   }
 
-  // 2. Day-granularity advance window. With the user's current rule
-  //    (stays = 24h), this means "today is rejected, tomorrow onward is OK."
+  // 3. Day-granularity advance window. Stays = 24h → "today rejected, tomorrow onward OK."
   const window = isBookingWindowSufficient(args.check_in, 24);
   if (!window.ok) {
     return {
@@ -1036,7 +1018,7 @@ export async function createDraftBooking(
     };
   }
 
-  // 2. Validate stay
+  // 4. Validate stay
   const [stay] = await db.select().from(stays).where(eq(stays.id, args.stay_id)).limit(1);
   if (!stay) return { ok: false, error: "stay_not_found" };
   if (!stay.isPublic || !stay.managerUserId) {
@@ -1055,14 +1037,7 @@ export async function createDraftBooking(
     };
   }
 
-  // 3. Check stay availability
-  // NOTE: This check-then-create pattern is not atomic. Two concurrent sessions
-  // could theoretically both see "available" and both create bookings. The
-  // idempotency key protects against duplicate submissions from the same session;
-  // cross-session races are mitigated by the low-volume nature of the concierge
-  // flow and by manual ops review of every booking. The correct long-term fix is
-  // a Postgres exclusion constraint on (accommodation_id, daterange) — tracked
-  // for v1.5.
+  // 5. Check stay availability
   const conflicts = await db
     .select({ id: bookings.id })
     .from(bookings)
@@ -1077,11 +1052,10 @@ export async function createDraftBooking(
     return { ok: false, error: "stay_not_available" };
   }
 
-  // 4. Server-side pricing. Never trust a price from the model.
+  // 6. Server-side pricing. Never trust a price from the model.
   let totalUsd = stay.price * nights;
   const staySubtotal = totalUsd;
 
-  // 5. Price services. Only simple modes supported in v1 — complex modes route to ops.
   const serviceIds = Array.from(new Set((args.service_ids || []).filter(Boolean)));
   const pricedServices: Array<{ id: string; name: string; subtotal: number }> = [];
 
@@ -1114,7 +1088,6 @@ export async function createDraftBooking(
       if (args.guests > car.seats) {
         return { ok: false, error: "guest_count_exceeds_car_capacity", service_id: serviceId };
       }
-      // Chauffeur-day pricing only. Hourly and self-drive go through ops for v1.
       const subtotal = car.priceWithDriver * nights;
       totalUsd += subtotal;
       pricedServices.push({ id: car.id, name: car.model, subtotal });
@@ -1129,7 +1102,6 @@ export async function createDraftBooking(
       if (args.guests < experience.privateMinimumGuests || args.guests > experience.maxGuests) {
         return { ok: false, error: "guest_count_out_of_range", service_id: serviceId };
       }
-      // Private pricing only. Shared departures go through ops for v1.
       const subtotal = experience.privatePricePerPerson * args.guests;
       totalUsd += subtotal;
       pricedServices.push({ id: experience.id, name: experience.title, subtotal });
@@ -1141,7 +1113,6 @@ export async function createDraftBooking(
       if (!errand.isPublic || !errand.managerUserId) {
         return { ok: false, error: "service_not_bookable", service_id: serviceId };
       }
-      // Base price only. Shopping, laundry, cleaning, MamaCare all need config — route to ops.
       const subtotal = errand.basePrice;
       totalUsd += subtotal;
       pricedServices.push({ id: errand.id, name: errand.serviceName, subtotal });
@@ -1151,7 +1122,7 @@ export async function createDraftBooking(
     return { ok: false, error: "service_not_found", service_id: serviceId };
   }
 
-  // 6. Create booking with the server-calculated total. The model never touched this number.
+  // 7. Create booking
   const now = new Date().toISOString();
   const booking = await storage.createBooking({
     userId: null,
@@ -1226,46 +1197,17 @@ export async function createDraftBooking(
 
   const paymentLink = `${appBaseUrl()}/bookings?bookingId=${booking.id}`;
 
-  // Fire an admin notification with the full transcript. Best-effort;
-  // failure here doesn't block the booking.
-  try {
-    const { sendZainaBookingCreatedEmail } = await import("../notifications");
-    const { zainaAuditLogs } = await import("@shared/schema");
-    const { asc } = await import("drizzle-orm");
-
-    const transcriptRows = await db
-      .select({
-        actor: zainaAuditLogs.actor,
-        messageContent: zainaAuditLogs.messageContent,
-        timestamp: zainaAuditLogs.timestamp,
-      })
-      .from(zainaAuditLogs)
-      .where(eq(zainaAuditLogs.sessionId, sessionId))
-      .orderBy(asc(zainaAuditLogs.timestamp));
-
-    const transcript = transcriptRows
-      .filter((r) => r.messageContent)
-      .map((r) => ({
-        actor: r.actor,
-        text: r.messageContent as string,
-        timestamp: String(r.timestamp),
-      }));
-
-    await sendZainaBookingCreatedEmail({
-      bookingId: booking.id,
-      customerName: args.customer_name,
-      customerEmail: args.customer_email,
-      customerPhone: args.customer_phone,
-      kind: "stay",
-      summary: `${nights} night${nights === 1 ? "" : "s"} at ${stay.title} (${args.check_in} → ${args.check_out}, ${args.guests} guest${args.guests === 1 ? "" : "s"})`,
-      totalDisplay: await formatPrice(totalUsd, sessionId),
-      paymentLink,
-      sessionId,
-      transcript,
-    });
-  } catch (notifyErr) {
-    console.error("[zaina] booking-created email failed:", notifyErr);
-  }
+  await notifyBookingCreated({
+    bookingId: booking.id,
+    customerName: args.customer_name,
+    customerEmail: args.customer_email,
+    customerPhone: args.customer_phone,
+    kind: "stay",
+    summary: `${nights} night${nights === 1 ? "" : "s"} at ${stay.title} (${args.check_in} → ${args.check_out}, ${args.guests} guest${args.guests === 1 ? "" : "s"})`,
+    totalDisplay: await formatPrice(totalUsd, sessionId),
+    paymentLink,
+    sessionId,
+  });
 
   return {
     ok: true,
@@ -1288,15 +1230,13 @@ export async function createDraftBooking(
     total: await formatPrice(totalUsd, sessionId),
   };
 }
+
 // ═══════════════════════════════════════════════════════════════════
 // SERVICE BOOKINGS — standalone, no stay required
 // ═══════════════════════════════════════════════════════════════════
 //
 // Use this for one-off services where the customer is NOT booking a stay:
 // MamaCare, private chefs (session mode), standalone experiences, base errands.
-//
-// Unlike createDraftBooking, this accepts a single `date` (check_in and
-// check_out are the same day) and prices the service from its own row.
 
 export async function createServiceBooking(
   args: {
@@ -1330,18 +1270,28 @@ export async function createServiceBooking(
       ok: true,
       booking_id: existing[0].id,
       idempotent_replay: true,
-      payment_link: `/bookings?bookingId=${existing[0].id}`,
+      payment_link: `${appBaseUrl()}/bookings?bookingId=${existing[0].id}`,
       total: await formatPrice(existing[0].totalPrice, sessionId),
     };
   }
 
-  // 1. Validate date format
+  // 1. Required-field guards
+  if (typeof args.customer_name !== "string" || args.customer_name.trim().length < 2) {
+    return { ok: false, error: "customer_name_required", hint: "Ask for the customer's full name before booking." };
+  }
+  if (typeof args.customer_email !== "string" || !args.customer_email.includes("@")) {
+    return { ok: false, error: "customer_email_required", hint: "Ask for the customer's email before booking." };
+  }
+  if (typeof args.customer_phone !== "string" || args.customer_phone.trim().length < 7) {
+    return { ok: false, error: "customer_phone_required", hint: "Ask for the customer's phone before booking." };
+  }
+
+  // 2. Validate date format
   if (!args.date || !/^\d{4}-\d{2}-\d{2}$/.test(args.date)) {
     return { ok: false, error: "invalid_date", hint: "Date must be YYYY-MM-DD." };
   }
 
-  // 2. Day-granularity advance window. Cars/errands/MamaCare use 6h → 1 day.
-  //    Cooks/experiences use 12h → 1 day. Same-day always rejected.
+  // 3. Day-granularity advance window.
   let advanceHours = 6;
   if (args.mode.startsWith("cook")) advanceHours = 12;
   else if (args.mode.startsWith("experience")) advanceHours = 12;
@@ -1362,7 +1312,8 @@ export async function createServiceBooking(
             : `This needs ${window.required_days} day(s) advance notice. Today is ${window.today}. Ask for a later date.`,
     };
   }
-  // 2. Look up the service across all tables
+
+  // 4. Look up the service across all tables
   const [cook] = await db.select().from(cooks).where(eq(cooks.id, args.service_id)).limit(1);
   const [errand] = await db.select().from(errands).where(eq(errands.id, args.service_id)).limit(1);
   const [experience] = await db.select().from(experiences).where(eq(experiences.id, args.service_id)).limit(1);
@@ -1496,7 +1447,7 @@ export async function createServiceBooking(
     return { ok: false, error: "could_not_price" };
   }
 
-  // 3. Create the booking
+  // 5. Create the booking
   const now = new Date().toISOString();
   const booking = await storage.createBooking({
     userId: null,
@@ -1568,48 +1519,22 @@ export async function createServiceBooking(
     createdAt: now,
     idempotencyKey: args.idempotency_key,
   } as any);
+
   const paymentLink = `${appBaseUrl()}/bookings?bookingId=${booking.id}`;
 
-  try {
-    const { sendZainaBookingCreatedEmail } = await import("../notifications");
-    const { zainaAuditLogs } = await import("@shared/schema");
-    const { asc } = await import("drizzle-orm");
+  const serviceLabel = errand?.serviceName ?? cook?.title ?? experience?.title ?? "Service";
 
-    const transcriptRows = await db
-      .select({
-        actor: zainaAuditLogs.actor,
-        messageContent: zainaAuditLogs.messageContent,
-        timestamp: zainaAuditLogs.timestamp,
-      })
-      .from(zainaAuditLogs)
-      .where(eq(zainaAuditLogs.sessionId, sessionId))
-      .orderBy(asc(zainaAuditLogs.timestamp));
-
-    const transcript = transcriptRows
-      .filter((r) => r.messageContent)
-      .map((r) => ({
-        actor: r.actor,
-        text: r.messageContent as string,
-        timestamp: String(r.timestamp),
-      }));
-
-    const serviceLabel = errand?.serviceName ?? cook?.title ?? experience?.title ?? "Service";
-
-    await sendZainaBookingCreatedEmail({
-      bookingId: booking.id,
-      customerName: args.customer_name,
-      customerEmail: args.customer_email,
-      customerPhone: args.customer_phone,
-      kind: "service",
-      summary: `${serviceLabel} on ${args.date} (${args.mode})`,
-      totalDisplay: await formatPrice(totalUsd, sessionId),
-      paymentLink,
-      sessionId,
-      transcript,
-    });
-  } catch (notifyErr) {
-    console.error("[zaina] booking-created email failed:", notifyErr);
-  }
+  await notifyBookingCreated({
+    bookingId: booking.id,
+    customerName: args.customer_name,
+    customerEmail: args.customer_email,
+    customerPhone: args.customer_phone,
+    kind: "service",
+    summary: `${serviceLabel} on ${args.date} (${args.mode})`,
+    totalDisplay: await formatPrice(totalUsd, sessionId),
+    paymentLink,
+    sessionId,
+  });
 
   return {
     ok: true,
@@ -1619,6 +1544,7 @@ export async function createServiceBooking(
     total: await formatPrice(totalUsd, sessionId),
   };
 }
+
 // ═══════════════════════════════════════════════════════════════════
 // CUSTOM OFFERS
 // ═══════════════════════════════════════════════════════════════════
@@ -1774,7 +1700,8 @@ export async function escalateToHuman(args: { reason: string }, sessionId: strin
     summary: `Handoff requested: ${args.reason}`,
     details: { Reason: args.reason },
   });
-   // ─── Notify all admins via push (fire-and-forget) ────────────
+
+  // Notify all admins via push (fire-and-forget)
   try {
     const admins = await db
       .select({ id: users.id })
@@ -1813,5 +1740,6 @@ export async function escalateToHuman(args: { reason: string }, sessionId: strin
   } catch (pushSetupErr) {
     console.error("[zaina] push fanout failed:", pushSetupErr);
   }
+
   return { ok: true, status: "escalated" };
 }
