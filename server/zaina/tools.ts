@@ -233,10 +233,12 @@ export async function searchStays(
     })
     .from(stays)
     .where(and(...conditions))
-    .limit(20);
+    .orderBy(stays.title)
+    .limit(3);
 
   const results = await Promise.all(
-    rows.map(async (s) => ({
+    rows.map(async (s, i) => ({
+      option_index: i + 1,
       id: s.id,
       title: s.title,
       location: s.location,
@@ -297,13 +299,17 @@ export async function searchCooks(
       sampleMenus: cooks.sampleMenus,
       rating: cooks.rating,
       reviewCount: cooks.reviewCount,
+      imageUrl: cooks.imageUrl,
+      galleryUrls: cooks.galleryUrls,
     })
     .from(cooks)
     .where(and(...conditions))
-    .limit(20);
+    .orderBy(cooks.title)
+    .limit(3);
 
   const results = await Promise.all(
-    rows.map(async (c) => ({
+    rows.map(async (c, i) => ({
+      option_index: i + 1,
       id: c.id,
       title: c.title,
       location: c.location,
@@ -311,6 +317,8 @@ export async function searchCooks(
       minimum_guests: c.minimumGuests,
       maximum_guests: c.maxGuests,
       public_url: `${appBaseUrl()}/book/cook/${c.id}`,
+      image_url: c.imageUrl,
+      gallery_urls: (c.galleryUrls ?? []).slice(0, 4),
       pricing: {
         per_plate: c.pricePerPlate
           ? { usd: c.pricePerPlate, display: await formatPrice(c.pricePerPlate, sessionId), minimum_plates: c.minPlates }
@@ -367,19 +375,25 @@ export async function searchCars(
       priceWithDriverHourly: cars.priceWithDriverHourly,
       chauffeurZones: cars.chauffeurZones,
       features: cars.features,
+      imageUrl: cars.imageUrl,
+      galleryUrls: cars.galleryUrls,
     })
     .from(cars)
     .where(and(...conditions))
-    .limit(20);
+    .orderBy(cars.model)
+    .limit(3);
 
   const results = await Promise.all(
-    rows.map(async (c) => ({
+    rows.map(async (c, i) => ({
+      option_index: i + 1,
       id: c.id,
       model: c.model,
       location: c.location,
       seats: c.seats,
       transmission: c.transmission,
       public_url: `${appBaseUrl()}/book/car/${c.id}`,
+      image_url: c.imageUrl,
+      gallery_urls: (c.galleryUrls ?? []).slice(0, 4),
       pricing: {
         self_drive_per_day: c.pricePerDay
           ? { usd: c.pricePerDay, display: await formatPrice(c.pricePerDay, sessionId) }
@@ -423,16 +437,20 @@ export async function searchErrands(
     .select()
     .from(errands)
     .where(and(...conditions))
-    .limit(20);
+    .orderBy(errands.serviceName)
+    .limit(3);
 
   const results = await Promise.all(
-    rows.map(async (e) => {
+    rows.map(async (e, i) => {
       const helpMama = e.helpMamaPricing;
       return {
+        option_index: i + 1,
         id: e.id,
         service_name: e.serviceName,
         location: e.location,
         public_url: `${appBaseUrl()}/book/errand/${e.id}`,
+        image_url: e.imageUrl,
+        gallery_urls: (e.galleryUrls ?? []).slice(0, 4),
         base_price: {
           usd: e.basePrice,
           display: await formatPrice(e.basePrice, sessionId),
@@ -510,13 +528,17 @@ export async function searchExperiences(
       inclusions: experiences.inclusions,
       rating: experiences.rating,
       reviewCount: experiences.reviewCount,
+      imageUrl: experiences.imageUrl,
+      galleryUrls: experiences.galleryUrls,
     })
     .from(experiences)
     .where(and(...conditions))
-    .limit(20);
+    .orderBy(experiences.title)
+    .limit(3);
 
   const results = await Promise.all(
-    rows.map(async (x) => ({
+    rows.map(async (x, i) => ({
+      option_index: i + 1,
       id: x.id,
       title: x.title,
       location: x.location,
@@ -524,6 +546,8 @@ export async function searchExperiences(
       duration_hours: x.durationHours,
       guests: { min: x.minGuests, max: x.maxGuests },
       public_url: `${appBaseUrl()}/book/experience/${x.id}`,
+      image_url: x.imageUrl,
+      gallery_urls: (x.galleryUrls ?? []).slice(0, 4),
       pricing: {
         private_per_person: x.privateEnabled && x.privatePricePerPerson
           ? { usd: x.privatePricePerPerson, display: await formatPrice(x.privatePricePerPerson, sessionId) }
@@ -583,12 +607,14 @@ export async function checkStayAvailability(
     ok: true,
     stay_id: args.stay_id,
     title: stay.title,
+    public_url: `${appBaseUrl()}/accommodation/${stay.id}`,
+    image_url: stay.imageUrl,
+    gallery_urls: (stay.galleryUrls ?? []).slice(0, 4),
     available: conflicts.length === 0,
     conflicting_bookings: conflicts.length,
     requested: { check_in: args.check_in, check_out: args.check_out, occupied_end: requestedEnd, nights },
   };
 }
-
 // ═══════════════════════════════════════════════════════════════════
 // PRICING TOOLS
 // ═══════════════════════════════════════════════════════════════════
