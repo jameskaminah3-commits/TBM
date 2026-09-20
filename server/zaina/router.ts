@@ -959,6 +959,11 @@ function maskPII(value: any): any {
   if (!value || typeof value !== "object") return value;
   const out: any = Array.isArray(value) ? [...value] : { ...value };
   for (const k of Object.keys(out)) {
+    // These are intentionally retained: they are the customer-facing links
+    // Zaina must be able to reuse on the next turn of the conversation.
+    if ((k === "public_url" || k === "payment_link") && typeof out[k] === "string") {
+      continue;
+    }
     if (/phone|email|card|token|secret|link|key/i.test(k) && typeof out[k] === "string") {
       out[k] = "***masked***";
     } else if (typeof out[k] === "object") {
@@ -1115,6 +1120,9 @@ export async function handleZainaMessage(
   let finalText: string | null = null;
   let escalated = false;
   const customerLinks: string[] = [];
+  for (const row of historyRows) {
+    collectCustomerLinks(row.toolResponse, customerLinks);
+  }
   // Only actual tool/system failures should trigger an automatic human handoff.
   // Normal business outcomes (for example, a stay becoming unavailable) are
   // recoverable by searching again or asking the customer for another choice.
