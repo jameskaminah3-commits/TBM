@@ -940,6 +940,22 @@ export async function handleZainaMessage(
     .limit(1);
 
   const isFirstMessage = priorUserRows.length === 0;
+  // 2b. Detect first user message BEFORE logging the current one.
+  //     Count USER rows explicitly — checking historyRows.length
+  //     after logging always saw at least the current message, so
+  //     the opener email never fired.
+  const priorUserRows = await db
+    .select({ id: zainaAuditLogs.id })
+    .from(zainaAuditLogs)
+    .where(
+      and(
+        eq(zainaAuditLogs.sessionId, sessionId),
+        eq(zainaAuditLogs.actor, "USER"),
+      ),
+    )
+    .limit(1);
+
+  const isFirstMessage = priorUserRows.length === 0;
 
   // 3. Log the raw user message — even if a human is handling it.
   //    The admin panel reads from this same log so the agent can see what
