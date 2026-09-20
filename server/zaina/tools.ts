@@ -22,9 +22,14 @@ import {
   aiLeads, chatSessions, customOffers, zainaAuditLogs,
   users, userPushDevices,
 } from "@shared/schema";
-import { and, eq, ne, lt, gt, gte, lte, sql, isNotNull, asc } from "drizzle-orm";
+import { and, eq, ne, lt, gt, gte, lte, sql, isNotNull, asc, or } from "drizzle-orm";
 import { getUsdToKesRate } from "../currency";
 import { HELP_MAMA_HOURLY_MINIMUM_HOURS } from "@shared/errand-pricing";
+import {
+  calculateBookingDepositAmount,
+  getBookingAmountPaid,
+  hasLockedInBookingDeposit,
+} from "@shared/booking-payments";
 import { sendWebPushNotification } from "../push";
 import { INVENTORY_CATALOG } from "./catalog";
 
@@ -64,10 +69,68 @@ async function formatPrice(amountUsd: number, sessionId: string): Promise<string
  */
 function validateAndGetNights(checkIn: string, checkOut: string): number | null {
   if (typeof checkIn !== "string" || typeof checkOut !== "string") return null;
+  if (!isValidIsoDate(checkIn) || !isValidIsoDate(checkOut)) return null;
   const start = new Date(`${checkIn}T00:00:00+03:00`).getTime();
   const end = new Date(`${checkOut}T00:00:00+03:00`).getTime();
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
   return Math.max(1, Math.ceil((end - start) / (1000 * 60 * 60 * 24)));
+}
+
+function isValidIsoDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00+03:00`);
+  return Number.isFinite(date.getTime()) && date.toLocaleDateString("en-CA", {
+    timeZone: "Africa/Nairobi",
+  }) === value;
+}
+
+function addOneDay(value: string): string {
+  const date = new Date(`${value}T00:00:00+03:00`);
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
+}
+
+function positiveIntegerOrDefault(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.max(1, Math.round(value))
+    : fallback;
+}
+
+function hasUsableIdempotencyKey(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length >= 8 && value.length <= 128;
+}
+
+function parseTimeToMinutes(value: unknown): number | null {
+  if (typeof value !== "string" || !/^\d{2}:\d{2}$/.test(value)) return null;
+  const [hours, minutes] = value.split(":").map(Number);
+  if (hours > 23 || minutes > 59) return null;
+  return hours * 60 + minutes;
+}
+
+type AvailabilityBooking = {
+  status: string;
+  totalPrice: number;
+  paymentStatus: string | null;
+  paymentAmountPaid: number | null;
+  paymentDepositAmount: number | null;
+  paymentHoldExpiresAt: string | null;
+  serviceMode: string | null;
+};
+
+/**
+ * Pending drafts do not block inventory. A verified payment, locked deposit,
+ * or active checkout hold does. This is the same rule used by the main
+ * booking routes and prevents abandoned Zaina drafts from making inventory
+ * appear permanently unavailable.
+ */
+function bookingBlocksAvailability(booking: AvailabilityBooking): boolean {
+  if (booking.status === "cancelled" || booking.status === "completed") return false;
+  if (getBookingAmountPaid(booking) >= Math.max(0, booking.totalPrice)) return true;
+  if (hasLockedInBookingDeposit(booking)) return true;
+
+  if (!["pending", "processing"].includes(booking.paymentStatus ?? "paid")) return false;
+  if (!booking.paymentHoldExpiresAt) return false;
+  return new Date(booking.paymentHoldExpiresAt).getTime() > Date.now();
 }
 
 function occupiedEndDate(checkIn: string, checkOut: string): string {
@@ -963,6 +1026,14 @@ export async function createDraftBooking(
   },
   sessionId: string,
 ) {
+  if (!hasUsableIdempotencyKey(args?.idempotency_key)) {
+    return {
+      ok: false,
+      error: "idempotency_key_required",
+      hint: "Generate a fresh UUID v4 before retrying the booking.",
+    };
+  }
+
   // 0. Idempotency check first
   const existing = await db
     .select()
@@ -983,7 +1054,7 @@ export async function createDraftBooking(
   // 1. Required-field guard. The model sometimes skips fields that are
   //    "required" in the declaration. Fail closed with a clear hint so it
   //    asks the customer rather than crashing downstream.
-  if (typeof args.guests !== "number" || !Number.isFinite(args.guests) || args.guests < 1) {
+  if (typeof args.guests !== "number" || !Number.isInteger(args.guests) || args.guests < 1) {
     return {
       ok: false,
       error: "guests_required",
@@ -1019,14 +1090,6 @@ export async function createDraftBooking(
       error: "customer_phone_required",
       hint: "Ask the customer for their phone number.",
       tell_customer: "One more — what's the best phone number to reach you on?",
-    };
-  }
-
-  if (typeof args.customer_phone !== "string" || args.customer_phone.trim().length < 7) {
-    return {
-      ok: false,
-      error: "customer_phone_required",
-      hint: "Ask the customer for their phone number before booking.",
     };
   }
 
@@ -1080,8 +1143,16 @@ export async function createDraftBooking(
   }
 
   // 5. Check stay availability
-  const conflicts = await db
-    .select({ id: bookings.id })
+  const candidateBookings = await db
+    .select({
+      status: bookings.status,
+      totalPrice: bookings.totalPrice,
+      paymentStatus: bookings.paymentStatus,
+      paymentAmountPaid: bookings.paymentAmountPaid,
+      paymentDepositAmount: bookings.paymentDepositAmount,
+      paymentHoldExpiresAt: bookings.paymentHoldExpiresAt,
+      serviceMode: bookings.serviceMode,
+    })
     .from(bookings)
     .where(and(
       eq(bookings.accommodationId, args.stay_id),
@@ -1089,8 +1160,8 @@ export async function createDraftBooking(
       lt(bookings.checkIn, args.check_out),
       gt(bookings.checkOut, args.check_in),
     ))
-    .limit(1);
-  if (conflicts.length > 0) {
+    .limit(20);
+  if (candidateBookings.some(bookingBlocksAvailability)) {
     return { ok: false, error: "stay_not_available" };
   }
 
@@ -1225,7 +1296,7 @@ export async function createDraftBooking(
     paymentCurrency: "USD",
     paymentAmount: null,
     paymentCheckoutAmount: null,
-    paymentDepositAmount: null,
+    paymentDepositAmount: calculateBookingDepositAmount(Math.round(totalUsd)),
     paymentAmountPaid: 0,
     paymentHoldExpiresAt: null,
     paidAt: null,
@@ -1287,9 +1358,13 @@ export async function createServiceBooking(
     customer_phone: string;
     service_id: string;
     date: string;
+    check_out?: string;
     mode: string;
     guests?: number;
     service_location?: string;
+    service_pickup_location?: string;
+    service_return_location?: string;
+    service_zone?: string;
     service_start_time?: string;
     service_end_time?: string;
     service_request_details?: string;
@@ -1301,6 +1376,14 @@ export async function createServiceBooking(
   },
   sessionId: string,
 ) {
+  if (!hasUsableIdempotencyKey(args?.idempotency_key)) {
+    return {
+      ok: false,
+      error: "idempotency_key_required",
+      hint: "Generate a fresh UUID v4 before retrying the booking.",
+    };
+  }
+
   // 0. Idempotency
   const existing = await db
     .select()
@@ -1344,8 +1427,16 @@ export async function createServiceBooking(
   }
 
   // 2. Validate date format
-  if (!args.date || !/^\d{4}-\d{2}-\d{2}$/.test(args.date)) {
+  if (!args.date || !isValidIsoDate(args.date)) {
     return { ok: false, error: "invalid_date", hint: "Date must be YYYY-MM-DD." };
+  }
+
+  if (typeof args.mode !== "string" || !args.mode.trim()) {
+    return {
+      ok: false,
+      error: "service_mode_required",
+      hint: "Choose the service mode before creating the booking.",
+    };
   }
 
   // 3. Day-granularity advance window.
@@ -1371,19 +1462,126 @@ export async function createServiceBooking(
   }
 
   // 4. Look up the service across all tables
+  const [car] = await db.select().from(cars).where(eq(cars.id, args.service_id)).limit(1);
   const [cook] = await db.select().from(cooks).where(eq(cooks.id, args.service_id)).limit(1);
   const [errand] = await db.select().from(errands).where(eq(errands.id, args.service_id)).limit(1);
   const [experience] = await db.select().from(experiences).where(eq(experiences.id, args.service_id)).limit(1);
 
-  if (!cook && !errand && !experience) {
+  if (!car && !cook && !errand && !experience) {
     return { ok: false, error: "service_not_found" };
+  }
+
+  const isCarBooking = Boolean(car);
+  const isCarHourly = args.mode === "car-chauffeur-hourly";
+  if (isCarBooking && !["car-chauffeur-day", "car-chauffeur-hourly", "car-self-drive-day"].includes(args.mode)) {
+    return { ok: false, error: "car_mode_required", hint: "Choose chauffeur day, chauffeur hourly, or self-drive day." };
+  }
+  const serviceCheckOut = isCarBooking ? (args.check_out || args.date) : args.date;
+  if (!isValidIsoDate(serviceCheckOut)) {
+    return { ok: false, error: "invalid_date", hint: "Date must be YYYY-MM-DD." };
+  }
+  if (isCarBooking && !isCarHourly && serviceCheckOut <= args.date) {
+    return { ok: false, error: "invalid_dates", hint: "Car day bookings require a check_out date after the pickup date." };
+  }
+  if (isCarBooking && isCarHourly && serviceCheckOut !== args.date) {
+    return { ok: false, error: "invalid_dates", hint: "Hourly chauffeur bookings must start and end on the same date." };
+  }
+
+  const guestCount = positiveIntegerOrDefault(args.guests, 1);
+
+  if ((cook || errand) && (typeof args.service_location !== "string" || !args.service_location.trim())) {
+    return {
+      ok: false,
+      error: "service_location_required",
+      hint: "Ask where the service will take place before creating the booking.",
+      tell_customer: "Where should we provide the service? Please share the villa, hotel, or other location.",
+    };
+  }
+  if (car && (typeof args.service_pickup_location !== "string" || !args.service_pickup_location.trim()
+    || typeof args.service_return_location !== "string" || !args.service_return_location.trim())) {
+    return {
+      ok: false,
+      error: "car_locations_required",
+      hint: "Ask for pickup and return locations before creating the car booking.",
+      tell_customer: "Where should we pick you up, and where should the car be returned?",
+    };
+  }
+
+  // A standalone service booking occupies that service on its requested day.
+  // Ignore unpaid drafts, but respect a paid booking, deposit, or active
+  // checkout hold so two customers cannot secure the same provider at once.
+  const nextDate = addOneDay(serviceCheckOut);
+  const serviceBookings = await db
+    .select({
+      status: bookings.status,
+      totalPrice: bookings.totalPrice,
+      paymentStatus: bookings.paymentStatus,
+      paymentAmountPaid: bookings.paymentAmountPaid,
+      paymentDepositAmount: bookings.paymentDepositAmount,
+      paymentHoldExpiresAt: bookings.paymentHoldExpiresAt,
+      serviceMode: bookings.serviceMode,
+    })
+    .from(bookings)
+    .where(and(
+      sql`${bookings.selectedServices} @> ARRAY[${args.service_id}]::text[]`,
+      ne(bookings.status, "cancelled"),
+      or(
+        and(lt(bookings.checkIn, nextDate), gt(bookings.checkOut, args.date)),
+        eq(bookings.checkIn, args.date),
+      ),
+    ))
+    .limit(20);
+  if (serviceBookings.some(bookingBlocksAvailability)) {
+    return { ok: false, error: "service_not_available", hint: "Offer another date or connect the customer with the team." };
   }
 
   let totalUsd = 0;
   const serviceAddonSelections: string[] = [];
+  let serviceHours: number | null = null;
 
+  // ─── Car rental / chauffeur ────────────────────────────────────
+  if (car) {
+    if (!car.isPublic || !car.managerUserId) {
+      return { ok: false, error: "service_not_bookable" };
+    }
+    if (guestCount > car.seats) {
+      return { ok: false, error: "guest_count_exceeds_car_capacity", maximum_guests: car.seats };
+    }
+
+    const selectedZone = args.service_zone
+      ? car.chauffeurZones.find((zone) => zone.name === args.service_zone)
+      : undefined;
+    if (args.service_zone && !selectedZone) {
+      return { ok: false, error: "service_zone_not_found" };
+    }
+
+    if (isCarHourly) {
+      if (!car.priceWithDriverHourly || !args.service_start_time || !args.service_end_time) {
+        return { ok: false, error: "hourly_chauffeur_details_required" };
+      }
+      const startMinutes = parseTimeToMinutes(args.service_start_time);
+      const endMinutes = parseTimeToMinutes(args.service_end_time);
+      if (startMinutes === null || endMinutes === null || endMinutes <= startMinutes) {
+        return { ok: false, error: "invalid_service_times", hint: "End time must be after start time." };
+      }
+      serviceHours = Math.ceil((endMinutes - startMinutes) / 60);
+      if (serviceHours < 3) {
+        return { ok: false, error: "minimum_hours_required", minimum_hours: 3 };
+      }
+      totalUsd = serviceHours * (selectedZone?.hourlyPrice || car.priceWithDriverHourly);
+    } else {
+      const days = Math.max(1, daysBetween(args.date, serviceCheckOut));
+      const dailyRate = args.mode === "car-self-drive-day"
+        ? (selectedZone?.selfDrivePrice || car.pricePerDay)
+        : (selectedZone?.dailyPrice || car.priceWithDriver);
+      if (!dailyRate) {
+        return { ok: false, error: "car_mode_not_available" };
+      }
+      totalUsd = days * dailyRate;
+    }
+  }
   // ─── Errand: MamaCare ─────────────────────────────────────────
-  if (errand && args.mode === "errand-childcare") {
+  else if (errand && args.mode === "errand-childcare") {
     if (!errand.isPublic || !errand.managerUserId) {
       return { ok: false, error: "service_not_bookable" };
     }
@@ -1400,7 +1598,7 @@ export async function createServiceBooking(
       };
     }
     const careMode = args.mamacare_care_mode ?? "overnight";
-    const careHours = args.mamacare_hours ?? HELP_MAMA_HOURLY_MINIMUM_HOURS;
+    const careHours = positiveIntegerOrDefault(args.mamacare_hours, HELP_MAMA_HOURLY_MINIMUM_HOURS);
     const isHourly = careMode === "hourly_daytime" || careMode === "hourly_evening";
     if (isHourly && careHours < HELP_MAMA_HOURLY_MINIMUM_HOURS) {
       return {
@@ -1412,6 +1610,10 @@ export async function createServiceBooking(
 
     const bands = pricing.ageBands ?? [];
     for (const child of children) {
+      const childCount = positiveIntegerOrDefault(child.count, 0);
+      if (childCount < 1) {
+        return { ok: false, error: "invalid_child_count", age_band_id: child.age_band_id };
+      }
       const band = bands.find((b: any) => b.id === child.age_band_id);
       if (!band) {
         return {
@@ -1436,7 +1638,7 @@ export async function createServiceBooking(
         };
       }
       const qty = isHourly ? Math.max(HELP_MAMA_HOURLY_MINIMUM_HOURS, careHours) : 1;
-      totalUsd += rate * child.count * qty;
+      totalUsd += rate * childCount * qty;
       serviceAddonSelections.push(band.id);
     }
 
@@ -1453,7 +1655,7 @@ export async function createServiceBooking(
     if (!errand.isPublic || !errand.managerUserId) {
       return { ok: false, error: "service_not_bookable" };
     }
-    totalUsd = errand.basePrice * (args.quantity ?? 1);
+    totalUsd = errand.basePrice * positiveIntegerOrDefault(args.quantity, 1);
   }
   // ─── Errand: other modes → ops ────────────────────────────────
   else if (errand) {
@@ -1468,14 +1670,22 @@ export async function createServiceBooking(
     if (!cook.isPublic || !cook.managerUserId) {
       return { ok: false, error: "service_not_bookable" };
     }
+    if (guestCount < cook.minimumGuests || guestCount > cook.maxGuests) {
+      return {
+        ok: false,
+        error: "guest_count_out_of_range",
+        minimum_guests: cook.minimumGuests,
+        maximum_guests: cook.maxGuests,
+      };
+    }
     if (args.mode === "cook-service-fee") {
       const sessionRate = cook.serviceFee || cook.pricePerSession;
       if (!sessionRate) return { ok: false, error: "no_pricing_configured" };
-      totalUsd = sessionRate * (args.quantity ?? 1);
+      totalUsd = sessionRate * positiveIntegerOrDefault(args.quantity, 1);
     } else if (args.mode === "cook-inclusive") {
       const inclusiveRate = cook.inclusivePrice || cook.serviceFee || cook.pricePerSession;
       if (!inclusiveRate) return { ok: false, error: "no_pricing_configured" };
-      totalUsd = inclusiveRate * (args.quantity ?? 1);
+      totalUsd = inclusiveRate * positiveIntegerOrDefault(args.quantity, 1);
     } else {
       return {
         ok: false,
@@ -1490,7 +1700,15 @@ export async function createServiceBooking(
       return { ok: false, error: "service_not_bookable" };
     }
     if (args.mode === "experience-private") {
-      totalUsd = experience.privatePricePerPerson * (args.guests ?? 2);
+      if (!experience.privateEnabled || guestCount < experience.privateMinimumGuests || guestCount > experience.maxGuests) {
+        return {
+          ok: false,
+          error: "guest_count_out_of_range",
+          minimum_guests: experience.privateMinimumGuests,
+          maximum_guests: experience.maxGuests,
+        };
+      }
+      totalUsd = experience.privatePricePerPerson * guestCount;
     } else {
       return {
         ok: false,
@@ -1513,15 +1731,15 @@ export async function createServiceBooking(
     guestEmail: args.customer_email,
     guestPhone: args.customer_phone,
     checkIn: args.date,
-    checkOut: args.date,
-    guests: args.guests ?? 1,
+    checkOut: serviceCheckOut,
+    guests: guestCount,
     selectedServices: [args.service_id],
     serviceMode: args.mode,
-    serviceHours: args.mamacare_hours ?? null,
+    serviceHours: serviceHours ?? args.mamacare_hours ?? null,
     serviceLocation: args.service_location ?? null,
-    servicePickupLocation: null,
-    serviceReturnLocation: null,
-    serviceZone: null,
+    servicePickupLocation: args.service_pickup_location ?? null,
+    serviceReturnLocation: args.service_return_location ?? null,
+    serviceZone: args.service_zone ?? null,
     serviceStartTime: args.service_start_time ?? null,
     serviceEndTime: args.service_end_time ?? null,
     serviceBudgetAmount: null,
@@ -1565,7 +1783,7 @@ export async function createServiceBooking(
     paymentCurrency: "USD",
     paymentAmount: null,
     paymentCheckoutAmount: null,
-    paymentDepositAmount: null,
+    paymentDepositAmount: calculateBookingDepositAmount(Math.round(totalUsd)),
     paymentAmountPaid: 0,
     paymentHoldExpiresAt: null,
     paidAt: null,
@@ -1579,7 +1797,7 @@ export async function createServiceBooking(
 
   const paymentLink = `${appBaseUrl()}/bookings?bookingId=${booking.id}`;
 
-  const serviceLabel = errand?.serviceName ?? cook?.title ?? experience?.title ?? "Service";
+  const serviceLabel = car?.model ?? errand?.serviceName ?? cook?.title ?? experience?.title ?? "Service";
 
   await notifyBookingCreated({
     bookingId: booking.id,
@@ -1606,6 +1824,106 @@ export async function createServiceBooking(
 // CUSTOM OFFERS
 // ═══════════════════════════════════════════════════════════════════
 
+async function createCustomOfferBooking(args: {
+  offerId: string;
+  feeUsd: number;
+  customerName: string;
+  customerEmail: string;
+  customerPhone?: string;
+  requestDetails: string;
+  travelDates?: string;
+  budgetUsd?: number;
+  idempotencyKey: string;
+  sessionId: string;
+}) {
+  const now = new Date().toISOString();
+  const booking = await storage.createBooking({
+    userId: null,
+    accommodationId: null,
+    guestName: args.customerName,
+    guestEmail: args.customerEmail,
+    guestPhone: args.customerPhone ?? null,
+    checkIn: args.travelDates || now.slice(0, 10),
+    checkOut: args.travelDates || now.slice(0, 10),
+    guests: 1,
+    selectedServices: [],
+    serviceMode: "experience-custom-offer",
+    serviceHours: null,
+    serviceLocation: null,
+    servicePickupLocation: null,
+    serviceReturnLocation: null,
+    serviceZone: null,
+    serviceStartTime: null,
+    serviceEndTime: null,
+    serviceBudgetAmount: args.budgetUsd ? Math.round(args.budgetUsd) : null,
+    serviceLaundryWeightKg: null,
+    serviceAddonSelections: [],
+    serviceScheduleSlots: [],
+    serviceDepartureId: null,
+    serviceRequestFee: args.feeUsd,
+    serviceRequestDetails: `[Zaina custom offer ${args.offerId}] ${args.requestDetails}`,
+    serviceResponseMessage: null,
+    serviceRequestFeeKes: null,
+    stayServiceSelections: [],
+    customMenuProposalStatus: "pending",
+    customMenuProposedAmount: null,
+    customMenuProposalMessage: null,
+    customMenuDeclineReason: null,
+    customMenuClientDecision: "pending",
+    customMenuClientRespondedAt: null,
+    customMenuCreditCode: null,
+    customMenuCreditAmount: null,
+    customMenuReviewedByUserId: null,
+    customMenuReviewedAt: null,
+    experienceCustomOfferStatus: "pending",
+    experienceCustomOfferAmount: null,
+    experienceCustomOfferMessage: null,
+    experienceCustomOfferDeclineReason: null,
+    experienceCustomOfferClientDecision: "pending",
+    experienceCustomOfferClientRespondedAt: null,
+    experienceCustomOfferReviewedByUserId: null,
+    experienceCustomOfferReviewedAt: null,
+    providerStatusRequest: null,
+    providerStatusRequestNote: null,
+    providerStatusRequestedByUserId: null,
+    providerStatusRequestedAt: null,
+    providerStatusReviewedByUserId: null,
+    providerStatusReviewedAt: null,
+    paymentStatus: "pending",
+    paymentProvider: null,
+    paymentReference: null,
+    paymentSessionId: null,
+    paymentCurrency: "USD",
+    paymentAmount: null,
+    paymentCheckoutAmount: null,
+    paymentDepositAmount: null,
+    paymentAmountPaid: 0,
+    paymentHoldExpiresAt: null,
+    paidAt: null,
+    paymentFailedAt: null,
+    totalPrice: args.feeUsd,
+    status: "upcoming",
+    bookingType: "service",
+    createdAt: now,
+    idempotencyKey: args.idempotencyKey,
+  } as any);
+
+  const paymentLink = `${appBaseUrl()}/bookings?bookingId=${booking.id}`;
+  await notifyBookingCreated({
+    bookingId: booking.id,
+    customerName: args.customerName,
+    customerEmail: args.customerEmail,
+    customerPhone: args.customerPhone ?? "",
+    kind: "service",
+    summary: `Custom ${args.requestDetails.slice(0, 100)}`,
+    totalDisplay: await formatPrice(args.feeUsd, args.sessionId),
+    paymentLink,
+    sessionId: args.sessionId,
+  });
+
+  return { booking, paymentLink };
+}
+
 export async function createCustomOffer(
   args: {
     offer_type: string;
@@ -1620,6 +1938,27 @@ export async function createCustomOffer(
   },
   sessionId: string,
 ) {
+  if (!hasUsableIdempotencyKey(args?.idempotency_key)) {
+    return { ok: false, error: "idempotency_key_required", hint: "Generate a fresh UUID v4 before retrying." };
+  }
+  if (typeof args.offer_type !== "string" || !args.offer_type.trim()
+    || typeof args.request_details !== "string" || args.request_details.trim().length < 10) {
+    return {
+      ok: false,
+      error: "custom_offer_details_required",
+      hint: "Collect a clear description of what the customer wants before creating the offer.",
+    };
+  }
+  if (typeof args.customer_name !== "string" || args.customer_name.trim().length < 2
+    || typeof args.customer_email !== "string"
+    || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(args.customer_email)) {
+    return {
+      ok: false,
+      error: "customer_contact_required",
+      tell_customer: "Before I place this custom request, may I have your full name and email address?",
+    };
+  }
+
   const tier = args.tier || "intake";
   const tierFees: Record<string, number> = { intake: 5, proposal: 15, verification: 40 };
   const feeUsd = tierFees[tier] ?? 5;
@@ -1632,12 +1971,17 @@ export async function createCustomOffer(
     .limit(1);
 
   if (existing[0]) {
+    const bookingId = existing[0].notes?.match(/booking_id:([^\s]+)/)?.[1] ?? null;
     return {
       ok: true,
       offer_id: existing[0].id,
       idempotent_replay: true,
       tier: existing[0].feeTier,
       fee_display: await formatPrice(existing[0].feeUsd ?? feeUsd, sessionId),
+      ...(bookingId ? {
+        booking_id: bookingId,
+        payment_link: `${appBaseUrl()}/bookings?bookingId=${bookingId}`,
+      } : {}),
     };
   }
 
@@ -1663,6 +2007,22 @@ export async function createCustomOffer(
     })
     .returning();
 
+  const { booking, paymentLink } = await createCustomOfferBooking({
+    offerId: row.id,
+    feeUsd,
+    customerName: args.customer_name.trim(),
+    customerEmail: args.customer_email.trim().toLowerCase(),
+    customerPhone: args.customer_phone,
+    requestDetails: args.request_details.trim(),
+    travelDates: args.travel_dates,
+    budgetUsd: args.budget_usd,
+    idempotencyKey: args.idempotency_key,
+    sessionId,
+  });
+  await db.update(customOffers)
+    .set({ notes: `booking_id:${booking.id}`, updatedAt: new Date().toISOString() })
+    .where(eq(customOffers.id, row.id));
+
   await sendOpsAlert({
     kind: "custom-offer",
     sessionId,
@@ -1671,6 +2031,8 @@ export async function createCustomOffer(
     customerContact: args.customer_email ?? args.customer_phone ?? null,
     details: {
       "Offer ID": row.id,
+      "Booking ID": booking.id,
+      "Payment link": paymentLink,
       Tier: tier,
       Type: args.offer_type,
       "Travel dates": args.travel_dates ?? "not provided",
@@ -1686,6 +2048,8 @@ export async function createCustomOffer(
     fee_usd: feeUsd,
     fee_display: await formatPrice(feeUsd, sessionId),
     fee_creditable: true,
+    booking_id: booking.id,
+    payment_link: paymentLink,
     disclosure:
       "A small creditable fee applies. It will be fully deducted from your final booking if you accept the proposal.",
     turnaround_hours: 24,

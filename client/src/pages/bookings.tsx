@@ -459,7 +459,10 @@ export default function Bookings() {
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
-      setLocation("/auth?next=/bookings");
+      const nextPath = typeof window === "undefined"
+        ? "/bookings"
+        : `${window.location.pathname}${window.location.search}`;
+      setLocation(`/auth?next=${encodeURIComponent(nextPath)}`);
     }
   }, [authLoading, isAuthenticated, setLocation]);
 

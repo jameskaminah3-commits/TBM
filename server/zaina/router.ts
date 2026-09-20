@@ -18,10 +18,12 @@
 
 import { sendOpsAlertEmail, sendZainaConversationStartedEmail, queueNotificationTask } from "../notifications";
 import { GoogleGenAI, Type } from "@google/genai";
+import type { Content, FunctionDeclaration } from "@google/genai";
 import { db } from "../db";
 import { chatSessions, zainaAuditLogs } from "@shared/schema";
 import { and, eq, inArray, desc } from "drizzle-orm";
 import { INVENTORY_CATALOG } from "./catalog";
+import { bookingDepositPercent } from "@shared/booking-payments";
 import {
   searchStays,
   searchCooks,
@@ -140,7 +142,7 @@ VOICE
 LISTING LINKS — how to present and share properties
 ═══════════════════════════════════════════════════════════════════════
 
-Every search tool returns an `option_index` and a `public_url` for each
+Every search tool returns an option_index and a public_url for each
 result. That URL points to the property's own page, which has all the
 photos, amenities, policies, and a book button. That is what the
 customer wants to see.
@@ -168,7 +170,7 @@ villa options unless the customer asked for them or the search was broader.
 
 RULE 4 — Number options by their option_index.
 When the customer says "option 1", "the second one", etc., look back at
-the tool result and match the number to the exact `option_index` field.
+the tool result and match the number to the exact option_index field.
 Confirm by title before booking.
 
 ═══════════════════════════════════════════════════════════════════════
@@ -178,7 +180,7 @@ PAYMENT LINK — NEVER shorten, ALWAYS include the instructions
 After create_draft_booking or create_service_booking succeeds, your
 reply MUST contain BOTH of these things, in this order:
 
-  1. The `payment_link` value from the tool response, VERBATIM.
+  1. The payment_link value from the tool response, VERBATIM.
      — Use the complete URL, starting with https://tembeabilamatata.com.
      — Never shorten it to a path like /bookings?bookingId=...
      — Never drop the domain.
@@ -188,7 +190,7 @@ reply MUST contain BOTH of these things, in this order:
 
 Use this exact format (substitute the URL and the total):
 
-  Your booking is ready 🎉 You can complete your 30% deposit securely
+  Your booking is ready 🎉 You can complete your ${bookingDepositPercent}% deposit securely
   here:
 
   https://tembeabilamatata.com/bookings?bookingId=<id>
@@ -197,7 +199,7 @@ Use this exact format (substitute the URL and the total):
   • You'll be asked to log in or create an account. We'll email you a
     6-digit code — enter it to verify.
   • Once you're in, you'll see your booking summary and a "Pay now"
-    button. A 30% deposit secures your slot.
+    button. A ${bookingDepositPercent}% deposit secures your slot.
   • We use secure HTTPS and never store your card details. Always
     check the address bar starts with tembeabilamatata.com before
     logging in.
@@ -208,6 +210,17 @@ Do NOT replace the URL with just the path. Both are required.
 The customer has never seen your booking system before. If you only send
 a link with no explanation, they will not know what to do and the
 booking will not complete.
+
+CUSTOM OFFER PAYMENT
+After create_custom_offer succeeds, give the customer its payment_link
+verbatim and explain:
+  • The link opens their saved request in My Bookings.
+  • If they are not signed in, they should create an account or sign in,
+    enter the emailed 6-digit verification code, and return to this exact request.
+  • They should click "Pay now" to pay the small request fee.
+  • The fee is credited in full against the final quotation if they proceed.
+The team reviews the request and sends the final quotation. Do not claim
+that the custom service is confirmed before that quotation is accepted and paid.
 
 M-PESA — FALLBACK ONLY, DO NOT MENTION BY DEFAULT.
 
@@ -368,8 +381,12 @@ You have two booking tools. Choosing correctly matters.
 
 • create_service_booking
     Use when the customer is booking a ONE-OFF SERVICE without a stay:
-    MamaCare (childcare), a private chef session, a standalone
-    experience, or a base errand. Takes a SINGLE date (not a range).
+    car rental/chauffeur, MamaCare (childcare), a private chef session,
+    a standalone experience, or a base errand. Cars use date + check_out
+    for day rentals and a single date for hourly chauffeur.
+
+    For car bookings, collect pickup location, return location, passenger
+    count, and the requested mode. Never book a car without both locations.
 
 Common mistake to avoid: trying to book MamaCare with create_draft_booking.
 MamaCare is a service, not a stay — always use create_service_booking,
@@ -462,8 +479,9 @@ Disclosing the fee:
 Then collect: what they want, travel dates, budget if they'll share,
 and a name plus phone or email. Generate a UUID v4 for idempotency_key.
 
-Never charge the verification or proposal tier from chat — the team
-sends those quotes.
+  The request fee is paid through the saved My Bookings link. The team sends
+  the final quotation after reviewing the request; do not invent or collect
+  the final service price in chat.
 
 ═══════════════════════════════════════════════════════════════════════
 TRUST PRINCIPLES
@@ -499,7 +517,7 @@ DO NOT escalate for these — try harder first:
   different keywords. Only escalate if you've tried twice.
 • A customer asks for something in a region you didn't see → call
   search_* with a broader query before assuming we can't help.
-• A booking tool returned an error → read the error's `hint` field and
+• A booking tool returned an error → read the error's hint field and
   respond to the customer with the specific reason (capacity, date,
   etc.). Do NOT escalate on the first error.
 • Customer's phrasing is unusual or broken English → ask a clarifying
@@ -539,7 +557,7 @@ ${JSON.stringify(INVENTORY_CATALOG, null, 2)}
 // TOOL DECLARATIONS
 // ═══════════════════════════════════════════════════════════════════
 
-const toolDeclarations = [
+const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
   {
     functionDeclarations: [
             {
@@ -743,9 +761,10 @@ const toolDeclarations = [
       {
         name: "create_custom_offer",
         description:
-          "Log a request for something outside our listed inventory. " +
-          "Disclose the applicable fee before calling. Requires a description, " +
-          "offer type, tier, and idempotency key.",
+          "Create a saved custom-offer request and payment link for something " +
+          "outside our listed inventory or for third-party listing verification. " +
+          "Disclose the applicable fee before calling. The fee is credited to " +
+          "the final quotation if the customer proceeds.",
         parameters: {
           type: Type.OBJECT,
           properties: {
@@ -766,7 +785,7 @@ const toolDeclarations = [
             travel_dates: { type: Type.STRING },
             idempotency_key: { type: Type.STRING },
           },
-          required: ["offer_type", "request_details", "tier", "idempotency_key"],
+          required: ["offer_type", "request_details", "tier", "customer_name", "customer_email", "idempotency_key"],
         },
       },
       {
@@ -802,10 +821,10 @@ const toolDeclarations = [
         name: "create_service_booking",
         description:
           "Create a draft booking for a ONE-OFF SERVICE where the customer is " +
-          "NOT booking a stay. Use this for MamaCare/childcare, private chefs " +
-          "(session mode), standalone experiences, or base errands. " +
-          "Takes a single date (not check-in/check-out). The server calculates " +
-          "the total — never pass a price.",
+          "NOT booking a stay. Use this for car rentals/chauffeur, MamaCare/childcare, " +
+          "private chefs (session mode), standalone experiences, or base errands. " +
+          "Cars use date plus check_out for day rentals, or one date for hourly chauffeur. " +
+          "The server calculates the total — never pass a price.",
         parameters: {
           type: Type.OBJECT,
           properties: {
@@ -820,11 +839,16 @@ const toolDeclarations = [
               type: Type.STRING,
               description: "ISO date for the service, e.g. 2026-10-20.",
             },
+            check_out: {
+              type: Type.STRING,
+              description: "For car day rentals only: checkout/return date after date.",
+            },
             mode: {
               type: Type.STRING,
               description:
                 "Service mode. For MamaCare use 'errand-childcare'. " +
-                "For chefs: 'cook-service-fee' or 'cook-inclusive'. " +
+                 "For cars: 'car-chauffeur-day', 'car-chauffeur-hourly', or 'car-self-drive-day'. " +
+                 "For chefs: 'cook-service-fee' or 'cook-inclusive'. " +
                 "For base errands: 'errand-base'. " +
                 "For private experiences: 'experience-private'.",
             },
@@ -833,6 +857,18 @@ const toolDeclarations = [
               description: "Number of guests (defaults to 1; used for experience-private).",
             },
             service_location: { type: Type.STRING },
+            service_pickup_location: {
+              type: Type.STRING,
+              description: "For cars: pickup location.",
+            },
+            service_return_location: {
+              type: Type.STRING,
+              description: "For cars: return/drop-off location.",
+            },
+            service_zone: {
+              type: Type.STRING,
+              description: "Optional chauffeur/self-drive pricing zone from the car result.",
+            },
             service_start_time: {
               type: Type.STRING,
               description: "HH:MM format, e.g. 18:00.",
@@ -1017,7 +1053,7 @@ export async function handleZainaMessage(
     .orderBy(desc(zainaAuditLogs.timestamp))
     .limit(HISTORY_TURNS * 3);
 
-  const history = historyRows.reverse().flatMap((row) => {
+  const history = historyRows.reverse().flatMap<Content>((row): Content[] => {
     if (row.actor === "USER" && row.messageContent) {
       return [{ role: "user" as const, parts: [{ text: row.messageContent }] }];
     }
@@ -1141,6 +1177,13 @@ export async function handleZainaMessage(
             error: "tool_execution_failed",
             message: "Do not invent a result. Apologize and offer human handoff.",
           };
+        }
+
+        // A failed state-changing tool must never end in a dead-end promise.
+        // Keep the customer-facing explanation, then hand the session to ops
+        // after the model turn if it did not explicitly escalate itself.
+        if (call.name.startsWith("create_") && toolResponseData?.ok === false) {
+          sawFailedWrite = true;
         }
 
         if (call.name === "escalate_to_human" && toolResponseData?.status === "escalated") {
