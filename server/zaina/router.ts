@@ -968,6 +968,22 @@ function maskPII(value: any): any {
   return out;
 }
 
+// Never let storage image URLs leak into the customer conversation. Listings
+// have a public booking page; that is the only link Zaina should share.
+const MEDIA_URL_PATTERN = /https?:\/\/[^\s"'<>]+\/storage\/v1\/object\/public\/media\/[^\s"'<>]+/gi;
+
+function redactMediaUrls(value: string): string {
+  return value.replace(MEDIA_URL_PATTERN, "[image link omitted — use the public listing page link]");
+}
+
+function replaceMediaUrls(value: string, listingUrls: string[]): string {
+  let index = 0;
+  return value.replace(MEDIA_URL_PATTERN, () => {
+    const listingUrl = listingUrls[index++];
+    return listingUrl ?? "[public listing page link unavailable]";
+  });
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // MAIN HANDLER
 // ═══════════════════════════════════════════════════════════════════
@@ -1055,14 +1071,18 @@ export async function handleZainaMessage(
 
   const history = historyRows.reverse().flatMap<Content>((row): Content[] => {
     if (row.actor === "USER" && row.messageContent) {
-      return [{ role: "user" as const, parts: [{ text: row.messageContent }] }];
+      return [{ role: "user" as const, parts: [{ text: redactMediaUrls(row.messageContent) }] }];
     }
     if (row.actor === "ZAINA_REASONING" && row.messageContent) {
-      return [{ role: "model" as const, parts: [{ text: row.messageContent }] }];
+      return [{ role: "model" as const, parts: [{ text: redactMediaUrls(row.messageContent) }] }];
     }
     if (row.actor === "SYSTEM_TOOL" && row.toolName) {
-      const argsText = row.toolArguments ? JSON.stringify(row.toolArguments) : "{}";
-      const respText = row.toolResponse ? JSON.stringify(row.toolResponse) : "null";
+      const argsText = row.toolArguments
+        ? redactMediaUrls(JSON.stringify(row.toolArguments))
+        : "{}";
+      const respText = row.toolResponse
+        ? redactMediaUrls(JSON.stringify(row.toolResponse))
+        : "null";
       const trimmed =
         respText.length > 1500 ? respText.slice(0, 1500) + "…[truncated]" : respText;
       return [{
@@ -1076,9 +1096,10 @@ export async function handleZainaMessage(
   const contents: any[] = [...history, { role: "user", parts: [{ text: message }] }];
   let finalText: string | null = null;
   let escalated = false;
-  // Tracks whether a state-mutating tool (create_*) returned ok: false.
-  // If it did, and the model gave up without escalating itself, we
-  // auto-escalate so the customer always lands with a human.
+  const publicListingUrls: string[] = [];
+  // Only actual tool/system failures should trigger an automatic human handoff.
+  // Normal business outcomes (for example, a stay becoming unavailable) are
+  // recoverable by searching again or asking the customer for another choice.
   let sawFailedWrite = false;
 
   try {
@@ -1156,7 +1177,7 @@ export async function handleZainaMessage(
       const functionCallParts = rawParts.filter((p: any) => p.functionCall);
 
       if (functionCallParts.length === 0) {
-        finalText = response.text ?? "";
+        finalText = replaceMediaUrls(response.text ?? "", publicListingUrls);
         break;
       }
 
@@ -1179,10 +1200,23 @@ export async function handleZainaMessage(
           };
         }
 
-        // A failed state-changing tool must never end in a dead-end promise.
-        // Keep the customer-facing explanation, then hand the session to ops
-        // after the model turn if it did not explicitly escalate itself.
-        if (call.name.startsWith("create_") && toolResponseData?.ok === false) {
+        const collectListingUrls = (value: any): void => {
+          if (!value || typeof value !== "object") return;
+          if (typeof value.public_url === "string" && value.public_url.startsWith("http")) {
+            publicListingUrls.push(value.public_url);
+          }
+          for (const child of Object.values(value)) collectListingUrls(child);
+        };
+        collectListingUrls(toolResponseData);
+
+        // Business validation failures are recoverable and must not be treated
+        // as infrastructure failures. Only explicit human-required responses
+        // or execution errors should cause the safety-net handoff.
+        if (
+          call.name.startsWith("create_")
+          && toolResponseData?.ok === false
+          && (toolResponseData?.needs_human === true || toolResponseData?.error === "tool_execution_failed")
+        ) {
           sawFailedWrite = true;
         }
 
@@ -1232,6 +1266,8 @@ export async function handleZainaMessage(
         "Let me connect you with someone from our team who can help directly — " +
         "they'll reach out shortly.";
     }
+
+    finalText = replaceMediaUrls(finalText, publicListingUrls);
 
     // If the model tried to book/offer something and failed, then gave up
     // with a friendly "let me connect you" message, we now actually do it.

@@ -381,8 +381,6 @@ export async function searchCooks(
       minimum_guests: c.minimumGuests,
       maximum_guests: c.maxGuests,
       public_url: `${appBaseUrl()}/book/cook/${c.id}`,
-      image_url: c.imageUrl,
-      gallery_urls: (c.galleryUrls ?? []).slice(0, 4),
       pricing: {
         per_plate: c.pricePerPlate
           ? { usd: c.pricePerPlate, display: await formatPrice(c.pricePerPlate, sessionId), minimum_plates: c.minPlates }
@@ -456,8 +454,6 @@ export async function searchCars(
       seats: c.seats,
       transmission: c.transmission,
       public_url: `${appBaseUrl()}/book/car/${c.id}`,
-      image_url: c.imageUrl,
-      gallery_urls: (c.galleryUrls ?? []).slice(0, 4),
       pricing: {
         self_drive_per_day: c.pricePerDay
           ? { usd: c.pricePerDay, display: await formatPrice(c.pricePerDay, sessionId) }
@@ -513,8 +509,6 @@ export async function searchErrands(
         service_name: e.serviceName,
         location: e.location,
         public_url: `${appBaseUrl()}/book/errand/${e.id}`,
-        image_url: e.imageUrl,
-        gallery_urls: (e.galleryUrls ?? []).slice(0, 4),
         base_price: {
           usd: e.basePrice,
           display: await formatPrice(e.basePrice, sessionId),
@@ -610,8 +604,6 @@ export async function searchExperiences(
       duration_hours: x.durationHours,
       guests: { min: x.minGuests, max: x.maxGuests },
       public_url: `${appBaseUrl()}/book/experience/${x.id}`,
-      image_url: x.imageUrl,
-      gallery_urls: (x.galleryUrls ?? []).slice(0, 4),
       pricing: {
         private_per_person: x.privateEnabled && x.privatePricePerPerson
           ? { usd: x.privatePricePerPerson, display: await formatPrice(x.privatePricePerPerson, sessionId) }
@@ -658,7 +650,17 @@ export async function checkStayAvailability(
   const requestedEnd = occupiedEndDate(args.check_in, args.check_out);
 
   const conflicts = await db
-    .select({ id: bookings.id, checkIn: bookings.checkIn, checkOut: bookings.checkOut })
+    .select({
+      checkIn: bookings.checkIn,
+      checkOut: bookings.checkOut,
+      status: bookings.status,
+      totalPrice: bookings.totalPrice,
+      paymentStatus: bookings.paymentStatus,
+      paymentAmountPaid: bookings.paymentAmountPaid,
+      paymentDepositAmount: bookings.paymentDepositAmount,
+      paymentHoldExpiresAt: bookings.paymentHoldExpiresAt,
+      serviceMode: bookings.serviceMode,
+    })
     .from(bookings)
     .where(and(
       eq(bookings.accommodationId, args.stay_id),
@@ -667,15 +669,14 @@ export async function checkStayAvailability(
       gt(bookings.checkOut, args.check_in),
     ));
 
+  const blockingConflicts = conflicts.filter(bookingBlocksAvailability);
   return {
     ok: true,
     stay_id: args.stay_id,
     title: stay.title,
     public_url: `${appBaseUrl()}/accommodation/${stay.id}`,
-    image_url: stay.imageUrl,
-    gallery_urls: (stay.galleryUrls ?? []).slice(0, 4),
-    available: conflicts.length === 0,
-    conflicting_bookings: conflicts.length,
+    available: blockingConflicts.length === 0,
+    conflicting_bookings: blockingConflicts.length,
     requested: { check_in: args.check_in, check_out: args.check_out, occupied_end: requestedEnd, nights },
   };
 }
@@ -1162,7 +1163,12 @@ export async function createDraftBooking(
     ))
     .limit(20);
   if (candidateBookings.some(bookingBlocksAvailability)) {
-    return { ok: false, error: "stay_not_available" };
+    return {
+      ok: false,
+      error: "stay_not_available",
+      hint: "The selected stay is no longer available for those dates. Call search_stays again for alternatives before retrying.",
+      tell_customer: "That stay has just become unavailable for those dates. Let me check the closest alternatives for you.",
+    };
   }
 
   // 6. Server-side pricing. Never trust a price from the model.
