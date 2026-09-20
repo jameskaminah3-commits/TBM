@@ -1132,7 +1132,9 @@ export async function handleZainaMessage(
         let toolResponseData: any;
         try {
           toolResponseData = await executeTool(call.name, call.args, sessionId);
+          console.log(`[zaina:tool] ${call.name} →`, JSON.stringify(toolResponseData).slice(0, 500));
         } catch (err: any) {
+          console.error(`[zaina:tool:error] ${call.name}:`, err);
           console.error(`[zaina] tool ${call.name} failed:`, err);
           toolResponseData = {
             ok: false,
