@@ -990,11 +990,14 @@ function redactMediaUrlsDeep(value: any): any {
   );
 }
 
-function collectCustomerLinks(value: any, links: string[]): void {
+type CustomerLink = { kind: "listing" | "payment"; url: string };
+
+function collectCustomerLinks(value: any, links: CustomerLink[]): void {
   if (!value || typeof value !== "object") return;
   for (const [key, child] of Object.entries(value)) {
     if ((key === "public_url" || key === "payment_link") && typeof child === "string") {
-      if (!links.includes(child)) links.push(child);
+      const kind = key === "payment_link" ? "payment" : "listing";
+      if (!links.some((link) => link.url === child)) links.push({ kind, url: child });
     }
     collectCustomerLinks(child, links);
   }
@@ -1005,6 +1008,16 @@ function replaceMediaUrls(value: string, latestCustomerLink: string | undefined)
     MEDIA_URL_PATTERN,
     latestCustomerLink ?? "[public listing or payment link unavailable]",
   );
+}
+
+function appendMissingCustomerLink(value: string, links: CustomerLink[]): string {
+  if (links.length === 0 || links.some((link) => value.includes(link.url))) return value;
+  const link = links.at(-1);
+  if (!link) return value;
+  const label = link.kind === "payment"
+    ? "Complete your booking here"
+    : "View the full listing here";
+  return `${value.trim()}\n\n${label}:\n${link.url}`;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1119,7 +1132,8 @@ export async function handleZainaMessage(
   const contents: any[] = [...history, { role: "user", parts: [{ text: message }] }];
   let finalText: string | null = null;
   let escalated = false;
-  const customerLinks: string[] = [];
+  const customerLinks: CustomerLink[] = [];
+  const turnCustomerLinks: CustomerLink[] = [];
   for (const row of historyRows) {
     collectCustomerLinks(row.toolResponse, customerLinks);
   }
@@ -1203,7 +1217,7 @@ export async function handleZainaMessage(
       const functionCallParts = rawParts.filter((p: any) => p.functionCall);
 
       if (functionCallParts.length === 0) {
-        finalText = replaceMediaUrls(response.text ?? "", customerLinks.at(-1));
+        finalText = replaceMediaUrls(response.text ?? "", customerLinks.at(-1)?.url);
         break;
       }
 
@@ -1227,6 +1241,18 @@ export async function handleZainaMessage(
         }
 
         collectCustomerLinks(toolResponseData, customerLinks);
+        collectCustomerLinks(toolResponseData, turnCustomerLinks);
+
+        // Persist every tool response, not only direct "ask the customer"
+        // responses. The next customer turn must be able to reuse the same
+        // listing or payment link without calling the search tool again.
+        await db.insert(zainaAuditLogs).values({
+          sessionId,
+          actor: "SYSTEM_TOOL",
+          toolName: call.name,
+          toolArguments: maskPII(call.args),
+          toolResponse: redactMediaUrlsDeep(maskPII(toolResponseData)),
+        });
 
         // Business validation failures are recoverable and must not be treated
         // as infrastructure failures. Only explicit human-required responses
@@ -1252,14 +1278,6 @@ export async function handleZainaMessage(
           typeof toolResponseData.tell_customer === "string" &&
           toolResponseData.tell_customer.trim().length > 0
         ) {
-          await db.insert(zainaAuditLogs).values({
-            sessionId,
-            actor: "SYSTEM_TOOL",
-            toolName: call.name,
-            toolArguments: maskPII(call.args),
-            toolResponse: maskPII(toolResponseData),
-          });
-
           finalText = toolResponseData.tell_customer;
           break;
         }
@@ -1286,7 +1304,11 @@ export async function handleZainaMessage(
         "they'll reach out shortly.";
     }
 
-    finalText = replaceMediaUrls(finalText, customerLinks.at(-1));
+    finalText = replaceMediaUrls(finalText, customerLinks.at(-1)?.url);
+    const linkContext = /listing|property|photos?|view|see|pay|booking/i.test(message)
+      ? customerLinks
+      : turnCustomerLinks;
+    finalText = appendMissingCustomerLink(finalText, linkContext);
 
     // If the model tried to book/offer something and failed, then gave up
     // with a friendly "let me connect you" message, we now actually do it.
