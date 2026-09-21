@@ -32,7 +32,7 @@ export function calculateBookingDepositAmount(totalPrice: number | null | undefi
 }
 
 export function isFullPaymentOnlyBooking(booking: Pick<BookingPaymentSnapshot, "serviceMode">) {
-  return booking.serviceMode === "cook-custom-menu" || booking.serviceMode === "experience-custom-offer";
+  return booking.serviceMode === "cook-custom-menu" || booking.serviceMode === "experience-custom-offer" || booking.serviceMode === "listing-verification";
 }
 
 export function supportsBookingDeposit(booking: Pick<BookingPaymentSnapshot, "serviceMode">) {

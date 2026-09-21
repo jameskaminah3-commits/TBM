@@ -51,6 +51,7 @@ const AdminBlog = lazy(() => import("@/pages/admin/blog"));
 const AdminFleetApplications = lazy(() => import("@/pages/admin/fleet-applications"));
 const AdminFleetApplicationDetail = lazy(() => import("@/pages/admin/fleet-application-detail"));
 const AdminZaina = lazy(() => import("@/pages/admin/zaina"));
+const AdminListingVerifications = lazy(() => import("@/pages/admin/listing-verifications"));
 const PartnerLanding = lazy(() => import("@/pages/partner/index"));
 const PartnerApply = lazy(() => import("@/pages/partner/apply"));
 const Blog = lazy(() => import("@/pages/blog"));
@@ -122,6 +123,7 @@ function Router() {
         <AppRoute path="/partner/apply" element={<PartnerApply />} />
         <AppRoute path="/admin/dashboard" element={<AdminDashboard />} />
         <AppRoute path="/admin/bookings" element={<AdminBookings />} />
+        <AppRoute path="/admin/listing-verifications" element={<AdminListingVerifications />} />
         <AppRoute path="/admin/clients" element={<AdminClients />} />
         <AppRoute path="/admin/payments" element={<AdminPayments />} />
         <AppRoute path="/admin/providers" element={<AdminProviders />} />

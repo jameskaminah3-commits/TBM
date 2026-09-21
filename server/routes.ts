@@ -56,7 +56,7 @@ import {
 } from "@shared/schema";
 import { listUploads, saveBase64Upload } from "./media";
 import { db } from "./db";
-import { bookings, users, stays, cars, cooks, errands, experiences, listings, blogPosts } from "@shared/schema";
+import { bookings, users, stays, cars, cooks, errands, experiences, listings, blogPosts, customOffers } from "@shared/schema";
 import { calculateCookInclusiveTotal, calculateCookServiceTotal, getCookMinimumGuests } from "@shared/cook-pricing";
 import { customServiceRequestFeeUsd } from "@shared/custom-service";
 import { calculateHelpMamaPackagePrice, calculateHouseCleaningPackagePrice, getHouseCleaningBedroomCount, HELP_MAMA_HOURLY_MINIMUM_HOURS, getHelpMamaAgeBandId, getHelpMamaRateId, hasHelpMamaPricing, isHelpMamaHourlyRate } from "@shared/errand-pricing";
@@ -74,6 +74,8 @@ import {
   queueNotificationTask,
   sendBookingCreatedNotificationEmails,
   sendBookingPaymentNotificationEmails,
+  sendOpsAlertEmail,
+  sendListingVerificationCompletedEmail,
 } from "./notifications";
 import {
   buildBookingReceiptPdf,
@@ -619,6 +621,7 @@ async function applyVerifiedBookingPayment(bookingId: string, verifiedPayment: V
 
   if (verifiedPayment.status === "paid") {
     if (isBookingFullyPaid(booking)) {
+      await activateListingVerificationAfterPayment(booking);
       return booking;
     }
 
@@ -634,6 +637,7 @@ async function applyVerifiedBookingPayment(bookingId: string, verifiedPayment: V
       && !!booking.paidAt;
 
     if (isDuplicatePaidReference) {
+      await activateListingVerificationAfterPayment(booking);
       return booking;
     }
 
@@ -670,6 +674,7 @@ async function applyVerifiedBookingPayment(bookingId: string, verifiedPayment: V
     if (updatedBooking && isFullySettled) {
       await storage.syncBookingServiceAssignments({ bookingIds: [updatedBooking.id], notifyProviders: true });
       await storage.syncBookingPayouts({ bookingIds: [updatedBooking.id] });
+      await activateListingVerificationAfterPayment(updatedBooking);
     }
 
     return updatedBooking;
@@ -706,6 +711,68 @@ async function applyVerifiedBookingPayment(bookingId: string, verifiedPayment: V
   }
 
   return updatedBooking;
+}
+
+async function activateListingVerificationAfterPayment(booking: import("@shared/schema").Booking) {
+  if (booking.serviceMode !== "listing-verification" || !isBookingFullyPaid(booking)) {
+    return;
+  }
+
+  const task = await storage.getListingVerificationTaskByBookingId(booking.id);
+  if (!task || task.paymentStatus === "paid") {
+    return;
+  }
+
+  const paidAt = booking.paidAt ?? new Date().toISOString();
+  await storage.updateListingVerificationTask(task.id, {
+    status: "dispatched",
+    paymentStatus: "paid",
+    paidAt,
+    dispatchedAt: new Date().toISOString(),
+  });
+  await db.update(customOffers)
+    .set({
+      status: "paid",
+      feePaid: true,
+      paymentReference: booking.paymentReference,
+      updatedAt: new Date().toISOString(),
+    })
+    .where(eq(customOffers.id, task.customOfferId));
+
+  const location = task.location ?? "Coast location to be confirmed";
+  const summary = `${task.sourcePlatform ?? "External"} listing verification — ${location}`;
+  try {
+    await storage.createAdminBookingNotification({
+      bookingId: booking.id,
+      sessionId: task.sessionId,
+      kind: "service",
+      customerName: task.customerName,
+      summary,
+      totalDisplay: `Paid verification fee (${task.feeKes ? `KSh ${task.feeKes.toLocaleString("en-KE")}` : formatBookingUsdAmount(task.feeUsd)})`,
+    });
+  } catch (error) {
+    console.error("[LISTING_VERIFICATION] Admin inbox notification failed:", error);
+  }
+  try {
+    await sendOpsAlertEmail({
+      kind: "listing-verification-paid",
+      sessionId: task.sessionId ?? `verification:${task.id}`,
+      summary: `Paid listing verification ready for dispatch — ${location}`,
+      customerName: task.customerName,
+      customerContact: task.customerEmail,
+      details: {
+        "Verification ID": task.id,
+        "Booking ID": booking.id,
+        "Listing URL": task.listingUrl,
+        "Source platform": task.sourcePlatform ?? "external",
+        Location: location,
+        "Verification scope": task.verificationScope,
+        "Next action": "Dispatch an on-ground partner, then upload the report in the admin console.",
+      },
+    });
+  } catch (error) {
+    console.error("[LISTING_VERIFICATION] Paid dispatch alert failed:", error);
+  }
 }
 
 function getPaymentResultRedirect(bookingId: string, status: "success" | "pending" | "failed" | "cancelled") {
@@ -4995,6 +5062,100 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/bookings/:id/listing-verification", isAuthenticated, async (req: any, res) => {
+    try {
+      const access = await assertCanAccessBookingThread(req, req.params.id);
+      if ("error" in access) {
+        return res.status(access.error!.status).json(access.error!.body);
+      }
+      if (access.booking.serviceMode !== "listing-verification") {
+        return res.status(404).json({ error: "Listing verification not found" });
+      }
+      const task = await storage.getListingVerificationTaskByBookingId(access.booking.id);
+      return task ? res.json(task) : res.status(404).json({ error: "Listing verification not found" });
+    } catch (error) {
+      console.error("[LISTING_VERIFICATION] Failed to load customer task:", error);
+      return res.status(500).json({ error: "Failed to load listing verification" });
+    }
+  });
+
+  app.get("/api/admin/listing-verifications", requireAdmin, async (_req, res) => {
+    try {
+      return res.json(await storage.getListingVerificationTasks());
+    } catch (error) {
+      console.error("[LISTING_VERIFICATION] Failed to load admin tasks:", error);
+      return res.status(500).json({ error: "Failed to load listing verifications" });
+    }
+  });
+
+  app.patch("/api/admin/listing-verifications/:id", requireAdmin, async (req: any, res) => {
+    try {
+      const current = await storage.getListingVerificationTask(req.params.id);
+      if (!current) {
+        return res.status(404).json({ error: "Listing verification not found" });
+      }
+      const payload = z.object({
+        action: z.enum(["assign", "start", "report", "credit"]),
+        assigned_to: z.string().trim().max(160).optional(),
+        report_summary: z.string().trim().min(10).max(5000).optional(),
+        report_url: z.string().url().optional().or(z.literal("")),
+        outcome: z.enum(["verified", "warning"]).optional(),
+        warning_flag: z.string().trim().max(1000).optional(),
+        quote_amount_usd: z.coerce.number().int().positive().optional(),
+      }).parse(req.body ?? {});
+      const now = new Date().toISOString();
+      let updated;
+      if (payload.action === "assign") {
+        updated = await storage.updateListingVerificationTask(current.id, {
+          assignedTo: payload.assigned_to || null,
+          status: current.status === "paid" ? "dispatched" : current.status,
+          dispatchedAt: current.dispatchedAt ?? now,
+        });
+      } else if (payload.action === "start") {
+        if (current.paymentStatus !== "paid") {
+          return res.status(409).json({ error: "Payment must clear before dispatch." });
+        }
+        updated = await storage.updateListingVerificationTask(current.id, { status: "in_review", dispatchedAt: current.dispatchedAt ?? now });
+      } else if (payload.action === "report") {
+        if (current.paymentStatus !== "paid") {
+          return res.status(409).json({ error: "Payment must clear before a report is submitted." });
+        }
+        if (!payload.report_summary || !payload.outcome) {
+          return res.status(400).json({ error: "A report summary and outcome are required." });
+        }
+        updated = await storage.updateListingVerificationTask(current.id, {
+          status: payload.outcome,
+          reportSummary: payload.report_summary,
+          reportUrl: payload.report_url || null,
+          warningFlag: payload.outcome === "warning" ? (payload.warning_flag || "Review the report carefully before sending funds.") : null,
+          completedAt: now,
+        });
+        if (updated) {
+          await sendListingVerificationCompletedEmail({
+            customerEmail: updated.customerEmail,
+            customerName: updated.customerName,
+            bookingId: updated.bookingId,
+            status: payload.outcome,
+            reportSummary: payload.report_summary,
+            reportUrl: payload.report_url || null,
+            approvalUrl: updated.approvalUrl || `${getApplicationBaseUrl(req)}/bookings?bookingId=${updated.bookingId}`,
+          });
+        }
+      } else {
+        const quoteAmount = payload.quote_amount_usd;
+        if (!quoteAmount) {
+          return res.status(400).json({ error: "quote_amount_usd is required to credit the verification fee." });
+        }
+        updated = await storage.updateListingVerificationTask(current.id, { feeCredited: true });
+        await db.update(customOffers).set({ feeCredited: true, quoteAmountUsd: quoteAmount, updatedAt: now }).where(eq(customOffers.id, current.customOfferId));
+      }
+      return updated ? res.json(updated) : res.status(404).json({ error: "Listing verification not found" });
+    } catch (error) {
+      console.error("[LISTING_VERIFICATION] Admin update failed:", error);
+      return res.status(400).json({ error: error instanceof Error ? error.message : "Failed to update listing verification" });
+    }
+  });
+
   app.patch("/api/admin/bookings/:id", requireAdmin, async (req: any, res) => {
     try {
       const existingBooking = await storage.getBooking(req.params.id);
@@ -5141,6 +5302,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (isFullySettled) {
           await storage.syncBookingServiceAssignments({ bookingIds: [updated.id], notifyProviders: true });
           await storage.syncBookingPayouts({ bookingIds: [updated.id] });
+          await activateListingVerificationAfterPayment(updated);
         }
 
         if (note.trim().length > 0) {

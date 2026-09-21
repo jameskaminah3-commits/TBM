@@ -2144,6 +2144,9 @@ async function createCustomOfferBooking(args: {
   budgetUsd?: number;
   idempotencyKey: string;
   sessionId: string;
+  serviceMode?: string;
+  serviceRequestFeeKes?: number | null;
+  notifyAdmin?: boolean;
 }) {
   const now = new Date().toISOString();
   const booking = await storage.createBooking({
@@ -2156,7 +2159,7 @@ async function createCustomOfferBooking(args: {
     checkOut: args.travelDates || now.slice(0, 10),
     guests: 1,
     selectedServices: [],
-    serviceMode: "experience-custom-offer",
+    serviceMode: args.serviceMode ?? "experience-custom-offer",
     serviceHours: null,
     serviceLocation: null,
     servicePickupLocation: null,
@@ -2172,7 +2175,7 @@ async function createCustomOfferBooking(args: {
     serviceRequestFee: args.feeUsd,
     serviceRequestDetails: `[Zaina custom offer ${args.offerId}] ${args.requestDetails}`,
     serviceResponseMessage: null,
-    serviceRequestFeeKes: null,
+    serviceRequestFeeKes: args.serviceRequestFeeKes ?? null,
     stayServiceSelections: [],
     customMenuProposalStatus: "pending",
     customMenuProposedAmount: null,
@@ -2218,19 +2221,170 @@ async function createCustomOfferBooking(args: {
   } as any);
 
   const paymentLink = `${appBaseUrl()}/bookings?bookingId=${booking.id}`;
-  await notifyBookingCreated({
-    bookingId: booking.id,
-    customerName: args.customerName,
-    customerEmail: args.customerEmail,
-    customerPhone: args.customerPhone ?? "",
-    kind: "service",
-    summary: `Custom ${args.requestDetails.slice(0, 100)}`,
-    totalDisplay: await formatPrice(args.feeUsd, args.sessionId),
-    paymentLink,
-    sessionId: args.sessionId,
-  });
+  if (args.notifyAdmin !== false) {
+    await notifyBookingCreated({
+      bookingId: booking.id,
+      customerName: args.customerName,
+      customerEmail: args.customerEmail,
+      customerPhone: args.customerPhone ?? "",
+      kind: "service",
+      summary: `Custom ${args.requestDetails.slice(0, 100)}`,
+      totalDisplay: await formatPrice(args.feeUsd, args.sessionId),
+      paymentLink,
+      sessionId: args.sessionId,
+    });
+  }
 
   return { booking, paymentLink };
+}
+
+function parseListingVerificationLink(listingUrl: string, location?: string) {
+  const parsed = new URL(listingUrl);
+  const haystack = `${parsed.hostname} ${parsed.pathname} ${parsed.search}`.toLowerCase();
+  const knownCoastLocations = [
+    "nyali", "diani", "shanzu", "mtwapa", "bamburi", "mombasa", "malindi", "watamu", "mambrui", "kilifi", "tudor", "likoni",
+  ];
+  const detectedLocation = knownCoastLocations.find((candidate) => haystack.includes(candidate)) ?? (location?.trim() || null);
+  const hostname = parsed.hostname.toLowerCase().replace(/^www\./, "");
+  const sourcePlatform = hostname.includes("jiji")
+    ? "Jiji"
+    : hostname.includes("facebook") || hostname.includes("fb.")
+      ? "Facebook"
+      : hostname.includes("airbnb")
+        ? "Airbnb"
+        : hostname;
+  return { sourcePlatform, location: detectedLocation ? detectedLocation.replace(/\b\w/g, (letter) => letter.toUpperCase()) : null };
+}
+
+function getListingVerificationFeeKes() {
+  const configured = Number(process.env.LISTING_VERIFICATION_FEE_KES ?? "2500");
+  return Number.isFinite(configured) && configured > 0 ? Math.round(configured) : 2500;
+}
+
+export async function createListingVerificationRequest(
+  args: {
+    listing_url: string;
+    verification_scope: string;
+    customer_name?: string;
+    customer_email?: string;
+    customer_phone?: string;
+    location?: string;
+    listing_context?: string;
+    travel_dates?: string;
+    idempotency_key: string;
+  },
+  sessionId: string,
+) {
+  if (!hasUsableIdempotencyKey(args?.idempotency_key)) {
+    return { ok: false, error: "idempotency_key_required", hint: "Generate a fresh UUID v4 before retrying." };
+  }
+  if (typeof args.listing_url !== "string" || !/^https?:\/\/\S+$/i.test(args.listing_url.trim())) {
+    return { ok: false, error: "invalid_listing_url", tell_customer: "Please send the full listing link beginning with https://." };
+  }
+  if (typeof args.verification_scope !== "string" || args.verification_scope.trim().length < 10) {
+    return { ok: false, error: "verification_scope_required", tell_customer: "What would you like us to verify — the property, amenities, host documents, or all three?" };
+  }
+  if (typeof args.customer_name !== "string" || args.customer_name.trim().length < 2
+    || typeof args.customer_email !== "string"
+    || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(args.customer_email)) {
+    return { ok: false, error: "customer_contact_required", tell_customer: "Before I open the verification request, may I have your full name and email address?" };
+  }
+
+  const existing = await storage.getListingVerificationTask(args.idempotency_key);
+  if (existing) {
+    return {
+      ok: true,
+      idempotent_replay: true,
+      verification_id: existing.id,
+      booking_id: existing.bookingId,
+      payment_link: `${appBaseUrl()}/bookings?bookingId=${existing.bookingId}`,
+      fee_display: existing.feeKes ? `KSh ${existing.feeKes.toLocaleString("en-KE")}` : await formatPrice(existing.feeUsd, sessionId),
+      status: existing.status,
+      location: existing.location,
+      source_platform: existing.sourcePlatform,
+    };
+  }
+
+  const parsed = parseListingVerificationLink(args.listing_url.trim(), args.location);
+  const feeKes = getListingVerificationFeeKes();
+  const rate = await getUsdToKesRate();
+  const configuredUsd = Number(process.env.LISTING_VERIFICATION_FEE_USD ?? "0");
+  const feeUsd = Number.isFinite(configuredUsd) && configuredUsd > 0
+    ? Math.round(configuredUsd)
+    : Math.max(1, Math.ceil(feeKes / rate.usdToKes));
+  const currency = await getSessionCurrency(sessionId);
+  const requestDetails = [
+    "LISTING VERIFICATION REQUEST",
+    `External listing: ${args.listing_url.trim()}`,
+    `Source platform: ${parsed.sourcePlatform}`,
+    `Location: ${parsed.location ?? "To be confirmed by the operations team"}`,
+    `Verification scope: ${args.verification_scope.trim()}`,
+    args.listing_context?.trim() ? `Customer-provided listing context: ${args.listing_context.trim()}` : null,
+  ].filter(Boolean).join("\n");
+  const now = new Date().toISOString();
+  const [offer] = await db.insert(customOffers).values({
+    id: args.idempotency_key,
+    sessionId,
+    customerName: args.customer_name.trim(),
+    customerEmail: args.customer_email.trim().toLowerCase(),
+    customerPhone: args.customer_phone?.trim() || null,
+    offerType: "listing_verification",
+    requestDetails,
+    budgetUsd: null,
+    travelDates: args.travel_dates?.trim() || null,
+    status: "awaiting_payment",
+    feeTier: "verification",
+    feeUsd,
+    displayCurrency: currency,
+    createdAt: now,
+    updatedAt: now,
+  }).returning();
+  const { booking, paymentLink } = await createCustomOfferBooking({
+    offerId: offer.id,
+    feeUsd,
+    customerName: args.customer_name.trim(),
+    customerEmail: args.customer_email.trim().toLowerCase(),
+    customerPhone: args.customer_phone,
+    requestDetails,
+    travelDates: args.travel_dates,
+    idempotencyKey: args.idempotency_key,
+    sessionId,
+    serviceMode: "listing-verification",
+    serviceRequestFeeKes: feeKes,
+    notifyAdmin: false,
+  });
+  await db.update(customOffers).set({ notes: `booking_id:${booking.id}`, updatedAt: new Date().toISOString() }).where(eq(customOffers.id, offer.id));
+  const task = await storage.createListingVerificationTask({
+    id: args.idempotency_key,
+    customOfferId: offer.id,
+    bookingId: booking.id,
+    sessionId,
+    customerName: args.customer_name.trim(),
+    customerEmail: args.customer_email.trim().toLowerCase(),
+    customerPhone: args.customer_phone?.trim() || null,
+    listingUrl: args.listing_url.trim(),
+    sourcePlatform: parsed.sourcePlatform,
+    location: parsed.location,
+    verificationScope: args.verification_scope.trim(),
+    feeUsd,
+    feeKes,
+    approvalUrl: `${appBaseUrl()}/bookings?bookingId=${booking.id}&verification=report`,
+  });
+  return {
+    ok: true,
+    verification_id: task.id,
+    booking_id: booking.id,
+    payment_link: paymentLink,
+    fee_usd: feeUsd,
+    fee_display: currency === "KES" ? `KSh ${feeKes.toLocaleString("en-KE")}` : await formatPrice(feeUsd, sessionId),
+    fee_kes: feeKes,
+    fee_creditable: true,
+    status: "awaiting_payment",
+    location: parsed.location,
+    source_platform: parsed.sourcePlatform,
+    next_step: "Payment is required before the on-ground verification team is dispatched.",
+    account_guidance: (await identifyCustomer({ email: args.customer_email, phone: args.customer_phone })).guidance,
+  };
 }
 
 export async function createCustomOffer(
@@ -2278,6 +2432,13 @@ export async function createCustomOffer(
   });
 
   const tier = args.tier || "intake";
+  if (tier === "verification") {
+    return {
+      ok: false,
+      error: "use_listing_verification_tool",
+      hint: "Use create_listing_verification_request for an external listing so payment, dispatch, reporting, and fee credit are tracked correctly.",
+    };
+  }
   const tierFees: Record<string, number> = { intake: 5, proposal: 15, verification: 40 };
   const feeUsd = tierFees[tier] ?? 5;
   const currency = await getSessionCurrency(sessionId);

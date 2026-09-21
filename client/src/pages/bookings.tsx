@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useSearch } from "wouter";
-import { Calendar, MapPin, Users, Car, ChefHat, ShoppingBag, Compass, CheckCircle2, UserRound, Clock3, ShieldCheck, Phone, Mail, Star, Download, Smartphone } from "lucide-react";
+import { Calendar, MapPin, Users, Car, ChefHat, ShoppingBag, Compass, CheckCircle2, UserRound, Clock3, ShieldCheck, Phone, Mail, Star, Download, Smartphone, ExternalLink, AlertTriangle } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -32,7 +32,7 @@ import {
   supportsBookingDeposit,
 } from "@shared/booking-payments";
 import { customServiceRequestFeeUsd } from "@shared/custom-service";
-import type { Booking, BookingWithMarketing, Stay, Car as CarType, Cook, Errand, Experience, Review, CustomerPaymentMethod } from "@shared/schema";
+import type { Booking, BookingWithMarketing, Stay, Car as CarType, Cook, Errand, Experience, Review, CustomerPaymentMethod, ListingVerificationTask } from "@shared/schema";
 
 type ReviewTarget = { targetType: "stay" | "car" | "cook" | "errand" | "experience"; targetId: string; label: string };
 
@@ -240,6 +240,59 @@ function BookingTimeline({ booking }: { booking: Booking }) {
             </div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function ListingVerificationPanel({ booking, formatAmount }: { booking: Booking; formatAmount: (amountUsd: number) => string }) {
+  const { data: task, isLoading } = useQuery<ListingVerificationTask>({
+    queryKey: [`/api/bookings/${booking.id}/listing-verification`],
+    enabled: booking.serviceMode === "listing-verification",
+  });
+
+  if (isLoading || !task) {
+    return booking.serviceMode === "listing-verification" ? (
+      <div className="rounded-[24px] border border-violet-200/80 bg-violet-50/70 p-5 text-sm text-violet-900">Loading verification details…</div>
+    ) : null;
+  }
+
+  const statusLabel = task.status === "awaiting_payment"
+    ? "Payment needed"
+    : task.status === "dispatched"
+      ? "Team dispatched"
+      : task.status === "in_review"
+        ? "On-ground review in progress"
+        : task.status === "verified"
+          ? "Verified report ready"
+          : task.status === "warning"
+            ? "Warning report ready"
+            : task.status;
+
+  return (
+    <div className="rounded-[24px] border border-violet-200/80 bg-[linear-gradient(180deg,rgba(245,243,255,0.98),rgba(237,233,254,0.88))] p-5 shadow-[0_18px_38px_-30px_rgba(109,40,217,0.28)]">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="text-sm font-semibold text-violet-950">Listing verification</div>
+          <div className="mt-1 text-sm text-violet-900">{statusLabel}</div>
+        </div>
+        <Badge variant="outline" className="w-fit rounded-full border-violet-300 bg-white text-violet-950">{task.paymentStatus === "paid" ? "Fee paid" : "Fee pending"}</Badge>
+      </div>
+      <div className="mt-4 space-y-3 text-sm text-violet-950">
+        <a href={task.listingUrl} target="_blank" rel="noreferrer" className="flex items-start gap-2 break-all underline underline-offset-2">
+          <ExternalLink className="mt-0.5 h-4 w-4 shrink-0" />
+          {task.listingUrl}
+        </a>
+        <div><span className="font-medium">Scope:</span> {task.verificationScope}</div>
+        {task.location ? <div><span className="font-medium">Location:</span> {task.location}</div> : null}
+        {task.reportSummary ? (
+          <div className="rounded-2xl bg-white/80 p-4">
+            <div className="flex items-center gap-2 font-medium">{task.status === "warning" ? <AlertTriangle className="h-4 w-4 text-amber-600" /> : <ShieldCheck className="h-4 w-4 text-emerald-600" />} Report</div>
+            <div className="mt-2 whitespace-pre-wrap text-muted-foreground">{task.reportSummary}</div>
+            {task.reportUrl ? <a href={task.reportUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex underline underline-offset-2">Open full report</a> : null}
+          </div>
+        ) : null}
+        <div className="text-xs text-violet-800">Paid verification fee: {task.feeKes ? `KSh ${task.feeKes.toLocaleString("en-KE")}` : formatAmount(task.feeUsd)}. It is credited to the final TBM quotation if you proceed.</div>
       </div>
     </div>
   );
@@ -784,7 +837,7 @@ export default function Bookings() {
     const stay = getStay(booking.accommodationId);
     const primaryService = booking.selectedServices[0] ? getServiceItem(booking.selectedServices[0]) : null;
     const serviceTitle = !primaryService ? "Service Booking" : "model" in primaryService ? primaryService.model : "title" in primaryService ? primaryService.title : primaryService.serviceName;
-    const bookingTitle = stay?.title ?? serviceTitle;
+    const bookingTitle = booking.serviceMode === "listing-verification" ? "External listing verification" : stay?.title ?? serviceTitle;
     const bookingType = stay ? "Stay" : "Service";
     const bookingLocation = stay?.location ?? booking.serviceLocation ?? booking.servicePickupLocation ?? booking.serviceReturnLocation ?? null;
     const bookingDates = formatTimelineDateRange(booking.checkIn, booking.checkOut);
@@ -801,7 +854,7 @@ export default function Bookings() {
         return "model" in service ? service.model : "title" in service ? service.title : service.serviceName;
       })
       .filter((label): label is string => !!label);
-    const isCustomFlow = booking.serviceMode === "cook-custom-menu" || booking.serviceMode === "experience-custom-offer";
+    const isCustomFlow = booking.serviceMode === "cook-custom-menu" || booking.serviceMode === "experience-custom-offer" || booking.serviceMode === "listing-verification";
     const showStandaloneRequestBrief = Boolean(booking.serviceRequestDetails?.trim()) && !isCustomFlow;
     const summaryLine = serviceLabels.length > 0
       ? `${serviceLabels.slice(0, 2).join(" / ")}${serviceLabels.length > 2 ? ` / +${serviceLabels.length - 2} more` : ""}`
@@ -851,6 +904,7 @@ export default function Bookings() {
                   </Badge>
                   {booking.serviceMode === "cook-custom-menu" ? <Badge variant="outline" className="rounded-full">Chef quote</Badge> : null}
                   {booking.serviceMode === "experience-custom-offer" ? <Badge variant="outline" className="rounded-full">Custom offer</Badge> : null}
+                  {booking.serviceMode === "listing-verification" ? <Badge variant="outline" className="rounded-full border-violet-300 text-violet-800">Listing verification</Badge> : null}
                   {booking.marketingAttribution ? (
                     <Badge variant="outline" className="rounded-full border-emerald-200 bg-emerald-50 text-emerald-800">
                       Promo applied
@@ -1063,6 +1117,7 @@ export default function Bookings() {
                 ) : null}
               </div>
             ) : null}
+            {booking.serviceMode === "listing-verification" ? <ListingVerificationPanel booking={booking} formatAmount={formatAmount} /> : null}
             {showStandaloneRequestBrief ? (
               <RequestBriefAccordion
                 id={`guest-request-${booking.id}`}

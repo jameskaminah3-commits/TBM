@@ -1858,6 +1858,55 @@ export const customOffers = pgTable(
 export type CustomOffer = typeof customOffers.$inferSelect;
 export type InsertCustomOffer = typeof customOffers.$inferInsert;
 
+export const listingVerificationTaskStatuses = [
+  "awaiting_payment",
+  "paid",
+  "dispatched",
+  "in_review",
+  "verified",
+  "warning",
+  "cancelled",
+] as const;
+export type ListingVerificationTaskStatus = typeof listingVerificationTaskStatuses[number];
+
+export const listingVerificationTasks = pgTable(
+  "listing_verification_tasks",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    customOfferId: varchar("custom_offer_id").notNull(),
+    bookingId: varchar("booking_id").notNull(),
+    sessionId: varchar("session_id"),
+    customerName: text("customer_name").notNull(),
+    customerEmail: text("customer_email").notNull(),
+    customerPhone: varchar("customer_phone"),
+    listingUrl: text("listing_url").notNull(),
+    sourcePlatform: varchar("source_platform"),
+    location: text("location"),
+    verificationScope: text("verification_scope").notNull(),
+    status: varchar("status").notNull().default("awaiting_payment"),
+    paymentStatus: varchar("payment_status").notNull().default("pending"),
+    feeUsd: integer("fee_usd").notNull(),
+    feeKes: integer("fee_kes"),
+    feeCredited: boolean("fee_credited").notNull().default(false),
+    assignedTo: text("assigned_to"),
+    reportSummary: text("report_summary"),
+    reportUrl: text("report_url"),
+    warningFlag: text("warning_flag"),
+    approvalUrl: text("approval_url"),
+    paidAt: text("paid_at"),
+    dispatchedAt: text("dispatched_at"),
+    completedAt: text("completed_at"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    index("idx_listing_verification_booking").on(table.bookingId),
+    index("idx_listing_verification_status").on(table.status, table.createdAt),
+  ],
+);
+export type ListingVerificationTask = typeof listingVerificationTasks.$inferSelect;
+export type InsertListingVerificationTask = typeof listingVerificationTasks.$inferInsert;
+
 export const aiLeads = pgTable("ai_leads", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),

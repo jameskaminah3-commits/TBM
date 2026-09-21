@@ -38,6 +38,7 @@ import {
   createDraftBooking,
   createServiceBooking,
   createCustomOffer,
+  createListingVerificationRequest,
   createLead,
   identifyCustomer,
   escalateToHuman,
@@ -200,11 +201,17 @@ CUSTOM REQUESTS AND VERIFICATION
   against the final quotation if they proceed.
 • If the customer wants a third-party stay, car, tour, or service checked,
   ask for the full https:// listing link first. Ask what they want checked
-  (match to advert, legitimacy, price, location, amenities, or red flags),
-  then use the verification tier and pass the exact link as listing_url.
-  The link is saved with the request. Say that desk review can flag concerns
-  and the team can arrange an on-ground visit; do not claim that Zaina has
-  personally verified the property or that a report already exists.
+  (property existence, match to advert, amenities, host documents, or red
+  flags), then call create_listing_verification_request with the exact link.
+  This is a premium paid verification request, not a generic custom offer.
+  The tool returns the configured fee and payment link. Never say the team
+  has been dispatched until the payment has cleared. After payment, the
+  operations team dispatches an on-ground partner to inspect the property,
+  amenities, and host documents. The team later posts a concise report with
+  either a verified outcome or a warning flag. If the customer proceeds with
+  a TBM booking, the verification fee is credited to the final quotation.
+  Do not claim Zaina personally inspected the property or that a report
+  already exists.
 
 Never give a generic brochure paragraph when a customer has already stated
 their intent. If they say “I need a car”, ask for date, passengers, mode,
@@ -293,6 +300,20 @@ verbatim and explain:
   • The fee is credited in full against the final quotation if they proceed.
 The team reviews the request and sends the final quotation. Do not claim
 that the custom service is confirmed before that quotation is accepted and paid.
+
+LISTING VERIFICATION PAYMENT
+After create_listing_verification_request succeeds, give the customer its
+payment_link verbatim and explain in a short, friendly message:
+  • The request is saved in My Bookings under the verification booking.
+  • If they are not signed in, they should create an account with the same
+    email, verify the emailed 6-digit code, and open My Bookings. Returning
+    clients should sign in with their existing account.
+  • They should open the request and click Pay now to pay the configured
+    verification fee securely.
+  • The on-ground team is dispatched only after payment clears; the result
+    will be a report or a warning flag, not an instant guarantee.
+  • The paid verification fee is credited to the final TBM booking if they
+    proceed.
 
 CUSTOMER ACCOUNT STATUS — identify before payment guidance
 After the customer provides an email address or phone number, call
@@ -894,7 +915,8 @@ const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
         name: "create_custom_offer",
         description:
           "Create a saved custom-offer request and payment link for something " +
-          "outside our listed inventory or for third-party listing verification. " +
+          "outside our listed inventory. For external listing verification, use " +
+          "create_listing_verification_request instead. " +
           "Disclose the applicable fee before calling. The fee is credited to " +
           "the final quotation if the customer proceeds.",
         parameters: {
@@ -919,6 +941,28 @@ const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
             idempotency_key: { type: Type.STRING },
           },
           required: ["offer_type", "request_details", "tier", "customer_name", "customer_email", "idempotency_key"],
+        },
+      },
+      {
+        name: "create_listing_verification_request",
+        description:
+          "Create a paid listing-verification request for an external Facebook, Jiji, Airbnb, or other property listing. " +
+          "This captures the link and verification scope, creates a booking payment link, and dispatches the on-ground team only after payment clears. " +
+          "The configured verification fee is credited to the final TBM booking if the customer proceeds.",
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            listing_url: { type: Type.STRING, description: "The complete external https:// listing URL." },
+            verification_scope: { type: Type.STRING, description: "What the team must verify: property existence, amenities, host documents, or all." },
+            customer_name: { type: Type.STRING },
+            customer_email: { type: Type.STRING },
+            customer_phone: { type: Type.STRING },
+            location: { type: Type.STRING, description: "Coast location if it is not clear from the link, e.g. Nyali, Diani, or Shanzu." },
+            listing_context: { type: Type.STRING, description: "Any title, description, or details the customer copied from the external listing." },
+            travel_dates: { type: Type.STRING },
+            idempotency_key: { type: Type.STRING, description: "A UUID v4. Prevents duplicate verification requests." },
+          },
+          required: ["listing_url", "verification_scope", "customer_name", "customer_email", "idempotency_key"],
         },
       },
       {
@@ -1088,6 +1132,7 @@ async function executeTool(name: string, args: any, sessionId: string): Promise<
     case "create_draft_booking":     return createDraftBooking(args, sessionId);
     case "create_service_booking":   return createServiceBooking(args, sessionId);
     case "create_custom_offer":      return createCustomOffer(args, sessionId);
+    case "create_listing_verification_request": return createListingVerificationRequest(args, sessionId);
     case "create_lead":              return createLead(args, sessionId);
     case "identify_customer":        return identifyCustomer(args);
     case "escalate_to_human":        return escalateToHuman(args, sessionId);

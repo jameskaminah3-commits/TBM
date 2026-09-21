@@ -16,6 +16,7 @@ import {
   Wallet,
   Megaphone,
   UserPlus,
+  ShieldCheck,
 } from "lucide-react";
 import {
   Sidebar,
@@ -48,6 +49,11 @@ const menuItems = [
     title: "Bookings",
     url: "/admin/bookings",
     icon: Calendar,
+  },
+  {
+    title: "Listing Verifications",
+    url: "/admin/listing-verifications",
+    icon: ShieldCheck,
   },
   {
     title: "Clients",

@@ -559,6 +559,7 @@ export async function sendBookingPaymentNotificationEmails(
 export type ZainaOpsAlertKind =
   | "handoff-requested"
   | "custom-offer"
+  | "listing-verification-paid"
   | "system-error"
   | "new-lead";
 
@@ -574,6 +575,7 @@ export type ZainaOpsAlert = {
 const zainaAlertLabels: Record<ZainaOpsAlertKind, string> = {
   "handoff-requested": "Zaina handoff",
   "custom-offer": "Zaina custom offer",
+  "listing-verification-paid": "Paid listing verification",
   "system-error": "Zaina system error",
   "new-lead": "Zaina new lead",
 };
@@ -759,4 +761,45 @@ export async function sendZainaBookingCreatedEmail(args: {
   ].join("");
 
   return await sendEmailMessage({ to: recipients, subject, text, html });
+}
+
+export async function sendListingVerificationCompletedEmail(args: {
+  customerEmail: string;
+  customerName: string;
+  bookingId: string;
+  status: "verified" | "warning";
+  reportSummary: string;
+  reportUrl?: string | null;
+  approvalUrl: string;
+}): Promise<boolean> {
+  const outcomeLabel = args.status === "verified" ? "Verification report ready" : "Verification needs your attention";
+  const bookingUrl = `${process.env.APP_BASE_URL?.trim() || "https://tembeabilamatata.com"}/bookings?bookingId=${encodeURIComponent(args.bookingId)}`;
+  const text = [
+    `Hi ${args.customerName},`,
+    "",
+    args.status === "verified"
+      ? "Our on-ground team has completed the listing verification."
+      : "Our on-ground team has completed the listing verification and found points that need closer attention.",
+    "",
+    args.reportSummary,
+    args.reportUrl ? `Report: ${args.reportUrl}` : "",
+    `Open your verification in My Bookings: ${args.approvalUrl || bookingUrl}`,
+    "If you proceed with a TBM booking, the paid verification fee can be credited to the final quotation.",
+  ].filter(Boolean).join("\n");
+  const html = [
+    '<div style="font-family:Arial,sans-serif;line-height:1.6;color:#0f172a;">',
+    `<p>Hi ${escapeHtml(args.customerName)},</p>`,
+    `<p>${args.status === "verified" ? "Our on-ground team has completed the listing verification." : "Our on-ground team has completed the listing verification and found points that need closer attention."}</p>`,
+    `<p>${escapeHtml(args.reportSummary).replace(/\n/g, "<br>")}</p>`,
+    args.reportUrl ? `<p><a href="${escapeHtml(args.reportUrl)}">Open the report</a></p>` : "",
+    `<p><a href="${escapeHtml(args.approvalUrl || bookingUrl)}">Open verification in My Bookings</a></p>`,
+    "<p>Your paid verification fee can be credited to the final quotation if you proceed with a TBM booking.</p>",
+    "</div>",
+  ].join("");
+  return await sendEmailMessage({
+    to: [args.customerEmail],
+    subject: `[Tembea Bila Matata] ${outcomeLabel}`,
+    text,
+    html,
+  });
 }

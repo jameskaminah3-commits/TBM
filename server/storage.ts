@@ -84,6 +84,7 @@ import {
   type FleetApplication,
   type InsertFleetApplication,
   type FleetApplicationStatus,
+  type ListingVerificationTask,
   type BookingServiceAssignmentResponse,
   providerCategories,
   marketingPromoCostAbsorptions,
@@ -1360,6 +1361,26 @@ export interface IStorage {
     summary: string;
     totalDisplay: string;
   }): Promise<AppInboxItem[]>;
+  createListingVerificationTask(data: {
+    id: string;
+    customOfferId: string;
+    bookingId: string;
+    sessionId?: string | null;
+    customerName: string;
+    customerEmail: string;
+    customerPhone?: string | null;
+    listingUrl: string;
+    sourcePlatform?: string | null;
+    location?: string | null;
+    verificationScope: string;
+    feeUsd: number;
+    feeKes?: number | null;
+    approvalUrl?: string | null;
+  }): Promise<ListingVerificationTask>;
+  getListingVerificationTask(id: string): Promise<ListingVerificationTask | undefined>;
+  getListingVerificationTaskByBookingId(bookingId: string): Promise<ListingVerificationTask | undefined>;
+  getListingVerificationTasks(): Promise<ListingVerificationTask[]>;
+  updateListingVerificationTask(id: string, data: Partial<Pick<ListingVerificationTask, "status" | "paymentStatus" | "feeCredited" | "assignedTo" | "reportSummary" | "reportUrl" | "warningFlag" | "approvalUrl" | "paidAt" | "dispatchedAt" | "completedAt">>): Promise<ListingVerificationTask | undefined>;
   getPushPublicConfig(): ReturnType<typeof getWebPushPublicConfig>;
   getProviderNotifications(userId: string): Promise<ProviderNotification[]>;
   markProviderNotificationRead(id: string, userId: string): Promise<ProviderNotification | undefined>;
@@ -1486,6 +1507,7 @@ export class DatabaseStorage implements IStorage {
   private providerWorkflowTablesEnsured = false;
   private inboxTablesEnsured = false;
   private pushTablesEnsured = false;
+  private listingVerificationTablesEnsured = false;
   private tableColumnsCache = new Map<string, Set<string>>();
 
   private async getTableColumns(tableName: string): Promise<Set<string>> {
@@ -1824,6 +1846,163 @@ export class DatabaseStorage implements IStorage {
     `);
 
     this.pushTablesEnsured = true;
+  }
+
+  private async ensureListingVerificationTables() {
+    if (this.listingVerificationTablesEnsured) {
+      return;
+    }
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS listing_verification_tasks (
+        id varchar PRIMARY KEY,
+        custom_offer_id varchar NOT NULL,
+        booking_id varchar NOT NULL,
+        session_id varchar,
+        customer_name text NOT NULL,
+        customer_email text NOT NULL,
+        customer_phone varchar,
+        listing_url text NOT NULL,
+        source_platform varchar,
+        location text,
+        verification_scope text NOT NULL,
+        status varchar NOT NULL DEFAULT 'awaiting_payment',
+        payment_status varchar NOT NULL DEFAULT 'pending',
+        fee_usd integer NOT NULL,
+        fee_kes integer,
+        fee_credited boolean NOT NULL DEFAULT false,
+        assigned_to text,
+        report_summary text,
+        report_url text,
+        warning_flag text,
+        approval_url text,
+        paid_at text,
+        dispatched_at text,
+        completed_at text,
+        created_at text NOT NULL,
+        updated_at text NOT NULL
+      );
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS listing_verification_tasks_booking_idx ON listing_verification_tasks (booking_id);`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS listing_verification_tasks_status_idx ON listing_verification_tasks (status, created_at DESC);`);
+    this.listingVerificationTablesEnsured = true;
+  }
+
+  private mapListingVerificationTask(row: any): ListingVerificationTask {
+    return {
+      id: row.id,
+      customOfferId: row.custom_offer_id,
+      bookingId: row.booking_id,
+      sessionId: row.session_id ?? null,
+      customerName: row.customer_name,
+      customerEmail: row.customer_email,
+      customerPhone: row.customer_phone ?? null,
+      listingUrl: row.listing_url,
+      sourcePlatform: row.source_platform ?? null,
+      location: row.location ?? null,
+      verificationScope: row.verification_scope,
+      status: row.status,
+      paymentStatus: row.payment_status,
+      feeUsd: row.fee_usd,
+      feeKes: row.fee_kes ?? null,
+      feeCredited: Boolean(row.fee_credited),
+      assignedTo: row.assigned_to ?? null,
+      reportSummary: row.report_summary ?? null,
+      reportUrl: row.report_url ?? null,
+      warningFlag: row.warning_flag ?? null,
+      approvalUrl: row.approval_url ?? null,
+      paidAt: row.paid_at ?? null,
+      dispatchedAt: row.dispatched_at ?? null,
+      completedAt: row.completed_at ?? null,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    } as ListingVerificationTask;
+  }
+
+  async createListingVerificationTask(data: {
+    id: string;
+    customOfferId: string;
+    bookingId: string;
+    sessionId?: string | null;
+    customerName: string;
+    customerEmail: string;
+    customerPhone?: string | null;
+    listingUrl: string;
+    sourcePlatform?: string | null;
+    location?: string | null;
+    verificationScope: string;
+    feeUsd: number;
+    feeKes?: number | null;
+    approvalUrl?: string | null;
+  }): Promise<ListingVerificationTask> {
+    await this.ensureListingVerificationTables();
+    const now = new Date().toISOString();
+    const result = await pool.query(
+      `INSERT INTO listing_verification_tasks
+        (id, custom_offer_id, booking_id, session_id, customer_name, customer_email, customer_phone,
+         listing_url, source_platform, location, verification_scope, status, payment_status, fee_usd,
+         fee_kes, fee_credited, approval_url, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'awaiting_payment','pending',$12,$13,false,$14,$15,$15)
+       RETURNING *`,
+      [data.id, data.customOfferId, data.bookingId, data.sessionId ?? null, data.customerName,
+        data.customerEmail, data.customerPhone ?? null, data.listingUrl, data.sourcePlatform ?? null,
+        data.location ?? null, data.verificationScope, data.feeUsd, data.feeKes ?? null,
+        data.approvalUrl ?? null, now],
+    );
+    return this.mapListingVerificationTask(result.rows[0]);
+  }
+
+  async getListingVerificationTask(id: string): Promise<ListingVerificationTask | undefined> {
+    await this.ensureListingVerificationTables();
+    const result = await pool.query(`SELECT * FROM listing_verification_tasks WHERE id = $1 LIMIT 1`, [id]);
+    return result.rows[0] ? this.mapListingVerificationTask(result.rows[0]) : undefined;
+  }
+
+  async getListingVerificationTaskByBookingId(bookingId: string): Promise<ListingVerificationTask | undefined> {
+    await this.ensureListingVerificationTables();
+    const result = await pool.query(`SELECT * FROM listing_verification_tasks WHERE booking_id = $1 LIMIT 1`, [bookingId]);
+    return result.rows[0] ? this.mapListingVerificationTask(result.rows[0]) : undefined;
+  }
+
+  async getListingVerificationTasks(): Promise<ListingVerificationTask[]> {
+    await this.ensureListingVerificationTables();
+    const result = await pool.query(`SELECT * FROM listing_verification_tasks ORDER BY created_at DESC`);
+    return result.rows.map((row) => this.mapListingVerificationTask(row));
+  }
+
+  async updateListingVerificationTask(
+    id: string,
+    data: Partial<Pick<ListingVerificationTask, "status" | "paymentStatus" | "feeCredited" | "assignedTo" | "reportSummary" | "reportUrl" | "warningFlag" | "approvalUrl" | "paidAt" | "dispatchedAt" | "completedAt">>,
+  ): Promise<ListingVerificationTask | undefined> {
+    await this.ensureListingVerificationTables();
+    const columnMap: Record<string, string> = {
+      status: "status",
+      paymentStatus: "payment_status",
+      feeCredited: "fee_credited",
+      assignedTo: "assigned_to",
+      reportSummary: "report_summary",
+      reportUrl: "report_url",
+      warningFlag: "warning_flag",
+      approvalUrl: "approval_url",
+      paidAt: "paid_at",
+      dispatchedAt: "dispatched_at",
+      completedAt: "completed_at",
+    };
+    const entries = Object.entries(data).filter(([key, value]) => key in columnMap && value !== undefined);
+    if (entries.length === 0) {
+      return await this.getListingVerificationTask(id);
+    }
+    const values: unknown[] = [];
+    const assignments = entries.map(([key, value], index) => {
+      values.push(value);
+      return `${columnMap[key]} = $${index + 1}`;
+    });
+    values.push(new Date().toISOString(), id);
+    const result = await pool.query(
+      `UPDATE listing_verification_tasks SET ${assignments.join(", ")}, updated_at = $${values.length - 1} WHERE id = $${values.length} RETURNING *`,
+      values,
+    );
+    return result.rows[0] ? this.mapListingVerificationTask(result.rows[0]) : undefined;
   }
 
   private async ensurePaymentsTables() {
