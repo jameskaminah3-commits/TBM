@@ -661,7 +661,7 @@ export type ProviderBookingAssignmentView = {
   assignment: BookingServiceAssignment;
   booking: Booking;
 };
-export const appInboxItemTypes = ["assignment-created", "assignment-reassigned", "assignment-updated", "booking-message", "partner-admin-message"] as const;
+export const appInboxItemTypes = ["assignment-created", "assignment-reassigned", "assignment-updated", "booking-created", "booking-message", "partner-admin-message"] as const;
 export type AppInboxItemType = typeof appInboxItemTypes[number];
 export const appInboxPriorities = ["low", "normal", "high", "urgent"] as const;
 export type AppInboxPriority = typeof appInboxPriorities[number];

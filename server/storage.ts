@@ -1352,6 +1352,14 @@ export interface IStorage {
   getUserPushPreferences(userId: string): Promise<UserPushPreferences>;
   updateUserPushPreferences(userId: string, update: UpdateUserPushPreferences): Promise<UserPushPreferences>;
   createPushTestNotification(userId: string): Promise<AppInboxItem>;
+  createAdminBookingNotification(data: {
+    bookingId: string;
+    sessionId?: string | null;
+    kind: "stay" | "service";
+    customerName: string;
+    summary: string;
+    totalDisplay: string;
+  }): Promise<AppInboxItem[]>;
   getPushPublicConfig(): ReturnType<typeof getWebPushPublicConfig>;
   getProviderNotifications(userId: string): Promise<ProviderNotification[]>;
   markProviderNotificationRead(id: string, userId: string): Promise<ProviderNotification | undefined>;
@@ -3501,6 +3509,42 @@ export class DatabaseStorage implements IStorage {
         source: "push-test",
       },
     });
+  }
+
+  async createAdminBookingNotification(data: {
+    bookingId: string;
+    sessionId?: string | null;
+    kind: "stay" | "service";
+    customerName: string;
+    summary: string;
+    totalDisplay: string;
+  }): Promise<AppInboxItem[]> {
+    const admins = await this.getUsersByRole("admin");
+    const bookingReference = data.bookingId.slice(0, 8).toUpperCase();
+    const bookingType = data.kind === "stay" ? "stay" : "service";
+    const body = `${data.customerName} created a ${bookingType} booking (${bookingReference}) for ${data.summary}. Total: ${data.totalDisplay}.`;
+
+    const items: AppInboxItem[] = [];
+    for (const admin of admins) {
+      items.push(await this.createInboxItem({
+        userId: admin.id,
+        bookingId: data.bookingId,
+        type: "booking-created",
+        title: "New booking via Zaina",
+        body,
+        actionUrl: `/admin/bookings?bookingId=${encodeURIComponent(data.bookingId)}`,
+        priority: "urgent",
+        channels: ["in-app", "push"],
+        metadata: {
+          source: "zaina",
+          bookingReference,
+          bookingType,
+          sessionId: data.sessionId ?? null,
+        },
+      }));
+    }
+
+    return items;
   }
 
   getPushPublicConfig() {

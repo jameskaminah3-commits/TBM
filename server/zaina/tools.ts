@@ -225,6 +225,8 @@ async function notifyBookingCreated(args: {
   paymentLink: string;
   sessionId: string;
 }): Promise<void> {
+  let transcript: Array<{ actor: string; text: string; timestamp: string }> = [];
+
   try {
     const transcriptRows = await db
       .select({
@@ -236,7 +238,7 @@ async function notifyBookingCreated(args: {
       .where(eq(zainaAuditLogs.sessionId, args.sessionId))
       .orderBy(asc(zainaAuditLogs.timestamp));
 
-    const transcript = transcriptRows
+    transcript = transcriptRows
       .filter((r) => r.messageContent)
       .map((r) => ({
         actor: r.actor,
@@ -244,7 +246,26 @@ async function notifyBookingCreated(args: {
         timestamp: String(r.timestamp),
       }));
 
-    await sendZainaBookingCreatedEmail({
+  } catch (transcriptErr) {
+    console.error("[zaina] booking-created transcript read failed:", transcriptErr);
+  }
+
+  try {
+    const adminInboxItems = await storage.createAdminBookingNotification({
+      bookingId: args.bookingId,
+      sessionId: args.sessionId,
+      kind: args.kind,
+      customerName: args.customerName,
+      summary: args.summary,
+      totalDisplay: args.totalDisplay,
+    });
+    console.info(`[zaina] admin booking notifications created: ${adminInboxItems.length} (${args.bookingId})`);
+  } catch (inboxErr) {
+    console.error("[zaina] admin booking inbox notification failed:", inboxErr);
+  }
+
+  try {
+    const emailSent = await sendZainaBookingCreatedEmail({
       bookingId: args.bookingId,
       customerName: args.customerName,
       customerEmail: args.customerEmail,
@@ -256,6 +277,9 @@ async function notifyBookingCreated(args: {
       sessionId: args.sessionId,
       transcript,
     });
+    if (!emailSent) {
+      console.warn("[zaina] booking-created email was not sent: no notification recipient is configured");
+    }
   } catch (notifyErr) {
     console.error("[zaina] booking-created email failed:", notifyErr);
   }
