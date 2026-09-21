@@ -25,7 +25,11 @@ import {
 import { and, eq, ne, lt, gt, gte, lte, sql, isNotNull, asc, or } from "drizzle-orm";
 import { getUsdToKesRate } from "../currency";
 import { normalizePhone } from "../auth-utils";
-import { HELP_MAMA_HOURLY_MINIMUM_HOURS } from "@shared/errand-pricing";
+import {
+  HELP_MAMA_HOURLY_MINIMUM_HOURS,
+  calculateHouseCleaningPackagePrice,
+  getHouseCleaningBedroomCount,
+} from "@shared/errand-pricing";
 import {
   calculateBookingDepositAmount,
   getBookingAmountPaid,
@@ -355,7 +359,7 @@ export async function searchStays(
 }
 
 export async function searchCooks(
-  args: { region?: string; guests?: number },
+  args: { region?: string; guests?: number; keyword?: string },
   sessionId: string,
 ) {
   const conditions: any[] = [
@@ -367,6 +371,9 @@ export async function searchCooks(
   }
   if (args.guests && args.guests > 0) {
     conditions.push(gte(cooks.maxGuests, args.guests));
+  }
+  if (args.keyword) {
+    conditions.push(sql`(${cooks.title} ILIKE ${"%" + args.keyword + "%"} OR ${cooks.speciality} ILIKE ${"%" + args.keyword + "%"})`);
   }
 
   const rows = await db
@@ -382,6 +389,7 @@ export async function searchCooks(
       priceSingleMeal: cooks.priceSingleMeal,
       minPlates: cooks.minPlates,
       serviceFee: cooks.serviceFee,
+      inclusivePrice: cooks.inclusivePrice,
       customMenuEnabled: cooks.customMenuEnabled,
       sampleMenus: cooks.sampleMenus,
       rating: cooks.rating,
@@ -415,6 +423,12 @@ export async function searchCooks(
           ? { usd: c.serviceFee || c.pricePerSession, display: await formatPrice(c.serviceFee || c.pricePerSession, sessionId) }
           : null,
       },
+      booking_modes: [
+        c.pricePerPlate ? "cook-per-plate" : null,
+        c.priceSingleMeal ? "cook-single-meal" : null,
+        c.serviceFee || c.pricePerSession ? "cook-service-fee" : null,
+        c.inclusivePrice ? "cook-inclusive" : null,
+      ].filter(Boolean),
       custom_menu_available: c.customMenuEnabled,
       sample_menus: c.sampleMenus,
       rating: c.rating,
@@ -434,7 +448,7 @@ export async function searchCooks(
 }
 
 export async function searchCars(
-  args: { region?: string; guests?: number },
+  args: { region?: string; guests?: number; keyword?: string },
   sessionId: string,
 ) {
   const conditions: any[] = [
@@ -446,6 +460,9 @@ export async function searchCars(
   }
   if (args.guests && args.guests > 0) {
     conditions.push(gte(cars.seats, args.guests));
+  }
+  if (args.keyword) {
+    conditions.push(sql`(${cars.model} ILIKE ${"%" + args.keyword + "%"} OR ${cars.make} ILIKE ${"%" + args.keyword + "%"})`);
   }
 
   const rows = await db
@@ -489,6 +506,11 @@ export async function searchCars(
           : null,
         zones: c.chauffeurZones,
       },
+      booking_modes: [
+        c.pricePerDay ? "car-self-drive-day" : null,
+        c.priceWithDriver ? "car-chauffeur-day" : null,
+        c.priceWithDriverHourly ? "car-chauffeur-hourly" : null,
+      ].filter(Boolean),
       features: c.features,
     })),
   );
@@ -505,7 +527,7 @@ export async function searchCars(
 }
 
 export async function searchErrands(
-  args: { region?: string },
+  args: { region?: string; keyword?: string },
   sessionId: string,
 ) {
   const conditions: any[] = [
@@ -514,6 +536,9 @@ export async function searchErrands(
   ];
   if (args.region) {
     conditions.push(sql`${errands.location} ILIKE ${"%" + args.region + "%"}`);
+  }
+  if (args.keyword) {
+    conditions.push(sql`(${errands.serviceName} ILIKE ${"%" + args.keyword + "%"} OR ${errands.description} ILIKE ${"%" + args.keyword + "%"})`);
   }
 
   const rows = await db
@@ -549,6 +574,13 @@ export async function searchErrands(
         house_cleaning: e.houseCleaningEnabled
           ? { addons: e.houseCleaningAddons }
           : null,
+        booking_modes: [
+          "errand-base",
+          e.shoppingEnabled ? "errand-shopping" : null,
+          e.laundryEnabled ? "errand-laundry" : null,
+          e.houseCleaningEnabled ? "errand-house-cleaning" : null,
+          helpMama?.enabled ? "errand-childcare" : null,
+        ].filter(Boolean),
         mamacare: helpMama?.enabled
           ? {
               age_bands: await Promise.all(
@@ -574,11 +606,15 @@ export async function searchErrands(
     ok: true,
     count: results.length,
     errands: results,
+    note:
+      results.length === 0
+        ? "No matching errand was found. Ask whether the customer wants shopping, laundry, cleaning, or childcare, then use a custom request if it is not listed."
+        : undefined,
   };
 }
 
 export async function searchExperiences(
-  args: { region?: string; guests?: number },
+  args: { region?: string; guests?: number; keyword?: string },
   sessionId: string,
 ) {
   const conditions: any[] = [
@@ -590,6 +626,9 @@ export async function searchExperiences(
   }
   if (args.guests && args.guests > 0) {
     conditions.push(gte(experiences.maxGuests, args.guests));
+  }
+  if (args.keyword) {
+    conditions.push(sql`(${experiences.title} ILIKE ${"%" + args.keyword + "%"} OR ${experiences.experienceType} ILIKE ${"%" + args.keyword + "%"} OR ${experiences.description} ILIKE ${"%" + args.keyword + "%"})`);
   }
 
   const rows = await db
@@ -603,6 +642,7 @@ export async function searchExperiences(
       maxGuests: experiences.maxGuests,
       privateEnabled: experiences.privateEnabled,
       sharedEnabled: experiences.sharedEnabled,
+      sharedDepartures: experiences.sharedDepartures,
       privatePricePerPerson: experiences.privatePricePerPerson,
       sharedPricePerPerson: experiences.sharedPricePerPerson,
       customQuoteEnabled: experiences.customQuoteEnabled,
@@ -636,6 +676,14 @@ export async function searchExperiences(
           : null,
       },
       custom_offers_available: x.customQuoteEnabled,
+      booking_modes: [
+        x.privateEnabled ? "experience-private" : null,
+        x.sharedEnabled ? "experience-shared" : null,
+        x.customQuoteEnabled ? "experience-custom-offer" : null,
+      ].filter(Boolean),
+      shared_departures: x.sharedEnabled
+        ? (x.sharedDepartures || []).filter((departure) => departure.date >= new Date().toISOString().slice(0, 10)).slice(0, 5)
+        : [],
       inclusions: x.inclusions,
       rating: x.rating,
       review_count: x.reviewCount,
@@ -646,6 +694,10 @@ export async function searchExperiences(
     ok: true,
     count: results.length,
     experiences: results,
+    note:
+      results.length === 0
+        ? "No matching experience was found. Try a wider area or offer a tailored custom request."
+        : undefined,
   };
 }
 
@@ -701,6 +753,100 @@ export async function checkStayAvailability(
     available: blockingConflicts.length === 0,
     conflicting_bookings: blockingConflicts.length,
     requested: { check_in: args.check_in, check_out: args.check_out, occupied_end: requestedEnd, nights },
+  };
+}
+
+export async function checkServiceAvailability(
+  args: {
+    service_id: string;
+    date: string;
+    check_out?: string;
+    mode?: string;
+    guests?: number;
+    service_departure_id?: string;
+  },
+  _sessionId: string,
+) {
+  if (!isValidIsoDate(args.date)) return { ok: false, error: "invalid_date" };
+
+  const [car] = await db.select().from(cars).where(eq(cars.id, args.service_id)).limit(1);
+  const [cook] = await db.select().from(cooks).where(eq(cooks.id, args.service_id)).limit(1);
+  const [errand] = await db.select().from(errands).where(eq(errands.id, args.service_id)).limit(1);
+  const [experience] = await db.select().from(experiences).where(eq(experiences.id, args.service_id)).limit(1);
+  const service = car || cook || errand || experience;
+  if (!service) return { ok: false, error: "service_not_found" };
+  if (!service.isPublic || !service.managerUserId) return { ok: false, error: "service_not_bookable" };
+
+  if (experience && args.mode === "experience-shared") {
+    const departure = (experience.sharedDepartures || []).find((item) => item.id === args.service_departure_id);
+    if (!departure || departure.date !== args.date) {
+      return { ok: true, available: false, reason: "shared_departure_not_found" };
+    }
+    const departureBookings = await db
+      .select({ guests: bookings.guests })
+      .from(bookings)
+      .where(and(
+        sql`${bookings.selectedServices} @> ARRAY[${args.service_id}]::text[]`,
+        eq(bookings.serviceMode, "experience-shared"),
+        eq(bookings.serviceDepartureId, departure.id),
+        ne(bookings.status, "cancelled"),
+      ));
+    const bookedGuests = departureBookings.reduce((total, booking) => total + Math.max(1, booking.guests || 1), 0);
+    const spotsLeft = Math.max(0, experience.sharedMaxCapacity - bookedGuests);
+    const guests = positiveIntegerOrDefault(args.guests, 1);
+    return {
+      ok: true,
+      service_id: experience.id,
+      title: experience.title,
+      public_url: `${appBaseUrl()}/book/experience/${experience.id}`,
+      available: guests <= spotsLeft,
+      spots_left: spotsLeft,
+      departure,
+    };
+  }
+
+  const checkOut = car && args.mode !== "car-chauffeur-hourly"
+    ? (args.check_out || args.date)
+    : args.date;
+  if (!isValidIsoDate(checkOut) || (car && args.mode !== "car-chauffeur-hourly" && checkOut <= args.date)) {
+    return { ok: false, error: "invalid_dates" };
+  }
+
+  const conflicts = await db
+    .select({
+      status: bookings.status,
+      totalPrice: bookings.totalPrice,
+      paymentStatus: bookings.paymentStatus,
+      paymentAmountPaid: bookings.paymentAmountPaid,
+      paymentDepositAmount: bookings.paymentDepositAmount,
+      paymentHoldExpiresAt: bookings.paymentHoldExpiresAt,
+      serviceMode: bookings.serviceMode,
+    })
+    .from(bookings)
+    .where(and(
+      sql`${bookings.selectedServices} @> ARRAY[${args.service_id}]::text[]`,
+      ne(bookings.status, "cancelled"),
+      or(
+        and(lt(bookings.checkIn, checkOut), gt(bookings.checkOut, args.date)),
+        eq(bookings.checkIn, args.date),
+      ),
+    ));
+
+  const blockingConflicts = conflicts.filter(bookingBlocksAvailability);
+  return {
+    ok: true,
+    service_id: args.service_id,
+    title: "title" in service ? service.title : "service",
+    public_url: car
+      ? `${appBaseUrl()}/book/car/${car.id}`
+      : cook
+        ? `${appBaseUrl()}/book/cook/${cook.id}`
+        : errand
+          ? `${appBaseUrl()}/book/errand/${errand.id}`
+          : `${appBaseUrl()}/book/experience/${experience!.id}`,
+    available: blockingConflicts.length === 0,
+    conflicting_bookings: blockingConflicts.length,
+    requested: { date: args.date, check_out: checkOut },
   };
 }
 // ═══════════════════════════════════════════════════════════════════
@@ -1468,6 +1614,11 @@ export async function createServiceBooking(
     service_start_time?: string;
     service_end_time?: string;
     service_request_details?: string;
+    service_budget_amount?: number;
+    service_laundry_weight_kg?: number;
+    service_addon_selections?: string[];
+    service_schedule_slots?: Array<{ date: string; note?: string }>;
+    service_departure_id?: string;
     mamacare_children?: Array<{ age_band_id: string; count: number }>;
     mamacare_care_mode?: "hourly_daytime" | "hourly_evening" | "overnight" | "full_day";
     mamacare_hours?: number;
@@ -1755,14 +1906,38 @@ export async function createServiceBooking(
     };
     serviceAddonSelections.push(rateIdMap[careMode]);
   }
-  // ─── Errand: base ─────────────────────────────────────────────
-  else if (errand && args.mode === "errand-base") {
+  // ─── Errands ──────────────────────────────────────────────────
+  else if (errand && ["errand-base", "errand-shopping", "errand-laundry", "errand-house-cleaning"].includes(args.mode)) {
     if (!errand.isPublic || !errand.managerUserId) {
       return { ok: false, error: "service_not_bookable" };
     }
-    totalUsd = errand.basePrice * positiveIntegerOrDefault(args.quantity, 1);
+    const packageCount = positiveIntegerOrDefault(args.quantity, 1);
+    const addonSelections = Array.isArray(args.service_addon_selections) ? args.service_addon_selections : [];
+    if (args.mode === "errand-shopping") {
+      if (!errand.shoppingEnabled || !args.service_budget_amount || args.service_budget_amount <= 0) {
+        return { ok: false, error: "shopping_details_required", hint: "Ask for the estimated shopping budget and the shopping list." };
+      }
+      if (!args.service_request_details?.trim()) {
+        return { ok: false, error: "shopping_list_required", tell_customer: "What would you like us to shop for, and what budget should I work with?" };
+      }
+      totalUsd = (errand.basePrice + args.service_budget_amount + Math.ceil((args.service_budget_amount * errand.shoppingCommissionPercent) / 100)) * packageCount;
+    } else if (args.mode === "errand-laundry") {
+      if (!errand.laundryEnabled) return { ok: false, error: "laundry_not_available" };
+      const selectedAddons = (errand.laundryAddons || []).filter((addon) => addonSelections.includes(addon.id));
+      totalUsd = (errand.basePrice + selectedAddons.reduce((sum, addon) => sum + addon.price, 0)) * packageCount;
+      serviceAddonSelections.push(...selectedAddons.map((addon) => addon.id));
+    } else if (args.mode === "errand-house-cleaning") {
+      if (!errand.houseCleaningEnabled) return { ok: false, error: "house_cleaning_not_available" };
+      const bedroomCount = getHouseCleaningBedroomCount(args.mamacare_hours);
+      const selectedAddons = (errand.houseCleaningAddons || []).filter((addon) => addonSelections.includes(addon.id));
+      totalUsd = calculateHouseCleaningPackagePrice(errand, selectedAddons.map((addon) => addon.id), bedroomCount) * packageCount;
+      serviceHours = bedroomCount;
+      serviceAddonSelections.push(...selectedAddons.map((addon) => addon.id));
+    } else {
+      totalUsd = errand.basePrice * packageCount;
+    }
   }
-  // ─── Errand: other modes → ops ────────────────────────────────
+  // ─── Errand: unknown modes → ops ──────────────────────────────
   else if (errand) {
     return {
       ok: false,
@@ -1791,6 +1966,14 @@ export async function createServiceBooking(
       const inclusiveRate = cook.inclusivePrice || cook.serviceFee || cook.pricePerSession;
       if (!inclusiveRate) return { ok: false, error: "no_pricing_configured" };
       totalUsd = inclusiveRate * positiveIntegerOrDefault(args.quantity, 1);
+    } else if (args.mode === "cook-per-plate") {
+      if (!cook.pricePerPlate) return { ok: false, error: "plate_pricing_not_configured" };
+      const plates = positiveIntegerOrDefault(args.quantity, guestCount);
+      if (plates < (cook.minPlates || 4)) return { ok: false, error: "below_minimum", minimum_plates: cook.minPlates || 4 };
+      totalUsd = cook.pricePerPlate * plates;
+    } else if (args.mode === "cook-single-meal") {
+      if (!cook.priceSingleMeal) return { ok: false, error: "single_meal_pricing_not_configured" };
+      totalUsd = cook.priceSingleMeal * positiveIntegerOrDefault(args.quantity, 1);
     } else {
       return {
         ok: false,
@@ -1814,6 +1997,25 @@ export async function createServiceBooking(
         };
       }
       totalUsd = experience.privatePricePerPerson * guestCount;
+    } else if (args.mode === "experience-shared") {
+      if (!experience.sharedEnabled || !args.service_departure_id) {
+        return { ok: false, error: "shared_departure_required", hint: "Choose one shared departure before booking." };
+      }
+      const departure = (experience.sharedDepartures || []).find((item) => item.id === args.service_departure_id);
+      if (!departure || departure.date !== args.date) return { ok: false, error: "shared_departure_not_found" };
+      const departureBookings = await db
+        .select({ guests: bookings.guests })
+        .from(bookings)
+        .where(and(
+          sql`${bookings.selectedServices} @> ARRAY[${args.service_id}]::text[]`,
+          eq(bookings.serviceMode, "experience-shared"),
+          eq(bookings.serviceDepartureId, departure.id),
+          ne(bookings.status, "cancelled"),
+        ));
+      const bookedGuests = departureBookings.reduce((total, booking) => total + Math.max(1, booking.guests || 1), 0);
+      const spotsLeft = Math.max(0, experience.sharedMaxCapacity - bookedGuests);
+      if (guestCount > spotsLeft) return { ok: false, error: "shared_departure_full", spots_left: spotsLeft };
+      totalUsd = (experience.sharedPricePerPerson || experience.price) * guestCount;
     } else {
       return {
         ok: false,
@@ -1847,11 +2049,11 @@ export async function createServiceBooking(
     serviceZone: args.service_zone ?? null,
     serviceStartTime: args.service_start_time ?? null,
     serviceEndTime: args.service_end_time ?? null,
-    serviceBudgetAmount: null,
-    serviceLaundryWeightKg: null,
+    serviceBudgetAmount: args.service_budget_amount ?? null,
+    serviceLaundryWeightKg: args.service_laundry_weight_kg ?? null,
     serviceAddonSelections,
-    serviceScheduleSlots: [],
-    serviceDepartureId: null,
+    serviceScheduleSlots: args.service_schedule_slots ?? (args.mode.startsWith("errand-") ? [{ date: args.date, note: args.service_request_details?.slice(0, 120) }] : []),
+    serviceDepartureId: args.service_departure_id ?? null,
     serviceRequestFee: null,
     serviceRequestDetails: args.service_request_details ?? null,
     serviceResponseMessage: null,
@@ -2039,6 +2241,7 @@ export async function createCustomOffer(
     customer_name?: string;
     customer_email?: string;
     customer_phone?: string;
+    listing_url?: string;
     budget_usd?: number;
     travel_dates?: string;
     idempotency_key: string;
@@ -2065,6 +2268,9 @@ export async function createCustomOffer(
       tell_customer: "Before I place this custom request, may I have your full name and email address?",
     };
   }
+  if (args.listing_url && !/^https?:\/\/\S+$/i.test(args.listing_url.trim())) {
+    return { ok: false, error: "invalid_listing_url", tell_customer: "Please send the full listing link beginning with https:// so I can attach it to the request." };
+  }
 
   const customerIdentity = await identifyCustomer({
     email: args.customer_email,
@@ -2075,6 +2281,10 @@ export async function createCustomOffer(
   const tierFees: Record<string, number> = { intake: 5, proposal: 15, verification: 40 };
   const feeUsd = tierFees[tier] ?? 5;
   const currency = await getSessionCurrency(sessionId);
+  const requestDetails = [
+    args.request_details.trim(),
+    args.listing_url?.trim() ? `Listing URL: ${args.listing_url.trim()}` : null,
+  ].filter(Boolean).join("\n\n");
 
   const existing = await db
     .select()
@@ -2107,7 +2317,7 @@ export async function createCustomOffer(
       customerEmail: args.customer_email ?? null,
       customerPhone: args.customer_phone ?? null,
       offerType: args.offer_type,
-      requestDetails: args.request_details,
+      requestDetails,
       budgetUsd: args.budget_usd ?? null,
       travelDates: args.travel_dates ?? null,
       status: "new",
@@ -2125,7 +2335,7 @@ export async function createCustomOffer(
     customerName: args.customer_name.trim(),
     customerEmail: args.customer_email.trim().toLowerCase(),
     customerPhone: args.customer_phone,
-    requestDetails: args.request_details.trim(),
+    requestDetails,
     travelDates: args.travel_dates,
     budgetUsd: args.budget_usd,
     idempotencyKey: args.idempotency_key,
@@ -2149,7 +2359,7 @@ export async function createCustomOffer(
       Type: args.offer_type,
       "Travel dates": args.travel_dates ?? "not provided",
       Budget: args.budget_usd ? `$${args.budget_usd}` : "not provided",
-      Details: args.request_details,
+      Details: requestDetails,
     },
   });
 
@@ -2162,6 +2372,7 @@ export async function createCustomOffer(
     fee_creditable: true,
     booking_id: booking.id,
     payment_link: paymentLink,
+    listing_url: args.listing_url?.trim() || undefined,
     client_status: customerIdentity.ok ? customerIdentity.client_status : undefined,
     account_guidance: customerIdentity.ok ? customerIdentity.guidance : undefined,
     disclosure:

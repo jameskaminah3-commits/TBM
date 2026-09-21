@@ -31,6 +31,7 @@ import {
   searchErrands,
   searchExperiences,
   checkStayAvailability,
+  checkServiceAvailability,
   calculateChefPrice,
   calculateMamaCarePrice,
   composeTripPackage,
@@ -44,7 +45,7 @@ import {
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 const MODEL = "gemini-3.5-flash-lite";
-const MAX_TOOL_ROUNDS = 4;
+const MAX_TOOL_ROUNDS = 6;
 const HISTORY_TURNS = 20;
 
 // ═══════════════════════════════════════════════════════════════════
@@ -139,6 +140,76 @@ VOICE
 - Never repeat the customer's question back to them.
 - Never apologize three times. Offer the next step instead.
 - Do not dump 20 options when 3 well-chosen ones would be better.
+- Default reply length: 1 short paragraph or 2–4 short sentences, normally
+  under 90 words. Use up to 3 numbered options only when the customer is
+  choosing between real results. Do not recite TBM's catalogue or policies.
+- Be socially aware: acknowledge the customer's purpose or mood briefly,
+  then ask the single most useful next question. Friendly does not mean
+  chatty, and helpful does not mean pushy.
+- Every turn should do one job: answer, narrow the choice, verify, create a
+  request, or hand over a payment link. End with one clear next step.
+═══════════════════════════════════════════════════════════════════════
+SERVICE RECEPTIONIST PLAYBOOKS — use the right path
+═══════════════════════════════════════════════════════════════════════
+
+Do not handle every request like a stay search. Identify the service first,
+then collect only the details needed for that service.
+
+TRANSPORT / CARS
+• Ask for date(s), number of passengers, self-drive or chauffeur, pickup,
+  and return/drop-off location. For hourly chauffeur also ask start and end
+  time. For a day rental, check_out must be after date.
+• Search cars, show up to 3 real options with their complete public_url, then
+  check live availability before saying a specific car is available. Book
+  with create_service_booking only after the customer chooses the car.
+• Never describe a car as available just because it appears in search.
+
+ERRANDS / RELAX
+• Classify the request as shopping, laundry, house cleaning, MamaCare, or a
+  basic errand. Ask for date, service location, and the one detail that
+  affects pricing: shopping budget/list, laundry weight or add-ons, bedroom
+  count for cleaning, or children's ages/care timing for MamaCare.
+• Use the matching errand mode when the listed service supports it. If the
+  exact request is not listed or needs a manual quote, create a custom offer;
+  do not leave the customer with a vague promise to contact someone.
+
+EXPERIENCES
+• Ask for date, area, number of guests, and whether they prefer private or
+  shared. Search experiences by keyword when they name an activity (dhow,
+  snorkeling, food, culture, etc.). Show the specific public_url.
+• For shared experiences, offer only the dated departures returned by search,
+  check the departure's live spaces, and pass its service_departure_id when
+  booking. For private experiences, verify the guest range before booking.
+• If the customer wants a bespoke itinerary or the listed experience does
+  not fit, use a proposal custom offer with the requested dates and brief.
+
+DINE
+• “Chef”, “private dining”, or “cook” means search_cooks. Ask date, location,
+  guest count, meal style, and whether they want ingredients included. Use
+  the pricing model actually returned for that chef; never force a session
+  price onto a per-plate or single-meal chef.
+• “Restaurant reservation” means a restaurant request, not a chef listing.
+  Collect restaurant or area, date, time, party size, occasion, and dietary
+  notes, then create an intake custom offer labelled restaurant_reservation.
+  Explain that the team confirms the reservation; do not claim it is booked.
+
+CUSTOM REQUESTS AND VERIFICATION
+• If a service is not listed, create a custom offer after collecting the
+  customer's name, email, phone if available, dates, location, and a concise
+  request brief. Mention the small request fee once: it is credited in full
+  against the final quotation if they proceed.
+• If the customer wants a third-party stay, car, tour, or service checked,
+  ask for the full https:// listing link first. Ask what they want checked
+  (match to advert, legitimacy, price, location, amenities, or red flags),
+  then use the verification tier and pass the exact link as listing_url.
+  The link is saved with the request. Say that desk review can flag concerns
+  and the team can arrange an on-ground visit; do not claim that Zaina has
+  personally verified the property or that a report already exists.
+
+Never give a generic brochure paragraph when a customer has already stated
+their intent. If they say “I need a car”, ask for date, passengers, mode,
+and pickup/return. If they say “verify this listing”, ask for the link. If
+they say “book a restaurant”, ask for restaurant, date, time, and party size.
 ═══════════════════════════════════════════════════════════════════════
 LISTING LINKS — how to present and share properties
 ═══════════════════════════════════════════════════════════════════════
@@ -617,6 +688,7 @@ const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
           properties: {
             region: { type: Type.STRING },
             guests: { type: Type.NUMBER },
+            keyword: { type: Type.STRING, description: "Optional food or chef speciality keyword." },
           },
         },
       },
@@ -630,6 +702,7 @@ const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
           properties: {
             region: { type: Type.STRING },
             guests: { type: Type.NUMBER },
+            keyword: { type: Type.STRING, description: "Optional vehicle keyword such as SUV or van." },
           },
         },
       },
@@ -642,6 +715,7 @@ const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
           type: Type.OBJECT,
           properties: {
             region: { type: Type.STRING },
+            keyword: { type: Type.STRING, description: "Optional service keyword such as shopping, laundry, cleaning, or childcare." },
           },
         },
       },
@@ -655,6 +729,7 @@ const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
           properties: {
             region: { type: Type.STRING },
             guests: { type: Type.NUMBER },
+            keyword: { type: Type.STRING, description: "Optional activity keyword such as dhow, snorkeling, food, or culture." },
           },
         },
       },
@@ -759,6 +834,24 @@ const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
         },
       },
       {
+        name: "check_service_availability",
+        description:
+          "Check live availability for a car, chef, errand, or experience on a requested date. " +
+          "For cars, pass check_out for multi-day rentals. For shared experiences, pass the departure id.",
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            service_id: { type: Type.STRING },
+            date: { type: Type.STRING, description: "ISO date" },
+            check_out: { type: Type.STRING, description: "ISO return date for a car day rental" },
+            mode: { type: Type.STRING },
+            guests: { type: Type.NUMBER },
+            service_departure_id: { type: Type.STRING },
+          },
+          required: ["service_id", "date"],
+        },
+      },
+      {
         name: "create_draft_booking",
         description:
           "Create a draft booking and return a payment link. " +
@@ -820,6 +913,7 @@ const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
             customer_name: { type: Type.STRING },
             customer_email: { type: Type.STRING },
             customer_phone: { type: Type.STRING },
+            listing_url: { type: Type.STRING, description: "Full https:// link for a third-party listing being verified." },
             budget_usd: { type: Type.NUMBER },
             travel_dates: { type: Type.STRING },
             idempotency_key: { type: Type.STRING },
@@ -887,9 +981,10 @@ const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
               description:
                 "Service mode. For MamaCare use 'errand-childcare'. " +
                  "For cars: 'car-chauffeur-day', 'car-chauffeur-hourly', or 'car-self-drive-day'. " +
-                 "For chefs: 'cook-service-fee' or 'cook-inclusive'. " +
+                "For chefs: 'cook-service-fee', 'cook-inclusive', 'cook-per-plate', or 'cook-single-meal'. " +
                 "For base errands: 'errand-base'. " +
-                "For private experiences: 'experience-private'.",
+                "For shopping, laundry, and house cleaning use the matching errand mode. " +
+                "For experiences use 'experience-private' or 'experience-shared'.",
             },
             guests: {
               type: Type.NUMBER,
@@ -917,6 +1012,15 @@ const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
               description: "HH:MM format, e.g. 06:00.",
             },
             service_request_details: { type: Type.STRING },
+            service_budget_amount: { type: Type.NUMBER, description: "For shopping: estimated receipt budget, excluding the service fee." },
+            service_laundry_weight_kg: { type: Type.NUMBER, description: "For laundry: estimated weight in kilograms." },
+            service_addon_selections: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Errand add-on ids returned by search." },
+            service_schedule_slots: {
+              type: Type.ARRAY,
+              items: { type: Type.OBJECT, properties: { date: { type: Type.STRING }, note: { type: Type.STRING } }, required: ["date"] },
+              description: "Optional errand schedule details.",
+            },
+            service_departure_id: { type: Type.STRING, description: "Required for a shared experience; use a departure id returned by search." },
             mamacare_children: {
               type: Type.ARRAY,
               description: "For MamaCare only. Each entry is one child's age band and count.",
@@ -977,6 +1081,7 @@ async function executeTool(name: string, args: any, sessionId: string): Promise<
     case "search_errands":           return searchErrands(args, sessionId);
     case "search_experiences":       return searchExperiences(args, sessionId);
     case "check_stay_availability":  return checkStayAvailability(args, sessionId);
+    case "check_service_availability": return checkServiceAvailability(args, sessionId);
     case "calculate_chef_price":     return calculateChefPrice(args, sessionId);
     case "calculate_mamacare_price": return calculateMamaCarePrice(args, sessionId);
       case "compose_trip_package":     return composeTripPackage(args, sessionId);
