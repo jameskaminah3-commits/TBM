@@ -1315,6 +1315,7 @@ export interface IStorage {
   getBooking(id: string): Promise<Booking | undefined>;
   createBooking(
     booking: ServerBooking & Partial<Pick<Booking, "paymentStatus" | "paymentProvider" | "paymentReference" | "paymentSessionId" | "paymentCurrency" | "paymentAmount" | "paymentCheckoutAmount" | "paymentDepositAmount" | "paymentAmountPaid" | "paymentHoldExpiresAt" | "paidAt" | "paymentFailedAt">>,
+    executor?: any,
   ): Promise<Booking>;
   updateBooking(
     id: string,
@@ -2840,16 +2841,22 @@ export class DatabaseStorage implements IStorage {
 
   async createBooking(
     data: ServerBooking & Partial<Pick<Booking, "paymentStatus" | "paymentProvider" | "paymentReference" | "paymentSessionId" | "paymentCurrency" | "paymentAmount" | "paymentCheckoutAmount" | "paymentDepositAmount" | "paymentAmountPaid" | "paymentHoldExpiresAt" | "paidAt" | "paymentFailedAt">>,
+    executor: any = db,
   ): Promise<Booking> {
     await this.ensurePaymentsTables();
     const now = new Date().toISOString();
     const columns = await this.getTableColumns("bookings");
     const filteredData = this.filterBookingWriteData({ ...data, createdAt: now }, columns);
-    const [created] = await db
+    const [created] = await executor
       .insert(bookings)
       .values(filteredData as typeof bookings.$inferInsert)
       .returning({ id: bookings.id });
-    const booking = await this.getBooking(created.id);
+    if (!created) {
+      throw new Error("Booking could not be created.");
+    }
+    const booking = executor === db
+      ? await this.getBooking(created.id)
+      : (await executor.select().from(bookings).where(eq(bookings.id, created.id)).limit(1))[0] as Booking | undefined;
     if (!booking) {
       throw new Error("Booking was created but could not be reloaded.");
     }

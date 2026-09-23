@@ -152,6 +152,76 @@ function occupiedEndDate(checkIn: string, checkOut: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+const bookingInventoryColumns = {
+  status: bookings.status,
+  totalPrice: bookings.totalPrice,
+  paymentStatus: bookings.paymentStatus,
+  paymentAmountPaid: bookings.paymentAmountPaid,
+  paymentDepositAmount: bookings.paymentDepositAmount,
+  paymentHoldExpiresAt: bookings.paymentHoldExpiresAt,
+  serviceMode: bookings.serviceMode,
+};
+
+async function hasStayInventoryConflict(
+  executor: any,
+  stayId: string,
+  checkIn: string,
+  checkOut: string,
+): Promise<boolean> {
+  const candidates = await executor
+    .select(bookingInventoryColumns)
+    .from(bookings)
+    .where(and(
+      eq(bookings.accommodationId, stayId),
+      ne(bookings.status, "cancelled"),
+      lt(bookings.checkIn, checkOut),
+      gt(bookings.checkOut, checkIn),
+    ))
+    .limit(50);
+  return candidates.some(bookingBlocksAvailability);
+}
+
+async function hasServiceInventoryConflict(
+  executor: any,
+  serviceId: string,
+  checkIn: string,
+  checkOut: string,
+): Promise<boolean> {
+  const candidates = await executor
+    .select(bookingInventoryColumns)
+    .from(bookings)
+    .where(and(
+      sql`${bookings.selectedServices} @> ARRAY[${serviceId}]::text[]`,
+      ne(bookings.status, "cancelled"),
+      lt(bookings.checkIn, checkOut),
+      gt(bookings.checkOut, checkIn),
+    ))
+    .limit(50);
+  return candidates.some(bookingBlocksAvailability);
+}
+
+async function createBookingWithInventoryLock(
+  resourceKeys: string[],
+  data: any,
+  inventoryCheck: (executor: any) => Promise<string | null>,
+): Promise<{ booking: any | null; conflict: string | null }> {
+  return db.transaction(async (tx) => {
+    // Lock every affected resource in a stable order so two multi-service
+    // bookings cannot deadlock while each waits for the other resource.
+    for (const resourceKey of Array.from(new Set(resourceKeys)).sort()) {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${resourceKey}, 0))`);
+    }
+
+    const conflict = await inventoryCheck(tx);
+    if (conflict) return { booking: null, conflict };
+
+    return {
+      booking: await storage.createBooking(data, tx),
+      conflict: null,
+    };
+  });
+}
+
 /**
  * Today's date in Kenya (YYYY-MM-DD). Using UTC here would misclassify
  * bookings made between 21:00 and 00:00 Kenya as "yesterday."
@@ -761,7 +831,7 @@ export async function checkStayAvailability(
     ok: true,
     stay_id: args.stay_id,
     title: stay.title,
-    public_url: `${appBaseUrl()}/accommodation/${stay.id}`,
+    public_url: `${appBaseUrl()}${getPublicListingPath("stay", stay.id, stay.title)}`,
     available: blockingConflicts.length === 0,
     conflicting_bookings: blockingConflicts.length,
     requested: { check_in: args.check_in, check_out: args.check_out, occupied_end: requestedEnd, nights },
@@ -810,7 +880,7 @@ export async function checkServiceAvailability(
       ok: true,
       service_id: experience.id,
       title: experience.title,
-      public_url: `${appBaseUrl()}/book/experience/${experience.id}`,
+      public_url: `${appBaseUrl()}${getPublicListingPath("experience", experience.id, experience.title)}`,
       available: guests <= spotsLeft,
       spots_left: spotsLeft,
       departure,
@@ -850,12 +920,12 @@ export async function checkServiceAvailability(
     service_id: args.service_id,
     title: "title" in service ? service.title : "service",
     public_url: car
-      ? `${appBaseUrl()}/book/car/${car.id}`
+      ? `${appBaseUrl()}${getPublicListingPath("car", car.id, `${car.make ? `${car.make} ` : ""}${car.model}`)}`
       : cook
-        ? `${appBaseUrl()}/book/cook/${cook.id}`
+        ? `${appBaseUrl()}${getPublicListingPath("cook", cook.id, cook.title)}`
         : errand
-          ? `${appBaseUrl()}/book/errand/${errand.id}`
-          : `${appBaseUrl()}/book/experience/${experience!.id}`,
+          ? `${appBaseUrl()}${getPublicListingPath("errand", errand.id, errand.serviceName)}`
+          : `${appBaseUrl()}${getPublicListingPath("experience", experience!.id, experience!.title)}`,
     available: blockingConflicts.length === 0,
     conflicting_bookings: blockingConflicts.length,
     requested: { date: args.date, check_out: checkOut },
@@ -1493,7 +1563,7 @@ export async function createDraftBooking(
 
   // 7. Create booking
   const now = new Date().toISOString();
-  const booking = await storage.createBooking({
+  const bookingData = {
     userId: null,
     accommodationId: args.stay_id,
     guestName: args.customer_name,
@@ -1562,7 +1632,43 @@ export async function createDraftBooking(
     bookingType: "accommodation",
     createdAt: now,
     idempotencyKey: args.idempotency_key,
-  } as any);
+  } as any;
+
+  const creation = await createBookingWithInventoryLock(
+    [`stay:${args.stay_id}`, ...serviceIds.map((serviceId) => `service:${serviceId}`)],
+    bookingData,
+    async (executor) => {
+      if (await hasStayInventoryConflict(executor, args.stay_id, args.check_in, args.check_out)) {
+        return "stay_not_available";
+      }
+      for (const serviceId of serviceIds) {
+        if (await hasServiceInventoryConflict(executor, serviceId, args.check_in, args.check_out)) {
+          return "service_not_available";
+        }
+      }
+      return null;
+    },
+  );
+  if (creation.conflict === "stay_not_available") {
+    return {
+      ok: false,
+      error: "stay_not_available",
+      hint: "The selected stay is no longer available for those dates. Call search_stays again for alternatives before retrying.",
+      tell_customer: "That stay has just become unavailable for those dates. Let me check the closest alternatives for you.",
+    };
+  }
+  if (creation.conflict === "service_not_available") {
+    return {
+      ok: false,
+      error: "service_not_available",
+      hint: "One of the selected services is no longer available for those dates. Offer alternatives before retrying.",
+      tell_customer: "One of the selected services has just become unavailable for those dates. Let me check the closest alternatives for you.",
+    };
+  }
+  const booking = creation.booking;
+  if (!booking) {
+    return { ok: false, error: "booking_creation_failed" };
+  }
 
   const paymentLink = `${appBaseUrl()}/bookings?bookingId=${booking.id}`;
 
@@ -2043,7 +2149,7 @@ export async function createServiceBooking(
 
   // 5. Create the booking
   const now = new Date().toISOString();
-  const booking = await storage.createBooking({
+  const bookingData = {
     userId: null,
     accommodationId: null,
     guestName: args.customer_name,
@@ -2112,7 +2218,58 @@ export async function createServiceBooking(
     bookingType: "service",
     createdAt: now,
     idempotencyKey: args.idempotency_key,
-  } as any);
+  } as any;
+
+  const creation = await createBookingWithInventoryLock(
+    [`service:${args.service_id}`],
+    bookingData,
+    async (executor) => {
+      if (await hasServiceInventoryConflict(executor, args.service_id, args.date, serviceCheckOut)) {
+        return "service_not_available";
+      }
+
+      if (experience && args.mode === "experience-shared" && args.service_departure_id) {
+        const departureBookings = await executor
+          .select({ guests: bookings.guests })
+          .from(bookings)
+          .where(and(
+            sql`${bookings.selectedServices} @> ARRAY[${args.service_id}]::text[]`,
+            eq(bookings.serviceMode, "experience-shared"),
+            eq(bookings.serviceDepartureId, args.service_departure_id),
+            ne(bookings.status, "cancelled"),
+          ));
+        const bookedGuests = departureBookings.reduce(
+          (total: number, booking: { guests: number | null }) => total + Math.max(1, booking.guests || 1),
+          0,
+        );
+        if (guestCount > Math.max(0, experience.sharedMaxCapacity - bookedGuests)) {
+          return "shared_departure_full";
+        }
+      }
+
+      return null;
+    },
+  );
+  if (creation.conflict === "service_not_available") {
+    return {
+      ok: false,
+      error: "service_not_available",
+      hint: "The selected service is no longer available for that date. Offer another date or connect the customer with the team.",
+      tell_customer: "That service has just become unavailable for that date. Let me check the closest alternatives for you.",
+    };
+  }
+  if (creation.conflict === "shared_departure_full") {
+    return {
+      ok: false,
+      error: "shared_departure_full",
+      hint: "The selected shared departure filled up before the booking was created. Offer another departure.",
+      tell_customer: "That shared departure has just filled up. Let me look for another departure or a private option.",
+    };
+  }
+  const booking = creation.booking;
+  if (!booking) {
+    return { ok: false, error: "booking_creation_failed" };
+  }
 
   const paymentLink = `${appBaseUrl()}/bookings?bookingId=${booking.id}`;
 
