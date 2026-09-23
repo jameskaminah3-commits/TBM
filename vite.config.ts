@@ -3,9 +3,26 @@ import react from "@vitejs/plugin-react";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 
+function cspSafeGlobalPlugin() {
+  return {
+    name: "csp-safe-global",
+    enforce: "post" as const,
+    transform(code: string, id: string) {
+      const legacyGlobalPattern = /Function\s*\(\s*(['"])return this\1\s*\)\s*\(\s*\)/g;
+      if (!legacyGlobalPattern.test(code)) {
+        return null;
+      }
+
+      const transformed = code.replace(legacyGlobalPattern, "globalThis");
+      return transformed === code ? null : { code: transformed, map: null };
+    },
+  };
+}
+
 export default defineConfig({
   plugins: [
     react(),
+    cspSafeGlobalPlugin(),
     runtimeErrorOverlay(),
     ...(process.env.NODE_ENV !== "production" &&
     process.env.REPL_ID !== undefined
