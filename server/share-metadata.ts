@@ -1,7 +1,12 @@
 import type { Request } from "express";
 import type { BlogPost, Car, Cook, Errand, Experience, Stay } from "@shared/schema";
 import { getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
-import { getPublicListingPath } from "@shared/seo";
+import {
+  buildListingSeoDescription,
+  formatSeoLocation,
+  getListingSeoTitle,
+  getPublicListingPath,
+} from "@shared/seo";
 import { storage } from "./storage";
 
 type ListingKind = "stay" | "car" | "cook" | "errand" | "experience";
@@ -120,16 +125,17 @@ function joinDetails(parts: Array<string | null | undefined>) {
 }
 
 function buildStayMetadata(stay: Stay, baseUrl: string, canonicalUrl: string, currency: ShareCurrency): ShareMetadata {
+  const location = formatSeoLocation(stay.location);
   const details = joinDetails([
-    stay.location,
+    location,
+    `${stay.bedrooms}-bedroom accommodation with ${stay.bathrooms} bathrooms`,
     formatShareAmount(stay.price, " per night", currency),
-    `${stay.bedrooms} bedroom${stay.bedrooms === 1 ? "" : "s"}`,
     `up to ${stay.maxOccupancy} guest${stay.maxOccupancy === 1 ? "" : "s"}`,
   ]);
 
   return {
-    title: `${stay.title} | ${siteName}`,
-    description: truncate([details, stay.description].filter(Boolean).join(". "), 220),
+    title: getListingSeoTitle("stay", stay.title, stay.location),
+    description: buildListingSeoDescription([details, stay.description]),
     imageUrl: getListingImage(stay, baseUrl),
     canonicalUrl,
     type: "website",
@@ -137,8 +143,10 @@ function buildStayMetadata(stay: Stay, baseUrl: string, canonicalUrl: string, cu
 }
 
 function buildCarMetadata(car: Car, baseUrl: string, canonicalUrl: string, currency: ShareCurrency): ShareMetadata {
+  const location = formatSeoLocation(car.location);
   const details = joinDetails([
-    car.location,
+    location,
+    "car hire",
     formatShareAmount(car.priceWithDriverHourly, "/hour chauffeur", currency),
     formatShareAmount(car.pricePerDay, "/day self-drive", currency),
     `${car.seats} seats`,
@@ -146,8 +154,8 @@ function buildCarMetadata(car: Car, baseUrl: string, canonicalUrl: string, curre
   ]);
 
   return {
-    title: `${car.model} | Drive with ${siteName}`,
-    description: truncate([details, car.description].filter(Boolean).join(". "), 220),
+    title: getListingSeoTitle("car", `${car.make ? `${car.make} ` : ""}${car.model}`, car.location),
+    description: buildListingSeoDescription([details, car.description]),
     imageUrl: getListingImage(car, baseUrl),
     canonicalUrl,
     type: "website",
@@ -155,8 +163,9 @@ function buildCarMetadata(car: Car, baseUrl: string, canonicalUrl: string, curre
 }
 
 function buildCookMetadata(cook: Cook, baseUrl: string, canonicalUrl: string, currency: ShareCurrency): ShareMetadata {
+  const location = formatSeoLocation(cook.location);
   const details = joinDetails([
-    cook.location,
+    location,
     cook.serviceType,
     cook.speciality,
     formatShareAmount(cook.serviceFee || cook.pricePerSession, " service fee", currency),
@@ -164,8 +173,8 @@ function buildCookMetadata(cook: Cook, baseUrl: string, canonicalUrl: string, cu
   ]);
 
   return {
-    title: `${cook.title} | Dine with ${siteName}`,
-    description: truncate([details, cook.description].filter(Boolean).join(". "), 220),
+    title: getListingSeoTitle("cook", cook.title, cook.location),
+    description: buildListingSeoDescription([details, cook.description]),
     imageUrl: getListingImage(cook, baseUrl),
     canonicalUrl,
     type: "website",
@@ -173,13 +182,14 @@ function buildCookMetadata(cook: Cook, baseUrl: string, canonicalUrl: string, cu
 }
 
 function buildErrandMetadata(errand: Errand, baseUrl: string, canonicalUrl: string, currency: ShareCurrency): ShareMetadata {
+  const location = formatSeoLocation(errand.location);
   const services = [
     errand.shoppingEnabled ? "shopping" : null,
     errand.laundryEnabled ? "laundry" : null,
     errand.houseCleaningEnabled ? "house cleaning" : null,
   ];
   const details = joinDetails([
-    errand.location,
+    location,
     hasHelpMamaPricing(errand)
       ? formatShareAmount(getHelpMamaStartingPrice(errand.helpMamaPricing), " starting Help Mama rate", currency)
       : formatShareAmount(errand.basePrice, " base fee", currency),
@@ -187,8 +197,8 @@ function buildErrandMetadata(errand: Errand, baseUrl: string, canonicalUrl: stri
   ]);
 
   return {
-    title: `${errand.serviceName} | Relax with ${siteName}`,
-    description: truncate([details, errand.description].filter(Boolean).join(". "), 220),
+    title: getListingSeoTitle("errand", errand.serviceName, errand.location),
+    description: buildListingSeoDescription([details, errand.description]),
     imageUrl: getListingImage(errand, baseUrl),
     canonicalUrl,
     type: "website",
@@ -196,16 +206,17 @@ function buildErrandMetadata(errand: Errand, baseUrl: string, canonicalUrl: stri
 }
 
 function buildExperienceMetadata(experience: Experience, baseUrl: string, canonicalUrl: string, currency: ShareCurrency): ShareMetadata {
+  const location = formatSeoLocation(experience.experienceLocation || experience.location);
   const details = joinDetails([
-    experience.experienceLocation || experience.location,
+    location,
     experience.experienceType,
     formatShareAmount(experience.privatePricePerPerson || experience.price, " per person", currency),
     `${experience.durationHours} hour${experience.durationHours === 1 ? "" : "s"}`,
   ]);
 
   return {
-    title: `${experience.title} | Experience with ${siteName}`,
-    description: truncate([details, experience.description].filter(Boolean).join(". "), 220),
+    title: getListingSeoTitle("experience", experience.title, experience.experienceLocation || experience.location),
+    description: buildListingSeoDescription([details, experience.description]),
     imageUrl: getListingImage(experience, baseUrl),
     canonicalUrl,
     type: "website",
@@ -229,9 +240,9 @@ function getListingStructuredData(
   canonicalUrl: string,
 ) {
   const name = getListingName(kind, listing);
-  const location = "experienceLocation" in listing
+  const location = formatSeoLocation("experienceLocation" in listing
     ? listing.experienceLocation || listing.location
-    : listing.location;
+    : listing.location);
   const type = kind === "stay" ? "LodgingBusiness" : kind === "car" ? "Car" : kind === "experience" ? "TouristAttraction" : "Service";
   const structuredData: Record<string, unknown> = {
     "@context": "https://schema.org",
@@ -240,6 +251,7 @@ function getListingStructuredData(
     description: truncate(listing.description, 320),
     url: canonicalUrl,
     areaServed: { "@type": "Place", name: location || "Mombasa, Kenya" },
+    address: { "@type": "PostalAddress", addressLocality: location, addressCountry: "KE" },
     provider: { "@type": "Organization", name: siteName, url: canonicalUrl.split("/").slice(0, 3).join("/") },
     breadcrumb: {
       "@type": "BreadcrumbList",

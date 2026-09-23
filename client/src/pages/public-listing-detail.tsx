@@ -12,7 +12,13 @@ import { CurrencyAmount } from "@/components/currency-amount";
 import { PremiumMediaGallery } from "@/components/premium-media-gallery";
 import { SeoHead } from "@/components/seo-head";
 import { buildCanonicalUrl } from "@/lib/canonical-url";
-import { getBookingPath, getPublicListingPath } from "@/lib/public-listing";
+import {
+  buildListingSeoDescription,
+  formatSeoLocation,
+  getBookingPath,
+  getListingSeoTitle,
+  getPublicListingPath,
+} from "@/lib/public-listing";
 
 type PublicListing = CarType | Cook | Errand | Experience;
 
@@ -42,9 +48,9 @@ function getListingName(kind: Exclude<PublicListingKind, "stay">, listing: Publi
 
 function getListingLocation(listing: PublicListing) {
   if ("experienceLocation" in listing) {
-    return listing.experienceLocation || listing.location || "Mombasa, Kenya";
+    return formatSeoLocation(listing.experienceLocation || listing.location);
   }
-  return listing.location || "Mombasa, Kenya";
+  return formatSeoLocation(listing.location);
 }
 
 function getListingDescription(kind: Exclude<PublicListingKind, "stay">, listing: PublicListing) {
@@ -102,6 +108,7 @@ function getStructuredData(kind: Exclude<PublicListingKind, "stay">, listing: Pu
     description,
     url: canonicalUrl,
     areaServed: { "@type": "Place", name: location },
+    address: { "@type": "PostalAddress", addressLocality: location, addressCountry: "KE" },
     provider: { "@type": "Organization", name: "Tembea Bila Matata", url: buildCanonicalUrl("/") },
     breadcrumb: {
       "@type": "BreadcrumbList",
@@ -154,6 +161,8 @@ export default function PublicListingDetail({ kind }: { kind: Exclude<PublicList
   const listingName = listing ? getListingName(kind, listing) : category.label;
   const canonicalUrl = listing ? buildCanonicalUrl(getPublicListingPath(kind, listing.id, listingName)) : buildCanonicalUrl(`${category.href}/${id || ""}`);
   const description = listing ? getListingDescription(kind, listing) : `Explore ${category.label} with Tembea Bila Matata.`;
+  const seoTitle = listing ? getListingSeoTitle(kind, listingName, getListingLocation(listing)) : "Listing not found | Tembea Bila Matata";
+  const seoDescription = listing ? buildListingSeoDescription([description]) : description;
   const structuredData = useMemo(
     () => (listing ? getStructuredData(kind, listing, canonicalUrl) : null),
     [canonicalUrl, kind, listing],
@@ -181,8 +190,8 @@ export default function PublicListingDetail({ kind }: { kind: Exclude<PublicList
   return (
     <div className="app-shell min-h-screen py-10">
       <SeoHead
-        title={`${listingName} in ${location} | Tembea Bila Matata`}
-        description={description}
+        title={seoTitle}
+        description={seoDescription}
         image={listing.imageUrl}
         canonicalUrl={canonicalUrl}
         structuredData={structuredData}

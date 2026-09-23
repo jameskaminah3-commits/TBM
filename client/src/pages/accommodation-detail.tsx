@@ -20,7 +20,12 @@ import {
 import type { Stay } from "@shared/schema";
 import { SeoHead } from "@/components/seo-head";
 import { buildCanonicalUrl } from "@/lib/canonical-url";
-import { getPublicListingPath } from "@/lib/public-listing";
+import {
+  buildListingSeoDescription,
+  formatSeoLocation,
+  getListingSeoTitle,
+  getPublicListingPath,
+} from "@/lib/public-listing";
 import { eachDayOfInterval, format, parseISO, startOfDay } from "date-fns";
 
 type StayAvailability = {
@@ -112,7 +117,8 @@ export default function AccommodationDetail() {
   }
 
   const canonicalUrl = buildCanonicalUrl(getPublicListingPath("stay", accommodation.id, accommodation.title));
-  const semanticSummary = `${accommodation.bedrooms}-bedroom accommodation in ${accommodation.location}, with ${accommodation.bathrooms} bathrooms and space for up to ${accommodation.maxOccupancy} guests. Available from ${accommodation.price} USD per night.`;
+  const location = formatSeoLocation(accommodation.location);
+  const semanticSummary = `${accommodation.bedrooms}-bedroom accommodation in ${location}, with ${accommodation.bathrooms} bathrooms and space for up to ${accommodation.maxOccupancy} guests. Available from ${accommodation.price} USD per night.`;
   const structuredData = {
     "@context": "https://schema.org",
     "@type": "LodgingBusiness",
@@ -122,7 +128,8 @@ export default function AccommodationDetail() {
     url: canonicalUrl,
     numberOfRooms: accommodation.bedrooms,
     occupancy: { "@type": "QuantitativeValue", maxValue: accommodation.maxOccupancy },
-    address: { "@type": "PostalAddress", addressLocality: accommodation.location, addressCountry: "KE" },
+    address: { "@type": "PostalAddress", addressLocality: location, addressCountry: "KE" },
+    areaServed: { "@type": "Place", name: location },
     aggregateRating: accommodation.reviewCount > 0 ? {
       "@type": "AggregateRating",
       ratingValue: accommodation.rating,
@@ -147,8 +154,8 @@ export default function AccommodationDetail() {
   return (
     <div className="min-h-screen py-12">
       <SeoHead
-        title={`${accommodation.title} in ${accommodation.location} | Tembea Bila Matata`}
-        description={`${semanticSummary} ${accommodation.description}`}
+        title={getListingSeoTitle("stay", accommodation.title, accommodation.location)}
+        description={buildListingSeoDescription([semanticSummary, accommodation.description])}
         image={accommodation.imageUrl}
         canonicalUrl={canonicalUrl}
         structuredData={structuredData}
@@ -184,7 +191,7 @@ export default function AccommodationDetail() {
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-muted-foreground">
                     <div className="flex items-center gap-1">
                       <MapPin className="h-4 w-4" />
-                      <span className="break-words">{accommodation.location}</span>
+                      <span className="break-words">{location}</span>
                     </div>
                     <div className="flex items-center gap-1">
                       <Star className="h-4 w-4 fill-amber-400 text-amber-400" />

@@ -1,7 +1,23 @@
 import type { PublicListingKind } from "@shared/seo";
-import { getPublicListingPath, slugifyForUrl } from "@shared/seo";
+import {
+  buildListingSeoDescription,
+  formatSeoLocation,
+  getListingSeoTitle,
+  getPublicListingPath,
+  getShortSeoLocation,
+  slugifyForUrl,
+  truncateSeoText,
+} from "@shared/seo";
 
-export { getPublicListingPath, slugifyForUrl };
+export {
+  buildListingSeoDescription,
+  formatSeoLocation,
+  getListingSeoTitle,
+  getPublicListingPath,
+  getShortSeoLocation,
+  slugifyForUrl,
+  truncateSeoText,
+};
 export type { PublicListingKind };
 
 export function getBookingPath(kind: PublicListingKind, id: string) {
