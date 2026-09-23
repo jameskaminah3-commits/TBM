@@ -223,6 +223,7 @@ export function ZainaWidget() {
   const [chips, setChips] = useState<Chip[]>([]);
   const logRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const verifiedSessionRef = useRef<string | null>(null);
 
   // ─── Feature flag ─────────────────────────────────────────────
   useEffect(() => {
@@ -366,6 +367,7 @@ export function ZainaWidget() {
   }
 
   function clearLocalSession() {
+    verifiedSessionRef.current = null;
     try {
       localStorage.removeItem(SESSION_KEY);
       localStorage.removeItem(SESSION_CREATED_KEY);
@@ -385,15 +387,20 @@ export function ZainaWidget() {
         !Number.isFinite(createdAt) || Date.now() - createdAt > SESSION_TTL_MS;
 
       if (!isExpired) {
-        // Verify the session still exists on the server. If the customer
-        // was handed off to a human and the session was deleted, or the
-        // row is gone for any reason, drop the cached id.
+        // Verify a cached session once per page lifecycle. The chat endpoint
+        // still enforces the authoritative AI/HUMAN state on every message,
+        // while avoiding an extra database round trip before every reply.
+        if (verifiedSessionRef.current === cached) return cached;
         try {
           const check = await fetch(`/api/zaina/session/${cached}`);
-          if (check.ok) return cached;
+          if (check.ok) {
+            verifiedSessionRef.current = cached;
+            return cached;
+          }
         } catch {
-          // network issue — keep using cached id and let the next chat
-          // request handle it. Avoids forcing a new session on flaky wifi.
+          // Network issue — keep using the cached id and let the chat request
+          // handle it. This preserves the retry path on flaky connections.
+          verifiedSessionRef.current = cached;
           return cached;
         }
         // Session not found server-side → fall through and create new.
@@ -417,6 +424,7 @@ export function ZainaWidget() {
       if (!data.sessionId) return null;
       localStorage.setItem(SESSION_KEY, data.sessionId);
       localStorage.setItem(SESSION_CREATED_KEY, String(Date.now()));
+      verifiedSessionRef.current = data.sessionId;
       return data.sessionId;
     } catch {
       return null;

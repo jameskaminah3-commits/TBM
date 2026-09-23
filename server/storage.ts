@@ -1317,6 +1317,7 @@ export interface IStorage {
     booking: ServerBooking & Partial<Pick<Booking, "paymentStatus" | "paymentProvider" | "paymentReference" | "paymentSessionId" | "paymentCurrency" | "paymentAmount" | "paymentCheckoutAmount" | "paymentDepositAmount" | "paymentAmountPaid" | "paymentHoldExpiresAt" | "paidAt" | "paymentFailedAt">>,
     executor?: any,
   ): Promise<Booking>;
+  ensureBookingWriteTables(): Promise<void>;
   updateBooking(
     id: string,
     booking: Partial<InsertBooking> & Partial<Pick<Booking, "paymentStatus" | "paymentProvider" | "paymentReference" | "paymentSessionId" | "paymentCurrency" | "paymentAmount" | "paymentCheckoutAmount" | "paymentDepositAmount" | "paymentAmountPaid" | "paymentHoldExpiresAt" | "paidAt" | "paymentFailedAt">>,
@@ -2861,6 +2862,10 @@ export class DatabaseStorage implements IStorage {
       throw new Error("Booking was created but could not be reloaded.");
     }
     return booking;
+  }
+
+  async ensureBookingWriteTables(): Promise<void> {
+    await this.ensurePaymentsTables();
   }
 
   async updateBooking(

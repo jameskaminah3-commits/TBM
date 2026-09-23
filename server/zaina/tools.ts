@@ -15,6 +15,7 @@ import {
   sendOpsAlertEmail,
   sendZainaBookingCreatedEmail,
   sendZainaConversationStartedEmail,
+  queueNotificationTask,
 } from "../notifications";
 import { storage } from "../storage";
 import {
@@ -205,6 +206,12 @@ async function createBookingWithInventoryLock(
   data: any,
   inventoryCheck: (executor: any) => Promise<string | null>,
 ): Promise<{ booking: any | null; conflict: string | null }> {
+  // Ensure schema compatibility before opening the transaction. The storage
+  // layer may need a second pool connection for its one-time payment-table
+  // migration; doing that while holding the transaction can deadlock when
+  // production is configured with a small pool.
+  await storage.ensureBookingWriteTables();
+
   return db.transaction(async (tx) => {
     // Lock every affected resource in a stable order so two multi-service
     // bookings cannot deadlock while each waits for the other resource.
@@ -1672,17 +1679,20 @@ export async function createDraftBooking(
 
   const paymentLink = `${appBaseUrl()}/bookings?bookingId=${booking.id}`;
 
-  await notifyBookingCreated({
-    bookingId: booking.id,
-    customerName: args.customer_name,
-    customerEmail: args.customer_email,
-    customerPhone: args.customer_phone,
-    kind: "stay",
-    summary: `${nights} night${nights === 1 ? "" : "s"} at ${stay.title} (${args.check_in} → ${args.check_out}, ${args.guests} guest${args.guests === 1 ? "" : "s"})`,
-    totalDisplay: await formatPrice(totalUsd, sessionId),
-    paymentLink,
-    sessionId,
-  });
+  queueNotificationTask(
+    `zaina stay booking notifications for ${booking.id}`,
+    (async () => notifyBookingCreated({
+      bookingId: booking.id,
+      customerName: args.customer_name,
+      customerEmail: args.customer_email,
+      customerPhone: args.customer_phone,
+      kind: "stay",
+      summary: `${nights} night${nights === 1 ? "" : "s"} at ${stay.title} (${args.check_in} → ${args.check_out}, ${args.guests} guest${args.guests === 1 ? "" : "s"})`,
+      totalDisplay: await formatPrice(totalUsd, sessionId),
+      paymentLink,
+      sessionId,
+    }))(),
+  );
 
   return {
     ok: true,
@@ -2275,17 +2285,20 @@ export async function createServiceBooking(
 
   const serviceLabel = car?.model ?? errand?.serviceName ?? cook?.title ?? experience?.title ?? "Service";
 
-  await notifyBookingCreated({
-    bookingId: booking.id,
-    customerName: args.customer_name,
-    customerEmail: args.customer_email,
-    customerPhone: args.customer_phone,
-    kind: "service",
-    summary: `${serviceLabel} on ${args.date} (${args.mode})`,
-    totalDisplay: await formatPrice(totalUsd, sessionId),
-    paymentLink,
-    sessionId,
-  });
+  queueNotificationTask(
+    `zaina service booking notifications for ${booking.id}`,
+    (async () => notifyBookingCreated({
+      bookingId: booking.id,
+      customerName: args.customer_name,
+      customerEmail: args.customer_email,
+      customerPhone: args.customer_phone,
+      kind: "service",
+      summary: `${serviceLabel} on ${args.date} (${args.mode})`,
+      totalDisplay: await formatPrice(totalUsd, sessionId),
+      paymentLink,
+      sessionId,
+    }))(),
+  );
 
   return {
     ok: true,
