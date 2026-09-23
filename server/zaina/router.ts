@@ -48,12 +48,39 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 const MODEL = "gemini-3.5-flash-lite";
 const MAX_TOOL_ROUNDS = 6;
 const HISTORY_TURNS = 20;
+const SYSTEM_PROMPT_CACHE_MS = 30_000;
+const ZAINA_TIMING_LOGS = process.env.ZAINA_TIMING_LOGS === "true";
+
+const READ_ONLY_ZAINA_TOOLS = new Set([
+  "search_stays",
+  "search_cooks",
+  "search_cars",
+  "search_errands",
+  "search_experiences",
+  "check_stay_availability",
+  "check_service_availability",
+  "calculate_chef_price",
+  "calculate_mamacare_price",
+  "identify_customer",
+]);
+
+let cachedSystemPrompt: { expiresAt: number; value: string } | null = null;
+
+function logZainaTiming(event: string, fields: Record<string, unknown>) {
+  if (!ZAINA_TIMING_LOGS) return;
+  console.info(`[zaina:timing] ${event}`, JSON.stringify(fields));
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // SYSTEM PROMPT
 // ═══════════════════════════════════════════════════════════════════
 
 function buildSystemPrompt(): string {
+  const nowMs = Date.now();
+  if (cachedSystemPrompt && cachedSystemPrompt.expiresAt > nowMs) {
+    return cachedSystemPrompt.value;
+  }
+
   const now = new Date();
 
   const dateFmt = new Intl.DateTimeFormat("en-CA", {
@@ -80,7 +107,7 @@ function buildSystemPrompt(): string {
     new Date(now.getTime() + 24 * 60 * 60 * 1000),
   );
 
-  return `
+  const value = `
 You are Zaina, the AI concierge for Tembea Bila Matata (TBM), a Kenyan Coast
 travel platform. You help travelers plan and book stays, chefs, transport,
 errands, MamaCare (childcare/family support), and experiences — and you also
@@ -668,6 +695,9 @@ those always come from tools.
 
 ${JSON.stringify(INVENTORY_CATALOG, null, 2)}
 `;
+
+  cachedSystemPrompt = { expiresAt: nowMs + SYSTEM_PROMPT_CACHE_MS, value };
+  return value;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1193,6 +1223,39 @@ function collectCustomerLinks(value: any, links: CustomerLink[]): void {
   }
 }
 
+async function runToolCall(part: any, sessionId: string): Promise<{ call: any; toolResponseData: any }> {
+  const call = part.functionCall;
+  const startedAt = Date.now();
+  try {
+    const toolResponseData = await executeTool(call.name, call.args, sessionId);
+    logZainaTiming("tool", {
+      sessionId,
+      tool: call.name,
+      durationMs: Date.now() - startedAt,
+      ok: toolResponseData?.ok !== false,
+    });
+    console.log(`[zaina:tool] ${call.name} →`, JSON.stringify(toolResponseData).slice(0, 500));
+    return { call, toolResponseData };
+  } catch (err: any) {
+    logZainaTiming("tool", {
+      sessionId,
+      tool: call.name,
+      durationMs: Date.now() - startedAt,
+      ok: false,
+    });
+    console.error(`[zaina:tool:error] ${call.name}:`, err);
+    console.error(`[zaina] tool ${call.name} failed:`, err);
+    return {
+      call,
+      toolResponseData: {
+        ok: false,
+        error: "tool_execution_failed",
+        message: "Do not invent a result. Apologize and offer human handoff.",
+      },
+    };
+  }
+}
+
 function replaceMediaUrls(value: string, latestCustomerLink: string | undefined): string {
   return value.replace(
     MEDIA_URL_PATTERN,
@@ -1223,6 +1286,12 @@ export async function handleZainaMessage(
   sessionId: string,
   message: string,
 ): Promise<ZainaReply> {
+  const requestStartedAt = Date.now();
+  let modelCalls = 0;
+  let modelRetries = 0;
+  let toolCalls = 0;
+  let rounds = 0;
+
   // 1. State gate
   const [session] = await db
     .select({ managedBy: chatSessions.managedBy })
@@ -1275,8 +1344,9 @@ export async function handleZainaMessage(
     );
   }
 
-  // 6. Load recent history (now includes the message we just logged,
-  //    which is fine — it's the model's newest context).
+  // 6. Load recent history. The current message is already present because
+  // it was logged above, so do not append it a second time to the model
+  // context.
   const historyRows = await db
     .select({
       actor: zainaAuditLogs.actor,
@@ -1318,8 +1388,8 @@ export async function handleZainaMessage(
     }
     return [];
   });
-  // 5. Agentic loop
-  const contents: any[] = [...history, { role: "user", parts: [{ text: message }] }];
+  // 7. Agentic loop
+  const contents: any[] = history;
   let finalText: string | null = null;
   let escalated = false;
   const customerLinks: CustomerLink[] = [];
@@ -1334,6 +1404,7 @@ export async function handleZainaMessage(
 
   try {
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+      rounds += 1;
       // On the final round, remove tools entirely. The model must produce
       // a text reply — no more tool calls allowed. This converts a hard
       // loop failure into a graceful handoff message.
@@ -1348,6 +1419,8 @@ export async function handleZainaMessage(
       const MAX_ATTEMPTS = 3;
 
       for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        const modelStartedAt = Date.now();
+        modelCalls += 1;
         try {
           response = await ai.models.generateContent({
             model: MODEL,
@@ -1359,9 +1432,23 @@ export async function handleZainaMessage(
                   tools: toolDeclarations,
                 },
           });
+          logZainaTiming("model", {
+            sessionId,
+            round: round + 1,
+            attempt: attempt + 1,
+            durationMs: Date.now() - modelStartedAt,
+            ok: true,
+          });
           lastError = null;
           break;
         } catch (err: any) {
+          logZainaTiming("model", {
+            sessionId,
+            round: round + 1,
+            attempt: attempt + 1,
+            durationMs: Date.now() - modelStartedAt,
+            ok: false,
+          });
           lastError = err;
 
           // Extract the HTTP status from the SDK error. The shape varies
@@ -1383,6 +1470,7 @@ export async function handleZainaMessage(
             throw err;
           }
 
+          modelRetries += 1;
           // Exponential backoff: 1s, 2s. Long enough to ride out a
           // spike, short enough that the customer barely notices.
           const delayMs = 1000 * Math.pow(2, attempt);
@@ -1414,22 +1502,28 @@ export async function handleZainaMessage(
       contents.push(modelContent);
 
       const toolParts: any[] = [];
-      for (const part of functionCallParts) {
-        const call = part.functionCall;
-        let toolResponseData: any;
-        try {
-          toolResponseData = await executeTool(call.name, call.args, sessionId);
-          console.log(`[zaina:tool] ${call.name} →`, JSON.stringify(toolResponseData).slice(0, 500));
-        } catch (err: any) {
-          console.error(`[zaina:tool:error] ${call.name}:`, err);
-          console.error(`[zaina] tool ${call.name} failed:`, err);
-          toolResponseData = {
-            ok: false,
-            error: "tool_execution_failed",
-            message: "Do not invent a result. Apologize and offer human handoff.",
-          };
-        }
+      toolCalls += functionCallParts.length;
+      const canRunInParallel =
+        functionCallParts.length > 1
+        && functionCallParts.every((part: any) => READ_ONLY_ZAINA_TOOLS.has(part.functionCall?.name));
+      const toolResults = canRunInParallel
+        ? await Promise.all(functionCallParts.map((part: any) => runToolCall(part, sessionId)))
+        : await (async () => {
+            const results: Array<{ call: any; toolResponseData: any }> = [];
+            for (const part of functionCallParts) {
+              const result = await runToolCall(part, sessionId);
+              results.push(result);
+              if (
+                typeof result.toolResponseData?.tell_customer === "string"
+                && result.toolResponseData.tell_customer.trim().length > 0
+              ) {
+                break;
+              }
+            }
+            return results;
+          })();
 
+      for (const { call, toolResponseData } of toolResults) {
         collectCustomerLinks(toolResponseData, customerLinks);
         collectCustomerLinks(toolResponseData, turnCustomerLinks);
 
@@ -1522,8 +1616,29 @@ export async function handleZainaMessage(
       messageContent: finalText,
     });
 
+    logZainaTiming("request", {
+      sessionId,
+      durationMs: Date.now() - requestStartedAt,
+      rounds,
+      modelCalls,
+      modelRetries,
+      toolCalls,
+      escalated,
+      ok: true,
+    });
+
     return { status: "ok", reply: finalText, escalated: escalated || undefined };
   } catch (err: any) {
+    logZainaTiming("request", {
+      sessionId,
+      durationMs: Date.now() - requestStartedAt,
+      rounds,
+      modelCalls,
+      modelRetries,
+      toolCalls,
+      escalated,
+      ok: false,
+    });
     const now = new Date().toISOString();
     const claimed = await db
       .update(chatSessions)

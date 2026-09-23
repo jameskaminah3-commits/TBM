@@ -127,13 +127,13 @@ function buildWhatsAppHandoffUrl(msgs: Msg[]): string {
 // Renders Zaina's messages with lightweight markdown support:
 //   • [text](url) → clickable link
 //   • ![alt](url) → inline image
-//   • bare paths starting with /bookings, /accommodation, /book, /auth, /blog
+//   • bare paths starting with public listing, booking, auth, inbox, or blog routes
 //     → auto-prefixed with https://tembeabilamatata.com so they're clickable
 //   • everything else → plain text
 function renderAssistantMessage(content: string): JSX.Element[] {
   const SITE = "https://tembeabilamatata.com";
   const parts = content.split(
-    /(!\[[^\]]*\]\([^)]+\)|\[[^\]]+\]\([^)]+\)|\/(?:bookings|accommodation|book|auth|blog|inbox|request-custom-service)(?:[/?][a-zA-Z0-9?=&%._\-\/]*)?)/g,
+    /(!\[[^\]]*\]\([^)]+\)|\[[^\]]+\]\([^)]+\)|\/(?:bookings|accommodation|transport|chef|errand|experience|book|auth|blog|inbox|request-custom-service)(?:[/?][a-zA-Z0-9?=&%._\-\/]*)?)/g,
   );
 
   return parts.map((part, idx) => {
@@ -170,7 +170,7 @@ function renderAssistantMessage(content: string): JSX.Element[] {
     }
 
     // Bare path: /bookings?bookingId=... etc.
-    if (/^\/(?:bookings|accommodation|book|auth|blog|inbox|request-custom-service)/.test(part)) {
+    if (/^\/(?:bookings|accommodation|transport|chef|errand|experience|book|auth|blog|inbox|request-custom-service)/.test(part)) {
       const href = `${SITE}${part}`;
       return (
         <a
@@ -306,16 +306,6 @@ export function ZainaWidget() {
     if (!sessionId) return;
 
     let cancelled = false;
-
-    async function fetchNewMessages() {
-      try {
-        const res = await fetch(`/api/admin/zaina/sessions/${sessionId}`);
-        // This is an admin endpoint — the widget can't call it.
-        // Instead we use the public /messages endpoint below.
-      } catch {
-        // ignore
-      }
-    }
 
     async function tick() {
       if (cancelled) return;

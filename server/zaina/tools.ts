@@ -37,6 +37,7 @@ import {
 } from "@shared/booking-payments";
 import { sendWebPushNotification } from "../push";
 import { INVENTORY_CATALOG } from "./catalog";
+import { getPublicListingPath } from "@shared/seo";
 
 // ═══════════════════════════════════════════════════════════════════
 // HELPERS — currency, dates, notifications
@@ -59,8 +60,12 @@ async function getSessionCurrency(sessionId: string): Promise<"USD" | "KES"> {
   return sess?.displayCurrency === "KES" ? "KES" : "USD";
 }
 
-async function formatPrice(amountUsd: number, sessionId: string): Promise<string> {
-  const currency = await getSessionCurrency(sessionId);
+async function formatPrice(
+  amountUsd: number,
+  sessionId: string,
+  sessionCurrency?: "USD" | "KES",
+): Promise<string> {
+  const currency = sessionCurrency ?? await getSessionCurrency(sessionId);
   if (currency === "USD") {
     return `$${Math.round(amountUsd).toLocaleString("en-US")}`;
   }
@@ -329,6 +334,7 @@ export async function searchStays(
     .orderBy(stays.title)
     .limit(3);
 
+  const currency = await getSessionCurrency(sessionId);
   const results = await Promise.all(
     rows.map(async (s, i) => ({
       option_index: i + 1,
@@ -336,13 +342,13 @@ export async function searchStays(
       title: s.title,
       location: s.location,
       price_per_night_usd: s.priceUsd,
-      price_per_night_display: await formatPrice(s.priceUsd, sessionId),
+      price_per_night_display: await formatPrice(s.priceUsd, sessionId, currency),
       max_occupancy: s.maxOccupancy,
       bedrooms: s.bedrooms,
       bathrooms: s.bathrooms,
       rating: s.rating,
       review_count: s.reviewCount,
-      public_url: `${appBaseUrl()}/accommodation/${s.id}`,
+      public_url: `${appBaseUrl()}${getPublicListingPath("stay", s.id, s.title)}`,
       features: s.features,
     })),
   );
@@ -402,6 +408,7 @@ export async function searchCooks(
     .orderBy(cooks.title)
     .limit(3);
 
+  const currency = await getSessionCurrency(sessionId);
   const results = await Promise.all(
     rows.map(async (c, i) => ({
       option_index: i + 1,
@@ -411,16 +418,16 @@ export async function searchCooks(
       speciality: c.speciality,
       minimum_guests: c.minimumGuests,
       maximum_guests: c.maxGuests,
-      public_url: `${appBaseUrl()}/book/cook/${c.id}`,
+      public_url: `${appBaseUrl()}${getPublicListingPath("cook", c.id, c.title)}`,
       pricing: {
         per_plate: c.pricePerPlate
-          ? { usd: c.pricePerPlate, display: await formatPrice(c.pricePerPlate, sessionId), minimum_plates: c.minPlates }
+          ? { usd: c.pricePerPlate, display: await formatPrice(c.pricePerPlate, sessionId, currency), minimum_plates: c.minPlates }
           : null,
         single_meal: c.priceSingleMeal
-          ? { usd: c.priceSingleMeal, display: await formatPrice(c.priceSingleMeal, sessionId) }
+          ? { usd: c.priceSingleMeal, display: await formatPrice(c.priceSingleMeal, sessionId, currency) }
           : null,
         session: (c.serviceFee || c.pricePerSession)
-          ? { usd: c.serviceFee || c.pricePerSession, display: await formatPrice(c.serviceFee || c.pricePerSession, sessionId) }
+          ? { usd: c.serviceFee || c.pricePerSession, display: await formatPrice(c.serviceFee || c.pricePerSession, sessionId, currency) }
           : null,
       },
       booking_modes: [
@@ -468,6 +475,7 @@ export async function searchCars(
   const rows = await db
     .select({
       id: cars.id,
+      make: cars.make,
       model: cars.model,
       location: cars.location,
       seats: cars.seats,
@@ -485,24 +493,26 @@ export async function searchCars(
     .orderBy(cars.model)
     .limit(3);
 
+  const currency = await getSessionCurrency(sessionId);
   const results = await Promise.all(
     rows.map(async (c, i) => ({
       option_index: i + 1,
       id: c.id,
+      make: c.make,
       model: c.model,
       location: c.location,
       seats: c.seats,
       transmission: c.transmission,
-      public_url: `${appBaseUrl()}/book/car/${c.id}`,
+      public_url: `${appBaseUrl()}${getPublicListingPath("car", c.id, `${c.make ? `${c.make} ` : ""}${c.model}`)}`,
       pricing: {
         self_drive_per_day: c.pricePerDay
-          ? { usd: c.pricePerDay, display: await formatPrice(c.pricePerDay, sessionId) }
+          ? { usd: c.pricePerDay, display: await formatPrice(c.pricePerDay, sessionId, currency) }
           : null,
         chauffeur_per_day: c.priceWithDriver
-          ? { usd: c.priceWithDriver, display: await formatPrice(c.priceWithDriver, sessionId) }
+          ? { usd: c.priceWithDriver, display: await formatPrice(c.priceWithDriver, sessionId, currency) }
           : null,
         chauffeur_per_hour: c.priceWithDriverHourly
-          ? { usd: c.priceWithDriverHourly, display: await formatPrice(c.priceWithDriverHourly, sessionId) }
+          ? { usd: c.priceWithDriverHourly, display: await formatPrice(c.priceWithDriverHourly, sessionId, currency) }
           : null,
         zones: c.chauffeurZones,
       },
@@ -548,6 +558,7 @@ export async function searchErrands(
     .orderBy(errands.serviceName)
     .limit(3);
 
+  const currency = await getSessionCurrency(sessionId);
   const results = await Promise.all(
     rows.map(async (e, i) => {
       const helpMama = e.helpMamaPricing;
@@ -556,10 +567,10 @@ export async function searchErrands(
         id: e.id,
         service_name: e.serviceName,
         location: e.location,
-        public_url: `${appBaseUrl()}/book/errand/${e.id}`,
+        public_url: `${appBaseUrl()}${getPublicListingPath("errand", e.id, e.serviceName)}`,
         base_price: {
           usd: e.basePrice,
-          display: await formatPrice(e.basePrice, sessionId),
+          display: await formatPrice(e.basePrice, sessionId, currency),
         },
         shopping: e.shoppingEnabled
           ? { commission_percent: e.shoppingCommissionPercent }
@@ -587,10 +598,10 @@ export async function searchErrands(
                 (helpMama.ageBands || []).map(async (band) => ({
                   id: band.id,
                   label: band.label,
-                  hourly_daytime: await formatPrice(band.hourlyDaytimePrice, sessionId),
-                  hourly_evening: await formatPrice(band.hourlyEveningPrice, sessionId),
-                  overnight: await formatPrice(band.overnightPrice, sessionId),
-                  full_day: await formatPrice(band.fullDayPrice, sessionId),
+                  hourly_daytime: await formatPrice(band.hourlyDaytimePrice, sessionId, currency),
+                  hourly_evening: await formatPrice(band.hourlyEveningPrice, sessionId, currency),
+                  overnight: await formatPrice(band.overnightPrice, sessionId, currency),
+                  full_day: await formatPrice(band.fullDayPrice, sessionId, currency),
                 })),
               ),
             }
@@ -657,6 +668,7 @@ export async function searchExperiences(
     .orderBy(experiences.title)
     .limit(3);
 
+  const currency = await getSessionCurrency(sessionId);
   const results = await Promise.all(
     rows.map(async (x, i) => ({
       option_index: i + 1,
@@ -666,13 +678,13 @@ export async function searchExperiences(
       type: x.experienceType,
       duration_hours: x.durationHours,
       guests: { min: x.minGuests, max: x.maxGuests },
-      public_url: `${appBaseUrl()}/book/experience/${x.id}`,
+      public_url: `${appBaseUrl()}${getPublicListingPath("experience", x.id, x.title)}`,
       pricing: {
         private_per_person: x.privateEnabled && x.privatePricePerPerson
-          ? { usd: x.privatePricePerPerson, display: await formatPrice(x.privatePricePerPerson, sessionId) }
+          ? { usd: x.privatePricePerPerson, display: await formatPrice(x.privatePricePerPerson, sessionId, currency) }
           : null,
         shared_per_person: x.sharedEnabled && x.sharedPricePerPerson
-          ? { usd: x.sharedPricePerPerson, display: await formatPrice(x.sharedPricePerPerson, sessionId) }
+          ? { usd: x.sharedPricePerPerson, display: await formatPrice(x.sharedPricePerPerson, sessionId, currency) }
           : null,
       },
       custom_offers_available: x.customQuoteEnabled,
