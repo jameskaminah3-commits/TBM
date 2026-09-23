@@ -15,6 +15,7 @@ import { CurrencyProvider } from "@/lib/currency";
 import { ConciergeSearchProvider, getSectionFromPath } from "@/lib/concierge-search";
 import { ZainaWidget } from "@/components/ZainaWidget";
 import { AdminZainaBubble } from "@/components/admin-zaina-bubble";
+import { RouteSeo } from "@/components/route-seo";
 import { useRouteMediaReady } from "@/hooks/use-route-media-ready";
 import { NavSheetProvider } from "@/hooks/use-nav-sheet";
 const Home = lazy(() => import("@/pages/home"));
@@ -81,6 +82,7 @@ const ProviderDocuments = lazy(() => import("@/pages/provider/documents"));
 const ProviderSupport = lazy(() => import("@/pages/provider/support"));
 const CustomServiceRequestPage = lazy(() => import("@/pages/custom-service-request"));
 const NotFound = lazy(() => import("@/pages/not-found"));
+const PublicListingDetail = lazy(() => import("@/pages/public-listing-detail"));
 
 function AppRoute({ path, element }: { path?: string; element: ReactNode }) {
   return <Route path={path}>{() => element}</Route>;
@@ -96,6 +98,7 @@ function Router() {
       <Switch>
         <AppRoute path="/" element={<Home />} />
         <AppRoute path="/accommodations" element={<Accommodations />} />
+        <AppRoute path="/accommodation/:id/:slug" element={<AccommodationDetail />} />
         <AppRoute path="/accommodation/:id" element={<AccommodationDetail />} />
         <AppRoute path="/book/:id" element={<Booking />} />
         <AppRoute path="/book/:serviceType/:id" element={<ServiceBooking />} />
@@ -108,6 +111,14 @@ function Router() {
         <AppRoute path="/services/dine" element={<DinePage />} />
         <AppRoute path="/services/relax" element={<RelaxPage />} />
         <AppRoute path="/services/experience" element={<ExperiencePage />} />
+        <AppRoute path="/transport/:id/:slug" element={<PublicListingDetail kind="car" />} />
+        <AppRoute path="/transport/:id" element={<PublicListingDetail kind="car" />} />
+        <AppRoute path="/chef/:id/:slug" element={<PublicListingDetail kind="cook" />} />
+        <AppRoute path="/chef/:id" element={<PublicListingDetail kind="cook" />} />
+        <AppRoute path="/errand/:id/:slug" element={<PublicListingDetail kind="errand" />} />
+        <AppRoute path="/errand/:id" element={<PublicListingDetail kind="errand" />} />
+        <AppRoute path="/experience/:id/:slug" element={<PublicListingDetail kind="experience" />} />
+        <AppRoute path="/experience/:id" element={<PublicListingDetail kind="experience" />} />
         <AppRoute path="/auth" element={<AuthPage />} />
         <AppRoute path="/articles/:slug" element={<BlogPost />} />
         <AppRoute path="/articles" element={<Blog />} />
@@ -190,6 +201,7 @@ function AppShell() {
     <NavSheetProvider>
     <TooltipProvider>
       <div className="min-h-screen flex flex-col">
+        <RouteSeo pathname={location} />
         {shouldShowHeader ? <Header /> : null}
         {shouldShowSiteChrome && currentSection ? <ConciergeSearchBar currentSection={currentSection} /> : null}
         <main className="relative flex-1">

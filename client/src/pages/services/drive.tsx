@@ -10,6 +10,7 @@ import { CustomServiceCta } from "@/components/custom-service-cta";
 import { PublicReviewPreview } from "@/components/public-review-preview";
 import { PremiumMediaGallery } from "@/components/premium-media-gallery";
 import type { Car as CarType } from "@shared/schema";
+import { getPublicListingPath } from "@/lib/public-listing";
 
 function getLeadPrice(car: CarType) {
   const options = [
@@ -176,10 +177,10 @@ export default function DrivePage() {
       <div className="container mx-auto px-4 md:px-8">
         <div className="mb-12">
           <h1 className="mb-4 font-serif text-3xl font-medium leading-tight sm:text-4xl md:text-5xl">
-            Drive Services
+            Car Hire and Chauffeur Service in Mombasa
           </h1>
           <p className="max-w-3xl text-base leading-7 text-muted-foreground sm:text-lg">
-            Book chauffeur-driven rides first, with self-drive available only on cars that offer it.
+            Compare self-drive car hire, chauffeur-driven vehicles, airport transfers and coastal transport for Mombasa, Nyali and nearby destinations.
           </p>
         </div>
 
@@ -199,7 +200,7 @@ export default function DrivePage() {
             <CarShowcaseCard
               key={car.id}
               car={car}
-              onOpen={() => setLocation(`/book/car/${car.id}`)}
+              onOpen={() => setLocation(getPublicListingPath("car", car.id, `${car.make ? `${car.make} ` : ""}${car.model}`))}
             />
           ))}
         </div>

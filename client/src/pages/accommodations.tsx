@@ -22,6 +22,7 @@ import {
   type StaySearchSort,
 } from "@/lib/stay-search";
 import type { Stay } from "@shared/schema";
+import { getPublicListingPath } from "@/lib/public-listing";
 
 const featureSuggestions = [
   "Pool",
@@ -221,10 +222,10 @@ export default function Accommodations() {
       <div className="container mx-auto px-4 md:px-8">
         <div className="mb-12">
           <h1 className="mb-4 font-serif text-3xl font-medium leading-tight sm:text-4xl md:text-5xl">
-            Luxury Accommodations
+            Accommodation in Mombasa and Nyali
           </h1>
           <p className="max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">
-            Discover exceptional stays in the world's most desirable destinations
+            Browse furnished apartments, holiday homes and short-stay accommodation in Mombasa, Nyali and the wider Kenyan Coast, with practical concierge support when you need it.
           </p>
         </div>
 
@@ -473,7 +474,7 @@ export default function Accommodations() {
                     </div>
                     <Button
                       className="w-full rounded-full px-5 min-[460px]:w-auto"
-                      onClick={() => setLocation(`/accommodation/${accommodation.id}${staySearchSuffix}`)}
+                      onClick={() => setLocation(`${getPublicListingPath("stay", accommodation.id, accommodation.title)}${staySearchSuffix}`)}
                       data-testid={`button-view-stay-${accommodation.id}`}
                     >
                       View Stay

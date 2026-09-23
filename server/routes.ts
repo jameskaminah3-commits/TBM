@@ -2,6 +2,7 @@ import crypto from "crypto";
 import type { Express, Response as ExpressResponse } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { getPublicListingPath } from "@shared/seo";
 import {
   isAuthenticated,
   registerAuthRoutes,
@@ -2396,7 +2397,7 @@ async function buildSitemapXml() {
       .filter(isPublicManagedItem)
       .map((stay) => sitemapEntry({
         baseUrl,
-        path: `/accommodation/${stay.id}`,
+        path: getPublicListingPath("stay", stay.id, stay.title),
         changefreq: "weekly",
         priority: "0.8",
         lastmod: stay.updatedAt,
@@ -2405,7 +2406,7 @@ async function buildSitemapXml() {
       .filter(isPublicManagedItem)
       .map((car) => sitemapEntry({
         baseUrl,
-        path: `/book/car/${car.id}`,
+        path: getPublicListingPath("car", car.id, `${car.make ? `${car.make} ` : ""}${car.model}`),
         changefreq: "weekly",
         priority: "0.7",
         lastmod: car.updatedAt,
@@ -2414,7 +2415,7 @@ async function buildSitemapXml() {
       .filter(isPublicManagedItem)
       .map((cook) => sitemapEntry({
         baseUrl,
-        path: `/book/cook/${cook.id}`,
+        path: getPublicListingPath("cook", cook.id, cook.title),
         changefreq: "weekly",
         priority: "0.7",
         lastmod: cook.updatedAt,
@@ -2423,7 +2424,7 @@ async function buildSitemapXml() {
       .filter(isPublicManagedItem)
       .map((errand) => sitemapEntry({
         baseUrl,
-        path: `/book/errand/${errand.id}`,
+        path: getPublicListingPath("errand", errand.id, errand.serviceName),
         changefreq: "weekly",
         priority: "0.7",
         lastmod: errand.updatedAt,
@@ -2432,7 +2433,7 @@ async function buildSitemapXml() {
       .filter(isPublicManagedItem)
       .map((experience) => sitemapEntry({
         baseUrl,
-        path: `/book/experience/${experience.id}`,
+        path: getPublicListingPath("experience", experience.id, experience.title),
         changefreq: "weekly",
         priority: "0.7",
         lastmod: experience.updatedAt,
@@ -2463,17 +2464,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       .send([
         "User-agent: *",
         "Allow: /",
-        "Allow: /api/blog",
-        "Allow: /api/stays",
-        "Allow: /api/cars",
-        "Allow: /api/cooks",
-        "Allow: /api/errands",
-        "Allow: /api/experiences",
-        "Allow: /api/reviews",
         "Disallow: /admin/",
         "Disallow: /provider/",
         "Disallow: /auth",
         "Disallow: /api/",
+        "Disallow: /book/",
+        "Disallow: /bookings",
+        "Disallow: /b/",
+        "Disallow: /inbox",
         "",
         `Sitemap: ${baseUrl}/sitemap.xml`,
         "",
@@ -7657,6 +7655,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/cars/:id", async (req, res) => {
+    try {
+      const car = await storage.getCar(req.params.id);
+      if (!isBookablePublicListing(car)) {
+        return res.status(404).json({ error: "Car not found" });
+      }
+      res.json(car);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch car" });
+    }
+  });
+
   app.get("/api/cooks/:id/availability", async (req, res) => {
     try {
       const cook = await storage.getCook(req.params.id);
@@ -7726,6 +7736,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/cooks/:id", async (req, res) => {
+    try {
+      const cook = await storage.getCook(req.params.id);
+      if (!isBookablePublicListing(cook)) {
+        return res.status(404).json({ error: "Chef not found" });
+      }
+      res.json(cook);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch chef" });
+    }
+  });
+
   app.get("/api/errands", async (_req, res) => {
     try {
       const errands = await storage.getErrands();
@@ -7735,12 +7757,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/errands/:id", async (req, res) => {
+    try {
+      const errand = await storage.getErrand(req.params.id);
+      if (!isBookablePublicListing(errand)) {
+        return res.status(404).json({ error: "Errand service not found" });
+      }
+      res.json(errand);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch errand service" });
+    }
+  });
+
   app.get("/api/experiences", async (_req, res) => {
     try {
       const experiences = await storage.getExperiences();
       res.json(experiences.filter((experience: any) => isBookablePublicListing(experience)));
     } catch (error) {
       sendPublicCatalogFailure("experiences", res, error);
+    }
+  });
+
+  app.get("/api/experiences/:id", async (req, res) => {
+    try {
+      const experience = await storage.getExperience(req.params.id);
+      if (!isBookablePublicListing(experience)) {
+        return res.status(404).json({ error: "Experience not found" });
+      }
+      res.json(experience);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch experience" });
     }
   });
 

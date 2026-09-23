@@ -61,9 +61,10 @@ export async function setupVite(app: Express, server: Server) {
         `src="/src/main.tsx?v=${nanoid()}"`,
       );
       template = injectHtmlSecurityContext(template, String(res.locals.cspNonce ?? ""));
-      template = injectShareMetadata(template, await resolveShareMetadata(req));
+      const metadata = await resolveShareMetadata(req);
+      template = injectShareMetadata(template, metadata);
       const page = await vite.transformIndexHtml(url, template);
-      res.status(200).set({ "Content-Type": "text/html" }).end(page);
+      res.status(metadata.statusCode ?? 200).set({ "Content-Type": "text/html" }).end(page);
     } catch (e) {
       vite.ssrFixStacktrace(e as Error);
       next(e);
@@ -85,10 +86,11 @@ export function serveStatic(app: Express) {
 
   const renderIndex = async (req: express.Request, res: express.Response) => {
     const securedTemplate = injectHtmlSecurityContext(indexTemplate, String(res.locals.cspNonce ?? ""));
-    const page = injectShareMetadata(securedTemplate, await resolveShareMetadata(req));
+    const metadata = await resolveShareMetadata(req);
+    const page = injectShareMetadata(securedTemplate, metadata);
 
     res
-      .status(200)
+      .status(metadata.statusCode ?? 200)
       .set({ "Content-Type": "text/html" })
       .send(page);
   };

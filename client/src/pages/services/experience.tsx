@@ -10,6 +10,7 @@ import { PublicReviewPreview } from "@/components/public-review-preview";
 import { Clock3, Compass, MapPin, Star, Users } from "lucide-react";
 import { PremiumMediaGallery } from "@/components/premium-media-gallery";
 import type { Experience } from "@shared/schema";
+import { getPublicListingPath } from "@/lib/public-listing";
 
 function getLowestExperiencePrice(experience: Experience) {
   const prices = [
@@ -142,10 +143,10 @@ export default function ExperiencePage() {
       <div className="container mx-auto px-4 md:px-8">
         <div className="mb-12">
           <h1 className="mb-4 font-serif text-3xl font-medium leading-tight sm:text-4xl md:text-5xl">
-            Curated Experiences
+            Coastal Experiences from Mombasa
           </h1>
           <p className="max-w-3xl text-base leading-7 text-muted-foreground sm:text-lg">
-            Discover crafted moments, local adventures, and memorable outings designed for travelers who want more than just transport and accommodation.
+            Discover crafted moments, local adventures and memorable outings from Mombasa, Nyali and the wider Kenyan Coast, designed to complement your stay.
           </p>
         </div>
 
@@ -165,7 +166,7 @@ export default function ExperiencePage() {
             <ExperienceCard
               key={experience.id}
               experience={experience}
-              onOpen={() => setLocation(`/book/experience/${experience.id}`)}
+              onOpen={() => setLocation(getPublicListingPath("experience", experience.id, experience.title))}
             />
           ))}
         </div>

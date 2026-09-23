@@ -19,10 +19,17 @@ export default function Blog() {
   return (
     <div className="app-shell min-h-screen">
       <SeoHead
-        title="Concierge Articles | Bila Matata"
-        description="SEO-friendly travel notes, destination guidance, and concierge insights for guests exploring Kenya with confidence."
-        keywords="kenya travel blog, mombasa concierge, luxury stay advice, curated experiences"
+        title="Mombasa and Kenyan Coast Travel Journal | Tembea Bila Matata"
+        description="Local guides and practical travel advice for stays, transport, dining, family support and experiences in Mombasa and along the Kenyan Coast."
+        keywords="Mombasa travel guide, Nyali travel, Kenyan Coast travel, Mombasa concierge"
         canonicalUrl={typeof window === "undefined" ? "/blog" : `${window.location.origin}/blog`}
+        structuredData={{
+          "@context": "https://schema.org",
+          "@type": "Blog",
+          name: "Tembea Bila Matata Travel Journal",
+          description: "Travel guidance and concierge insight for Mombasa and the Kenyan Coast.",
+          url: typeof window === "undefined" ? "/blog" : `${window.location.origin}/blog`,
+        }}
       />
       <section className="px-4 py-14 md:px-8 md:py-16">
         <div className="mx-auto max-w-7xl">

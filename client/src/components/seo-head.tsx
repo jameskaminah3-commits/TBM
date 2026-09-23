@@ -9,6 +9,7 @@ type SeoHeadProps = {
   articlePublishedTime?: string | null;
   articleModifiedTime?: string | null;
   articleAuthor?: string | null;
+  robots?: string | null;
   structuredData?: Record<string, unknown> | null;
 };
 
@@ -96,6 +97,7 @@ export function SeoHead({
   articlePublishedTime,
   articleModifiedTime,
   articleAuthor,
+  robots = "index,follow",
   structuredData,
 }: SeoHeadProps) {
   useEffect(() => {
@@ -112,6 +114,7 @@ export function SeoHead({
     upsertMeta("property", "article:published_time", articlePublishedTime);
     upsertMeta("property", "article:modified_time", articleModifiedTime);
     upsertMeta("property", "article:author", articleAuthor);
+    upsertMeta("name", "robots", robots);
     upsertMeta("name", "twitter:card", image ? "summary_large_image" : "summary");
     upsertMeta("name", "twitter:title", title);
     upsertMeta("name", "twitter:description", description);
@@ -122,7 +125,7 @@ export function SeoHead({
     return () => {
       document.title = previousTitle;
     };
-  }, [title, description, keywords, image, canonicalUrl, articlePublishedTime, articleModifiedTime, articleAuthor, structuredData]);
+  }, [title, description, keywords, image, canonicalUrl, articlePublishedTime, articleModifiedTime, articleAuthor, robots, structuredData]);
 
   return null;
 }

@@ -11,6 +11,7 @@ import { filterErrands, useConciergeSearch } from "@/lib/concierge-search";
 import { HOUSE_CLEANING_BASE_ROOM_LABEL, getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
 import { PremiumMediaGallery } from "@/components/premium-media-gallery";
 import type { Errand } from "@shared/schema";
+import { getPublicListingPath } from "@/lib/public-listing";
 
 const helpMamaPublicSummary =
   "Certified in-villa childcare and family support for travelling families on the Kenyan Coast, with daytime, evening, and overnight care options.";
@@ -59,10 +60,10 @@ export default function RelaxPage() {
       <div className="container mx-auto px-4 md:px-8">
         <div className="mb-12">
           <h1 className="mb-4 font-serif text-3xl font-medium leading-tight sm:text-4xl md:text-5xl">
-            Relax Services
+            Concierge and Errand Services in Mombasa
           </h1>
           <p className="max-w-3xl text-base leading-7 text-muted-foreground sm:text-lg">
-            Let us handle the errands. Help Mama family care, shopping, fridge stocking, laundry, and personal assistance services.
+            Arrange holiday errands, shopping, fridge stocking, laundry, housekeeping and in-villa family support in Mombasa, Nyali and the Kenyan Coast.
           </p>
         </div>
 
@@ -163,7 +164,7 @@ export default function RelaxPage() {
                     </div>
                     <Button
                       className="rounded-full px-5"
-                      onClick={() => setLocation(`/book/errand/${errand.id}`)}
+                      onClick={() => setLocation(getPublicListingPath("errand", errand.id, errand.serviceName))}
                       data-testid={`button-book-${errand.id}`}
                     >
                       Book Now

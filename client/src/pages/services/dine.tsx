@@ -16,6 +16,7 @@ import {
 import { filterCooks, useConciergeSearch } from "@/lib/concierge-search";
 import { PremiumMediaGallery } from "@/components/premium-media-gallery";
 import type { Cook } from "@shared/schema";
+import { getPublicListingPath } from "@/lib/public-listing";
 
 function CookCard({
   cook,
@@ -173,10 +174,10 @@ export default function DinePage() {
       <div className="container mx-auto px-4 md:px-8">
         <div className="mb-12">
           <h1 className="mb-4 font-serif text-3xl font-medium leading-tight sm:text-4xl md:text-5xl">
-            Dine Services
+            Private Chefs and In-Villa Dining in Mombasa
           </h1>
           <p className="max-w-3xl text-base leading-7 text-muted-foreground sm:text-lg">
-            Experience gourmet dining with our expert personal chefs. Custom menus tailored to your taste.
+            Book a private chef or personal cook for in-villa dining in Mombasa, Nyali and across the Kenyan Coast, with menus shaped around your occasion.
           </p>
         </div>
 
@@ -197,7 +198,7 @@ export default function DinePage() {
               key={cook.id}
               cook={cook}
               usdToKes={usdToKes}
-              onOpen={() => setLocation(`/book/cook/${cook.id}`)}
+              onOpen={() => setLocation(getPublicListingPath("cook", cook.id, cook.title))}
             />
           ))}
         </div>

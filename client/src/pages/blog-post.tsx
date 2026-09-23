@@ -226,6 +226,7 @@ export default function BlogPostDetail() {
   if (error || !post) {
     return (
       <div className="min-h-screen flex items-center justify-center">
+        <SeoHead title="Article not found | Tembea Bila Matata" robots="noindex,follow" canonicalUrl={buildCanonicalUrl("/blog")} />
         <div className="space-y-4 text-center">
           <h1 className="font-serif text-4xl font-medium" data-testid="text-error-heading">Article Not Found</h1>
           <p className="text-muted-foreground" data-testid="text-error-message">
@@ -256,6 +257,14 @@ export default function BlogPostDetail() {
       name: post.author,
     },
     mainEntityOfPage: canonicalUrl,
+    breadcrumb: {
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: "Home", item: buildCanonicalUrl("/") },
+        { "@type": "ListItem", position: 2, name: "Travel Journal", item: buildCanonicalUrl("/blog") },
+        { "@type": "ListItem", position: 3, name: post.title, item: canonicalUrl },
+      ],
+    },
   };
 
   const markdownComponents = {

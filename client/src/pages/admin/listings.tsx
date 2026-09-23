@@ -203,13 +203,13 @@ function getPublicListingPath(category: ServiceCategory, id: string) {
     case "stays":
       return `/accommodation/${id}`;
     case "cars":
-      return `/book/car/${id}`;
+      return `/transport/${id}`;
     case "cooks":
-      return `/book/cook/${id}`;
+      return `/chef/${id}`;
     case "errands":
-      return `/book/errand/${id}`;
+      return `/errand/${id}`;
     case "experiences":
-      return `/book/experience/${id}`;
+      return `/experience/${id}`;
   }
 }
 

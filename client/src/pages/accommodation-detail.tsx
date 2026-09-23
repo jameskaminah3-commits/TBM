@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useParams, useLocation, useSearch } from "wouter";
+import { useParams, useLocation, useSearch, Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Star, MapPin, Users, Bed, Bath, Car, ChefHat, ShoppingBag, CheckCircle2, CalendarDays } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -18,6 +18,9 @@ import {
   toSearchSuffix,
 } from "@/lib/stay-search";
 import type { Stay } from "@shared/schema";
+import { SeoHead } from "@/components/seo-head";
+import { buildCanonicalUrl } from "@/lib/canonical-url";
+import { getPublicListingPath } from "@/lib/public-listing";
 import { eachDayOfInterval, format, parseISO, startOfDay } from "date-fns";
 
 type StayAvailability = {
@@ -97,6 +100,7 @@ export default function AccommodationDetail() {
   if (!accommodation) {
     return (
       <div className="min-h-screen flex items-center justify-center">
+        <SeoHead title="Accommodation not found | Tembea Bila Matata" robots="noindex,follow" canonicalUrl={buildCanonicalUrl("/accommodations")} />
         <div className="text-center">
           <h2 className="font-serif text-2xl font-medium mb-2">Accommodation not found</h2>
           <Button onClick={() => setLocation(`/accommodations${staySearchSuffix}`)} data-testid="button-back">
@@ -107,9 +111,56 @@ export default function AccommodationDetail() {
     );
   }
 
+  const canonicalUrl = buildCanonicalUrl(getPublicListingPath("stay", accommodation.id, accommodation.title));
+  const semanticSummary = `${accommodation.bedrooms}-bedroom accommodation in ${accommodation.location}, with ${accommodation.bathrooms} bathrooms and space for up to ${accommodation.maxOccupancy} guests. Available from ${accommodation.price} USD per night.`;
+  const structuredData = {
+    "@context": "https://schema.org",
+    "@type": "LodgingBusiness",
+    name: accommodation.title,
+    description: accommodation.description,
+    image: accommodation.imageUrl ? [accommodation.imageUrl] : undefined,
+    url: canonicalUrl,
+    numberOfRooms: accommodation.bedrooms,
+    occupancy: { "@type": "QuantitativeValue", maxValue: accommodation.maxOccupancy },
+    address: { "@type": "PostalAddress", addressLocality: accommodation.location, addressCountry: "KE" },
+    aggregateRating: accommodation.reviewCount > 0 ? {
+      "@type": "AggregateRating",
+      ratingValue: accommodation.rating,
+      reviewCount: accommodation.reviewCount,
+    } : undefined,
+    offers: {
+      "@type": "Offer",
+      priceCurrency: "USD",
+      price: accommodation.price,
+      url: canonicalUrl,
+    },
+    breadcrumb: {
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: "Home", item: buildCanonicalUrl("/") },
+        { "@type": "ListItem", position: 2, name: "Accommodation in Mombasa and Nyali", item: buildCanonicalUrl("/accommodations") },
+        { "@type": "ListItem", position: 3, name: accommodation.title, item: canonicalUrl },
+      ],
+    },
+  };
+
   return (
     <div className="min-h-screen py-12">
+      <SeoHead
+        title={`${accommodation.title} in ${accommodation.location} | Tembea Bila Matata`}
+        description={`${semanticSummary} ${accommodation.description}`}
+        image={accommodation.imageUrl}
+        canonicalUrl={canonicalUrl}
+        structuredData={structuredData}
+      />
       <div className="container mx-auto max-w-6xl px-4 sm:px-6 md:px-8">
+        <nav aria-label="Breadcrumb" className="mb-6 text-sm text-muted-foreground">
+          <Link href="/"><a className="hover:text-foreground">Home</a></Link>
+          <span className="mx-2">/</span>
+          <Link href="/accommodations"><a className="hover:text-foreground">Accommodation in Mombasa and Nyali</a></Link>
+          <span className="mx-2">/</span>
+          <span className="text-foreground">{accommodation.title}</span>
+        </nav>
         <div className="mb-10">
           <StayMediaCarousel
             stay={accommodation}
@@ -127,6 +178,9 @@ export default function AccommodationDetail() {
                   <h1 className="mb-2 font-serif text-3xl font-medium md:text-4xl">
                     {accommodation.title}
                   </h1>
+                  <p className="max-w-3xl text-sm leading-6 text-muted-foreground sm:text-base">
+                    {semanticSummary}
+                  </p>
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-muted-foreground">
                     <div className="flex items-center gap-1">
                       <MapPin className="h-4 w-4" />

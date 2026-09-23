@@ -1,10 +1,11 @@
 import type { Request } from "express";
 import type { BlogPost, Car, Cook, Errand, Experience, Stay } from "@shared/schema";
 import { getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
+import { getPublicListingPath } from "@shared/seo";
 import { storage } from "./storage";
 
 type ListingKind = "stay" | "car" | "cook" | "errand" | "experience";
-type ParsedListingRoute = { kind: ListingKind; id: string; isShortLink?: boolean };
+type ParsedListingRoute = { kind: ListingKind; id: string; isShortLink?: boolean; publicPath?: boolean };
 type ShareCurrency = "USD" | "KES";
 
 type ShareMetadata = {
@@ -13,6 +14,9 @@ type ShareMetadata = {
   imageUrl: string;
   canonicalUrl: string;
   type: "article" | "website";
+  robots?: string;
+  statusCode?: number;
+  structuredData?: Record<string, unknown> | null;
   publishedTime?: string | null;
   modifiedTime?: string | null;
   author?: string | null;
@@ -97,11 +101,6 @@ function getListingImage(
 function getShareCurrency(req: Request): ShareCurrency {
   const value = Array.isArray(req.query.currency) ? req.query.currency[0] : req.query.currency;
   return value === "KES" ? "KES" : "USD";
-}
-
-function getListingCanonicalUrl(req: Request, baseUrl: string, currency: ShareCurrency) {
-  const currencyQuery = currency === "KES" ? "?currency=KES" : "";
-  return `${baseUrl}${req.path}${currencyQuery}`;
 }
 
 function formatShareAmount(amount: number | null | undefined, suffix: string, currency: ShareCurrency) {
@@ -213,6 +212,156 @@ function buildExperienceMetadata(experience: Experience, baseUrl: string, canoni
   };
 }
 
+function getListingName(kind: ListingKind, listing: Stay | Car | Cook | Errand | Experience) {
+  if (kind === "stay") return (listing as Stay).title;
+  if (kind === "car") {
+    const car = listing as Car;
+    return `${car.make ? `${car.make} ` : ""}${car.model}`.trim();
+  }
+  if (kind === "cook") return (listing as Cook).title;
+  if (kind === "errand") return (listing as Errand).serviceName;
+  return (listing as Experience).title;
+}
+
+function getListingStructuredData(
+  kind: ListingKind,
+  listing: Stay | Car | Cook | Errand | Experience,
+  canonicalUrl: string,
+) {
+  const name = getListingName(kind, listing);
+  const location = "experienceLocation" in listing
+    ? listing.experienceLocation || listing.location
+    : listing.location;
+  const type = kind === "stay" ? "LodgingBusiness" : kind === "car" ? "Car" : kind === "experience" ? "TouristAttraction" : "Service";
+  const structuredData: Record<string, unknown> = {
+    "@context": "https://schema.org",
+    "@type": type,
+    name,
+    description: truncate(listing.description, 320),
+    url: canonicalUrl,
+    areaServed: { "@type": "Place", name: location || "Mombasa, Kenya" },
+    provider: { "@type": "Organization", name: siteName, url: canonicalUrl.split("/").slice(0, 3).join("/") },
+    breadcrumb: {
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: "Home", item: canonicalUrl.split("/").slice(0, 3).join("/") },
+        { "@type": "ListItem", position: 2, name: kind === "stay" ? "Accommodation in Mombasa and Nyali" : `${kind} services in Mombasa`, item: canonicalUrl.split("/").slice(0, 3).join("/") },
+        { "@type": "ListItem", position: 3, name, item: canonicalUrl },
+      ],
+    },
+  };
+
+  const imageUrl = getListingImage(listing, canonicalUrl.split("/").slice(0, 3).join("/"));
+  if (imageUrl) structuredData.image = imageUrl;
+  if (listing.rating > 0 && listing.reviewCount > 0) {
+    structuredData.aggregateRating = {
+      "@type": "AggregateRating",
+      ratingValue: listing.rating,
+      reviewCount: listing.reviewCount,
+    };
+  }
+
+  if (kind === "stay") {
+    const stay = listing as Stay;
+    structuredData.numberOfRooms = stay.bedrooms;
+    structuredData.occupancy = { "@type": "QuantitativeValue", maxValue: stay.maxOccupancy };
+    structuredData.offers = { "@type": "Offer", priceCurrency: "USD", price: stay.price, url: canonicalUrl };
+  } else if (kind === "car") {
+    const car = listing as Car;
+    structuredData.vehicleTransmission = car.transmission;
+    structuredData.seatingCapacity = car.seats;
+    structuredData.offers = { "@type": "Offer", priceCurrency: "USD", price: car.pricePerDay || car.priceWithDriver, url: canonicalUrl };
+  } else if (kind === "cook") {
+    const cook = listing as Cook;
+    structuredData.serviceType = cook.serviceType;
+    structuredData.offers = { "@type": "Offer", priceCurrency: "USD", price: cook.serviceFee || cook.pricePerSession, url: canonicalUrl };
+  } else if (kind === "errand") {
+    const errand = listing as Errand;
+    structuredData.serviceType = "Holiday concierge and errand service";
+    structuredData.offers = { "@type": "Offer", priceCurrency: "USD", price: errand.basePrice, url: canonicalUrl };
+  } else {
+    const experience = listing as Experience;
+    structuredData.duration = `PT${experience.durationHours}H`;
+    structuredData.offers = { "@type": "Offer", priceCurrency: "USD", price: experience.privatePricePerPerson || experience.sharedPricePerPerson || experience.price, url: canonicalUrl };
+  }
+
+  return structuredData;
+}
+
+function getStaticMetadata(pathname: string, baseUrl: string): ShareMetadata | null {
+  const metadata: Record<string, { title: string; description: string }> = {
+    "/": {
+      title: "Mombasa Stays, Car Hire, Private Chefs & Concierge Services | Tembea Bila Matata",
+      description: "Discover curated accommodation, car hire, private chefs, holiday errands and coastal experiences in Mombasa, Nyali and across the Kenyan Coast.",
+    },
+    "/accommodations": {
+      title: "Accommodation in Mombasa & Nyali | Furnished Apartments and Holiday Stays",
+      description: "Browse curated furnished apartments, holiday homes and short-stay accommodation in Mombasa, Nyali and the Kenyan Coast.",
+    },
+    "/services/drive": {
+      title: "Car Hire, Self-Drive & Chauffeur Service in Mombasa | Tembea Bila Matata",
+      description: "Find self-drive cars, chauffeur-driven vehicles, airport transfers and coastal transport in Mombasa, Nyali and nearby destinations.",
+    },
+    "/services/dine": {
+      title: "Private Chefs and In-Villa Dining in Mombasa & Nyali",
+      description: "Book a private chef, personal cook or in-villa dining experience in Mombasa, Nyali and across the Kenyan Coast.",
+    },
+    "/services/relax": {
+      title: "Concierge, Errand and In-Villa Family Services in Mombasa",
+      description: "Arrange holiday errands, shopping, laundry, housekeeping and in-villa childcare support across Mombasa and the Kenyan Coast.",
+    },
+    "/services/experience": {
+      title: "Coastal Experiences, Tours and Activities in Mombasa",
+      description: "Explore curated coastal experiences, local activities and memorable outings from Mombasa, Nyali and the wider Kenyan Coast.",
+    },
+    "/services": {
+      title: "Coastal Travel Services in Mombasa | Tembea Bila Matata",
+      description: "Plan a smoother coastal stay with accommodation, transport, private dining, errands and experiences in Mombasa and Nyali.",
+    },
+    "/blog": {
+      title: "Mombasa and Kenyan Coast Travel Journal | Tembea Bila Matata",
+      description: "Local guides and practical travel advice for stays, transport, dining, family support and experiences in Mombasa and along the Kenyan Coast.",
+    },
+    "/about": {
+      title: "About Tembea Bila Matata | Mombasa Coastal Concierge",
+      description: "Learn how Tembea Bila Matata combines curated stays and practical concierge services for travellers in Mombasa and the Kenyan Coast.",
+    },
+    "/contact": {
+      title: "Contact Tembea Bila Matata | Mombasa and Kenyan Coast",
+      description: "Contact Tembea Bila Matata for accommodation, transport, private chef, concierge and coastal travel support.",
+    },
+    "/faq": {
+      title: "Frequently Asked Questions | Tembea Bila Matata",
+      description: "Find answers about booking stays, transport, chefs, errands, experiences and concierge services in Mombasa and the Kenyan Coast.",
+    },
+  };
+  const item = metadata[pathname];
+  if (!item) return null;
+  return {
+    ...item,
+    imageUrl: `${baseUrl}${defaultImagePath}`,
+    canonicalUrl: `${baseUrl}${pathname === "/" ? "/" : pathname}`,
+    type: "website",
+    structuredData: pathname === "/" ? {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "Organization",
+          name: siteName,
+          url: baseUrl,
+          areaServed: ["Mombasa", "Nyali", "Bamburi", "Shanzu", "Diani", "Kilifi", "Watamu", "Kenyan Coast"],
+        },
+        {
+          "@type": "WebSite",
+          name: siteName,
+          url: baseUrl,
+          description: item.description,
+        },
+      ],
+    } : null,
+  };
+}
+
 function parseListingRoute(pathname: string): ParsedListingRoute | null {
   const shortMatch = /^\/b\/([sckrx])\/([^/?#]+)\/?$/.exec(pathname);
   if (shortMatch) {
@@ -228,6 +377,22 @@ function parseListingRoute(pathname: string): ParsedListingRoute | null {
       kind: shortKindMap[shortMatch[1]],
       id: decodeURIComponent(shortMatch[2]),
       isShortLink: true,
+    };
+  }
+
+  const publicMatch = /^\/(accommodation|transport|chef|errand|experience)\/([^/?#]+)(?:\/[^/?#]+)?\/?$/.exec(pathname);
+  if (publicMatch) {
+    const publicKindMap: Record<string, ListingKind> = {
+      accommodation: "stay",
+      transport: "car",
+      chef: "cook",
+      errand: "errand",
+      experience: "experience",
+    };
+    return {
+      kind: publicKindMap[publicMatch[1]],
+      id: decodeURIComponent(publicMatch[2]),
+      publicPath: true,
     };
   }
 
@@ -308,14 +473,26 @@ async function resolveListing(route: ParsedListingRoute) {
   return (await storage.getExperiences()).find((experience) => experience.id.toLowerCase().startsWith(normalizedId));
 }
 
+function getRobotsForPath(pathname: string) {
+  if (/^\/(?:book(?:ings)?|b\/|auth(?:\/|$)|admin(?:\/|$)|provider(?:\/|$)|inbox(?:\/|$))/.test(pathname)) {
+    return "noindex,follow";
+  }
+  return "index,follow";
+}
+
 function defaultMetadata(req: Request): ShareMetadata {
   const baseUrl = getRequestBaseUrl(req);
+  const staticMetadata = getStaticMetadata(req.path, baseUrl);
+  if (staticMetadata) {
+    return { ...staticMetadata, robots: getRobotsForPath(req.path) };
+  }
   return {
     title: defaultTitle,
     description: defaultDescription,
     imageUrl: `${baseUrl}${defaultImagePath}`,
     canonicalUrl: `${baseUrl}${req.path === "/" ? "/" : req.path}`,
     type: "website",
+    robots: getRobotsForPath(req.path),
   };
 }
 
@@ -327,10 +504,30 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
     try {
       const post = await storage.getBlogPostBySlug(blogSlug);
       if (!post || post.status !== "published") {
-        return fallback;
+        return { ...fallback, robots: "noindex,follow", statusCode: 404 };
       }
 
-      return buildBlogMetadata(post, baseUrl);
+      const metadata = buildBlogMetadata(post, baseUrl);
+      metadata.structuredData = {
+        "@context": "https://schema.org",
+        "@type": "Article",
+        headline: post.seoTitle || post.title,
+        description: truncate(post.seoDescription || post.excerpt || post.contentMarkdown, 320),
+        image: post.featuredImage ? [toAbsoluteUrl(post.featuredImage, baseUrl)] : undefined,
+        datePublished: post.publishedAt || undefined,
+        dateModified: post.updatedAt || undefined,
+        author: { "@type": "Person", name: post.author },
+        mainEntityOfPage: metadata.canonicalUrl,
+        breadcrumb: {
+          "@type": "BreadcrumbList",
+          itemListElement: [
+            { "@type": "ListItem", position: 1, name: "Home", item: baseUrl },
+            { "@type": "ListItem", position: 2, name: "Travel Journal", item: `${baseUrl}/blog` },
+            { "@type": "ListItem", position: 3, name: post.title, item: metadata.canonicalUrl },
+          ],
+        },
+      };
+      return metadata;
     } catch (error) {
       console.error("[SEO] Failed to resolve blog share metadata:", error);
       return fallback;
@@ -344,46 +541,65 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
 
   const baseUrl = getRequestBaseUrl(req);
   const currency = getShareCurrency(req);
-  const canonicalUrl = getListingCanonicalUrl(req, baseUrl, currency);
 
   try {
     if (route.kind === "stay") {
       const stay = await resolveListing(route) as Stay | undefined;
       if (!isPublicListing(stay)) {
-        return fallback;
+        return { ...fallback, robots: "noindex,follow", statusCode: 404 };
       }
-      return buildStayMetadata(stay, baseUrl, canonicalUrl, currency);
+      const canonicalUrl = `${baseUrl}${getPublicListingPath("stay", stay.id, stay.title)}`;
+      const metadata = buildStayMetadata(stay, baseUrl, canonicalUrl, currency);
+      metadata.robots = route.publicPath ? "index,follow" : "noindex,follow";
+      metadata.structuredData = getListingStructuredData("stay", stay, canonicalUrl);
+      return metadata;
     }
 
     if (route.kind === "car") {
       const car = await resolveListing(route) as Car | undefined;
       if (!isPublicListing(car)) {
-        return fallback;
+        return { ...fallback, robots: "noindex,follow", statusCode: 404 };
       }
-      return buildCarMetadata(car, baseUrl, canonicalUrl, currency);
+      const canonicalUrl = `${baseUrl}${getPublicListingPath("car", car.id, getListingName("car", car))}`;
+      const metadata = buildCarMetadata(car, baseUrl, canonicalUrl, currency);
+      metadata.robots = route.publicPath ? "index,follow" : "noindex,follow";
+      metadata.structuredData = getListingStructuredData("car", car, canonicalUrl);
+      return metadata;
     }
 
     if (route.kind === "cook") {
       const cook = await resolveListing(route) as Cook | undefined;
       if (!isPublicListing(cook)) {
-        return fallback;
+        return { ...fallback, robots: "noindex,follow", statusCode: 404 };
       }
-      return buildCookMetadata(cook, baseUrl, canonicalUrl, currency);
+      const canonicalUrl = `${baseUrl}${getPublicListingPath("cook", cook.id, cook.title)}`;
+      const metadata = buildCookMetadata(cook, baseUrl, canonicalUrl, currency);
+      metadata.robots = route.publicPath ? "index,follow" : "noindex,follow";
+      metadata.structuredData = getListingStructuredData("cook", cook, canonicalUrl);
+      return metadata;
     }
 
     if (route.kind === "errand") {
       const errand = await resolveListing(route) as Errand | undefined;
       if (!isPublicListing(errand)) {
-        return fallback;
+        return { ...fallback, robots: "noindex,follow", statusCode: 404 };
       }
-      return buildErrandMetadata(errand, baseUrl, canonicalUrl, currency);
+      const canonicalUrl = `${baseUrl}${getPublicListingPath("errand", errand.id, errand.serviceName)}`;
+      const metadata = buildErrandMetadata(errand, baseUrl, canonicalUrl, currency);
+      metadata.robots = route.publicPath ? "index,follow" : "noindex,follow";
+      metadata.structuredData = getListingStructuredData("errand", errand, canonicalUrl);
+      return metadata;
     }
 
     const experience = await resolveListing(route) as Experience | undefined;
     if (!isPublicListing(experience)) {
-      return fallback;
+      return { ...fallback, robots: "noindex,follow", statusCode: 404 };
     }
-    return buildExperienceMetadata(experience, baseUrl, canonicalUrl, currency);
+    const canonicalUrl = `${baseUrl}${getPublicListingPath("experience", experience.id, experience.title)}`;
+    const metadata = buildExperienceMetadata(experience, baseUrl, canonicalUrl, currency);
+    metadata.robots = route.publicPath ? "index,follow" : "noindex,follow";
+    metadata.structuredData = getListingStructuredData("experience", experience, canonicalUrl);
+    return metadata;
   } catch (error) {
     console.error("[SEO] Failed to resolve listing share metadata:", error);
     return fallback;
@@ -418,6 +634,7 @@ function getGoogleSiteVerificationTag() {
 }
 
 export function injectShareMetadata(html: string, metadata: ShareMetadata) {
+  const cspNonce = /<meta\s+name="csp-nonce"\s+content="([^"]*)"/i.exec(html)?.[1] ?? "";
   const tags = [
     metaTag("property", "og:site_name", siteName),
     metaTag("property", "og:title", metadata.title),
@@ -434,8 +651,12 @@ export function injectShareMetadata(html: string, metadata: ShareMetadata) {
     metadata.publishedTime ? metaTag("property", "article:published_time", metadata.publishedTime) : null,
     metadata.modifiedTime ? metaTag("property", "article:modified_time", metadata.modifiedTime) : null,
     metadata.author ? metaTag("property", "article:author", metadata.author) : null,
+    metaTag("name", "robots", metadata.robots || "index,follow"),
     getGoogleSiteVerificationTag(),
     `<link rel="canonical" href="${escapeHtml(metadata.canonicalUrl)}" />`,
+    metadata.structuredData
+      ? `<script type="application/ld+json" data-seo-structured="true"${cspNonce ? ` nonce="${escapeHtml(cspNonce)}"` : ""}>${JSON.stringify(metadata.structuredData).replace(/</g, "\\u003c")}</script>`
+      : null,
   ].filter(Boolean).join("\n    ");
 
   return html
