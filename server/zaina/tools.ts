@@ -38,6 +38,7 @@ import {
 } from "@shared/booking-payments";
 import { sendWebPushNotification } from "../push";
 import { INVENTORY_CATALOG } from "./catalog";
+import { describeInputAmount, toUsdAmount } from "./money-input";
 import { getPublicListingPath } from "@shared/seo";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1088,7 +1089,10 @@ export async function composeTripPackage(
     people: number;
     check_in: string;
     check_out: string;
-    budget_usd: number;
+    budget_amount?: number;
+    budget_currency?: string;
+    /** Legacy: a budget the model already converted to USD. */
+    budget_usd?: number;
     destination_preference?: string;
     include_experience?: boolean;
   },
@@ -1096,6 +1100,27 @@ export async function composeTripPackage(
 ) {
   const nights = validateAndGetNights(args.check_in, args.check_out);
   if (nights === null) return { ok: false, error: "invalid_dates" };
+
+  let budgetUsd: number;
+  if (args.budget_amount !== undefined) {
+    const budget = toUsdAmount(args.budget_amount, args.budget_currency, (await getUsdToKesRate()).usdToKes);
+    if (!budget.ok) {
+      return {
+        ok: false,
+        error: budget.error === "amount_invalid" ? "budget_required" : "budget_currency_required",
+        hint: "Pass budget_amount exactly as the customer stated it, with budget_currency set to USD or KES. Never convert the budget yourself.",
+      };
+    }
+    budgetUsd = budget.exactUsd;
+  } else if (typeof args.budget_usd === "number" && Number.isFinite(args.budget_usd) && args.budget_usd > 0) {
+    budgetUsd = args.budget_usd;
+  } else {
+    return {
+      ok: false,
+      error: "budget_required",
+      hint: "Ask the customer for their total budget and its currency, then pass budget_amount and budget_currency.",
+    };
+  }
 
   const warnings: string[] = [];
 
@@ -1206,9 +1231,9 @@ export async function composeTripPackage(
   }
 
   const totalUsd = stayTotal + transportTotal + experienceTotal;
-  const withinBudget = totalUsd <= args.budget_usd;
-  const overByUsd = withinBudget ? 0 : totalUsd - args.budget_usd;
-  const remainderUsd = withinBudget ? args.budget_usd - totalUsd : 0;
+  const withinBudget = totalUsd <= budgetUsd;
+  const overByUsd = withinBudget ? 0 : totalUsd - budgetUsd;
+  const remainderUsd = withinBudget ? budgetUsd - totalUsd : 0;
 
   return {
     ok: true,
@@ -1247,7 +1272,7 @@ export async function composeTripPackage(
     },
     total: await formatPrice(totalUsd, sessionId),
     total_usd: totalUsd,
-    budget: await formatPrice(args.budget_usd, sessionId),
+    budget: await formatPrice(budgetUsd, sessionId),
     within_budget: withinBudget,
     over_by: withinBudget ? null : await formatPrice(overByUsd, sessionId),
     over_by_usd: overByUsd || null,
@@ -1743,6 +1768,8 @@ export async function createServiceBooking(
     service_end_time?: string;
     service_request_details?: string;
     service_budget_amount?: number;
+    service_budget_currency?: string;
+    service_bedrooms?: number;
     service_laundry_weight_kg?: number;
     service_addon_selections?: string[];
     service_schedule_slots?: Array<{ date: string; note?: string }>;
@@ -1922,6 +1949,8 @@ export async function createServiceBooking(
   let totalUsd = 0;
   const serviceAddonSelections: string[] = [];
   let serviceHours: number | null = null;
+  // Stored in USD, like every other amount on bookings.
+  let serviceBudgetUsd: number | null = null;
 
   // ─── Car rental / chauffeur ────────────────────────────────────
   if (car) {
@@ -2048,7 +2077,20 @@ export async function createServiceBooking(
       if (!args.service_request_details?.trim()) {
         return { ok: false, error: "shopping_list_required", tell_customer: "What would you like us to shop for, and what budget should I work with?" };
       }
-      totalUsd = (errand.basePrice + args.service_budget_amount + Math.ceil((args.service_budget_amount * errand.shoppingCommissionPercent) / 100)) * packageCount;
+      const budget = toUsdAmount(
+        args.service_budget_amount,
+        args.service_budget_currency,
+        (await getUsdToKesRate()).usdToKes,
+      );
+      if (!budget.ok) {
+        return {
+          ok: false,
+          error: budget.error === "amount_invalid" ? "shopping_details_required" : "budget_currency_required",
+          hint: "Pass service_budget_amount exactly as the customer stated it, with service_budget_currency set to USD or KES. Never convert the budget yourself.",
+        };
+      }
+      serviceBudgetUsd = budget.usd;
+      totalUsd = (errand.basePrice + serviceBudgetUsd + Math.ceil((serviceBudgetUsd * errand.shoppingCommissionPercent) / 100)) * packageCount;
     } else if (args.mode === "errand-laundry") {
       if (!errand.laundryEnabled) return { ok: false, error: "laundry_not_available" };
       const selectedAddons = (errand.laundryAddons || []).filter((addon) => addonSelections.includes(addon.id));
@@ -2056,7 +2098,16 @@ export async function createServiceBooking(
       serviceAddonSelections.push(...selectedAddons.map((addon) => addon.id));
     } else if (args.mode === "errand-house-cleaning") {
       if (!errand.houseCleaningEnabled) return { ok: false, error: "house_cleaning_not_available" };
-      const bedroomCount = getHouseCleaningBedroomCount(args.mamacare_hours);
+      // The price scales with bedrooms, so never assume a default count.
+      if (typeof args.service_bedrooms !== "number" || !Number.isFinite(args.service_bedrooms) || args.service_bedrooms < 1) {
+        return {
+          ok: false,
+          error: "bedroom_count_required",
+          hint: "Ask how many bedrooms need cleaning, then pass service_bedrooms.",
+          tell_customer: "How many bedrooms should we clean?",
+        };
+      }
+      const bedroomCount = getHouseCleaningBedroomCount(args.service_bedrooms);
       const selectedAddons = (errand.houseCleaningAddons || []).filter((addon) => addonSelections.includes(addon.id));
       totalUsd = calculateHouseCleaningPackagePrice(errand, selectedAddons.map((addon) => addon.id), bedroomCount) * packageCount;
       serviceHours = bedroomCount;
@@ -2177,7 +2228,7 @@ export async function createServiceBooking(
     serviceZone: args.service_zone ?? null,
     serviceStartTime: args.service_start_time ?? null,
     serviceEndTime: args.service_end_time ?? null,
-    serviceBudgetAmount: args.service_budget_amount ?? null,
+    serviceBudgetAmount: serviceBudgetUsd,
     serviceLaundryWeightKg: args.service_laundry_weight_kg ?? null,
     serviceAddonSelections,
     serviceScheduleSlots: args.service_schedule_slots ?? (args.mode.startsWith("errand-") ? [{ date: args.date, note: args.service_request_details?.slice(0, 120) }] : []),
@@ -2578,6 +2629,9 @@ export async function createCustomOffer(
     customer_email?: string;
     customer_phone?: string;
     listing_url?: string;
+    budget_amount?: number;
+    budget_currency?: string;
+    /** Legacy: a budget the model already converted to USD. */
     budget_usd?: number;
     travel_dates?: string;
     idempotency_key: string;
@@ -2621,6 +2675,26 @@ export async function createCustomOffer(
       hint: "Use create_listing_verification_request for an external listing so payment, dispatch, reporting, and fee credit are tracked correctly.",
     };
   }
+  let budgetUsd: number | null = null;
+  let budgetNote: string | null = null;
+  if (args.budget_amount !== undefined) {
+    const budget = toUsdAmount(args.budget_amount, args.budget_currency, (await getUsdToKesRate()).usdToKes);
+    if (!budget.ok) {
+      return {
+        ok: false,
+        error: budget.error === "amount_invalid" ? "budget_invalid" : "budget_currency_required",
+        hint: "Pass budget_amount exactly as the customer stated it, with budget_currency set to USD or KES, or leave both out. Never convert the budget yourself.",
+      };
+    }
+    budgetUsd = budget.usd;
+    budgetNote = budget.currency === "USD"
+      ? describeInputAmount(budget.amount, "USD")
+      : `${describeInputAmount(budget.amount, "KES")} (≈ $${budget.usd})`;
+  } else if (typeof args.budget_usd === "number" && Number.isFinite(args.budget_usd) && args.budget_usd > 0) {
+    budgetUsd = Math.round(args.budget_usd);
+    budgetNote = `$${budgetUsd}`;
+  }
+
   // Listing verification has its own configured fee (see createListingVerificationRequest).
   const tierFees: Record<string, number> = { intake: 5, proposal: 15 };
   const feeUsd = tierFees[tier] ?? 5;
@@ -2662,7 +2736,7 @@ export async function createCustomOffer(
       customerPhone: args.customer_phone ?? null,
       offerType: args.offer_type,
       requestDetails,
-      budgetUsd: args.budget_usd ?? null,
+      budgetUsd,
       travelDates: args.travel_dates ?? null,
       status: "new",
       feeTier: tier,
@@ -2681,7 +2755,7 @@ export async function createCustomOffer(
     customerPhone: args.customer_phone,
     requestDetails,
     travelDates: args.travel_dates,
-    budgetUsd: args.budget_usd,
+    budgetUsd: budgetUsd ?? undefined,
     idempotencyKey: args.idempotency_key,
     sessionId,
   });
@@ -2702,7 +2776,7 @@ export async function createCustomOffer(
       Tier: tier,
       Type: args.offer_type,
       "Travel dates": args.travel_dates ?? "not provided",
-      Budget: args.budget_usd ? `$${args.budget_usd}` : "not provided",
+      Budget: budgetNote ?? "not provided",
       Details: requestDetails,
     },
   });

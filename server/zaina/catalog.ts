@@ -490,8 +490,8 @@ export const INVENTORY_CATALOG = {
       "Don't just find the cheapest thing. Ask what matters most: accommodation, " +
       "experiences, transport, or overall cost. Then build accordingly.",
     budget_note:
-      "Budgets may be given in KES or USD. Convert to USD for searching, then " +
-      "present the total in the customer's display currency.",
+      "Budgets may be given in KES or USD. Pass the amount and the currency the customer " +
+      "used; the server converts. Present the total in the customer's display currency.",
   },
 
   // ═══════════════════════════════════════════════════════════════════

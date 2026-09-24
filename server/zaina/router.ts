@@ -856,9 +856,14 @@ const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
             people: { type: Type.NUMBER },
             check_in: { type: Type.STRING },
             check_out: { type: Type.STRING },
-            budget_usd: {
+            budget_amount: {
               type: Type.NUMBER,
-              description: "Budget in USD. Convert from KES if needed using the current rate.",
+              description: "Total budget exactly as the customer stated it, e.g. 60000. Never convert it yourself.",
+            },
+            budget_currency: {
+              type: Type.STRING,
+              enum: ["USD", "KES"],
+              description: "Currency of budget_amount as the customer stated it. The server converts.",
             },
             destination_preference: {
               type: Type.STRING,
@@ -869,7 +874,7 @@ const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
               description: "Default true. Set false only if customer explicitly opts out.",
             },
           },
-          required: ["people", "check_in", "check_out", "budget_usd"],
+          required: ["people", "check_in", "check_out", "budget_amount", "budget_currency"],
         },
       },
       {
@@ -969,7 +974,12 @@ const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
             customer_email: { type: Type.STRING },
             customer_phone: { type: Type.STRING },
             listing_url: { type: Type.STRING, description: "Full https:// link for a third-party listing being verified." },
-            budget_usd: { type: Type.NUMBER },
+            budget_amount: { type: Type.NUMBER, description: "Optional budget exactly as the customer stated it. Never convert it yourself." },
+            budget_currency: {
+              type: Type.STRING,
+              enum: ["USD", "KES"],
+              description: "Required whenever budget_amount is given: the currency the customer used.",
+            },
             travel_dates: { type: Type.STRING },
             idempotency_key: { type: Type.STRING },
           },
@@ -1089,7 +1099,19 @@ const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
               description: "HH:MM format, e.g. 06:00.",
             },
             service_request_details: { type: Type.STRING },
-            service_budget_amount: { type: Type.NUMBER, description: "For shopping: estimated receipt budget, excluding the service fee." },
+            service_budget_amount: {
+              type: Type.NUMBER,
+              description: "For shopping: the estimated receipt budget exactly as the customer stated it, excluding the service fee. Never convert it yourself.",
+            },
+            service_budget_currency: {
+              type: Type.STRING,
+              enum: ["USD", "KES"],
+              description: "Required with service_budget_amount: the currency the customer used. The server converts.",
+            },
+            service_bedrooms: {
+              type: Type.NUMBER,
+              description: "For house cleaning (errand-house-cleaning): number of bedrooms to clean. Ask the customer; never assume.",
+            },
             service_laundry_weight_kg: { type: Type.NUMBER, description: "For laundry: estimated weight in kilograms." },
             service_addon_selections: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Errand add-on ids returned by search." },
             service_schedule_slots: {
