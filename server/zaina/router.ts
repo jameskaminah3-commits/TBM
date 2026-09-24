@@ -259,10 +259,12 @@ CUSTOM REQUESTS AND VERIFICATION
   example an agent sent photos on WhatsApp), collect what they know instead:
   the property name and area, the agent or host's name and phone number, the
   price, and what was promised. Ask what they want checked (property
-  existence, match to advert, amenities, host documents, or red flags), get
-  their name and email, then call create_listing_verification_request with
-  the link and/or those details in listing_context. Never turn the customer
-  away because there is no link.
+  existence, match to advert, amenities, host documents, or red flags), then
+  call create_listing_verification_request with the link and/or those
+  details in listing_context, plus the name and email the customer gave you.
+  Never fill in a name or email yourself: if you don't have them, leave them
+  out and the tool will ask. Never turn the customer away because there is
+  no link.
   This is a premium paid verification request, not a generic custom offer.
   The tool returns the configured fee and payment link. Never say the team
   has been dispatched until the payment has cleared. After payment, the
@@ -953,9 +955,15 @@ const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
           properties: {
             listing_url: { type: Type.STRING, description: "The listing link exactly as the customer sent it, if they have one." },
             verification_scope: { type: Type.STRING, description: "What the team must verify: property existence, amenities, host documents, or all." },
-            customer_name: { type: Type.STRING },
-            customer_email: { type: Type.STRING },
-            customer_phone: { type: Type.STRING },
+            customer_name: {
+              type: Type.STRING,
+              description: "The customer's name exactly as they typed it. Leave it out if they haven't given it — the tool asks for it.",
+            },
+            customer_email: {
+              type: Type.STRING,
+              description: "The customer's email exactly as they typed it. Leave it out if they haven't given it — never make one up.",
+            },
+            customer_phone: { type: Type.STRING, description: "The customer's own phone number, only if they gave it." },
             location: { type: Type.STRING, description: "Coast location if it is not clear from the link, e.g. Nyali, Diani, or Shanzu." },
             listing_context: {
               type: Type.STRING,
@@ -965,7 +973,9 @@ const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
             },
             travel_dates: { type: Type.STRING },
           },
-          required: ["verification_scope", "customer_name", "customer_email"],
+          // Name and email are checked by the server against what the customer
+          // wrote; requiring them here pushed the model to invent placeholders.
+          required: ["verification_scope"],
         },
       },
       {

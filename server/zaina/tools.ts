@@ -40,6 +40,7 @@ import { INVENTORY_CATALOG } from "./catalog";
 import { describeInputAmount, toUsdAmount } from "./money-input";
 import { getPublicSiteUrl } from "./reply-policy";
 import { describeListingSource, MIN_LISTING_DETAILS_LENGTH, normalizeListingLink } from "./listing-verification";
+import { resolveCustomerContact, textArg } from "./tool-args";
 import { getPublicListingPath } from "@shared/seo";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -2320,6 +2321,8 @@ async function createCustomOfferBooking(args: {
   notifyAdmin?: boolean;
   /** Summary line for the admin inbox and booking email. */
   notificationSummary?: string;
+  /** Transaction to write in; the caller then sends the notification after commit. */
+  executor?: any;
 }) {
   const now = new Date().toISOString();
   const booking = await storage.createBooking({
@@ -2391,27 +2394,41 @@ async function createCustomOfferBooking(args: {
     bookingType: "service",
     createdAt: now,
     idempotencyKey: args.idempotencyKey,
-  } as any);
+  } as any, args.executor ?? db);
 
   const paymentLink = `${appBaseUrl()}/bookings?bookingId=${booking.id}`;
-  if (args.notifyAdmin !== false) {
-    queueNotificationTask(
-      `zaina custom request notifications for ${booking.id}`,
-      (async () => notifyBookingCreated({
-        bookingId: booking.id,
-        customerName: args.customerName,
-        customerEmail: args.customerEmail,
-        customerPhone: args.customerPhone ?? "",
-        kind: "service",
-        summary: args.notificationSummary ?? `Custom ${args.requestDetails.slice(0, 100)}`,
-        totalDisplay: await formatPrice(args.feeUsd, args.sessionId),
-        paymentLink,
-        sessionId: args.sessionId,
-      }))(),
-    );
+  if (args.notifyAdmin !== false && !args.executor) {
+    queueCustomOfferBookingNotification({ ...args, bookingId: booking.id, paymentLink });
   }
 
   return { booking, paymentLink };
+}
+
+function queueCustomOfferBookingNotification(args: {
+  bookingId: string;
+  paymentLink: string;
+  feeUsd: number;
+  customerName: string;
+  customerEmail: string;
+  customerPhone?: string;
+  requestDetails: string;
+  notificationSummary?: string;
+  sessionId: string;
+}) {
+  queueNotificationTask(
+    `zaina custom request notifications for ${args.bookingId}`,
+    (async () => notifyBookingCreated({
+      bookingId: args.bookingId,
+      customerName: args.customerName,
+      customerEmail: args.customerEmail,
+      customerPhone: args.customerPhone ?? "",
+      kind: "service",
+      summary: args.notificationSummary ?? `Custom ${args.requestDetails.slice(0, 100)}`,
+      totalDisplay: await formatPrice(args.feeUsd, args.sessionId),
+      paymentLink: args.paymentLink,
+      sessionId: args.sessionId,
+    }))(),
+  );
 }
 
 function getListingVerificationFeeKes() {
@@ -2419,16 +2436,34 @@ function getListingVerificationFeeKes() {
   return Number.isFinite(configured) && configured > 0 ? Math.round(configured) : 2500;
 }
 
+/** Everything the customer has written in this conversation, oldest first. */
+async function getCustomerMessages(sessionId: string): Promise<string[]> {
+  const rows = await db
+    .select({ messageContent: zainaAuditLogs.messageContent })
+    .from(zainaAuditLogs)
+    .where(and(eq(zainaAuditLogs.sessionId, sessionId), eq(zainaAuditLogs.actor, "USER")))
+    .orderBy(asc(zainaAuditLogs.timestamp));
+  return rows.map((row) => row.messageContent).filter((text): text is string => typeof text === "string");
+}
+
+function askForVerificationContact(missing: Array<"name" | "email">): string {
+  if (missing.length === 2) return "Before I open the verification request, may I have your full name and email address?";
+  return missing[0] === "email"
+    ? "Before I open the verification request, may I have your email address? We'll send the payment link and your report there."
+    : "Before I open the verification request, may I have your full name?";
+}
+
 export async function createListingVerificationRequest(
+  // Read through textArg: the model can send any JSON type for these.
   args: {
-    listing_url?: string;
-    verification_scope: string;
-    customer_name?: string;
-    customer_email?: string;
-    customer_phone?: string;
-    location?: string;
-    listing_context?: string;
-    travel_dates?: string;
+    listing_url?: unknown;
+    verification_scope?: unknown;
+    customer_name?: unknown;
+    customer_email?: unknown;
+    customer_phone?: unknown;
+    location?: unknown;
+    listing_context?: unknown;
+    travel_dates?: unknown;
     idempotency_key: string;
   },
   sessionId: string,
@@ -2438,10 +2473,10 @@ export async function createListingVerificationRequest(
   }
   // A listing can be verified from its link, from the customer's details (for
   // example an agent who shared it on WhatsApp without a link), or both.
-  const listingLink = normalizeListingLink(args.listing_url);
-  const rawLink = typeof args.listing_url === "string" ? args.listing_url.trim() : "";
+  const rawLink = textArg(args.listing_url);
+  const listingLink = normalizeListingLink(rawLink);
   const listingDetails = [
-    typeof args.listing_context === "string" ? args.listing_context.trim() : "",
+    textArg(args.listing_context),
     // Text passed as a "link" that isn't one still describes the listing.
     rawLink && !listingLink ? rawLink : "",
   ].filter(Boolean).join("\n");
@@ -2454,14 +2489,20 @@ export async function createListingVerificationRequest(
         "the agent or host's name and phone number, and what they're offering.",
     };
   }
-  if (typeof args.verification_scope !== "string" || args.verification_scope.trim().length < 10) {
+  const verificationScope = textArg(args.verification_scope);
+  if (verificationScope.length < 10) {
     return { ok: false, error: "verification_scope_required", tell_customer: "What would you like us to verify — the property, amenities, host documents, or all three?" };
   }
-  if (typeof args.customer_name !== "string" || args.customer_name.trim().length < 2
-    || typeof args.customer_email !== "string"
-    || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(args.customer_email)) {
-    return { ok: false, error: "customer_contact_required", tell_customer: "Before I open the verification request, may I have your full name and email address?" };
+  // Only contact details the customer actually gave: a name or email the
+  // model filled in would send the payment link and report to nobody.
+  const contact = resolveCustomerContact(
+    { name: args.customer_name, email: args.customer_email, phone: args.customer_phone },
+    await getCustomerMessages(sessionId),
+  );
+  if (!contact.ok) {
+    return { ok: false, error: "customer_contact_required", tell_customer: askForVerificationContact(contact.missing) };
   }
+  const travelDates = textArg(args.travel_dates);
 
   const existing = await storage.getListingVerificationTask(args.idempotency_key);
   if (existing) {
@@ -2478,7 +2519,7 @@ export async function createListingVerificationRequest(
     };
   }
 
-  const parsed = describeListingSource(listingLink, listingDetails, args.location);
+  const parsed = describeListingSource(listingLink, listingDetails, textArg(args.location) || undefined);
   const verificationLabel = [parsed.sourcePlatform, parsed.location].filter(Boolean).join(", ");
   const feeKes = getListingVerificationFeeKes();
   const rate = await getUsdToKesRate();
@@ -2492,75 +2533,100 @@ export async function createListingVerificationRequest(
     `External listing: ${listingLink ?? "No link — see the listing details below"}`,
     `Source platform: ${parsed.sourcePlatform}`,
     `Location: ${parsed.location ?? "To be confirmed by the operations team"}`,
-    `Verification scope: ${args.verification_scope.trim()}`,
+    `Verification scope: ${verificationScope}`,
     listingDetails ? `Customer-provided listing details: ${listingDetails}` : null,
   ].filter(Boolean).join("\n");
   const now = new Date().toISOString();
-  const [offer] = await db.insert(customOffers).values({
+  const offerValues = {
     id: args.idempotency_key,
     sessionId,
-    customerName: args.customer_name.trim(),
-    customerEmail: args.customer_email.trim().toLowerCase(),
-    customerPhone: args.customer_phone?.trim() || null,
+    customerName: contact.name,
+    customerEmail: contact.email,
+    customerPhone: contact.phone,
     offerType: "listing_verification",
     requestDetails,
     budgetUsd: null,
-    travelDates: args.travel_dates?.trim() || null,
+    travelDates: travelDates || null,
     status: "awaiting_payment",
     feeTier: "verification",
     feeUsd,
     displayCurrency: currency,
     createdAt: now,
     updatedAt: now,
-  }).returning();
-  const { booking, paymentLink } = await createCustomOfferBooking({
-    offerId: offer.id,
-    feeUsd,
-    customerName: args.customer_name.trim(),
-    customerEmail: args.customer_email.trim().toLowerCase(),
-    customerPhone: args.customer_phone,
-    requestDetails,
-    travelDates: args.travel_dates,
-    idempotencyKey: args.idempotency_key,
-    sessionId,
-    serviceMode: "listing-verification",
-    serviceRequestFeeKes: feeKes,
-    // The team hears about the request as soon as Zaina creates it (as with
-    // custom offers), clearly marked unpaid; dispatch still waits for payment.
-    notificationSummary: `Listing verification (awaiting payment) — ${verificationLabel}`,
-  });
-  await db.update(customOffers).set({ notes: `booking_id:${booking.id}`, updatedAt: new Date().toISOString() }).where(eq(customOffers.id, offer.id));
-  const task = await storage.createListingVerificationTask({
-    id: args.idempotency_key,
-    customOfferId: offer.id,
-    bookingId: booking.id,
-    sessionId,
-    customerName: args.customer_name.trim(),
-    customerEmail: args.customer_email.trim().toLowerCase(),
-    customerPhone: args.customer_phone?.trim() || null,
-    // Empty when an agent shared the listing without a link; the details
-    // the customer gave are stored alongside for the field team.
-    listingUrl: listingLink ?? "",
-    listingContext: listingDetails || null,
-    sourcePlatform: parsed.sourcePlatform,
-    location: parsed.location,
-    verificationScope: args.verification_scope.trim(),
-    feeUsd,
-    feeKes,
-    approvalUrl: `${appBaseUrl()}/bookings?bookingId=${booking.id}&verification=report`,
+  };
+
+  // The offer, its booking, and the verification task are written together,
+  // so a failure part-way leaves nothing behind for a retry to trip over.
+  await storage.ensureBookingWriteTables();
+  const { booking, paymentLink, task } = await db.transaction(async (tx) => {
+    const [offer] = await tx.insert(customOffers).values(offerValues)
+      // A request that failed part-way before these writes were grouped may
+      // have left its offer row behind; reuse it.
+      .onConflictDoUpdate({ target: customOffers.id, set: offerValues })
+      .returning();
+    const created = await createCustomOfferBooking({
+      offerId: offer.id,
+      feeUsd,
+      customerName: contact.name,
+      customerEmail: contact.email,
+      customerPhone: contact.phone ?? undefined,
+      requestDetails,
+      travelDates: travelDates || undefined,
+      idempotencyKey: args.idempotency_key,
+      sessionId,
+      serviceMode: "listing-verification",
+      serviceRequestFeeKes: feeKes,
+      executor: tx,
+    });
+    await tx.update(customOffers)
+      .set({ notes: `booking_id:${created.booking.id}`, updatedAt: new Date().toISOString() })
+      .where(eq(customOffers.id, offer.id));
+    const task = await storage.createListingVerificationTask({
+      id: args.idempotency_key,
+      customOfferId: offer.id,
+      bookingId: created.booking.id,
+      sessionId,
+      customerName: contact.name,
+      customerEmail: contact.email,
+      customerPhone: contact.phone,
+      // Empty when an agent shared the listing without a link; the details
+      // the customer gave are stored alongside for the field team.
+      listingUrl: listingLink ?? "",
+      listingContext: listingDetails || null,
+      sourcePlatform: parsed.sourcePlatform,
+      location: parsed.location,
+      verificationScope,
+      feeUsd,
+      feeKes,
+      approvalUrl: `${appBaseUrl()}/bookings?bookingId=${created.booking.id}&verification=report`,
+    }, tx);
+    return { ...created, task };
   });
 
+  // The team hears about the request as soon as Zaina creates it (as with
+  // custom offers), clearly marked unpaid; dispatch still waits for payment.
+  queueCustomOfferBookingNotification({
+    bookingId: booking.id,
+    paymentLink,
+    feeUsd,
+    customerName: contact.name,
+    customerEmail: contact.email,
+    customerPhone: contact.phone ?? undefined,
+    requestDetails,
+    notificationSummary: `Listing verification (awaiting payment) — ${verificationLabel}`,
+    sessionId,
+  });
   queueNotificationTask(`zaina listing verification alert for ${task.id}`, sendOpsAlert({
     kind: "custom-offer",
     sessionId,
     summary: `New listing verification request — ${verificationLabel} (awaiting payment)`,
-    customerName: args.customer_name.trim(),
-    customerContact: args.customer_email.trim().toLowerCase(),
+    customerName: contact.name,
+    customerContact: contact.email,
     details: {
       Status: "Awaiting payment — dispatch the on-ground check only after the fee is paid",
       "Listing link": listingLink ?? "No link — see the listing details",
       "Listing details": listingDetails || "not provided",
-      "Verification scope": args.verification_scope.trim(),
+      "Verification scope": verificationScope,
       Fee: `KSh ${feeKes.toLocaleString("en-KE")}`,
       "Payment link": paymentLink,
       "Admin page": `${appBaseUrl()}/admin/listing-verifications`,

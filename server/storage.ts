@@ -118,6 +118,7 @@ import {
   stayReservations,
   carReservations,
   cookReservations,
+  listingVerificationTasks,
   users,
 } from "@shared/schema";
 import { hasLockedInBookingDeposit } from "@shared/booking-payments";
@@ -1379,7 +1380,7 @@ export interface IStorage {
     feeUsd: number;
     feeKes?: number | null;
     approvalUrl?: string | null;
-  }): Promise<ListingVerificationTask>;
+  }, executor?: any): Promise<ListingVerificationTask>;
   getListingVerificationTask(id: string): Promise<ListingVerificationTask | undefined>;
   getListingVerificationTaskByBookingId(bookingId: string): Promise<ListingVerificationTask | undefined>;
   getListingVerificationTasks(): Promise<ListingVerificationTask[]>;
@@ -1942,22 +1943,37 @@ export class DatabaseStorage implements IStorage {
     feeUsd: number;
     feeKes?: number | null;
     approvalUrl?: string | null;
-  }): Promise<ListingVerificationTask> {
+  }, executor: any = db): Promise<ListingVerificationTask> {
+    // The one-time table setup uses its own connection; callers writing in a
+    // transaction look the task up first (getListingVerificationTask), which runs it.
     await this.ensureListingVerificationTables();
     const now = new Date().toISOString();
-    const result = await pool.query(
-      `INSERT INTO listing_verification_tasks
-        (id, custom_offer_id, booking_id, session_id, customer_name, customer_email, customer_phone,
-         listing_url, source_platform, location, verification_scope, status, payment_status, fee_usd,
-         fee_kes, fee_credited, approval_url, created_at, updated_at, listing_context)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'awaiting_payment','pending',$12,$13,false,$14,$15,$15,$16)
-       RETURNING *`,
-      [data.id, data.customOfferId, data.bookingId, data.sessionId ?? null, data.customerName,
-        data.customerEmail, data.customerPhone ?? null, data.listingUrl, data.sourcePlatform ?? null,
-        data.location ?? null, data.verificationScope, data.feeUsd, data.feeKes ?? null,
-        data.approvalUrl ?? null, now, data.listingContext ?? null],
-    );
-    return this.mapListingVerificationTask(result.rows[0]);
+    const [task] = await executor
+      .insert(listingVerificationTasks)
+      .values({
+        id: data.id,
+        customOfferId: data.customOfferId,
+        bookingId: data.bookingId,
+        sessionId: data.sessionId ?? null,
+        customerName: data.customerName,
+        customerEmail: data.customerEmail,
+        customerPhone: data.customerPhone ?? null,
+        listingUrl: data.listingUrl,
+        listingContext: data.listingContext ?? null,
+        sourcePlatform: data.sourcePlatform ?? null,
+        location: data.location ?? null,
+        verificationScope: data.verificationScope,
+        status: "awaiting_payment",
+        paymentStatus: "pending",
+        feeUsd: data.feeUsd,
+        feeKes: data.feeKes ?? null,
+        feeCredited: false,
+        approvalUrl: data.approvalUrl ?? null,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning();
+    return task as ListingVerificationTask;
   }
 
   async getListingVerificationTask(id: string): Promise<ListingVerificationTask | undefined> {
