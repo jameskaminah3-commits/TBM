@@ -57,6 +57,7 @@ import {
   type CustomerLink,
   type PaymentDetails,
 } from "./reply-policy";
+import { withServerIdempotencyKey } from "./idempotency";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 const MODEL = "gemini-3.5-flash-lite";
@@ -526,7 +527,6 @@ Example — MamaCare overnight booking:
     service_end_time: "06:00"
     service_location: "Nyali 5th Avenue"
     customer_name / email / phone from the conversation
-    idempotency_key: <new UUID v4>
 ═══════════════════════════════════════════════════════════════════════
 MULTI-UNIT BOOKINGS — one at a time
 ═══════════════════════════════════════════════════════════════════════
@@ -591,7 +591,7 @@ Disclosing the fee:
 • Say it once, briefly, then move on.
 
 Then collect: what they want, travel dates, budget if they'll share,
-and a name plus phone or email. Generate a UUID v4 for idempotency_key.
+and a name plus phone or email.
 
   The request fee is paid through the saved My Bookings link. The team sends
   the final quotation after reviewing the request; do not invent or collect
@@ -869,7 +869,7 @@ const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
           "Create a draft booking and return a payment link. " +
           "IMPORTANT: Do NOT pass a price — the server calculates the total from " +
           "the stay and services you specify. Required: customer name, email, phone, " +
-          "guests, dates, at least one stay_id, and a UUID idempotency_key.",
+          "guests, dates, and a stay_id. Duplicate protection is handled by the server.",
         parameters: {
           type: Type.OBJECT,
           properties: {
@@ -885,10 +885,6 @@ const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
               items: { type: Type.STRING },
               description: "Optional list of service IDs (chefs, cars, experiences, errands)",
             },
-            idempotency_key: {
-              type: Type.STRING,
-              description: "A UUID v4 you generate. Prevents duplicate bookings.",
-            },
           },
           required: [
             "customer_name",
@@ -898,7 +894,6 @@ const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
             "check_in",
             "check_out",
             "stay_id",
-            "idempotency_key",
           ],
         },
       },
@@ -935,9 +930,8 @@ const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
               description: "Required whenever budget_amount is given: the currency the customer used.",
             },
             travel_dates: { type: Type.STRING },
-            idempotency_key: { type: Type.STRING },
           },
-          required: ["offer_type", "request_details", "tier", "customer_name", "customer_email", "idempotency_key"],
+          required: ["offer_type", "request_details", "tier", "customer_name", "customer_email"],
         },
       },
       {
@@ -957,9 +951,8 @@ const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
             location: { type: Type.STRING, description: "Coast location if it is not clear from the link, e.g. Nyali, Diani, or Shanzu." },
             listing_context: { type: Type.STRING, description: "Any title, description, or details the customer copied from the external listing." },
             travel_dates: { type: Type.STRING },
-            idempotency_key: { type: Type.STRING, description: "A UUID v4. Prevents duplicate verification requests." },
           },
-          required: ["listing_url", "verification_scope", "customer_name", "customer_email", "idempotency_key"],
+          required: ["listing_url", "verification_scope", "customer_name", "customer_email"],
         },
       },
       {
@@ -1102,10 +1095,6 @@ const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
               type: Type.NUMBER,
               description: "Number of sessions/units (defaults to 1). Used for chef sessions and base errands.",
             },
-            idempotency_key: {
-              type: Type.STRING,
-              description: "A UUID v4 you generate. Prevents duplicate bookings.",
-            },
           },
           required: [
             "customer_name",
@@ -1114,7 +1103,6 @@ const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
             "service_id",
             "date",
             "mode",
-            "idempotency_key",
           ],
         },
       },
@@ -1175,7 +1163,10 @@ async function runToolCall(part: any, sessionId: string): Promise<{ call: any; t
   const call = part.functionCall;
   const startedAt = Date.now();
   try {
-    const toolResponseData = await executeTool(call.name, call.args, sessionId);
+    // create_* tools get a server-derived idempotency key; any key the model
+    // sends (for example one copied from masked history) is ignored.
+    const toolArgs = withServerIdempotencyKey(call.name, call.args, sessionId);
+    const toolResponseData = await executeTool(call.name, toolArgs, sessionId);
     logZainaTiming("tool", {
       sessionId,
       tool: call.name,
