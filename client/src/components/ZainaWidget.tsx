@@ -434,7 +434,10 @@ export function ZainaWidget() {
   // ─── Send ────────────────────────────────────────────────────
   async function sendMessage(text: string) {
     const trimmed = text.trim();
-    if (!trimmed || busy || widgetState !== "ready") return;
+    // After a handoff the customer keeps replying through the same endpoint:
+    // the server logs the message for the agent and answers "human_managed".
+    const canSend = widgetState === "ready" || widgetState === "handed_off";
+    if (!trimmed || busy || !canSend) return;
 
     setHasUserMessaged(true);
     setShowTooltip(false);
@@ -518,8 +521,10 @@ export function ZainaWidget() {
       // Zaina just escalated during this turn — lock the widget into
       // handed-off mode right away so the customer sees the WhatsApp
       // handoff option without needing to send another message.
-      if (data.escalated) {
-        setWidgetState("handed_off");
+      // An AI reply without escalation means the session is AI-managed
+      // (for example a fresh session after the old one expired).
+      if (data.status === "ok") {
+        setWidgetState(data.escalated ? "handed_off" : "ready");
       }
     } catch {
       setMsgs((m) => [
