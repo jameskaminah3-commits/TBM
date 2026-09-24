@@ -2317,6 +2317,8 @@ async function createCustomOfferBooking(args: {
   serviceMode?: string;
   serviceRequestFeeKes?: number | null;
   notifyAdmin?: boolean;
+  /** Summary line for the admin inbox and booking email. */
+  notificationSummary?: string;
 }) {
   const now = new Date().toISOString();
   const booking = await storage.createBooking({
@@ -2400,7 +2402,7 @@ async function createCustomOfferBooking(args: {
         customerEmail: args.customerEmail,
         customerPhone: args.customerPhone ?? "",
         kind: "service",
-        summary: `Custom ${args.requestDetails.slice(0, 100)}`,
+        summary: args.notificationSummary ?? `Custom ${args.requestDetails.slice(0, 100)}`,
         totalDisplay: await formatPrice(args.feeUsd, args.sessionId),
         paymentLink,
         sessionId: args.sessionId,
@@ -2479,6 +2481,7 @@ export async function createListingVerificationRequest(
   }
 
   const parsed = parseListingVerificationLink(args.listing_url.trim(), args.location);
+  const verificationLabel = [parsed.sourcePlatform, parsed.location].filter(Boolean).join(", ");
   const feeKes = getListingVerificationFeeKes();
   const rate = await getUsdToKesRate();
   const configuredUsd = Number(process.env.LISTING_VERIFICATION_FEE_USD ?? "0");
@@ -2524,7 +2527,9 @@ export async function createListingVerificationRequest(
     sessionId,
     serviceMode: "listing-verification",
     serviceRequestFeeKes: feeKes,
-    notifyAdmin: false,
+    // The team hears about the request as soon as Zaina creates it (as with
+    // custom offers), clearly marked unpaid; dispatch still waits for payment.
+    notificationSummary: `Listing verification (awaiting payment) — ${verificationLabel}`,
   });
   await db.update(customOffers).set({ notes: `booking_id:${booking.id}`, updatedAt: new Date().toISOString() }).where(eq(customOffers.id, offer.id));
   const task = await storage.createListingVerificationTask({
@@ -2543,6 +2548,24 @@ export async function createListingVerificationRequest(
     feeKes,
     approvalUrl: `${appBaseUrl()}/bookings?bookingId=${booking.id}&verification=report`,
   });
+
+  queueNotificationTask(`zaina listing verification alert for ${task.id}`, sendOpsAlert({
+    kind: "custom-offer",
+    sessionId,
+    summary: `New listing verification request — ${verificationLabel} (awaiting payment)`,
+    customerName: args.customer_name.trim(),
+    customerContact: args.customer_email.trim().toLowerCase(),
+    details: {
+      Status: "Awaiting payment — dispatch the on-ground check only after the fee is paid",
+      "Listing link": args.listing_url.trim(),
+      "Listing details": args.listing_context?.trim() || "not provided",
+      "Verification scope": args.verification_scope.trim(),
+      Fee: `KSh ${feeKes.toLocaleString("en-KE")}`,
+      "Payment link": paymentLink,
+      "Admin page": `${appBaseUrl()}/admin/listing-verifications`,
+    },
+  }));
+
   return {
     ok: true,
     verification_id: task.id,
