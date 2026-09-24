@@ -25,7 +25,6 @@ import {
 } from "@shared/schema";
 import { and, eq, ne, lt, gt, gte, lte, sql, isNotNull, asc, or } from "drizzle-orm";
 import { getUsdToKesRate } from "../currency";
-import { normalizePhone } from "../auth-utils";
 import {
   HELP_MAMA_HOURLY_MINIMUM_HOURS,
   calculateHouseCleaningPackagePrice,
@@ -1289,70 +1288,6 @@ export async function composeTripPackage(
 // ═══════════════════════════════════════════════════════════════════
 
 /**
- * Identify the customer without exposing account or booking details.
- * A customer can be returning even when their previous booking was created
- * as a guest and has not yet been claimed by an authenticated account.
- */
-export async function identifyCustomer(args: { email?: string; phone?: string }) {
-  const normalizedEmail = typeof args.email === "string" ? args.email.trim().toLowerCase() : "";
-  const normalizedPhone = typeof args.phone === "string" ? normalizePhone(args.phone) : "";
-
-  if (!normalizedEmail && !normalizedPhone) {
-    return {
-      ok: false,
-      error: "customer_contact_required",
-      hint: "Ask for the customer's email address or phone number before checking their account status.",
-    };
-  }
-
-  const accountConditions = [];
-  if (normalizedEmail) accountConditions.push(eq(users.email, normalizedEmail));
-  if (normalizedPhone) accountConditions.push(eq(users.phone, normalizedPhone));
-
-  const accountMatches = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(or(...accountConditions))
-    .limit(1);
-
-  const bookingConditions = [];
-  if (normalizedEmail) {
-    bookingConditions.push(sql`lower(trim(${bookings.guestEmail})) = ${normalizedEmail}`);
-  }
-  if (normalizedPhone) {
-    bookingConditions.push(sql`
-      regexp_replace(coalesce(${bookings.guestPhone}, ''), '[^0-9+]', '', 'g') = ${normalizedPhone}
-    `);
-  }
-
-  const bookingMatches = await db
-    .select({ id: bookings.id })
-    .from(bookings)
-    .where(or(...bookingConditions))
-    .limit(1);
-
-  const hasAccount = accountMatches.length > 0;
-  const hasPreviousBooking = bookingMatches.length > 0;
-  const status = hasAccount
-    ? "returning_account"
-    : hasPreviousBooking
-      ? "returning_guest"
-      : "new_client";
-
-  return {
-    ok: true,
-    client_status: status,
-    has_account: hasAccount,
-    has_previous_booking: hasPreviousBooking,
-    guidance: hasAccount
-      ? "This customer already has a TBM account. Tell them to use Log in/Sign in with the same email or phone. If they forgot their password, use the password reset option."
-      : hasPreviousBooking
-        ? "This customer has a previous guest booking but no account yet. Tell them to create an account using the same email address so their booking can be claimed and shown in My Bookings."
-        : "This is a new customer. After creating the booking, tell them to create an account using the same email address, verify the emailed 6-digit code, and open My Bookings.",
-  };
-}
-
-/**
  * Create a draft booking.
  *
  * IMPORTANT: This function does NOT accept a price from the caller.
@@ -1440,11 +1375,6 @@ export async function createDraftBooking(
       tell_customer: "One more — what's the best phone number to reach you on?",
     };
   }
-
-  const customerIdentity = await identifyCustomer({
-    email: args.customer_email,
-    phone: args.customer_phone,
-  });
 
   // 2. Validate dates
   const nights = validateAndGetNights(args.check_in, args.check_out);
@@ -1723,8 +1653,6 @@ export async function createDraftBooking(
     ok: true,
     booking_id: booking.id,
     payment_link: paymentLink,
-    client_status: customerIdentity.ok ? customerIdentity.client_status : undefined,
-    account_guidance: customerIdentity.ok ? customerIdentity.guidance : undefined,
     status: "draft",
     nights,
     stay: {
@@ -1831,11 +1759,6 @@ export async function createServiceBooking(
       tell_customer: "One more — what's the best phone number to reach you on?",
     };
   }
-
-  const customerIdentity = await identifyCustomer({
-    email: args.customer_email,
-    phone: args.customer_phone,
-  });
 
   // 2. Validate date format
   if (!args.date || !isValidIsoDate(args.date)) {
@@ -2355,8 +2278,6 @@ export async function createServiceBooking(
     ok: true,
     booking_id: booking.id,
     payment_link: paymentLink,
-    client_status: customerIdentity.ok ? customerIdentity.client_status : undefined,
-    account_guidance: customerIdentity.ok ? customerIdentity.guidance : undefined,
     status: "draft",
     total: await formatPrice(totalUsd, sessionId),
   };
@@ -2616,7 +2537,6 @@ export async function createListingVerificationRequest(
     location: parsed.location,
     source_platform: parsed.sourcePlatform,
     next_step: "Payment is required before the on-ground verification team is dispatched.",
-    account_guidance: (await identifyCustomer({ email: args.customer_email, phone: args.customer_phone })).guidance,
   };
 }
 
@@ -2661,11 +2581,6 @@ export async function createCustomOffer(
   if (args.listing_url && !/^https?:\/\/\S+$/i.test(args.listing_url.trim())) {
     return { ok: false, error: "invalid_listing_url", tell_customer: "Please send the full listing link beginning with https:// so I can attach it to the request." };
   }
-
-  const customerIdentity = await identifyCustomer({
-    email: args.customer_email,
-    phone: args.customer_phone,
-  });
 
   const tier = args.tier || "intake";
   if (tier === "verification") {
@@ -2791,8 +2706,6 @@ export async function createCustomOffer(
     booking_id: booking.id,
     payment_link: paymentLink,
     listing_url: args.listing_url?.trim() || undefined,
-    client_status: customerIdentity.ok ? customerIdentity.client_status : undefined,
-    account_guidance: customerIdentity.ok ? customerIdentity.guidance : undefined,
     disclosure:
       "A small creditable fee applies. It will be fully deducted from your final booking if you accept the proposal.",
     turnaround_hours: 24,

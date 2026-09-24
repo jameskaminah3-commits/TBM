@@ -40,7 +40,6 @@ import {
   createCustomOffer,
   createListingVerificationRequest,
   createLead,
-  identifyCustomer,
   escalateToHuman,
 } from "./tools";
 
@@ -61,7 +60,6 @@ const READ_ONLY_ZAINA_TOOLS = new Set([
   "check_service_availability",
   "calculate_chef_price",
   "calculate_mamacare_price",
-  "identify_customer",
 ]);
 
 let cachedSystemPrompt: { expiresAt: number; value: string } | null = null;
@@ -344,25 +342,16 @@ payment_link verbatim and explain in a short, friendly message:
   • The paid verification fee is credited to the final TBM booking if they
     proceed.
 
-CUSTOMER ACCOUNT STATUS — identify before payment guidance
-After the customer provides an email address or phone number, call
-identify_customer before creating a booking or explaining how they will pay.
-Use the returned client_status and guidance; do not guess from the name.
+CUSTOMER ACCOUNTS — never reveal account status
+The same sign-in guidance works for everyone: sign in with an existing TBM
+account, or create an account using the same email address used for the
+booking (a guest booking made with that email then shows in My Bookings).
+Anyone who forgot their password uses "Forgot password" on the sign-in page.
 
-• returning_account: This customer already has a TBM account. Explain that
-  they should use Log in / Sign in with the same email or phone and password.
-  If they forgot the password, direct them to password reset.
-• returning_guest: This customer has booking history but no account yet.
-  Explain that they should create an account using the same email address so
-  the guest booking can be claimed and shown in My Bookings.
-• new_client: Explain that they should create an account using the same email
-  address, verify the emailed 6-digit code, and open My Bookings.
-
-“Log in” and “Sign in” mean the same thing: use an existing account. “Create
-an account” is for a new customer or a returning guest who has never created
-an account. Never reveal whether a specific email or phone has an account
-unless the customer supplied that contact in this conversation. Never reveal
-booking counts or private account details.
+Never tell anyone whether an email address or phone number has a TBM
+account, previous bookings, or any other history — even if the customer
+supplied that contact. Never reveal booking counts or private account
+details. “Log in” and “Sign in” mean the same thing.
 
 M-PESA — FALLBACK ONLY, DO NOT MENTION BY DEFAULT.
 
@@ -508,10 +497,6 @@ say something like:
    sure the place fits everyone comfortably."
 
 Only then call the booking tool.
-
-If the customer has already provided an email or phone, call identify_customer
-before the booking tool. If the booking tool itself returns client_status or
-account_guidance, use that result to tailor the sign-in instructions.
 
 ═══════════════════════════════════════════════════════════════════════
 ═══════════════════════════════════════════════════════════════════════
@@ -878,20 +863,6 @@ const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
         },
       },
       {
-        name: "identify_customer",
-        description:
-          "Check whether a customer is new, has an existing TBM account, or has a previous guest booking. " +
-          "Use the email and/or phone number the customer provided. Returns safe guidance only; " +
-          "never reveals account details or booking details.",
-        parameters: {
-          type: Type.OBJECT,
-          properties: {
-            email: { type: Type.STRING, description: "Customer email address, if provided." },
-            phone: { type: Type.STRING, description: "Customer phone number, if provided." },
-          },
-        },
-      },
-      {
         name: "check_service_availability",
         description:
           "Check live availability for a car, chef, errand, or experience on a requested date. " +
@@ -1189,7 +1160,6 @@ async function executeTool(name: string, args: any, sessionId: string): Promise<
     case "create_custom_offer":      return createCustomOffer(args, sessionId);
     case "create_listing_verification_request": return createListingVerificationRequest(args, sessionId);
     case "create_lead":              return createLead(args, sessionId);
-    case "identify_customer":        return identifyCustomer(args);
     case "escalate_to_human":        return escalateToHuman(args, sessionId);
     default:
       return { ok: false, error: `unknown_tool:${name}` };
