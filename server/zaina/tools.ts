@@ -38,6 +38,7 @@ import {
 import { sendWebPushNotification } from "../push";
 import { INVENTORY_CATALOG } from "./catalog";
 import { describeInputAmount, toUsdAmount } from "./money-input";
+import { getPublicSiteUrl } from "./reply-policy";
 import { getPublicListingPath } from "@shared/seo";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -49,7 +50,18 @@ import { getPublicListingPath } from "@shared/seo";
  * click — payment links, listing pages, etc.
  */
 function appBaseUrl(): string {
-  return (process.env.APP_BASE_URL?.trim() || "https://tembeabilamatata.com").replace(/\/+$/, "");
+  return getPublicSiteUrl();
+}
+
+/** The booking deposit in the customer's currency, or undefined when the full amount is due. */
+async function formatDepositDisplay(
+  totalUsd: number,
+  depositUsd: number | null | undefined,
+  sessionId: string,
+): Promise<string | undefined> {
+  const total = Math.round(totalUsd);
+  const deposit = depositUsd ?? calculateBookingDepositAmount(total);
+  return deposit > 0 && deposit < total ? formatPrice(deposit, sessionId) : undefined;
 }
 
 async function getSessionCurrency(sessionId: string): Promise<"USD" | "KES"> {
@@ -1331,6 +1343,7 @@ export async function createDraftBooking(
       idempotent_replay: true,
       payment_link: `${appBaseUrl()}/bookings?bookingId=${existing[0].id}`,
       total: await formatPrice(existing[0].totalPrice, sessionId),
+      deposit_display: await formatDepositDisplay(existing[0].totalPrice, existing[0].paymentDepositAmount, sessionId),
     };
   }
 
@@ -1668,6 +1681,7 @@ export async function createDraftBooking(
       })),
     ),
     total: await formatPrice(totalUsd, sessionId),
+    deposit_display: await formatDepositDisplay(totalUsd, bookingData.paymentDepositAmount, sessionId),
   };
 }
 
@@ -1731,6 +1745,7 @@ export async function createServiceBooking(
       idempotent_replay: true,
       payment_link: `${appBaseUrl()}/bookings?bookingId=${existing[0].id}`,
       total: await formatPrice(existing[0].totalPrice, sessionId),
+      deposit_display: await formatDepositDisplay(existing[0].totalPrice, existing[0].paymentDepositAmount, sessionId),
     };
   }
 
@@ -2280,6 +2295,7 @@ export async function createServiceBooking(
     payment_link: paymentLink,
     status: "draft",
     total: await formatPrice(totalUsd, sessionId),
+    deposit_display: await formatDepositDisplay(totalUsd, bookingData.paymentDepositAmount, sessionId),
   };
 }
 

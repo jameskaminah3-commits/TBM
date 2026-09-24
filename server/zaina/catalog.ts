@@ -15,9 +15,9 @@
 //   4. Only rules, policies, voice, static scenarios, and destination knowledge.
 
 import { bookingDepositPercent } from "../../shared/booking-payments.ts";
+import { getPublicSiteUrl } from "./reply-policy.ts";
 
-// Same rule as appBaseUrl() in tools.ts: the public site customers can open.
-const PUBLIC_SITE_URL = (process.env.APP_BASE_URL?.trim() || "https://tembeabilamatata.com").replace(/\/+$/, "");
+const PUBLIC_SITE_URL = getPublicSiteUrl();
 
 export const INVENTORY_CATALOG = {
   version: 6,

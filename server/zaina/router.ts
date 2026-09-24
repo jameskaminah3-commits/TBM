@@ -23,7 +23,6 @@ import { db } from "../db";
 import { chatSessions, zainaAuditLogs } from "@shared/schema";
 import { and, eq, inArray, desc } from "drizzle-orm";
 import { INVENTORY_CATALOG } from "./catalog";
-import { bookingDepositPercent } from "@shared/booking-payments";
 import {
   searchStays,
   searchCooks,
@@ -42,6 +41,18 @@ import {
   createLead,
   escalateToHuman,
 } from "./tools";
+import {
+  appendMissingCustomerLink,
+  collectCustomerLinks,
+  composeCustomerReply,
+  paymentDetailsFromToolResult,
+  paymentRecoveryMessage,
+  redactMediaUrls,
+  redactMediaUrlsDeep,
+  replaceMediaUrls,
+  type CustomerLink,
+  type PaymentDetails,
+} from "./reply-policy";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 const MODEL = "gemini-3.5-flash-lite";
@@ -263,7 +274,7 @@ NEVER send an image that wasn't requested.
 RULE 2 — When presenting options, keep it to text + link.
 Format:
 
-  **3 Bedroom Beachfront Apartment — Nyali**
+  3 Bedroom Beachfront Apartment — Nyali
   <price_per_night_display from the tool>/night · 3 bedrooms · 2 bathrooms · sleeps 6
   [View full listing →](<public_url from the tool>)
 
@@ -280,67 +291,24 @@ the tool result and match the number to the exact option_index field.
 Confirm by title before booking.
 
 ═══════════════════════════════════════════════════════════════════════
-PAYMENT LINK — NEVER shorten, ALWAYS include the instructions
+PAYMENT LINKS — added automatically, never written by you
 ═══════════════════════════════════════════════════════════════════════
 
-After create_draft_booking or create_service_booking succeeds, your
-reply MUST contain BOTH of these things, in this order:
+When create_draft_booking, create_service_booking, create_custom_offer, or
+create_listing_verification_request succeeds, the system adds the exact
+payment link and the "What happens next" steps (sign-in, deposit or fee,
+and what happens after payment) to the end of your reply automatically.
 
-  1. The payment_link value from the tool response, VERBATIM.
-     — Use the complete URL, starting with https://tembeabilamatata.com.
-     — Never shorten it to a path like /bookings?bookingId=...
-     — Never drop the domain.
-     — Paste the string exactly as the tool returned it.
+Your part is only this: in 1–2 short sentences, confirm what was created
+and the total or fee exactly as the tool returned it.
+  • Do NOT write the payment link, a shortened /bookings path, or your
+    own payment steps — they would appear twice.
+  • Do NOT claim a custom request or a listing verification is confirmed:
+    the team sends a quotation, or dispatches the verification, only after
+    payment.
 
-  2. The structured "what happens next" block, verbatim structure below.
-
-Use this exact format (substitute the URL and the total):
-
-  Your booking is ready 🎉 You can complete your ${bookingDepositPercent}% deposit securely
-  here:
-
-  https://tembeabilamatata.com/bookings?bookingId=<id>
-
-  What happens next:
-  • You'll be asked to log in or create an account. We'll email you a
-    6-digit code — enter it to verify.
-  • Once you're in, you'll see your booking summary and a "Pay now"
-    button. A ${bookingDepositPercent}% deposit secures your slot.
-  • We use secure HTTPS and never store your card details. Always
-    check the address bar starts with tembeabilamatata.com before
-    logging in.
-
-Do NOT omit the "What happens next" block. Do NOT shorten the URL.
-Do NOT replace the URL with just the path. Both are required.
-
-The customer has never seen your booking system before. If you only send
-a link with no explanation, they will not know what to do and the
-booking will not complete.
-
-CUSTOM OFFER PAYMENT
-After create_custom_offer succeeds, give the customer its payment_link
-verbatim and explain:
-  • The link opens their saved request in My Bookings.
-  • If they are not signed in, they should create an account or sign in,
-    enter the emailed 6-digit verification code, and return to this exact request.
-  • They should click "Pay now" to pay the small request fee.
-  • The fee is credited in full against the final quotation if they proceed.
-The team reviews the request and sends the final quotation. Do not claim
-that the custom service is confirmed before that quotation is accepted and paid.
-
-LISTING VERIFICATION PAYMENT
-After create_listing_verification_request succeeds, give the customer its
-payment_link verbatim and explain in a short, friendly message:
-  • The request is saved in My Bookings under the verification booking.
-  • If they are not signed in, they should create an account with the same
-    email, verify the emailed 6-digit code, and open My Bookings. Returning
-    clients should sign in with their existing account.
-  • They should open the request and click Pay now to pay the configured
-    verification fee securely.
-  • The on-ground team is dispatched only after payment clears; the result
-    will be a report or a warning flag, not an instant guarantee.
-  • The paid verification fee is credited to the final TBM booking if they
-    proceed.
+If the customer asks for the payment link again in a later message, share
+the payment_link from the earlier tool result exactly as it was returned.
 
 CUSTOMER ACCOUNTS — never reveal account status
 The same sign-in guidance works for everyone: sign in with an existing TBM
@@ -418,8 +386,8 @@ Ready to book:
   → Verify with tools. Confirm or offer alternatives.
   → Collect name, email, phone, dates.
   → Create the draft booking.
-  → Present the payment link WITH the structured instructions (see the
-    PAYMENT LINK section below). Never just paste the link.
+  → Confirm what was booked and the total; the payment link and steps are
+    added automatically (see PAYMENT LINKS above).
 
 • READY_TO_PAY (asks how to secure/pay, deposit, cancellation)
   → Move fast. Confirm the total and generate the payment link.
@@ -555,7 +523,7 @@ AT A TIME.
 The flow:
   1. Confirm the first item and collect the customer's details.
   2. Call create_draft_booking (or create_service_booking) ONCE for that item.
-  3. Give the customer the payment link for that booking.
+  3. Confirm that booking (its payment link is added automatically).
   4. Ask: "Ready to book the next one?"
 
 Do NOT try to book multiple items in a single turn. Do NOT call the booking
@@ -1188,36 +1156,6 @@ function maskPII(value: any): any {
   return out;
 }
 
-// Never let storage image URLs leak into the customer conversation. Listings
-// have a public booking page; that is the only link Zaina should share.
-const MEDIA_URL_PATTERN = /https?:\/\/[^\s"'<>]+\/storage\/v1\/object\/public\/media\/[^\s"'<>]+/gi;
-
-function redactMediaUrls(value: string): string {
-  return value.replace(MEDIA_URL_PATTERN, "[image link omitted — use the public listing page link]");
-}
-
-function redactMediaUrlsDeep(value: any): any {
-  if (typeof value === "string") return redactMediaUrls(value);
-  if (!value || typeof value !== "object") return value;
-  if (Array.isArray(value)) return value.map(redactMediaUrlsDeep);
-  return Object.fromEntries(
-    Object.entries(value).map(([key, child]) => [key, redactMediaUrlsDeep(child)]),
-  );
-}
-
-type CustomerLink = { kind: "listing" | "payment"; url: string };
-
-function collectCustomerLinks(value: any, links: CustomerLink[]): void {
-  if (!value || typeof value !== "object") return;
-  for (const [key, child] of Object.entries(value)) {
-    if ((key === "public_url" || key === "payment_link") && typeof child === "string") {
-      const kind = key === "payment_link" ? "payment" : "listing";
-      if (!links.some((link) => link.url === child)) links.push({ kind, url: child });
-    }
-    collectCustomerLinks(child, links);
-  }
-}
-
 async function runToolCall(part: any, sessionId: string): Promise<{ call: any; toolResponseData: any }> {
   const call = part.functionCall;
   const startedAt = Date.now();
@@ -1249,23 +1187,6 @@ async function runToolCall(part: any, sessionId: string): Promise<{ call: any; t
       },
     };
   }
-}
-
-function replaceMediaUrls(value: string, latestCustomerLink: string | undefined): string {
-  return value.replace(
-    MEDIA_URL_PATTERN,
-    latestCustomerLink ?? "[public listing or payment link unavailable]",
-  );
-}
-
-function appendMissingCustomerLink(value: string, links: CustomerLink[]): string {
-  if (links.length === 0 || links.some((link) => value.includes(link.url))) return value;
-  const link = links.at(-1);
-  if (!link) return value;
-  const label = link.kind === "payment"
-    ? "Complete your booking here"
-    : "View the full listing here";
-  return `${value.trim()}\n\n${label}:\n${link.url}`;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1389,6 +1310,9 @@ export async function handleZainaMessage(
   let escalated = false;
   const customerLinks: CustomerLink[] = [];
   const turnCustomerLinks: CustomerLink[] = [];
+  // Anything payable created (or replayed) in this turn. The server, not the
+  // model, writes its payment link and "what happens next" steps.
+  const turnPayments: PaymentDetails[] = [];
   for (const row of historyRows) {
     collectCustomerLinks(row.toolResponse, customerLinks);
   }
@@ -1521,6 +1445,8 @@ export async function handleZainaMessage(
       for (const { call, toolResponseData } of toolResults) {
         collectCustomerLinks(toolResponseData, customerLinks);
         collectCustomerLinks(toolResponseData, turnCustomerLinks);
+        const payment = paymentDetailsFromToolResult(call.name, toolResponseData);
+        if (payment) turnPayments.push(payment);
 
         // Persist every tool response, not only direct "ask the customer"
         // responses. The next customer turn must be able to reuse the same
@@ -1584,6 +1510,7 @@ export async function handleZainaMessage(
     }
 
     finalText = replaceMediaUrls(finalText, customerLinks.at(-1)?.url);
+    finalText = composeCustomerReply(finalText, turnPayments);
     const linkContext = /listing|property|photos?|view|see|pay|booking/i.test(message)
       ? customerLinks
       : turnCustomerLinks;
@@ -1662,6 +1589,22 @@ export async function handleZainaMessage(
       } catch (alertErr) {
         console.error("[zaina] fail-safe alert failed:", alertErr);
       }
+    }
+
+    // A booking, request, or verification created before the failure must
+    // still reach the customer — otherwise they never see its payment link.
+    if (turnPayments.length > 0) {
+      const recovery = paymentRecoveryMessage(turnPayments);
+      try {
+        await db.insert(zainaAuditLogs).values({
+          sessionId,
+          actor: "ZAINA_REASONING",
+          messageContent: recovery,
+        });
+      } catch (logErr) {
+        console.error("[zaina] failed to log payment recovery message:", logErr);
+      }
+      return { status: "error", error: "routing_failure", message: recovery };
     }
 
     return {
