@@ -205,7 +205,9 @@ export function registerZainaRoutes(app: Express): void {
   // ─── Session status ───────────────────────────────────────────
   // Used by the widget to verify the cached session ID is still alive
   // on the server (e.g. after a handoff deleted state, or after a very
-  // long inactivity). Returns only non-sensitive fields.
+  // long inactivity). Returns only non-sensitive fields: the handoff
+  // reason is an internal note for the team (it can contain error text or
+  // remarks about the customer) and is never sent to the browser.
   app.get("/api/zaina/session/:id", async (req: Request, res: Response) => {
     try {
       const [row] = await db
@@ -222,7 +224,6 @@ export function registerZainaRoutes(app: Express): void {
       res.json({
         id: row.id,
         managedBy: row.managedBy,
-        handoffReason: row.handoffReason,
         handoffTimestamp: row.handoffTimestamp,
         displayCurrency: row.displayCurrency,
         createdAt: row.createdAt,
