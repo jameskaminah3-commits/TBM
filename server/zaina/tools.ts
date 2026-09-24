@@ -2621,7 +2621,8 @@ export async function createCustomOffer(
       hint: "Use create_listing_verification_request for an external listing so payment, dispatch, reporting, and fee credit are tracked correctly.",
     };
   }
-  const tierFees: Record<string, number> = { intake: 5, proposal: 15, verification: 40 };
+  // Listing verification has its own configured fee (see createListingVerificationRequest).
+  const tierFees: Record<string, number> = { intake: 5, proposal: 15 };
   const feeUsd = tierFees[tier] ?? 5;
   const currency = await getSessionCurrency(sessionId);
   const requestDetails = [

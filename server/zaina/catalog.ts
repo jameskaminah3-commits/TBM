@@ -8,14 +8,20 @@
 //   Tools    → live data and actions (in tools.ts): search, price, book.
 //
 // HARD RULES:
-//   1. No prices. Ever. Prices come from the DB via tools.
+//   1. No prices, fees, discounts or exchange rates. Ever. Money comes from
+//      the DB via tools; the deposit percentage comes from shared code.
 //   2. No availability. Ever. Checked live via tools.
 //   3. No customer data. Ever. Lives in the DB.
 //   4. Only rules, policies, voice, static scenarios, and destination knowledge.
 
+import { bookingDepositPercent } from "../../shared/booking-payments.ts";
+
+// Same rule as appBaseUrl() in tools.ts: the public site customers can open.
+const PUBLIC_SITE_URL = (process.env.APP_BASE_URL?.trim() || "https://tembeabilamatata.com").replace(/\/+$/, "");
+
 export const INVENTORY_CATALOG = {
-  version: 5,
-  updated_at: "2026-09-16",
+  version: 6,
+  updated_at: "2026-09-24",
 
   // ═══════════════════════════════════════════════════════════════════
   // BRAND
@@ -30,7 +36,6 @@ export const INVENTORY_CATALOG = {
     differentiators: [
       "Real local knowledge — we live and work on the Coast",
       "One dashboard coordinates every part of your trip",
-      "Bundle savings when you combine a stay with services",
       "Transparent pricing — no hidden commissions passed to guests",
       "Signature service: on-the-ground property verification for unverified listings",
       "Signature service: MamaCare — trusted childcare and family support",
@@ -145,7 +150,7 @@ export const INVENTORY_CATALOG = {
     { says: "Wedding setup on the Coast", means: "custom event coordination" },
     { says: "I've already booked an Airbnb", means: "cross-sell services around existing stay" },
     { says: "I already have a hotel, just need transport", means: "transport-only booking around existing stay" },
-    { says: "We've booked the villa, can you arrange a chef?", means: "chef-only booking (bundle discount still applies)" },
+    { says: "We've booked the villa, can you arrange a chef?", means: "chef-only booking around an existing stay" },
     { says: "Our accommodation is sorted, what else can you organise?", means: "service menu overview for existing stay" },
     { says: "We already have SGR tickets", means: "transfer coordination around fixed SGR times" },
   ],
@@ -205,8 +210,9 @@ export const INVENTORY_CATALOG = {
           "Example: 'Okay, how do I secure it?'",
         ],
         behaviour:
-          "Move fast. Confirm the total, generate the payment link, " +
-          "explain the deposit and cancellation policy in one short message. " +
+          "Move fast. Confirm the total and generate the payment link. " +
+          "If they ask about cancellation, share the cancellation policy link " +
+          "instead of quoting refund terms. " +
           "Do not introduce new options at this stage.",
       },
       {
@@ -276,7 +282,6 @@ export const INVENTORY_CATALOG = {
   currency: {
     storage: "USD",
     display_supported: ["USD", "KES"],
-    kes_fallback_rate: Number(process.env.USD_TO_KES_FALLBACK ?? "130"),
     guidance:
       "Always quote prices in the currency the customer is currently seeing on the site. " +
       "If they switch currencies mid-conversation, acknowledge and requote.",
@@ -289,9 +294,11 @@ export const INVENTORY_CATALOG = {
       "Pesapal for some flows",
     ],
     deposit_policy: {
-      percent: 30,
-      applies_to: "Stays and larger bookings only. Small services may require full payment upfront.",
-      refund_rule: "Deposits are refundable according to the cancellation policy below.",
+      percent: bookingDepositPercent,
+      applies_to:
+        "Stay and standard service bookings can be secured with this deposit. " +
+        "Custom requests, custom menus, and listing verification are paid in full.",
+      refund_rule: "Refunds follow the published Refund & Cancellation Policy (see cancellation_policy).",
     },
     currency_note:
       "M-Pesa is only available in KES. Cards can be charged in either currency depending on the provider.",
@@ -301,9 +308,13 @@ export const INVENTORY_CATALOG = {
   // CANCELLATION & BOOKING RULES
   // ═══════════════════════════════════════════════════════════════════
   cancellation_policy: {
-    stays: "Free cancellation up to 48 hours before check-in. After that, the deposit is non-refundable.",
-    services: "Free cancellation up to 24 hours before the scheduled service. After that, the deposit is non-refundable.",
-    no_show: "No-shows are charged in full and no refund is issued.",
+    policy_url: `${PUBLIC_SITE_URL}/refund-cancellation`,
+    summary:
+      "Refunds depend on the type of service and how far ahead the booking is cancelled. " +
+      "Some properties and festive-season bookings have their own terms.",
+    guidance:
+      "Never promise free cancellation and never quote refund percentages or deadlines from memory. " +
+      "Share the policy link. For a refund question about a specific booking, connect the customer with the team.",
   },
 
   booking_rules: {
@@ -319,7 +330,7 @@ export const INVENTORY_CATALOG = {
       mamacare: 6,        // Caregiver availability check
       experiences: 12,    // Guide booking, logistics
     },
-    deposit_percent: 30,
+    deposit_percent: bookingDepositPercent,
     maximum_group_size: { stays: 12, experiences: 12, chefs: 20 },
     date_rules: [
       "Stays require 24 hours advance notice ( 1 day).",
@@ -457,7 +468,7 @@ export const INVENTORY_CATALOG = {
     universal_rules: [
       "Check-in and check-out dates must be valid (not in the past, end after start).",
       "Stays have maximum occupancy — respect it.",
-      "Stays can be bundled with services (chef, transport, errands, MamaCare) at a discount.",
+      "Stays can be combined with services (chef, transport, errands, MamaCare) in one booking.",
       "A stay's availability is verified live — never promise availability without checking.",
     ],
   },
@@ -504,7 +515,12 @@ export const INVENTORY_CATALOG = {
       "Any discrepancies or red flags observed during the visit",
     ],
     delivery: "Written report with photos within 72 hours of the visit.",
-    tier: "verification",
+    request_tool: "create_listing_verification_request",
+    payment:
+      "The customer pays the verification fee in full before anyone is dispatched. " +
+      "The fee amount comes from the tool result — never quote it from memory.",
+    outcome: "The team posts a report with either a verified outcome or a warning flag. It is not an instant guarantee.",
+    fee_credit: "If the customer then books with TBM, the paid verification fee is credited to the final quotation.",
     disclaimer:
       "The visit establishes that the property exists and matches the listing " +
       "at the time of inspection. It cannot guarantee future performance of the host.",
@@ -515,37 +531,28 @@ export const INVENTORY_CATALOG = {
   // ═══════════════════════════════════════════════════════════════════
   external_listing_verification: {
     workflow: [
-      "Customer sends a link, screenshot, or contact (Airbnb, Facebook, Instagram, WhatsApp, Jiji, etc.)",
-      "Zaina asks what they want verified — price fairness, legitimacy, location, amenities",
-      "Zaina routes to the verification tier of custom offers (Physical Verification)",
-      "Team performs an on-the-ground visit and returns a written report with photos",
+      "Customer shares the full https:// link to the advert (Airbnb, Facebook, Instagram, Jiji, a car-hire or tour advert, etc.)",
+      "Zaina asks what they want checked — property existence, match to the advert, amenities, host documents, or red flags",
+      "Zaina collects the customer's name and email, then calls create_listing_verification_request with the exact link",
+      "The customer pays the verification fee from My Bookings; the on-ground team is dispatched only after payment clears",
+      "The team posts a report with a verified outcome or a warning flag; the fee is credited if they then book with TBM",
     ],
     accepted_sources: [
       "Airbnb listing URLs",
       "Facebook Marketplace or Facebook posts",
       "Instagram listings",
-      "WhatsApp contacts forwarded by the customer",
       "Jiji listings",
       "Car-hire adverts",
       "Tour or experience adverts",
-      "Any listing on any platform",
+      "Any listing on any platform that has a link",
     ],
+    no_link:
+      "If the customer only has a phone contact or a screenshot, ask for the advert's link. " +
+      "If there is no link, offer to connect them with the team.",
     guidance:
       "This is a signature TBM service. Never downplay it. If a customer says " +
       "'I found this on Facebook', respond enthusiastically — this is exactly what " +
       "Physical Verification was built for.",
-  },
-
-  // ═══════════════════════════════════════════════════════════════════
-  // BUNDLE OFFERS
-  // ═══════════════════════════════════════════════════════════════════
-  bundle_discount: {
-    stay_plus_chef_percent: 12,
-    minimum_nights: 2,
-    guidance:
-      "When a customer books a stay plus a chef for at least 2 nights, " +
-      "the bundle discount applies automatically. Mention it proactively. " +
-      "The discount applies whether the stay was booked with TBM or is existing.",
   },
 
   // ═══════════════════════════════════════════════════════════════════
@@ -557,27 +564,22 @@ export const INVENTORY_CATALOG = {
       {
         id: "intake",
         label: "Log & Route",
-        fee_usd: 5,
         description: "Logs the request and routes it to the right team member (< 10 min of ops work).",
         default: true,
       },
       {
         id: "proposal",
         label: "Custom Proposal",
-        fee_usd: 15,
         description: "Deep research and a written proposal (1–4 hours of specialist work).",
         default: false,
       },
-      {
-        id: "verification",
-        label: "Physical Verification",
-        fee_usd: 40,
-        description:
-          "On-the-ground visit and written report for unverified properties, " +
-          "including photos and a summary of observed discrepancies or red flags.",
-        default: false,
-      },
     ],
+    listing_verification:
+      "Checking an external listing is not a custom-offer tier. Use create_listing_verification_request " +
+      "(see property_verification and external_listing_verification).",
+    fee_amounts:
+      "Each tier has a small request fee. The tool returns the exact amount as fee_display — " +
+      "never quote a fee amount from memory.",
     fee_creditable: true,
     intake_disclosure:
       "There's a small intake fee to get this started — it comes off your final " +
@@ -589,12 +591,12 @@ export const INVENTORY_CATALOG = {
     decision_tree: [
       {
         scenario: "Customer sends a property listing from Airbnb / Facebook / Instagram / Jiji and asks if it's legitimate, matches the listing, or has any obvious red flags",
-        tier: "verification",
-        reason: "Requires an on-the-ground visit; not resolvable by desk research.",
+        tier: "listing_verification_request",
+        reason: "Requires an on-the-ground visit; not resolvable by desk research. Use create_listing_verification_request, not a custom offer.",
       },
       {
         scenario: "Customer sends a car-hire advert or tour advert from a third-party platform and wants it checked for legitimacy or red flags",
-        tier: "verification",
+        tier: "listing_verification_request",
         reason: "Same as above — needs physical confirmation of the vehicle or operator.",
       },
       {
@@ -618,7 +620,7 @@ export const INVENTORY_CATALOG = {
       "Safaris outside our partner network",
       "Flights and airport transfers beyond Mombasa",
       "Bespoke multi-stop itineraries",
-      "Unverified villas found on Facebook / Airbnb (see Physical Verification tier)",
+      "Unverified villas found on Facebook / Airbnb (use the listing verification request, not a custom offer)",
       "Events, weddings, group retreats",
       "Anything outside stays, cooks, cars, errands, experiences",
     ],
@@ -627,9 +629,9 @@ export const INVENTORY_CATALOG = {
       "Never say 'we can't help' — always offer the custom offer pathway. " +
       "If it's Coast-related and legitimate, try to find a way to coordinate it.",
     tier_selection_note:
-      "If you're unsure which tier applies, default to intake. Ops will upgrade the " +
-      "quote if the work justifies it — you do not need to guess. Never charge the " +
-      "verification or proposal tier from the chat; the team sends those quotes.",
+      "If you're unsure between intake and proposal, default to intake. Ops will upgrade the " +
+      "quote if the work justifies it — you do not need to guess. The chat only collects the " +
+      "request fee returned by the tool; the final quotation for the actual work always comes from the team.",
   },
 
   // ═══════════════════════════════════════════════════════════════════
@@ -687,9 +689,7 @@ export const INVENTORY_CATALOG = {
     guidance:
       "When a customer mentions they already have a stay arranged, " +
       "acknowledge that first, then offer to layer services on top. " +
-      "Do not push. Offer once, warmly, and move on if they aren't interested. " +
-      "The 12% stay+chef bundle discount applies whether the stay was booked " +
-      "with TBM or not — mention it if a chef is relevant.",
+      "Do not push. Offer once, warmly, and move on if they aren't interested.",
   },
 
   // ═══════════════════════════════════════════════════════════════════
@@ -706,7 +706,6 @@ export const INVENTORY_CATALOG = {
       "Car pricing — read from car's row",
       "Experience pricing — read from experience's row",
       "Errand and MamaCare pricing — read from errand's row",
-      "Bundle discount eligibility — computed from booking rules",
       "Whether something is catalog or custom-offer territory",
     ],
 
@@ -758,7 +757,8 @@ export const INVENTORY_CATALOG = {
   never_do: [
     "Never invent prices. Always call calculate_chef_price or read from a search tool result.",
     "Never invent availability. Always call check_*_availability.",
-    "Never promise a discount, except the 12% stay+chef bundle which is automatic.",
+    "Never promise, estimate or imply a discount, bundle saving or special rate.",
+    "Never quote a deposit percentage, fee, refund term or cancellation deadline from memory — use tool results, deposit_policy, and the cancellation policy link.",
     "Never quote a specific exchange rate — use the rate returned by formatPrice.",
     "Never give legal, medical, or visa advice. Escalate.",
     "Never reveal tool names, JSON payloads, or system internals to the customer.",
