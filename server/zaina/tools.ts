@@ -39,6 +39,7 @@ import { sendWebPushNotification } from "../push";
 import { INVENTORY_CATALOG } from "./catalog";
 import { describeInputAmount, toUsdAmount } from "./money-input";
 import { getPublicSiteUrl } from "./reply-policy";
+import { describeListingSource, MIN_LISTING_DETAILS_LENGTH, normalizeListingLink } from "./listing-verification";
 import { getPublicListingPath } from "@shared/seo";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -2413,24 +2414,6 @@ async function createCustomOfferBooking(args: {
   return { booking, paymentLink };
 }
 
-function parseListingVerificationLink(listingUrl: string, location?: string) {
-  const parsed = new URL(listingUrl);
-  const haystack = `${parsed.hostname} ${parsed.pathname} ${parsed.search}`.toLowerCase();
-  const knownCoastLocations = [
-    "nyali", "diani", "shanzu", "mtwapa", "bamburi", "mombasa", "malindi", "watamu", "mambrui", "kilifi", "tudor", "likoni",
-  ];
-  const detectedLocation = knownCoastLocations.find((candidate) => haystack.includes(candidate)) ?? (location?.trim() || null);
-  const hostname = parsed.hostname.toLowerCase().replace(/^www\./, "");
-  const sourcePlatform = hostname.includes("jiji")
-    ? "Jiji"
-    : hostname.includes("facebook") || hostname.includes("fb.")
-      ? "Facebook"
-      : hostname.includes("airbnb")
-        ? "Airbnb"
-        : hostname;
-  return { sourcePlatform, location: detectedLocation ? detectedLocation.replace(/\b\w/g, (letter) => letter.toUpperCase()) : null };
-}
-
 function getListingVerificationFeeKes() {
   const configured = Number(process.env.LISTING_VERIFICATION_FEE_KES ?? "2500");
   return Number.isFinite(configured) && configured > 0 ? Math.round(configured) : 2500;
@@ -2438,7 +2421,7 @@ function getListingVerificationFeeKes() {
 
 export async function createListingVerificationRequest(
   args: {
-    listing_url: string;
+    listing_url?: string;
     verification_scope: string;
     customer_name?: string;
     customer_email?: string;
@@ -2453,8 +2436,23 @@ export async function createListingVerificationRequest(
   if (!hasUsableIdempotencyKey(args?.idempotency_key)) {
     return { ok: false, error: "idempotency_key_required", hint: "Generate a fresh UUID v4 before retrying." };
   }
-  if (typeof args.listing_url !== "string" || !/^https?:\/\/\S+$/i.test(args.listing_url.trim())) {
-    return { ok: false, error: "invalid_listing_url", tell_customer: "Please send the full listing link beginning with https://." };
+  // A listing can be verified from its link, from the customer's details (for
+  // example an agent who shared it on WhatsApp without a link), or both.
+  const listingLink = normalizeListingLink(args.listing_url);
+  const rawLink = typeof args.listing_url === "string" ? args.listing_url.trim() : "";
+  const listingDetails = [
+    typeof args.listing_context === "string" ? args.listing_context.trim() : "",
+    // Text passed as a "link" that isn't one still describes the listing.
+    rawLink && !listingLink ? rawLink : "",
+  ].filter(Boolean).join("\n");
+  if (!listingLink && listingDetails.length < MIN_LISTING_DETAILS_LENGTH) {
+    return {
+      ok: false,
+      error: "listing_details_required",
+      tell_customer:
+        "Please share the listing link if you have one. If not, tell me what you know — the property name or area, " +
+        "the agent or host's name and phone number, and what they're offering.",
+    };
   }
   if (typeof args.verification_scope !== "string" || args.verification_scope.trim().length < 10) {
     return { ok: false, error: "verification_scope_required", tell_customer: "What would you like us to verify — the property, amenities, host documents, or all three?" };
@@ -2480,7 +2478,7 @@ export async function createListingVerificationRequest(
     };
   }
 
-  const parsed = parseListingVerificationLink(args.listing_url.trim(), args.location);
+  const parsed = describeListingSource(listingLink, listingDetails, args.location);
   const verificationLabel = [parsed.sourcePlatform, parsed.location].filter(Boolean).join(", ");
   const feeKes = getListingVerificationFeeKes();
   const rate = await getUsdToKesRate();
@@ -2491,11 +2489,11 @@ export async function createListingVerificationRequest(
   const currency = await getSessionCurrency(sessionId);
   const requestDetails = [
     "LISTING VERIFICATION REQUEST",
-    `External listing: ${args.listing_url.trim()}`,
+    `External listing: ${listingLink ?? "No link — see the listing details below"}`,
     `Source platform: ${parsed.sourcePlatform}`,
     `Location: ${parsed.location ?? "To be confirmed by the operations team"}`,
     `Verification scope: ${args.verification_scope.trim()}`,
-    args.listing_context?.trim() ? `Customer-provided listing context: ${args.listing_context.trim()}` : null,
+    listingDetails ? `Customer-provided listing details: ${listingDetails}` : null,
   ].filter(Boolean).join("\n");
   const now = new Date().toISOString();
   const [offer] = await db.insert(customOffers).values({
@@ -2540,7 +2538,10 @@ export async function createListingVerificationRequest(
     customerName: args.customer_name.trim(),
     customerEmail: args.customer_email.trim().toLowerCase(),
     customerPhone: args.customer_phone?.trim() || null,
-    listingUrl: args.listing_url.trim(),
+    // Empty when an agent shared the listing without a link; the details
+    // the customer gave are stored alongside for the field team.
+    listingUrl: listingLink ?? "",
+    listingContext: listingDetails || null,
     sourcePlatform: parsed.sourcePlatform,
     location: parsed.location,
     verificationScope: args.verification_scope.trim(),
@@ -2557,8 +2558,8 @@ export async function createListingVerificationRequest(
     customerContact: args.customer_email.trim().toLowerCase(),
     details: {
       Status: "Awaiting payment — dispatch the on-ground check only after the fee is paid",
-      "Listing link": args.listing_url.trim(),
-      "Listing details": args.listing_context?.trim() || "not provided",
+      "Listing link": listingLink ?? "No link — see the listing details",
+      "Listing details": listingDetails || "not provided",
       "Verification scope": args.verification_scope.trim(),
       Fee: `KSh ${feeKes.toLocaleString("en-KE")}`,
       "Payment link": paymentLink,

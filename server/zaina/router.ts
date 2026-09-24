@@ -253,10 +253,16 @@ CUSTOM REQUESTS AND VERIFICATION
   customer's name, email, phone if available, dates, location, and a concise
   request brief. Mention the small request fee once: it is credited in full
   against the final quotation if they proceed.
-• If the customer wants a third-party stay, car, tour, or service checked,
-  ask for the full https:// listing link first. Ask what they want checked
-  (property existence, match to advert, amenities, host documents, or red
-  flags), then call create_listing_verification_request with the exact link.
+• If the customer wants a third-party stay, hotel, car, tour, or service
+  checked — something they found on Facebook, Jiji, Airbnb, or through
+  another agent — ask for the listing link. If they don't have one (for
+  example an agent sent photos on WhatsApp), collect what they know instead:
+  the property name and area, the agent or host's name and phone number, the
+  price, and what was promised. Ask what they want checked (property
+  existence, match to advert, amenities, host documents, or red flags), get
+  their name and email, then call create_listing_verification_request with
+  the link and/or those details in listing_context. Never turn the customer
+  away because there is no link.
   This is a premium paid verification request, not a generic custom offer.
   The tool returns the configured fee and payment link. Never say the team
   has been dispatched until the payment has cleared. After payment, the
@@ -269,7 +275,8 @@ CUSTOM REQUESTS AND VERIFICATION
 
 Never give a generic brochure paragraph when a customer has already stated
 their intent. If they say “I need a car”, ask for date, passengers, mode,
-and pickup/return. If they say “verify this listing”, ask for the link. If
+and pickup/return. If they say “verify this listing”, ask for the link (or the
+details, if they have no link). If
 they say “book a restaurant”, ask for restaurant, date, time, and party size.
 ═══════════════════════════════════════════════════════════════════════
 LISTING LINKS — how to present and share properties
@@ -937,22 +944,28 @@ const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
       {
         name: "create_listing_verification_request",
         description:
-          "Create a paid listing-verification request for an external Facebook, Jiji, Airbnb, or other property listing. " +
-          "This captures the link and verification scope, creates a booking payment link, and dispatches the on-ground team only after payment clears. " +
+          "Create a paid listing-verification request for an external stay or service the customer found on Facebook, Jiji, Airbnb, " +
+          "or through another agent. Works with a link, with the customer's details when there is no link, or both. " +
+          "Creates a booking payment link and dispatches the on-ground team only after payment clears. " +
           "The configured verification fee is credited to the final TBM booking if the customer proceeds.",
         parameters: {
           type: Type.OBJECT,
           properties: {
-            listing_url: { type: Type.STRING, description: "The complete external https:// listing URL." },
+            listing_url: { type: Type.STRING, description: "The listing link exactly as the customer sent it, if they have one." },
             verification_scope: { type: Type.STRING, description: "What the team must verify: property existence, amenities, host documents, or all." },
             customer_name: { type: Type.STRING },
             customer_email: { type: Type.STRING },
             customer_phone: { type: Type.STRING },
             location: { type: Type.STRING, description: "Coast location if it is not clear from the link, e.g. Nyali, Diani, or Shanzu." },
-            listing_context: { type: Type.STRING, description: "Any title, description, or details the customer copied from the external listing." },
+            listing_context: {
+              type: Type.STRING,
+              description:
+                "Everything the customer knows about the listing: property name and area, agent or host name and phone, " +
+                "price, what was promised, text copied from the advert. Required when there is no link.",
+            },
             travel_dates: { type: Type.STRING },
           },
-          required: ["listing_url", "verification_scope", "customer_name", "customer_email"],
+          required: ["verification_scope", "customer_name", "customer_email"],
         },
       },
       {

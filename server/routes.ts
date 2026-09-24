@@ -764,7 +764,8 @@ async function activateListingVerificationAfterPayment(booking: import("@shared/
       details: {
         "Verification ID": task.id,
         "Booking ID": booking.id,
-        "Listing URL": task.listingUrl,
+        "Listing URL": task.listingUrl || "No link — see the listing details",
+        "Listing details": task.listingContext ?? undefined,
         "Source platform": task.sourcePlatform ?? "external",
         Location: location,
         "Verification scope": task.verificationScope,

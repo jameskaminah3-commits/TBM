@@ -531,9 +531,9 @@ export const INVENTORY_CATALOG = {
   // ═══════════════════════════════════════════════════════════════════
   external_listing_verification: {
     workflow: [
-      "Customer shares the full https:// link to the advert (Airbnb, Facebook, Instagram, Jiji, a car-hire or tour advert, etc.)",
+      "Customer shares the link to the advert (Airbnb, Facebook, Instagram, Jiji, a hotel, car-hire or tour advert, etc.) — or, if an agent shared it without a link, the details they have",
       "Zaina asks what they want checked — property existence, match to the advert, amenities, host documents, or red flags",
-      "Zaina collects the customer's name and email, then calls create_listing_verification_request with the exact link",
+      "Zaina collects the customer's name and email, then calls create_listing_verification_request with the link and/or the listing details",
       "The customer pays the verification fee from My Bookings; the on-ground team is dispatched only after payment clears",
       "The team posts a report with a verified outcome or a warning flag; the fee is credited if they then book with TBM",
     ],
@@ -544,11 +544,13 @@ export const INVENTORY_CATALOG = {
       "Jiji listings",
       "Car-hire adverts",
       "Tour or experience adverts",
-      "Any listing on any platform that has a link",
+      "Listings shared by agents on WhatsApp or by phone, even without a link",
+      "Any listing on any platform",
     ],
     no_link:
-      "If the customer only has a phone contact or a screenshot, ask for the advert's link. " +
-      "If there is no link, offer to connect them with the team.",
+      "If there is no link (an agent sent photos or a phone number), still create the request: " +
+      "collect the property name and area, the agent or host's name and phone number, the price, " +
+      "and what was promised, and pass them as listing_context.",
     guidance:
       "This is a signature TBM service. Never downplay it. If a customer says " +
       "'I found this on Facebook', respond enthusiastically — this is exactly what " +

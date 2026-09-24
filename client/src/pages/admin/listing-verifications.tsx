@@ -56,8 +56,11 @@ export default function AdminListingVerifications() {
                   <CardContent className="space-y-5">
                     <div className="grid gap-4 lg:grid-cols-2">
                       <div className="rounded-lg bg-muted/40 p-4 text-sm">
-                        <div className="font-medium">External listing</div>
-                        <a href={task.listingUrl} target="_blank" rel="noreferrer" className="mt-2 flex items-start gap-2 break-all text-primary underline underline-offset-2"><ExternalLink className="mt-0.5 h-4 w-4 shrink-0" />{task.listingUrl}</a>
+                        <div className="font-medium">External listing{task.sourcePlatform ? ` · ${task.sourcePlatform}` : ""}</div>
+                        {task.listingUrl
+                          ? <a href={task.listingUrl} target="_blank" rel="noreferrer" className="mt-2 flex items-start gap-2 break-all text-primary underline underline-offset-2"><ExternalLink className="mt-0.5 h-4 w-4 shrink-0" />{task.listingUrl}</a>
+                          : <div className="mt-2 text-muted-foreground">No link — shared by an agent or privately. Use the details below.</div>}
+                        {task.listingContext ? <div className="mt-3 whitespace-pre-wrap"><span className="font-medium">Listing details from the guest:</span> {task.listingContext}</div> : null}
                         <div className="mt-3"><span className="font-medium">Scope:</span> {task.verificationScope}</div>
                         <div className="mt-1"><span className="font-medium">Fee:</span> {task.feeKes ? `KSh ${task.feeKes.toLocaleString("en-KE")}` : `USD ${task.feeUsd}`}</div>
                       </div>

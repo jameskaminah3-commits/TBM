@@ -279,10 +279,15 @@ function ListingVerificationPanel({ booking, formatAmount }: { booking: Booking;
         <Badge variant="outline" className="w-fit rounded-full border-violet-300 bg-white text-violet-950">{task.paymentStatus === "paid" ? "Fee paid" : "Fee pending"}</Badge>
       </div>
       <div className="mt-4 space-y-3 text-sm text-violet-950">
-        <a href={task.listingUrl} target="_blank" rel="noreferrer" className="flex items-start gap-2 break-all underline underline-offset-2">
-          <ExternalLink className="mt-0.5 h-4 w-4 shrink-0" />
-          {task.listingUrl}
-        </a>
+        {task.listingUrl ? (
+          <a href={task.listingUrl} target="_blank" rel="noreferrer" className="flex items-start gap-2 break-all underline underline-offset-2">
+            <ExternalLink className="mt-0.5 h-4 w-4 shrink-0" />
+            {task.listingUrl}
+          </a>
+        ) : (
+          <div><span className="font-medium">Listing:</span> shared without a link</div>
+        )}
+        {task.listingContext ? <div className="whitespace-pre-wrap"><span className="font-medium">Details you shared:</span> {task.listingContext}</div> : null}
         <div><span className="font-medium">Scope:</span> {task.verificationScope}</div>
         {task.location ? <div><span className="font-medium">Location:</span> {task.location}</div> : null}
         {task.reportSummary ? (

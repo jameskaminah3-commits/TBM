@@ -1879,7 +1879,10 @@ export const listingVerificationTasks = pgTable(
     customerName: text("customer_name").notNull(),
     customerEmail: text("customer_email").notNull(),
     customerPhone: varchar("customer_phone"),
+    // Empty when the listing was shared without a link (e.g. by an agent on WhatsApp).
     listingUrl: text("listing_url").notNull(),
+    // What the customer told Zaina about the listing: property, area, agent or host, price, promises.
+    listingContext: text("listing_context"),
     sourcePlatform: varchar("source_platform"),
     location: text("location"),
     verificationScope: text("verification_scope").notNull(),

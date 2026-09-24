@@ -1372,6 +1372,7 @@ export interface IStorage {
     customerEmail: string;
     customerPhone?: string | null;
     listingUrl: string;
+    listingContext?: string | null;
     sourcePlatform?: string | null;
     location?: string | null;
     verificationScope: string;
@@ -1865,6 +1866,7 @@ export class DatabaseStorage implements IStorage {
         customer_email text NOT NULL,
         customer_phone varchar,
         listing_url text NOT NULL,
+        listing_context text,
         source_platform varchar,
         location text,
         verification_scope text NOT NULL,
@@ -1885,6 +1887,8 @@ export class DatabaseStorage implements IStorage {
         updated_at text NOT NULL
       );
     `);
+    // Added after the table first shipped: listings shared without a link.
+    await pool.query(`ALTER TABLE listing_verification_tasks ADD COLUMN IF NOT EXISTS listing_context text;`);
     await pool.query(`CREATE INDEX IF NOT EXISTS listing_verification_tasks_booking_idx ON listing_verification_tasks (booking_id);`);
     await pool.query(`CREATE INDEX IF NOT EXISTS listing_verification_tasks_status_idx ON listing_verification_tasks (status, created_at DESC);`);
     this.listingVerificationTablesEnsured = true;
@@ -1900,6 +1904,7 @@ export class DatabaseStorage implements IStorage {
       customerEmail: row.customer_email,
       customerPhone: row.customer_phone ?? null,
       listingUrl: row.listing_url,
+      listingContext: row.listing_context ?? null,
       sourcePlatform: row.source_platform ?? null,
       location: row.location ?? null,
       verificationScope: row.verification_scope,
@@ -1930,6 +1935,7 @@ export class DatabaseStorage implements IStorage {
     customerEmail: string;
     customerPhone?: string | null;
     listingUrl: string;
+    listingContext?: string | null;
     sourcePlatform?: string | null;
     location?: string | null;
     verificationScope: string;
@@ -1943,13 +1949,13 @@ export class DatabaseStorage implements IStorage {
       `INSERT INTO listing_verification_tasks
         (id, custom_offer_id, booking_id, session_id, customer_name, customer_email, customer_phone,
          listing_url, source_platform, location, verification_scope, status, payment_status, fee_usd,
-         fee_kes, fee_credited, approval_url, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'awaiting_payment','pending',$12,$13,false,$14,$15,$15)
+         fee_kes, fee_credited, approval_url, created_at, updated_at, listing_context)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'awaiting_payment','pending',$12,$13,false,$14,$15,$15,$16)
        RETURNING *`,
       [data.id, data.customOfferId, data.bookingId, data.sessionId ?? null, data.customerName,
         data.customerEmail, data.customerPhone ?? null, data.listingUrl, data.sourcePlatform ?? null,
         data.location ?? null, data.verificationScope, data.feeUsd, data.feeKes ?? null,
-        data.approvalUrl ?? null, now],
+        data.approvalUrl ?? null, now, data.listingContext ?? null],
     );
     return this.mapListingVerificationTask(result.rows[0]);
   }
