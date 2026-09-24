@@ -1599,16 +1599,15 @@ export async function handleZainaMessage(
       .returning();
 
     if (claimed.length > 0) {
-      try {
-        await sendOpsAlertEmail({
+      queueNotificationTask(
+        `zaina fail-safe alert for ${sessionId}`,
+        sendOpsAlertEmail({
           kind: "system-error",
           sessionId,
           summary: `Zaina system error: ${err.message}`,
           details: { Error: err.message },
-        });
-      } catch (alertErr) {
-        console.error("[zaina] fail-safe alert failed:", alertErr);
-      }
+        }),
+      );
     }
 
     // A booking, request, or verification created before the failure must

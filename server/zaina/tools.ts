@@ -2392,17 +2392,20 @@ async function createCustomOfferBooking(args: {
 
   const paymentLink = `${appBaseUrl()}/bookings?bookingId=${booking.id}`;
   if (args.notifyAdmin !== false) {
-    await notifyBookingCreated({
-      bookingId: booking.id,
-      customerName: args.customerName,
-      customerEmail: args.customerEmail,
-      customerPhone: args.customerPhone ?? "",
-      kind: "service",
-      summary: `Custom ${args.requestDetails.slice(0, 100)}`,
-      totalDisplay: await formatPrice(args.feeUsd, args.sessionId),
-      paymentLink,
-      sessionId: args.sessionId,
-    });
+    queueNotificationTask(
+      `zaina custom request notifications for ${booking.id}`,
+      (async () => notifyBookingCreated({
+        bookingId: booking.id,
+        customerName: args.customerName,
+        customerEmail: args.customerEmail,
+        customerPhone: args.customerPhone ?? "",
+        kind: "service",
+        summary: `Custom ${args.requestDetails.slice(0, 100)}`,
+        totalDisplay: await formatPrice(args.feeUsd, args.sessionId),
+        paymentLink,
+        sessionId: args.sessionId,
+      }))(),
+    );
   }
 
   return { booking, paymentLink };
@@ -2694,7 +2697,7 @@ export async function createCustomOffer(
     .set({ notes: `booking_id:${booking.id}`, updatedAt: new Date().toISOString() })
     .where(eq(customOffers.id, row.id));
 
-  await sendOpsAlert({
+  queueNotificationTask(`zaina custom-offer alert for ${row.id}`, sendOpsAlert({
     kind: "custom-offer",
     sessionId,
     summary: `New ${tier} request — ${args.offer_type}`,
@@ -2710,7 +2713,7 @@ export async function createCustomOffer(
       Budget: budgetNote ?? "not provided",
       Details: requestDetails,
     },
-  });
+  }));
 
   return {
     ok: true,
@@ -2751,14 +2754,17 @@ export async function createLead(
     })
     .returning();
 
-  await sendOpsAlert({
-    kind: "new-lead",
-    sessionId,
-    summary: `Lead: ${args.name}`,
-    customerName: args.name,
-    customerContact: args.email ?? args.phone ?? null,
-    details: { Interest: args.interest ?? "unspecified", Notes: args.notes ?? "" },
-  });
+  queueNotificationTask(
+    `zaina lead alert for ${row.id}`,
+    sendOpsAlert({
+      kind: "new-lead",
+      sessionId,
+      summary: `Lead: ${args.name}`,
+      customerName: args.name,
+      customerContact: args.email ?? args.phone ?? null,
+      details: { Interest: args.interest ?? "unspecified", Notes: args.notes ?? "" },
+    }),
+  );
 
   return { ok: true, lead_id: row.id };
 }
@@ -2787,52 +2793,54 @@ export async function escalateToHuman(args: { reason: string }, sessionId: strin
     return { ok: true, status: "already_escalated" };
   }
 
+  // The customer's reply must not wait for email or push delivery.
+  queueNotificationTask(
+    `zaina handoff alerts for ${sessionId}`,
+    notifyTeamOfHandoff(sessionId, args.reason),
+  );
+
+  return { ok: true, status: "escalated" };
+}
+
+async function notifyTeamOfHandoff(sessionId: string, reason: string): Promise<void> {
   await sendOpsAlert({
     kind: "handoff-requested",
     sessionId,
-    summary: `Handoff requested: ${args.reason}`,
-    details: { Reason: args.reason },
+    summary: `Handoff requested: ${reason}`,
+    details: { Reason: reason },
   });
 
-  // Notify all admins via push (fire-and-forget)
+  // Push to every active device of every admin.
   try {
-    const admins = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.role, "admin"));
+    const devices = await db
+      .select({ userId: userPushDevices.userId, subscription: userPushDevices.subscription })
+      .from(userPushDevices)
+      .innerJoin(users, eq(users.id, userPushDevices.userId))
+      .where(and(eq(users.role, "admin"), eq(userPushDevices.isActive, true)));
 
-    for (const admin of admins) {
-      const devices = await db
-        .select()
-        .from(userPushDevices)
-        .where(and(eq(userPushDevices.userId, admin.id), eq(userPushDevices.isActive, true)));
-
-      for (const device of devices) {
-        try {
-          await sendWebPushNotification(device.subscription as any, {
-            id: `zaina-handoff-${sessionId}`,
-            userId: admin.id,
-            type: "assignment-created",
-            title: "Zaina handoff — customer waiting",
-            body: `${args.reason.slice(0, 120)}`,
-            actionUrl: "/admin/zaina",
-            priority: "high",
-            channels: ["push"],
-            deliveryState: {},
-            metadata: { sessionId },
-            isRead: false,
-            readAt: null,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          } as any);
-        } catch (pushErr) {
-          console.error(`[zaina] push failed for admin ${admin.id}:`, pushErr);
-        }
+    await Promise.all(devices.map(async (device) => {
+      try {
+        await sendWebPushNotification(device.subscription as any, {
+          id: `zaina-handoff-${sessionId}`,
+          userId: device.userId,
+          type: "assignment-created",
+          title: "Zaina handoff — customer waiting",
+          body: `${reason.slice(0, 120)}`,
+          actionUrl: "/admin/zaina",
+          priority: "high",
+          channels: ["push"],
+          deliveryState: {},
+          metadata: { sessionId },
+          isRead: false,
+          readAt: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        } as any);
+      } catch (pushErr) {
+        console.error(`[zaina] push failed for admin ${device.userId}:`, pushErr);
       }
-    }
+    }));
   } catch (pushSetupErr) {
     console.error("[zaina] push fanout failed:", pushSetupErr);
   }
-
-  return { ok: true, status: "escalated" };
 }
