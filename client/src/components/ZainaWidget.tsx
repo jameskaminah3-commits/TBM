@@ -124,65 +124,76 @@ function buildWhatsAppHandoffUrl(msgs: Msg[]): string {
   const separator = WHATSAPP_URL.includes("?") ? "&" : "?";
   return `${WHATSAPP_URL}${separator}text=${encodeURIComponent(summary)}`;
 }
-// Renders Zaina's messages with lightweight markdown support:
-//   • [text](url) → clickable link
-//   • ![alt](url) → inline image
+// Renders Zaina's (and team members') messages with lightweight markdown support:
+//   • [text](url) → clickable link, for web links only (javascript:, data: etc. show as text)
+//   • full https:// links → clickable, shown once
 //   • bare paths starting with public listing, booking, auth, inbox, or blog routes
 //     → auto-prefixed with https://tembeabilamatata.com so they're clickable
+//   • ![alt](url) images → never rendered (the server does not send them either)
 //   • everything else → plain text
-function renderAssistantMessage(content: string): JSX.Element[] {
-  const SITE = "https://tembeabilamatata.com";
-  const parts = content.split(
-    /(!\[[^\]]*\]\([^)]+\)|\[[^\]]+\]\([^)]+\)|\/(?:bookings|accommodation|transport|chef|errand|experience|book|auth|blog|inbox|request-custom-service)(?:[/?][a-zA-Z0-9?=&%._\-\/]*)?)/g,
+const SITE = "https://tembeabilamatata.com";
+const MESSAGE_TOKEN_PATTERN =
+  /(!\[[^\]]*\]\([^)]*\)|\[[^\]]+\]\([^)\s]+\)|https?:\/\/[^\s<>"'\])]+|\/(?:bookings|accommodation|transport|chef|errand|experience|book|auth|blog|inbox|request-custom-service|refund-cancellation)(?:[/?][a-zA-Z0-9?=&%._\-\/]*)?)/g;
+
+function safeHref(url: string): string | null {
+  const trimmed = url.trim();
+  if (trimmed.startsWith("/") && !trimmed.startsWith("//")) return `${SITE}${trimmed}`;
+  try {
+    const { protocol } = new URL(trimmed);
+    return protocol === "https:" || protocol === "http:" ? trimmed : null;
+  } catch {
+    return null;
+  }
+}
+
+function MessageLink({ href, children }: { href: string; children: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer nofollow"
+      className="underline text-emerald-700 hover:text-emerald-900 break-all"
+    >
+      {children}
+    </a>
   );
+}
+
+function renderAssistantMessage(content: string): JSX.Element[] {
+  const parts = content.split(MESSAGE_TOKEN_PATTERN);
 
   return parts.map((part, idx) => {
-    // Image: ![alt](url)
-    const img = part.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
-    if (img) {
-      const src = img[2].startsWith("/") ? `${SITE}${img[2]}` : img[2];
-      return (
-        <img
-          key={idx}
-          src={src}
-          alt={img[1]}
-          loading="lazy"
-          className="my-2 rounded-lg max-h-48 w-auto object-cover"
-        />
-      );
+    // Images are never rendered.
+    if (/^!\[[^\]]*\]\([^)]*\)$/.test(part)) {
+      return <span key={idx} />;
     }
 
     // Link: [text](url)
-    const link = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+    const link = part.match(/^\[([^\]]+)\]\(([^)\s]+)\)$/);
     if (link) {
-      const href = link[2].startsWith("/") ? `${SITE}${link[2]}` : link[2];
+      const href = safeHref(link[2]);
+      return href
+        ? <MessageLink key={idx} href={href}>{link[1]}</MessageLink>
+        : <span key={idx}>{link[1]}</span>;
+    }
+
+    // Full link: https://tembeabilamatata.com/bookings?bookingId=...
+    if (/^https?:\/\//i.test(part)) {
+      const trailing = part.match(/[.,;:!?]+$/)?.[0] ?? "";
+      const url = trailing ? part.slice(0, -trailing.length) : part;
+      const href = safeHref(url);
       return (
-        <a
-          key={idx}
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="underline text-emerald-700 hover:text-emerald-900 break-all"
-        >
-          {link[1]}
-        </a>
+        <span key={idx}>
+          {href ? <MessageLink href={href}>{url}</MessageLink> : url}
+          {trailing}
+        </span>
       );
     }
 
     // Bare path: /bookings?bookingId=... etc.
-    if (/^\/(?:bookings|accommodation|transport|chef|errand|experience|book|auth|blog|inbox|request-custom-service)/.test(part)) {
+    if (/^\/(?:bookings|accommodation|transport|chef|errand|experience|book|auth|blog|inbox|request-custom-service|refund-cancellation)/.test(part)) {
       const href = `${SITE}${part}`;
-      return (
-        <a
-          key={idx}
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="underline text-emerald-700 hover:text-emerald-900 break-all"
-        >
-          {href}
-        </a>
-      );
+      return <MessageLink key={idx} href={href}>{href}</MessageLink>;
     }
 
     return <span key={idx}>{part}</span>;
@@ -720,7 +731,8 @@ export function ZainaWidget() {
                   {m.role === "user" ? (
                     <span className="whitespace-pre-wrap">{m.content}</span>
                   ) : (
-                    renderAssistantMessage(m.content)
+                    // Keep line breaks so options and payment steps stay on separate lines.
+                    <span className="whitespace-pre-wrap">{renderAssistantMessage(m.content)}</span>
                   )}
                 </div>
               </div>

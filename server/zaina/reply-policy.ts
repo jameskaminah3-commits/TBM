@@ -74,6 +74,161 @@ export function replaceMediaUrls(value: string, latestCustomerLink: string | und
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// LINK AND NUMBER SAFETY — what the model is allowed to pass on
+// ═══════════════════════════════════════════════════════════════════
+//
+// Tool results include text written by listing owners, and the model can be
+// talked into repeating anything. Customers act on links and phone numbers
+// (including M-Pesa numbers), so those are checked deterministically:
+//   • links: TBM's own site, WhatsApp, official Kenyan government sites
+//     (*.go.ke), or a link the customer sent in this conversation;
+//   • phone and M-Pesa numbers: TBM's official number, or a number the
+//     customer gave;
+//   • images are never sent, and non-web links (javascript:, data:) are dropped.
+
+/** TBM's official phone / WhatsApp / M-Pesa send-money number. */
+export const TBM_OFFICIAL_PHONE = "+254718475264";
+export const TBM_OFFICIAL_PHONE_DISPLAY = "+254 718 475 264";
+
+const TRUSTED_HOSTS = ["tembeabilamatata.com", "wa.me", "whatsapp.com", "api.whatsapp.com"];
+const LINK_REMOVED = "(link removed)";
+const NUMBER_REMOVED = "(number removed)";
+
+export type SanitizeContext = {
+  /** Everything the customer has written in this conversation. */
+  customerTexts: string[];
+};
+
+function normalizeHost(host: string): string {
+  return host.toLowerCase().replace(/^www\./, "").replace(/\.$/, "");
+}
+
+function trimUrlPunctuation(url: string): { url: string; trailing: string } {
+  const match = url.match(/[.,;:!?]+$/);
+  return match ? { url: url.slice(0, -match[0].length), trailing: match[0] } : { url, trailing: "" };
+}
+
+/** Compares links loosely: protocol, "www.", case of the host, and a trailing "/" don't matter. */
+function comparableUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    return `${normalizeHost(parsed.hostname)}${parsed.pathname.replace(/\/+$/, "")}${parsed.search}`;
+  } catch {
+    return null;
+  }
+}
+
+function customerSentUrl(url: string, context: SanitizeContext): boolean {
+  const target = comparableUrl(url);
+  if (!target) return false;
+  return context.customerTexts.some((text) =>
+    (text.match(/https?:\/\/[^\s<>"'\])]+/gi) ?? []).some((sent) => comparableUrl(trimUrlPunctuation(sent).url) === target));
+}
+
+export function isAllowedCustomerUrl(rawUrl: string, context: SanitizeContext): boolean {
+  const url = rawUrl.trim();
+  if (url.startsWith("/") && !url.startsWith("//")) return true; // a path on TBM's own site
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return false;
+  const host = normalizeHost(parsed.hostname);
+  const siteHost = normalizeHost(getPublicSiteHost().split(":")[0]);
+  if (host === siteHost || TRUSTED_HOSTS.includes(host) || host.endsWith(".go.ke")) return true;
+  return customerSentUrl(url, context);
+}
+
+function digitsOnly(value: string): string {
+  return value.replace(/\D/g, "");
+}
+
+/** Kenyan numbers in any common spelling compare equal: 0718…, +254 718…, 254718…. */
+function canonicalPhone(value: string): string {
+  const digits = digitsOnly(value);
+  if (digits.length === 10 && digits.startsWith("0")) return `254${digits.slice(1)}`;
+  if (digits.length === 9 && /^[17]/.test(digits)) return `254${digits}`;
+  return digits;
+}
+
+function customerNumbers(context: SanitizeContext): Set<string> {
+  const numbers = new Set<string>();
+  for (const text of context.customerTexts) {
+    for (const match of text.match(/\+?\d[\d\s-]{5,16}\d/g) ?? []) {
+      numbers.add(canonicalPhone(match));
+      numbers.add(digitsOnly(match));
+    }
+  }
+  return numbers;
+}
+
+// Kenyan mobile numbers (07…, 01…, +254 7…, 254 1…) and other international "+" numbers.
+const PHONE_PATTERN = /(?<![\w+])(?:(?:\+?254[\s-]?|0)[17]\d{2}[\s-]?\d{3}[\s-]?\d{3}|\+\d{1,3}[\s-]?\d[\d\s-]{6,13}\d)(?![\w])/g;
+// M-Pesa paybill / till / account numbers, e.g. "Paybill 522522, account no. 1234".
+// "till" needs an explicit "number"/"no." so "till 2026-10-12" (a date) is left alone.
+const PAYMENT_NUMBER_PATTERN = /\b(pay\s?bill(?:\s+(?:no\.?|number))?|till\s+(?:no\.?|number)|buy\s+goods(?:\s+(?:till|number|no\.?))?|business\s+(?:no\.?|number)|account\s+(?:no\.?|number))(\s*[:#-]?\s*)(\d[\d\s-]{2,14}\d)/gi;
+
+function sanitizePlainText(text: string, context: SanitizeContext): string {
+  const allowedNumbers = customerNumbers(context);
+  allowedNumbers.add(canonicalPhone(TBM_OFFICIAL_PHONE));
+
+  return text
+    .replace(PHONE_PATTERN, (match) => (allowedNumbers.has(canonicalPhone(match)) ? match : NUMBER_REMOVED))
+    .replace(PAYMENT_NUMBER_PATTERN, (match, label: string, separator: string, number: string) => (
+      allowedNumbers.has(digitsOnly(number)) || allowedNumbers.has(canonicalPhone(number))
+        ? match
+        : `${label}${separator}${NUMBER_REMOVED}`
+    ));
+}
+
+// Markdown images, markdown links, and bare URLs — in that order of precedence.
+// Link targets may contain one level of parentheses, e.g. javascript:alert(1).
+const LINK_TOKEN_PATTERN = /!\[[^\]]*\]\((?:[^()\s]|\([^()\s]*\))*\)|\[([^\]]+)\]\(((?:[^()\s]|\([^()\s]*\))+)\)|\b(?:https?:\/\/|javascript:|data:|vbscript:)[^\s<>"'\])]+/gi;
+
+/**
+ * Applies the link and number rules to text written by the model. Server-built
+ * sections (payment steps, listing links) are appended after this runs.
+ */
+export function sanitizeModelText(text: string, context: SanitizeContext): string {
+  let result = "";
+  let lastIndex = 0;
+  for (const match of Array.from(text.matchAll(LINK_TOKEN_PATTERN))) {
+    const index = match.index ?? 0;
+    result += sanitizePlainText(text.slice(lastIndex, index), context);
+    lastIndex = index + match[0].length;
+
+    const token = match[0];
+    if (token.startsWith("!")) continue; // images are never sent
+    if (match[1] !== undefined && match[2] !== undefined) {
+      const label = sanitizePlainText(match[1], context);
+      result += isAllowedCustomerUrl(match[2], context) ? `[${label}](${match[2]})` : label;
+      continue;
+    }
+    const { url, trailing } = trimUrlPunctuation(token);
+    result += (isAllowedCustomerUrl(url, context) ? url : LINK_REMOVED) + trailing;
+  }
+  result += sanitizePlainText(text.slice(lastIndex), context);
+  return result;
+}
+
+/**
+ * Customer messages are replayed to the model next to earlier tool results.
+ * A customer must not be able to pass their own text off as a tool result.
+ */
+export function neutralizeToolMarkers(text: string): string {
+  return text
+    .replace(/<(\/?)tool_result/gi, "‹$1tool_result")
+    .replace(/\[earlier tool\]/gi, "(earlier tool)");
+}
+
+/** How an earlier tool call is replayed to the model: clearly delimited data. */
+export function formatToolHistoryEntry(toolName: string, argsText: string, resultText: string): string {
+  return `<tool_result name="${toolName.replace(/[^\w-]/g, "")}">\nargs: ${argsText}\nresult: ${resultText}\n</tool_result>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // PAYMENT SECTIONS — appended by the server, never written by the model
 // ═══════════════════════════════════════════════════════════════════
 
