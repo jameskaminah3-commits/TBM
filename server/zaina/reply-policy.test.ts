@@ -163,6 +163,11 @@ test("unknown paybill, till and account numbers are removed but dates are not", 
   );
 });
 
+test("instructions that mention https:// are not mistaken for links", () => {
+  const text = "Please send the full listing link beginning with https://. A link like https:// alone is fine to mention.";
+  assert.equal(sanitizeModelText(text, noCustomerInput), text);
+});
+
 test("prices, dates and times are never mistaken for phone numbers", () => {
   const text = "Total KSh 14,040 for 10–12 October (2026-10-10), pickup 07:30, 3 bedrooms, booking b4b40f86-52a7-4152.";
   assert.equal(sanitizeModelText(text, noCustomerInput), text);

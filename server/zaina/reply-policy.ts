@@ -185,7 +185,9 @@ function sanitizePlainText(text: string, context: SanitizeContext): string {
 
 // Markdown images, markdown links, and bare URLs — in that order of precedence.
 // Link targets may contain one level of parentheses, e.g. javascript:alert(1).
-const LINK_TOKEN_PATTERN = /!\[[^\]]*\]\((?:[^()\s]|\([^()\s]*\))*\)|\[([^\]]+)\]\(((?:[^()\s]|\([^()\s]*\))+)\)|\b(?:https?:\/\/|javascript:|data:|vbscript:)[^\s<>"'\])]+/gi;
+// A bare "https://" with no host after it (as in "a link beginning with
+// https://") is plain text, not a link.
+const LINK_TOKEN_PATTERN = /!\[[^\]]*\]\((?:[^()\s]|\([^()\s]*\))*\)|\[([^\]]+)\]\(((?:[^()\s]|\([^()\s]*\))+)\)|\b(?:https?:\/\/[a-z0-9][^\s<>"'\])]*|(?:javascript|data|vbscript):[^\s<>"'\])]+)/gi;
 
 /**
  * Applies the link and number rules to text written by the model. Server-built

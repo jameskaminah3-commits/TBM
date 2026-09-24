@@ -1326,6 +1326,9 @@ export async function handleZainaMessage(
   // 7. Agentic loop
   const contents: any[] = history;
   let finalText: string | null = null;
+  // True when the reply is a fixed message written by a tool (tell_customer),
+  // not model output — the model-output filters must not rewrite it.
+  let finalTextIsServerWritten = false;
   let escalated = false;
   const customerLinks: CustomerLink[] = [];
   const turnCustomerLinks: CustomerLink[] = [];
@@ -1503,6 +1506,7 @@ export async function handleZainaMessage(
           toolResponseData.tell_customer.trim().length > 0
         ) {
           finalText = toolResponseData.tell_customer;
+          finalTextIsServerWritten = true;
           break;
         }
 
@@ -1529,7 +1533,9 @@ export async function handleZainaMessage(
     }
 
     finalText = replaceMediaUrls(finalText, customerLinks.at(-1)?.url);
-    finalText = sanitizeModelText(finalText, { customerTexts });
+    if (!finalTextIsServerWritten) {
+      finalText = sanitizeModelText(finalText, { customerTexts });
+    }
     finalText = composeCustomerReply(finalText, turnPayments);
     const linkContext = /listing|property|photos?|view|see|pay|booking/i.test(message)
       ? customerLinks
