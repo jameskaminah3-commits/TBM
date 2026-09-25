@@ -82,9 +82,51 @@ async function setBusiness(fields: Record<string, unknown>) {
 const asBusiness = (businessId: string, text: string, params: unknown[] = []) =>
   inBusiness((_db, client) => client.query(text, params), businessId);
 
+// Like a Supabase database: roles for its Data API, which get everything
+// created in the public schema (migration 0006 takes that back).
+const SUPABASE_API_ROLES = `
+do $$
+begin
+  if not exists (select 1 from pg_roles where rolname = 'anon') then create role anon nologin; end if;
+  if not exists (select 1 from pg_roles where rolname = 'authenticated') then create role authenticated nologin; end if;
+  if not exists (select 1 from pg_roles where rolname = 'service_role') then create role service_role nologin bypassrls; end if;
+end $$;
+grant usage on schema public to anon, authenticated, service_role;
+alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
+alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
+alter default privileges in schema public grant all on functions to anon, authenticated, service_role;
+`;
+
+/** Every table, sequence and function in public that one of the API roles can use. */
+async function reachableByApiRoles(): Promise<string[]> {
+  const { rows } = await ownerPool().query<{ reach: string }>(`
+    select r.rolname || ' → ' || c.relname as reach
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
+    cross join pg_roles r
+    where r.rolname in ('anon', 'authenticated', 'service_role')
+      and c.relkind in ('r', 'p', 'v', 'm', 'S')
+      and case when c.relkind = 'S'
+        then has_sequence_privilege(r.oid, c.oid, 'usage, select, update')
+        else has_table_privilege(r.oid, c.oid, 'select, insert, update, delete, truncate, references, trigger') end
+    union all
+    select r.rolname || ' → ' || p.proname || '()'
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace and n.nspname = 'public'
+    cross join pg_roles r
+    where r.rolname in ('anon', 'authenticated', 'service_role') and has_function_privilege(r.oid, p.oid, 'execute')
+    union all
+    select r.rolname || ' → schema public'
+    from pg_roles r
+    where r.rolname in ('anon', 'authenticated', 'service_role') and has_schema_privilege(r.oid, 'public', 'usage')
+    order by 1`);
+  return rows.map((row) => row.reach);
+}
+
 before(async () => {
   const admin = new pg.Pool({ connectionString: TEST_DB, max: 1 });
   await admin.query("drop schema public cascade; create schema public;");
+  await admin.query(SUPABASE_API_ROLES);
   await admin.end();
   initPlatformDb(TEST_DB, { max: 5 });
   const applied = await migrate(ownerPool());
@@ -117,6 +159,25 @@ test("migrations run once, in order, and a changed one is refused", async () => 
   await assert.rejects(() => pendingMigrations(ownerPool(), tampered), /changed after it ran/);
   const { rows } = await ownerPool().query("select id, name from businesses where id = 'tbm'");
   assert.equal(rows[0]?.name, "Tembea Bila Matata");
+});
+
+test("on Supabase, its Data API roles can't reach the platform's tables, sequences or functions", async () => {
+  assert.deepEqual(await reachableByApiRoles(), []);
+  // What later migrations create isn't given to them either, and functions
+  // aren't callable by everyone.
+  await ownerPool().query("create table later_table (id serial primary key); create function later_function() returns int language sql as 'select 1';");
+  try {
+    assert.deepEqual(await reachableByApiRoles(), []);
+    const { rows: [later] } = await ownerPool().query("select has_function_privilege('zaina_app', 'later_function()', 'execute') as callable");
+    assert.equal(later.callable, false);
+  } finally {
+    await ownerPool().query("drop table later_table; drop function later_function();");
+  }
+  // The platform's own role still has what it needs.
+  const { rows: [own] } = await ownerPool().query(
+    "select has_function_privilege('zaina_app', 'app_business()', 'execute') as scope, has_table_privilege('zaina_app', 'chat_sessions', 'select, insert') as chats",
+  );
+  assert.deepEqual(own, { scope: true, chats: true });
 });
 
 // ── Separation between businesses ─────────────────────────────────────

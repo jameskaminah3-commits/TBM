@@ -180,7 +180,7 @@ WhatsApp, and its team works from a console:
 | Alerts | Web push to staff phones and browsers (the console can be installed on the home screen) and email: a waiting chat, still waiting, a callback, a reply from the customer they're helping, and trouble for managers. Each person can turn emails off |
 | Console | Sign-in with an HttpOnly cookie and a strict content policy. Inbox (waiting, mine, with the team, callbacks, all) with claim, reply, hand back and close, WhatsApp ticks and the 24-hour window, and customers' photos. Knowledge (documents, "what would Zaina find?", unanswered questions). Reports. Settings (business, widget and embed code, WhatsApp, hours). Team and secrets. A platform view for its admins. Works on phones, light and dark |
 | Reports | Chats by channel, handled by Zaina alone, handoffs picked up within 15 minutes (the plan's 90% target), time to claim and to first reply, Zaina's reply times and failures, bookings and deposits asked in chat, unanswered questions, cost; chats per day. The platform view shows every business's model use against its budget |
-| Deploying | Its own Railway service (`railway.json`) and Postgres (`zaina-db`). The release step runs migrations, sets the restricted role's password, creates the first admin and imports TBM's knowledge. See DEPLOY.md |
+| Deploying | Its own Railway service (`railway.json`) and its own Supabase project for the database. The release step runs migrations, sets the restricted role's password, creates the first admin and imports TBM's knowledge. See DEPLOY.md |
 
 Exit check (the plan's: "a pilot business answers its WhatsApp customers
 end to end"):
@@ -209,6 +209,30 @@ Decisions to confirm:
 - Routing: first to one available person for 3 minutes, then everyone.
 - Where the platform lives: `zaina.tembeabilamatata.com` or another domain.
 
+**The database: Supabase.** The platform's database is a Supabase project of
+its own, separate from TBM's (DEPLOY.md). The service connects through
+Supabase's session pooler: the owner as `postgres.<project-ref>`, and
+business queries as `zaina_app.<project-ref>`. TLS follows `sslmode` the way
+psql reads it. With the project's CA certificate in `PLATFORM_DATABASE_CA`,
+the server's certificate is checked. Without it, the connection is encrypted
+but unchecked, and the service logs a warning. The service refuses setups
+that can't work: the transaction pooler (port 6543), a pooler user without
+its project, a restricted role on another database, or no encryption to a
+remote database. Migration 0006 takes Supabase's Data API roles off every
+platform table, sequence and function, including those later migrations
+add. Functions are callable only by the roles given them. The database
+tests run in a database set up like Supabase (its API roles and their
+default grants). Before release, the whole service was run against a
+Postgres 16 set up the way Supabase is:
+- `postgres` is not a superuser, but can create roles and bypasses
+  row-level security;
+- the API roles have their default grants;
+- TLS runs with its own CA.
+
+On it, the release step, sign-in as `zaina_app`, a chat and the team's
+inbox all work. Wrong certificates, passwords and host names fail with
+what to check.
+
 **Next: Phase 4 — hospitality pilot.** Generic offerings with room-type
 counts, shared pricing rules, each business's own payment account.
 
@@ -233,7 +257,9 @@ snippet, the webhook, links in alerts), `WHATSAPP_APP_SECRET` and
 `RESEND_API_KEY` and `ALERT_FROM_EMAIL` (alert emails), `ROUTE_ESCALATE_MINUTES`
 (3) and `AVAILABILITY_HOURS` (2).
 
-Optional: `PLATFORM_APP_DATABASE_URL` (see below), `PLATFORM_SECRETS_KEY_ID`
+Optional: `PLATFORM_APP_DATABASE_URL` (see below), `PLATFORM_DATABASE_CA`
+(the CA certificate that signs the database server's, so it is checked),
+`PLATFORM_DB_POOL_MAX` (10: connections for business queries), `PLATFORM_SECRETS_KEY_ID`
 (`k1`) and `PLATFORM_SECRETS_OLD_KEYS` (`id:key,…`, to rotate the secrets
 key), `PORT` (5070), `TURN_BUDGET_MS` (25000), `TRUST_PROXY` (1), `LIMIT_*`
 rate limits (see `src/config.ts`), `MODEL_PRICE_INPUT_USD_PER_MTOK` and
@@ -264,11 +290,13 @@ For production, let the service sign in as `zaina_app` itself, so even
 injected SQL couldn't switch back:
 
 ```
-alter role zaina_app login password '…';   -- once, as the owner
-PLATFORM_APP_DATABASE_URL=postgres://zaina_app:…@host/db
+PLATFORM_APP_DATABASE_URL=postgres://zaina_app:…@host/db     # on Supabase's pooler: zaina_app.<project-ref>
 ```
 
-The service refuses to start if business queries would run unrestricted.
+The release step (`npm run release`) gives `zaina_app` that password when it
+can't sign in with it yet. By hand: `alter role zaina_app login password '…'`,
+as the owner. The service refuses to start if business queries would run
+unrestricted, or if the two addresses aren't the same database.
 
 ## API
 
@@ -338,8 +366,8 @@ to a WhatsApp chat answers with its delivery (`delivered`, `window_closed`, …)
 ## Tests
 
 ```
-npm test            # unit tests (no database): 125
-npm run test:db     # database checks, including separation between businesses: 31
+npm test            # unit tests (no database): 132
+npm run test:db     # database checks, including separation between businesses: 32
                     # PLATFORM_TEST_DATABASE_URL, a local database ending in _test (wiped)
 npm run test:e2e    # the whole service with a scripted model, TBM and a second business,
                     # and the Phase 3 channels (WhatsApp, alerts, console, widget): 54

@@ -19,7 +19,8 @@ import { deleteExpiredConversations } from "./conversations/retention.ts";
 import { registerStaffConversationRoutes } from "./conversations/staff-routes.ts";
 import { configureTeamAlerts } from "./conversations/team-alerts.ts";
 import { registerConsoleRoutes } from "./console/routes.ts";
-import { assertAppRole, closePlatformDb, initPlatformDb, ownerPool } from "./db/platform-db.ts";
+import { describeDatabaseUrl } from "./db/connection.ts";
+import { assertAppRole, closePlatformDb, explainConnectionError, initPlatformDb, ownerPool } from "./db/platform-db.ts";
 import { migrate, pendingMigrations } from "./db/migrate.ts";
 import type { EngineOptions } from "./engine/agent.ts";
 import { normalizeOrigin } from "./gateway/origin.ts";
@@ -114,7 +115,19 @@ function every(label: string, ms: number, job: () => Promise<unknown>): NodeJS.T
 }
 
 export async function startServer(config: PlatformConfig): Promise<{ server: Server; stop: () => Promise<void> }> {
-  initPlatformDb(config.platformDatabaseUrl, { appConnectionString: config.platformAppDatabaseUrl });
+  initPlatformDb(config.platformDatabaseUrl, {
+    appConnectionString: config.platformAppDatabaseUrl,
+    ca: config.platformDatabaseCa,
+    max: config.databasePoolMax,
+  });
+  if (!config.platformAppDatabaseUrl && !describeDatabaseUrl(config.platformDatabaseUrl).local) {
+    console.warn("[platform] PLATFORM_APP_DATABASE_URL isn't set: business queries sign in as the owner and switch to zaina_app. Set it, so they sign in as zaina_app itself.");
+  }
+  try {
+    await ownerPool().query("select 1");
+  } catch (error) {
+    throw explainConnectionError(error);
+  }
   if (config.migrateOnStart) {
     const applied = await migrate(ownerPool(), { log: (message) => console.log(`[migrate] ${message}`) });
     if (applied.length) console.log(`[migrate] applied ${applied.join(", ")}`);
@@ -125,7 +138,11 @@ export async function startServer(config: PlatformConfig): Promise<{ server: Ser
     }
   }
   // Business data must only ever be read as the restricted role.
-  await assertAppRole();
+  try {
+    await assertAppRole();
+  } catch (error) {
+    throw explainConnectionError(error);
+  }
   setSecretKeys(loadSecretKeys());
   setExtraAllowedOrigins((process.env.EXTRA_ALLOWED_ORIGINS ?? "").split(","));
 

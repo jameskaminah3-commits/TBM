@@ -3,6 +3,8 @@
 // Everything the service reads from its environment, checked once at start.
 // A missing or weak secret stops the service instead of running unprotected.
 
+import { appAddressProblem, describeDatabaseUrl, parseDatabaseCa } from "./db/connection.ts";
+
 export type RateLimits = {
   /** Messages one chat session may send per minute. */
   sessionMessagesPerMinute: number;
@@ -52,6 +54,10 @@ export type PlatformConfig = {
    * itself, rather than the owner switching to it.
    */
   platformAppDatabaseUrl: string | null;
+  /** The CA certificate that signs the database server's (Supabase's), so it is checked. */
+  platformDatabaseCa: string | null;
+  /** Connections business queries may hold at once. */
+  databasePoolMax: number;
   /** TBM's own database, read and written by the TBM connector through TBM's code. */
   tbmDatabaseUrl: string | null;
   /** Signs chat and staff tokens (each with its own derived key). */
@@ -136,9 +142,22 @@ function alertEmailConfig(env: NodeJS.ProcessEnv): AlertEmailConfig | null {
   return { resendApiKey, from };
 }
 
+/** The owner's and the restricted role's addresses: valid, and the same database. */
+function databaseUrls(env: NodeJS.ProcessEnv): { owner: string; app: string | null } {
+  const owner = required(env, "PLATFORM_DATABASE_URL");
+  const ownerAddress = describeDatabaseUrl(owner, "PLATFORM_DATABASE_URL");
+  const app = env.PLATFORM_APP_DATABASE_URL?.trim() || null;
+  if (app) {
+    const problem = appAddressProblem(ownerAddress, describeDatabaseUrl(app, "PLATFORM_APP_DATABASE_URL"));
+    if (problem) throw new Error(problem);
+  }
+  return { owner, app };
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): PlatformConfig {
   const sessionTokenSecret = required(env, "SESSION_TOKEN_SECRET");
   if (sessionTokenSecret.length < 32) throw new Error("SESSION_TOKEN_SECRET must be at least 32 characters");
+  const database = databaseUrls(env);
 
   const inputPrice = price(env, "MODEL_PRICE_INPUT_USD_PER_MTOK");
   const outputPrice = price(env, "MODEL_PRICE_OUTPUT_USD_PER_MTOK");
@@ -152,8 +171,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): PlatformConfig
     alertEmail: alertEmailConfig(env),
     routeEscalateMinutes: positiveInt(env, "ROUTE_ESCALATE_MINUTES", 3),
     availabilityHours: positiveInt(env, "AVAILABILITY_HOURS", 2),
-    platformDatabaseUrl: required(env, "PLATFORM_DATABASE_URL"),
-    platformAppDatabaseUrl: env.PLATFORM_APP_DATABASE_URL?.trim() || null,
+    platformDatabaseUrl: database.owner,
+    platformAppDatabaseUrl: database.app,
+    platformDatabaseCa: parseDatabaseCa(env.PLATFORM_DATABASE_CA),
+    databasePoolMax: positiveInt(env, "PLATFORM_DB_POOL_MAX", 10),
     tbmDatabaseUrl: env.TBM_DATABASE_URL?.trim() || null,
     sessionTokenSecret,
     geminiApiKey: required(env, "GEMINI_API_KEY"),

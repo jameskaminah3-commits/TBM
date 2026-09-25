@@ -167,6 +167,9 @@ before(async () => {
     if (!started) await settle(250);
   }
   if (!started) throw new Error(`The platform didn't start:\n${serverOutput}`);
+  // TBM is staffed 07:00–22:00 Kenya time: staffed all day here, so the run
+  // doesn't depend on the clock. The test for off hours sets its own.
+  await platform.query("update businesses set staffed_hours = $1 where id = 'tbm'", [JSON.stringify({ days: [0, 1, 2, 3, 4, 5, 6], open: "00:00", close: "23:59" })]);
 
   // The first platform admin is made on the command line, as in production…
   const created = spawnSync(
@@ -409,7 +412,7 @@ test("outside staffed hours the customer gets a time, not a wait (C4c)", async (
     const chat = await openChat();
     await say(chat, "Hi, I'm Amina, amina@example.com");
     const reply = await say(chat, "TEST:escalate");
-    assert.match(reply, /Our team is offline right now — they're back at \d{1,2}:00 [AP]M \(Kenya time\)/);
+    assert.match(reply, /Our team is offline right now — they're back (tomorrow )?at \d{1,2}:00 [AP]M \(Kenya time\)/);
     assert.doesNotMatch(reply, /phone number or email/, "she already gave her email");
     const row = await session(chat.sessionId);
     assert.equal(row.managed_by, "AI");

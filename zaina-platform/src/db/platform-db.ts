@@ -12,25 +12,55 @@
 //   creating businesses, staff sign-in), and nowhere else.
 //
 //   App connections either sign in as zaina_app (appConnectionString, the
-//   stronger setup) or sign in as the owner and switch to zaina_app.
+//   stronger setup, and the one to use on Supabase) or sign in as the owner
+//   and switch to zaina_app. Addresses and TLS: db/connection.ts.
 
+import dns from "node:dns";
 import pg from "pg";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
+import { APP_ROLE, connectionHint, databaseConnection, describeCa, parseDatabaseCa, type DatabaseConnection } from "./connection.ts";
 import * as schema from "./schema.ts";
 
-export const APP_ROLE = "zaina_app";
+export { APP_ROLE };
 
 export type PlatformDb = NodePgDatabase<typeof schema>;
 
 let app: pg.Pool | null = null;
 let owner: pg.Pool | null = null;
+let ownerConnection: DatabaseConnection | null = null;
 
 export function initPlatformDb(
   connectionString: string,
-  options: { max?: number; appConnectionString?: string | null } = {},
+  options: {
+    max?: number;
+    appConnectionString?: string | null;
+    /** The CA certificate that signs the server's (PLATFORM_DATABASE_CA by default). */
+    ca?: string | null;
+    quiet?: boolean;
+  } = {},
 ): void {
   if (app) return;
-  app = new pg.Pool({ connectionString: options.appConnectionString || connectionString, max: options.max ?? 10 });
+  const ca = options.ca === undefined ? parseDatabaseCa(process.env.PLATFORM_DATABASE_CA) : options.ca;
+  const ownerSide = databaseConnection(connectionString, { label: "PLATFORM_DATABASE_URL", ca, max: 3 });
+  const appSide = options.appConnectionString
+    ? databaseConnection(options.appConnectionString, { label: "PLATFORM_APP_DATABASE_URL", ca, max: options.max ?? 10 })
+    : { ...ownerSide, config: { ...ownerSide.config, max: options.max ?? 10 } };
+
+  if (!ownerSide.address.local || !appSide.address.local) {
+    // Poolers and cloud hosts often have IPv6 addresses this network can't reach.
+    dns.setDefaultResultOrder("ipv4first");
+  }
+  if (!options.quiet) {
+    const warnings = new Set([...ownerSide.warnings, ...appSide.warnings]);
+    for (const warning of warnings) console.warn(`[platform-db] ${warning}`);
+    if (!ownerSide.address.local) {
+      const tls = { off: "TLS off", encrypted: "TLS on, the server isn't checked", verified: `TLS on, the server is checked against ${ca ? describeCa(ca) : "the system's certificates"}` }[ownerSide.tls];
+      console.log(`[platform-db] ${ownerSide.address.host}:${ownerSide.address.port}/${ownerSide.address.database}: ${tls}`);
+    }
+  }
+
+  ownerConnection = ownerSide;
+  app = new pg.Pool(appSide.config);
   // Every connection switches to the restricted role before it is used.
   // (inBusiness() sets the role again per transaction; assertAppRole() checks it at start.)
   app.on("connect", (client) => {
@@ -39,7 +69,7 @@ export function initPlatformDb(
     });
   });
   app.on("error", (error) => console.error("[platform-db] idle app client error:", error.message));
-  owner = new pg.Pool({ connectionString, max: 3 });
+  owner = new pg.Pool(ownerSide.config);
   owner.on("error", (error) => console.error("[platform-db] idle owner client error:", error.message));
 }
 
@@ -63,6 +93,13 @@ export function ownerDb(): PlatformDb {
   return drizzle(ownerPool(), { schema });
 }
 
+/** The first query's failure, with a hint when it's a known setup mistake. */
+export function explainConnectionError(error: unknown): Error {
+  const hint = ownerConnection ? connectionHint(error, ownerConnection.address) : null;
+  const message = (error as Error)?.message ?? String(error);
+  return new Error(hint ? `${message}. ${hint}` : message, { cause: error });
+}
+
 /** Refuses to run if app connections aren't restricted: isolation must not silently fail. */
 export async function assertAppRole(): Promise<void> {
   const { rows } = await appPool().query<{ role: string; bypass: boolean }>(
@@ -77,5 +114,6 @@ export async function closePlatformDb(): Promise<void> {
   const pools = [app, owner];
   app = null;
   owner = null;
+  ownerConnection = null;
   await Promise.all(pools.map((pool) => pool?.end()));
 }
