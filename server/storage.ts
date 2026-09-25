@@ -122,6 +122,7 @@ import {
   users,
 } from "@shared/schema";
 import { hasLockedInBookingDeposit } from "@shared/booking-payments";
+import { kenyaClockMinutes, todayInKenya } from "@shared/calendar-dates";
 import { calculateCookInclusiveTotal, calculateCookServiceTotal } from "@shared/cook-pricing";
 import { calculateHelpMamaPackagePrice, calculateHouseCleaningPackagePrice } from "@shared/errand-pricing";
 import { buildAppInboxActionUrl, buildInboxWorkspaceUrl } from "@shared/inbox";
@@ -452,13 +453,13 @@ function parseTimeToMinutes(value: string | null | undefined) {
   return (hours * 60) + minutes;
 }
 
+// A booking's dates and times are Kenya's, so its stage is judged on Kenya's clock.
 function getTodayIsoDate() {
-  return new Date().toISOString().slice(0, 10);
+  return todayInKenya();
 }
 
-function getCurrentUtcMinutes() {
-  const now = new Date();
-  return (now.getUTCHours() * 60) + now.getUTCMinutes();
+function getCurrentKenyaMinutes() {
+  return kenyaClockMinutes();
 }
 
 function getBookingOperationalStatus(booking: Booking) {
@@ -510,7 +511,7 @@ function getBookingOperationalStatus(booking: Booking) {
 
     const startMinutes = parseTimeToMinutes(booking.serviceStartTime);
     const endMinutes = parseTimeToMinutes(booking.serviceEndTime);
-    const currentMinutes = getCurrentUtcMinutes();
+    const currentMinutes = getCurrentKenyaMinutes();
 
     if (startMinutes !== null && currentMinutes < startMinutes) {
       return "upcoming";

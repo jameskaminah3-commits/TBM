@@ -18,6 +18,8 @@ type CurrencyContextValue = {
   setSelectedCurrency: (currency: CurrencyCode) => void;
   usdToKes: number;
   formatAmount: (amountUsd: number, currency?: CurrencyCode) => string;
+  /** An amount due; a fee quoted in KSh shows exactly as quoted when shown in KSh. */
+  formatPayable: (amountUsd: number, quotedKes?: number | null, currency?: CurrencyCode) => string;
   formatDualAmount: (amountUsd: number) => string;
   convertFromUsd: (amountUsd: number, currency?: CurrencyCode) => number;
   convertToUsd: (amount: number, currency?: CurrencyCode) => number;
@@ -117,6 +119,10 @@ export function CurrencyProvider({ children, preferredCurrency }: CurrencyProvid
     return currency === "KES" ? formatKes(convertedAmount) : formatUsd(convertedAmount);
   };
 
+  const formatPayable = (amountUsd: number, quotedKes?: number | null, currency: CurrencyCode = selectedCurrency) => (
+    currency === "KES" && quotedKes && quotedKes > 0 ? formatKes(quotedKes) : formatAmount(amountUsd, currency)
+  );
+
   const formatDualAmount = (amountUsd: number) => (
     `${formatAmount(amountUsd, selectedCurrency)} (${formatAmount(amountUsd, alternateCurrency)})`
   );
@@ -129,6 +135,7 @@ export function CurrencyProvider({ children, preferredCurrency }: CurrencyProvid
         setSelectedCurrency,
         usdToKes,
         formatAmount,
+        formatPayable,
         formatDualAmount,
         convertFromUsd,
         convertToUsd,

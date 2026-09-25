@@ -6,6 +6,7 @@ import {
 } from "../shared/booking-payments.ts";
 import type { Booking, BookingPaymentStatus, User } from "../shared/schema.ts";
 import { SUPPORT_PHONE_DISPLAY } from "../shared/support-contact.ts";
+import { formatCalendarDateRange, KENYA_TIME_ZONE } from "../shared/calendar-dates.ts";
 import { buildVerificationEmail, type VerificationPurpose } from "./verification-email.ts";
 
 type RequestOriginLike = {
@@ -117,10 +118,12 @@ function formatTimestamp(value: string | null | undefined) {
     return value;
   }
 
-  return new Intl.DateTimeFormat("en-KE", {
+  // Kenya time, labelled, whatever clock the server runs on.
+  return `${new Intl.DateTimeFormat("en-KE", {
     dateStyle: "medium",
     timeStyle: "short",
-  }).format(parsed);
+    timeZone: KENYA_TIME_ZONE,
+  }).format(parsed)} (Kenya time)`;
 }
 
 function getPrimaryGuestLabel(booking: Booking) {
@@ -139,10 +142,9 @@ function getBookingCategoryLabel(booking: Booking) {
   return humanizeToken(booking.serviceMode, booking.bookingType === "service" ? "Service booking" : "Booking");
 }
 
+// Calendar dates, the same for the guest abroad and for the team in Kenya.
 function getBookingDateLabel(booking: Booking) {
-  return booking.checkIn === booking.checkOut
-    ? booking.checkIn
-    : `${booking.checkIn} to ${booking.checkOut}`;
+  return formatCalendarDateRange(booking.checkIn, booking.checkOut);
 }
 
 function resolveApplicationBaseUrl(requestLike?: RequestOriginLike) {

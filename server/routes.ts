@@ -91,6 +91,7 @@ import {
   getBookingAmountPaid,
   getBookingCheckoutAmount,
   getBookingOutstandingAmount,
+  getRequestFeeKesDue,
   hasLockedInBookingDeposit,
   isBookingFullyPaid,
   manualMpesaReviewHoldHours,
@@ -102,6 +103,7 @@ import { sanitizeUserRecord } from "./user-sanitizer";
 import { registerZainaRoutes } from "./zaina/routes";
 import { registerZainaAgentRoutes } from "./zaina/agent-routes";
 import { getUsdToKesRate } from "./currency";
+import { kenyaClockMinutes, kenyaDateTimeToIso } from "@shared/calendar-dates";
 
 function normalizeDateOnly(value: string) {
   const date = new Date(`${value}T00:00:00.000Z`);
@@ -251,14 +253,14 @@ function getSortedServiceScheduleSlots(slots: Array<{ date: string; note?: strin
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
+// Departures are set in Kenya time: 09:00 on the coast is 06:00 UTC, whatever
+// clock the server or the guest is on.
 function toIsoDateTimeString(date: string, time: string) {
-  const normalizedTime = /^\d{2}:\d{2}$/.test(time) ? `${time}:00` : time;
-  const value = `${date}T${normalizedTime}`;
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
+  try {
+    return kenyaDateTimeToIso(date, time);
+  } catch {
     throw new Error("Invalid shared departure date or time");
   }
-  return parsed.toISOString();
 }
 
 function pickPatchedValue<T>(value: T | undefined, fallback: T): T {
@@ -394,6 +396,8 @@ async function getExperienceDepartureAvailability(experienceId: string) {
     guestsByDeparture.set(booking.serviceDepartureId!, current + Math.max(1, booking.guests || 1));
   });
 
+  // A departure that has already left can't be booked.
+  const now = Date.now();
   return (experience.sharedDepartures || [])
     .map((departure) => {
       const bookedGuests = guestsByDeparture.get(departure.id) || 0;
@@ -406,6 +410,7 @@ async function getExperienceDepartureAvailability(experienceId: string) {
         departureDateTime: toIsoDateTimeString(departure.date, departure.time),
       };
     })
+    .filter((departure) => new Date(departure.departureDateTime).getTime() > now)
     .sort((a, b) => a.departureDateTime.localeCompare(b.departureDateTime));
 }
 
@@ -580,6 +585,7 @@ async function startHostedBookingPayment(
     baseUrl,
     usdToKes: rate.usdToKes,
     amountUsd,
+    amountKes: getRequestFeeKesDue(booking),
   });
   const updatedBooking = await storage.updateBookingPaymentState(booking.id, {
     paymentStatus: "pending",
@@ -1684,9 +1690,9 @@ function isAvailabilityRangeCurrentOrFuture(range: { endDate: string }) {
   return range.endDate >= getTodayIsoDate();
 }
 
-function getCurrentUtcMinutes() {
-  const now = new Date();
-  return (now.getUTCHours() * 60) + now.getUTCMinutes();
+// Service times are Kenya times, so compare them with Kenya's clock.
+function getCurrentKenyaMinutes() {
+  return kenyaClockMinutes();
 }
 
 function getBookingOperationalStatus(booking: any) {
@@ -1738,7 +1744,7 @@ function getBookingOperationalStatus(booking: any) {
 
     const startMinutes = booking.serviceStartTime ? parseTimeToMinutes(booking.serviceStartTime) : null;
     const endMinutes = booking.serviceEndTime ? parseTimeToMinutes(booking.serviceEndTime) : null;
-    const currentMinutes = getCurrentUtcMinutes();
+    const currentMinutes = getCurrentKenyaMinutes();
 
     if (startMinutes !== null && currentMinutes < startMinutes) {
       return "upcoming";
@@ -4239,6 +4245,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const payload = manualMpesaPaymentSchema.parse(req.body ?? {});
       const previousPaymentStatus = booking.paymentStatus;
       const currentAmountPaid = getBookingAmountPaid(booking);
+      // M-Pesa is sent in KSh: the team checks the code against the KSh amount
+      // the guest was shown.
+      const quotedFeeKes = getRequestFeeKesDue(booking);
+      const expectedAmount = quotedFeeKes !== null
+        ? `KSh ${quotedFeeKes.toLocaleString("en-KE")}`
+        : `KSh ${Math.round(checkoutAmountDue * (await getUsdToKesRate()).usdToKes).toLocaleString("en-KE")} (${formatBookingUsdAmount(checkoutAmountDue)})`;
 
       const submission = {
         paymentStatus: "processing" as const,
@@ -4272,7 +4284,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         senderRole: currentUserRole ?? "customer",
         message: [
           "Customer submitted a temporary manual M-Pesa payment for review.",
-          `Expected amount: ${formatBookingUsdAmount(checkoutAmountDue)}`,
+          `Expected amount: ${expectedAmount}`,
           "Send money number: 0718475264",
           `M-Pesa code: ${payload.transactionCode}`,
           payload.senderPhone ? `Sender phone: ${payload.senderPhone}` : null,

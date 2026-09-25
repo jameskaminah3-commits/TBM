@@ -27,11 +27,14 @@ import {
   getBookingAmountPaid,
   getBookingCheckoutAmount,
   getBookingOutstandingAmount,
+  getRequestFeeKes,
+  getRequestFeeKesDue,
   hasLockedInBookingDeposit,
   isFullPaymentOnlyBooking,
   isBookingFullyPaid,
   supportsBookingDeposit,
 } from "@shared/booking-payments";
+import { formatCalendarDate, formatCalendarDateRange, formatKenyaClockTime, isOnKenyaTime } from "@shared/calendar-dates";
 import { customServiceRequestFeeUsd } from "@shared/custom-service";
 import type { Booking, BookingWithMarketing, Stay, Car as CarType, Cook, Errand, Experience, Review, CustomerPaymentMethod, ListingVerificationTask } from "@shared/schema";
 import { CONTACT_PHONE, CONTACT_PHONE_DISPLAY, WHATSAPP_URL } from "@/lib/contact-info";
@@ -156,28 +159,8 @@ const getRequestPreview = (details?: string | null) => {
 
   return flattened.length > 180 ? `${flattened.slice(0, 177)}...` : flattened;
 };
-const formatTimelineDateRange = (start: string, end: string) => {
-  const startDate = new Date(start);
-  const endDate = new Date(end);
-  const sameDay = start === end;
-
-  if (sameDay) {
-    return startDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-  }
-
-  const sameYear = startDate.getFullYear() === endDate.getFullYear();
-  const sameMonth = sameYear && startDate.getMonth() === endDate.getMonth();
-
-  if (sameMonth) {
-    return `${startDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })} - ${endDate.toLocaleDateString("en-US", { day: "numeric", year: "numeric" })}`;
-  }
-
-  if (sameYear) {
-    return `${startDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })} - ${endDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
-  }
-
-  return `${startDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} - ${endDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
-};
+// Booking dates are the coast's calendar dates: shown the same in every time zone.
+const formatTimelineDateRange = (start: string, end: string) => formatCalendarDateRange(start, end);
 
 function BookingTimeline({ booking }: { booking: Booking }) {
   const items = [
@@ -520,7 +503,7 @@ export default function Bookings() {
   const [, setLocation] = useLocation();
   const search = useSearch();
   const { toast } = useToast();
-  const { formatAmount } = useCurrency();
+  const { formatAmount, formatPayable } = useCurrency();
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const [profileForm, setProfileForm] = useState({ firstName: "", lastName: "", phone: "" });
   const pageIntent = useMemo(() => readBookingsPageIntent(search), [search]);
@@ -776,8 +759,9 @@ export default function Bookings() {
 
   const getStay = (id: string | null) => (!id ? null : stays?.find((stay) => stay.id === id));
   const getServiceItem = (id: string) => cars?.find((item) => item.id === id) || cooks?.find((item) => item.id === id) || errands?.find((item) => item.id === id) || experiences?.find((item) => item.id === id);
-  const formatDate = (dateString: string) => new Date(dateString).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-  const formatTime = (timeString?: string | null) => !timeString ? null : new Date(`2000-01-01T${timeString}`).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  const formatDate = (dateString: string) => formatCalendarDate(dateString);
+  // Service times are Kenya time; visitors on another clock see it labelled.
+  const formatTime = (timeString?: string | null) => !timeString ? null : `${formatKenyaClockTime(timeString)}${isOnKenyaTime() ? "" : " Kenya time"}`;
   const getStatusBadge = (status: string) => status === "upcoming"
     ? <Badge>Upcoming</Badge>
     : status === "in-progress"
@@ -924,6 +908,9 @@ export default function Bookings() {
     const bookingLocation = stay?.location ?? booking.serviceLocation ?? booking.servicePickupLocation ?? booking.serviceReturnLocation ?? null;
     const bookingDates = formatTimelineDateRange(booking.checkIn, booking.checkOut);
     const checkoutAmountDue = getBookingCheckoutAmount(booking);
+    // A request fee quoted in KSh is shown, and charged, exactly as quoted.
+    const quotedFeeKes = getRequestFeeKesDue(booking);
+    const requestFeeKes = getRequestFeeKes(booking);
     const amountPaid = getBookingAmountPaid(booking);
     const outstandingAmount = getBookingOutstandingAmount(booking);
     const fullPaymentOnlyBooking = isFullPaymentOnlyBooking(booking);
@@ -1026,11 +1013,11 @@ export default function Bookings() {
                   </div>
                 ) : null}
                 <div className="mt-1 text-xl font-semibold tracking-tight text-foreground">
-                  {formatAmount(isBookingPaid(booking) ? booking.totalPrice : checkoutAmountDue)}
+                  {isBookingPaid(booking) ? formatPayable(booking.totalPrice, requestFeeKes) : formatPayable(checkoutAmountDue, quotedFeeKes)}
                 </div>
                 {!isBookingPaid(booking) && checkoutAmountDue !== booking.totalPrice ? (
                   <div className="mt-1 text-xs text-muted-foreground">
-                    Booking total {formatAmount(booking.totalPrice)}
+                    Booking total {formatPayable(booking.totalPrice, requestFeeKes)}
                   </div>
                 ) : null}
                 {booking.marketingAttribution ? (
@@ -1261,6 +1248,7 @@ export default function Bookings() {
                   ) : null}
                   <CurrencyAmount
                     amountUsd={isBookingPaid(booking) ? booking.totalPrice : checkoutAmountDue}
+                    quotedKes={isBookingPaid(booking) ? requestFeeKes : quotedFeeKes}
                     variant="stacked"
                     primaryClassName="text-3xl font-semibold tracking-tight text-stone-900"
                     secondaryClassName="text-sm text-stone-500"
@@ -1293,7 +1281,7 @@ export default function Bookings() {
                 {!isBookingPaid(booking) ? (
                   <div className="flex flex-col gap-1 rounded-2xl bg-white/80 px-4 py-3 min-[360px]:flex-row min-[360px]:items-center min-[360px]:justify-between">
                     <span className="text-stone-500">Booking total</span>
-                    <span className="font-medium text-stone-900">{formatAmount(booking.totalPrice)}</span>
+                    <span className="font-medium text-stone-900">{formatPayable(booking.totalPrice, requestFeeKes)}</span>
                   </div>
                 ) : null}
                 {amountPaid > 0 && !isBookingPaid(booking) ? (
@@ -1407,7 +1395,7 @@ export default function Bookings() {
                   <div className="mt-4 rounded-[22px] border border-emerald-200 bg-emerald-50/80 p-4">
                     <div className="text-sm font-semibold text-emerald-950">Temporary M-Pesa instructions</div>
                     <div className="mt-2 text-sm leading-6 text-emerald-900">
-                      Send <span className="font-semibold">{formatAmount(checkoutAmountDue)}</span> to <span className="font-semibold">{TEMP_MPESA_SEND_MONEY_NUMBER}</span>, then submit the M-Pesa code below for confirmation.
+                      Send <span className="font-semibold">{formatPayable(checkoutAmountDue, quotedFeeKes, "KES")}</span> to <span className="font-semibold">{TEMP_MPESA_SEND_MONEY_NUMBER}</span>, then submit the M-Pesa code below for confirmation.
                     </div>
                     {manualMpesaHoldUntil ? (
                       <div className="mt-2 text-sm leading-6 text-emerald-900">
@@ -1617,7 +1605,7 @@ export default function Bookings() {
         }}
         value={retryPaymentMethod}
         onChange={setRetryPaymentMethod}
-        amount={retryCheckoutBooking ? <CurrencyAmount amountUsd={getBookingCheckoutAmount(retryCheckoutBooking)} /> : undefined}
+        amount={retryCheckoutBooking ? <CurrencyAmount amountUsd={getBookingCheckoutAmount(retryCheckoutBooking)} quotedKes={getRequestFeeKesDue(retryCheckoutBooking)} /> : undefined}
         title="Finish your payment"
         description={retryCheckoutBooking && hasLockedInBookingDeposit(retryCheckoutBooking)
           ? "Select one to settle the remaining balance."

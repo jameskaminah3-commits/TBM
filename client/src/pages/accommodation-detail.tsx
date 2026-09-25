@@ -27,6 +27,7 @@ import {
   getPublicListingPath,
 } from "@/lib/public-listing";
 import { eachDayOfInterval, format, parseISO, startOfDay } from "date-fns";
+import { parseCalendarDate, todayInKenya } from "@shared/calendar-dates";
 
 type StayAvailability = {
   blockedRanges: Array<{
@@ -45,7 +46,9 @@ export default function AccommodationDetail() {
   const { id } = useParams();
   const [, setLocation] = useLocation();
   const search = useSearch();
-  const [calendarMonth, setCalendarMonth] = useState(startOfDay(new Date()));
+  // Kenya's today: a guest abroad sees the coast's calendar.
+  const kenyaToday = useMemo(() => parseCalendarDate(todayInKenya()) ?? startOfDay(new Date()), []);
+  const [calendarMonth, setCalendarMonth] = useState(kenyaToday);
   const staySearch = useMemo(() => readStaySearchState(search), [search]);
   const staySearchSuffix = toSearchSuffix(search);
   const hasTripFilters = hasStructuredStayFilters(staySearch);
@@ -389,7 +392,8 @@ export default function AccommodationDetail() {
                     mode="single"
                     month={calendarMonth}
                     onMonthChange={setCalendarMonth}
-                    disabled={{ before: startOfDay(new Date()) }}
+                    today={kenyaToday}
+                    disabled={{ before: kenyaToday }}
                     modifiers={{
                       booked: blockedDates,
                     }}

@@ -3,6 +3,7 @@ import { addMonths, format, eachDayOfInterval, parseISO, startOfDay } from "date
 import type { DateRange } from "react-day-picker";
 import { Calendar } from "@/components/ui/calendar";
 import { Badge } from "@/components/ui/badge";
+import { formatCalendarDate, parseCalendarDate, todayInKenya } from "@shared/calendar-dates";
 
 type BlockedRange = {
   id: string;
@@ -36,7 +37,8 @@ export function AvailabilityCalendar({
   onSelectRange,
   onBlockedDayClick,
 }: AvailabilityCalendarProps) {
-  const today = startOfDay(new Date());
+  // Kenya's today, so a guest abroad can't pick a day that is already over on the coast.
+  const today = parseCalendarDate(todayInKenya()) ?? startOfDay(new Date());
   const monthsToRender = Array.from({ length: 18 }, (_, index) => addMonths(today, index));
   const blockedDateMap = new Map<string, BlockedRange>();
 
@@ -65,7 +67,7 @@ export function AvailabilityCalendar({
         </div>
         {availableFrom ? (
           <Badge variant="outline" className="w-fit text-[11px]">
-            Available from {availableFrom}
+            Available from {formatCalendarDate(availableFrom)}
           </Badge>
         ) : null}
       </div>
@@ -78,6 +80,7 @@ export function AvailabilityCalendar({
                 key={monthDate.toISOString()}
                 mode="range"
                 month={monthDate}
+                today={today}
                 selected={selectedRange}
                 onSelect={onSelectRange}
                 disabled={[
@@ -116,6 +119,7 @@ export function AvailabilityCalendar({
                 key={monthDate.toISOString()}
                 mode="single"
                 month={monthDate}
+                today={today}
                 selected={selectedDate}
                 onSelect={onSelectDate}
                 disabled={[

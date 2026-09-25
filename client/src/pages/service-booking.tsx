@@ -86,20 +86,15 @@ import {
   savePendingBookingDraft,
   isPendingBookingPathMatch,
 } from "@/lib/pending-booking";
-
-function getDateInputValue(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
+import { formatKenyaDateTime, isOnKenyaTime, todayInKenya } from "@shared/calendar-dates";
 
 function isDateInputValue(value: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
+// Services happen on the coast: "today" is Kenya's today, wherever the guest is.
 function isBeforeToday(value: string) {
-  return isDateInputValue(value) && value < getDateInputValue(new Date());
+  return isDateInputValue(value) && value < todayInKenya();
 }
 
 const serviceBookingFormSchema = insertBookingSchema.omit({
@@ -583,7 +578,9 @@ export default function ServiceBooking() {
   const visibleDescription = hasLongDescription && !isDescriptionExpanded
     ? getDescriptionPreview(serviceDescription)
     : serviceDescription;
-  const todayDateInputValue = useMemo(() => getDateInputValue(new Date()), []);
+  const todayDateInputValue = useMemo(() => todayInKenya(), []);
+  // Departure times are Kenya time; visitors on another clock see it labelled.
+  const kenyaTimeLabel = useMemo(() => (isOnKenyaTime() ? "" : " (Kenya time)"), []);
   const bookingPrefill = useMemo(() => {
     if (typeof window === "undefined") {
       return {
@@ -1314,7 +1311,7 @@ export default function ServiceBooking() {
     }
 
     if (serviceType === "experience" && serviceMode === "experience-shared" && selectedExperienceDeparture) {
-      return `${guestsCount} guest${guestsCount === 1 ? "" : "s"} on ${new Date(selectedExperienceDeparture.departureDateTime).toLocaleDateString("en-US", {
+      return `${guestsCount} guest${guestsCount === 1 ? "" : "s"} on ${formatKenyaDateTime(selectedExperienceDeparture.departureDateTime, {
         month: "short",
         day: "numeric",
       })}`;
@@ -2011,7 +2008,7 @@ export default function ServiceBooking() {
                                     <RadioGroupItem value={departure.id} className="mt-1 shrink-0" />
                                     <div className="min-w-0 flex-1">
                                       <div className="break-words font-medium leading-5">
-                                        {new Date(departure.departureDateTime).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                                        {formatKenyaDateTime(departure.departureDateTime)}{kenyaTimeLabel}
                                       </div>
                                       <div className="mt-1 text-sm leading-5 text-muted-foreground">
                                         {departure.spotsLeft} spots left out of {departure.maxCapacity}
@@ -2820,7 +2817,7 @@ export default function ServiceBooking() {
                     <div className="flex items-start justify-between gap-3 text-sm">
                       <span className="text-muted-foreground">Departure</span>
                       <span className="max-w-[58%] break-words text-right font-medium">
-                        {new Date(selectedExperienceDeparture.departureDateTime).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                        {formatKenyaDateTime(selectedExperienceDeparture.departureDateTime, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}{kenyaTimeLabel}
                       </span>
                     </div>
                   ) : null}

@@ -37,6 +37,7 @@ import { cn } from "@/lib/utils";
 import { getShortShareUrl, type ShareServiceType } from "@/lib/share-links";
 import { getCookExtraGuestInclusivePrice, getCookExtraGuestServiceFee, getCookMinimumGuests } from "@shared/cook-pricing";
 import { HOUSE_CLEANING_BASE_ROOM_LABEL, getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
+import { formatCalendarDate, isCalendarDate } from "@shared/calendar-dates";
 
 type ProviderAssignments = {
   stays: Stay[];
@@ -428,6 +429,11 @@ function getAssignmentDateRange(assignment: ProviderBookingAssignmentView) {
 function formatDashboardDate(value: string | null | undefined) {
   if (!value) {
     return null;
+  }
+
+  // Booking dates are calendar dates: the same day in every time zone.
+  if (isCalendarDate(value)) {
+    return formatCalendarDate(value, { month: "short", day: "numeric", year: "numeric" }, undefined);
   }
 
   const parsed = new Date(value);

@@ -306,12 +306,20 @@ async function getPesapalNotificationId(baseUrl: string) {
   return payload.ipn_id;
 }
 
+/** The KSh amount to charge: the exact amount quoted in KSh, when there is one. */
+function kesChargeAmount(amountUsd: number, usdToKes: number, amountKes?: number | null) {
+  return amountKes && amountKes > 0
+    ? Math.round(amountKes)
+    : Math.max(1, Math.round(amountUsd * usdToKes));
+}
+
 async function createPaystackCheckoutSession(
   booking: Pick<Booking, "id" | "guestEmail" | "guestName" | "guestPhone" | "totalPrice">,
   baseUrl: string,
   paymentMethod: CustomerPaymentMethod,
   usdToKes: number,
   amountUsd: number,
+  amountKes?: number | null,
 ): Promise<HostedCheckoutSession> {
   const secretKey = ensurePaystackSecretKey();
   const reference = buildBookingPaymentReference("paystack", booking.id);
@@ -321,7 +329,7 @@ async function createPaystackCheckoutSession(
     : ["card", "apple_pay"];
   const currency = paymentMethod === "mpesa" ? "KES" : "USD";
   const amount = paymentMethod === "mpesa"
-    ? Math.max(300, Math.round(amountUsd * usdToKes * 100))
+    ? Math.max(300, amountKes && amountKes > 0 ? Math.round(amountKes) * 100 : Math.round(amountUsd * usdToKes * 100))
     : Math.max(100, Math.round(amountUsd * 100));
   const response = await fetch(`${PAYSTACK_API_BASE_URL}/transaction/initialize`, {
     method: "POST",
@@ -358,7 +366,7 @@ async function createPaystackCheckoutSession(
     redirectUrl: payload.data.authorization_url,
     currency,
     amount: currency === "KES"
-      ? Math.max(1, Math.round(amountUsd * usdToKes))
+      ? kesChargeAmount(amountUsd, usdToKes, amountKes)
       : Math.max(1, Math.round(amountUsd)),
     holdExpiresAt: getPaymentHoldExpiresAt(),
   };
@@ -369,12 +377,13 @@ async function createPesapalCheckoutSession(
   baseUrl: string,
   usdToKes: number,
   amountUsd: number,
+  quotedAmountKes?: number | null,
 ): Promise<HostedCheckoutSession> {
   const token = await getPesapalBearerToken();
   const reference = buildBookingPaymentReference("pesapal", booking.id);
   const notificationId = await getPesapalNotificationId(baseUrl);
   const { firstName, lastName } = splitGuestName(booking.guestName);
-  const amountKes = Math.max(1, Math.round(amountUsd * usdToKes));
+  const amountKes = kesChargeAmount(amountUsd, usdToKes, quotedAmountKes);
   const response = await fetch(`${PESAPAL_API_BASE_URL}/Transactions/SubmitOrderRequest`, {
     method: "POST",
     headers: {
@@ -424,12 +433,14 @@ export async function createHostedCheckoutSession(args: {
   baseUrl: string;
   usdToKes: number;
   amountUsd?: number;
+  /** A fee quoted in KSh: charged exactly, when paying in KSh. */
+  amountKes?: number | null;
 }) {
   const amountUsd = Math.max(0, Math.round(args.amountUsd ?? args.booking.totalPrice));
 
   if (hasPaystackSecretKey()) {
     try {
-      return await createPaystackCheckoutSession(args.booking, args.baseUrl, args.paymentMethod, args.usdToKes, amountUsd);
+      return await createPaystackCheckoutSession(args.booking, args.baseUrl, args.paymentMethod, args.usdToKes, amountUsd, args.amountKes);
     } catch (paystackError) {
       if (!hasPesapalCredentials()) {
         throw paystackError;
@@ -440,7 +451,7 @@ export async function createHostedCheckoutSession(args: {
   }
 
   if (hasPesapalCredentials()) {
-    return await createPesapalCheckoutSession(args.booking, args.baseUrl, args.usdToKes, amountUsd);
+    return await createPesapalCheckoutSession(args.booking, args.baseUrl, args.usdToKes, amountUsd, args.amountKes);
   }
 
   if (!hasPaystackSecretKey()) {

@@ -1,4 +1,5 @@
 import type { Booking } from "../shared/schema.ts";
+import { formatCalendarDate, KENYA_TIME_ZONE } from "../shared/calendar-dates.ts";
 import {
   getBookingAmountPaid,
   getBookingOutstandingAmount,
@@ -31,17 +32,9 @@ function formatReceiptAmount(amount: number) {
   return `USD ${Math.max(0, Math.round(amount)).toLocaleString("en-US")}`;
 }
 
+// A booking's dates are calendar dates: never shifted by a time zone.
 function formatReceiptDate(value: string) {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.valueOf())) {
-    return value;
-  }
-
-  return parsed.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return formatCalendarDate(value);
 }
 
 function formatReceiptTimestamp(value?: string | null) {
@@ -54,10 +47,11 @@ function formatReceiptTimestamp(value?: string | null) {
     return value;
   }
 
-  return parsed.toLocaleString("en-KE", {
+  return `${parsed.toLocaleString("en-KE", {
     dateStyle: "medium",
     timeStyle: "short",
-  });
+    timeZone: KENYA_TIME_ZONE,
+  })} (Kenya time)`;
 }
 
 function getReceiptPaymentStatusLabel(booking: Booking) {

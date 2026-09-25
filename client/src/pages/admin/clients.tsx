@@ -15,8 +15,11 @@ import { AdminLayout } from "@/components/admin-layout";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Input } from "@/components/ui/input";
 import { Calendar, Mail, Package, Phone, Search, User, Wallet } from "lucide-react";
+import { formatCalendarDate, isCalendarDate } from "@shared/calendar-dates";
 
 function formatDate(dateString: string): string {
+  // Booking dates are calendar dates: the same day in every time zone.
+  if (isCalendarDate(dateString)) return formatCalendarDate(dateString);
   return new Date(dateString).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",

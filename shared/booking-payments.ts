@@ -104,3 +104,40 @@ export function hasLockedInBookingDeposit(booking: BookingPaymentSnapshot) {
 export function isBookingFullyPaid(booking: BookingPaymentSnapshot) {
   return getBookingOutstandingAmount(booking) === 0;
 }
+
+type RequestFeeSnapshot = BookingPaymentSnapshot & {
+  serviceRequestFeeKes?: number | null;
+  experienceCustomOfferClientDecision?: string | null;
+};
+
+/**
+ * A request fee quoted in KSh — a custom request or a listing verification —
+ * while the booking's total is that fee. Shown as quoted, paid or not: a
+ * KSh 2,500 fee reads KSh 2,500, not its dollar value converted back at the
+ * day's rate. Null for everything else, which is priced in USD.
+ */
+export function getRequestFeeKes(booking: RequestFeeSnapshot): number | null {
+  const feeKes = normalizeMoney(booking.serviceRequestFeeKes);
+  if (feeKes <= 0) {
+    return null;
+  }
+
+  if (booking.serviceMode === "listing-verification") {
+    return feeKes;
+  }
+
+  // Once a custom request's quote is accepted, the total is the balance instead.
+  if (booking.serviceMode === "experience-custom-offer" && booking.experienceCustomOfferClientDecision !== "accepted") {
+    return feeKes;
+  }
+
+  return null;
+}
+
+/**
+ * The exact KSh amount due when what's owed is a request fee quoted in KSh.
+ * The guest pays what they were told: a KSh 2,500 fee is charged as KSh 2,500.
+ */
+export function getRequestFeeKesDue(booking: RequestFeeSnapshot): number | null {
+  return getBookingAmountPaid(booking) > 0 ? null : getRequestFeeKes(booking);
+}

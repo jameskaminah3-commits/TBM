@@ -3,6 +3,8 @@ import { type CurrencyCode, useCurrency } from "@/lib/currency";
 
 type CurrencyAmountProps = {
   amountUsd: number;
+  /** A fee quoted in KSh: shown exactly as quoted whenever the amount is shown in KSh. */
+  quotedKes?: number | null;
   variant?: "inline" | "stacked";
   primaryClassName?: string;
   secondaryClassName?: string;
@@ -14,6 +16,7 @@ type CurrencyAmountProps = {
 
 export function CurrencyAmount({
   amountUsd,
+  quotedKes,
   variant = "inline",
   primaryClassName,
   secondaryClassName,
@@ -23,11 +26,11 @@ export function CurrencyAmount({
   showSecondary = false,
   ...props
 }: CurrencyAmountProps) {
-  const { selectedCurrency, alternateCurrency, formatAmount } = useCurrency();
+  const { selectedCurrency, alternateCurrency, formatPayable } = useCurrency();
   const primaryCurrency = forcePrimaryCurrency ?? selectedCurrency;
   const secondaryCurrency = primaryCurrency === selectedCurrency ? alternateCurrency : selectedCurrency;
-  const primaryText = formatAmount(amountUsd, primaryCurrency);
-  const secondaryBaseText = formatAmount(amountUsd, secondaryCurrency);
+  const primaryText = formatPayable(amountUsd, quotedKes, primaryCurrency);
+  const secondaryBaseText = formatPayable(amountUsd, quotedKes, secondaryCurrency);
   const secondaryText = secondaryPrefix !== undefined
     ? `${secondaryPrefix}${secondaryBaseText}`
     : variant === "stacked"

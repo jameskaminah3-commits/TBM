@@ -28,6 +28,7 @@ import trustStoryImageSmall from "@assets/generated_images/trust-story-768.jpg";
 import tailoredTripImageLarge from "@assets/generated_images/tailored-trip-1280.jpg";
 import tailoredTripImageSmall from "@assets/generated_images/tailored-trip-768.jpg";
 import type { Stay, Car as CarType, Cook, Errand, Experience } from "@shared/schema";
+import { todayInKenya } from "@shared/calendar-dates";
 
 type ShowcaseItem = {
   id: string;
@@ -175,7 +176,8 @@ export default function Home() {
   const storyImageSizes = "(min-width: 1024px) 48vw, 100vw";
   const primaryCtaClassName =
     "w-full rounded-xl border border-white/12 bg-[#f98b5b] px-6 py-5 text-base font-medium text-white shadow-[0_20px_44px_-24px_rgba(249,139,91,0.58),inset_0_1px_0_rgba(255,255,255,0.18)] transition-all duration-300 hover:-translate-y-0.5 hover:bg-[#f58756] hover:shadow-[0_24px_54px_-24px_rgba(249,139,91,0.66)] sm:w-auto sm:min-w-[16rem] sm:px-8 sm:py-6 sm:text-lg";
-  const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  // Stays are on the coast: the earliest check-in is Kenya's today, wherever the guest is.
+  const todayIso = useMemo(() => todayInKenya(), []);
   const whyTembeaStories = [
     {
       eyebrow: "Trust You Can Rely On",

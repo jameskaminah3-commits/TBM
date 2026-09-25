@@ -34,18 +34,11 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { formatCalendarDate } from "@shared/calendar-dates";
 
+// Booking dates are calendar dates: the same day in every time zone.
 function formatDateRange(checkIn: string, checkOut: string) {
-  const start = new Date(checkIn);
-  const end = new Date(checkOut);
-
-  return `${start.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  })} - ${end.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  })}`;
+  return `${formatCalendarDate(checkIn, { month: "short", day: "numeric" })} - ${formatCalendarDate(checkOut, { month: "short", day: "numeric" })}`;
 }
 
 function formatStatusLabel(status: string) {

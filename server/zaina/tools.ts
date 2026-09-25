@@ -52,6 +52,7 @@ import {
   type RequestDetail,
 } from "./custom-offer-intake";
 import { getPublicListingPath } from "@shared/seo";
+import { addCalendarDays, kenyaDateTimeToIso } from "@shared/calendar-dates";
 
 // ═══════════════════════════════════════════════════════════════════
 // HELPERS — currency, dates, notifications
@@ -119,12 +120,6 @@ function isValidIsoDate(value: string): boolean {
   }) === value;
 }
 
-function addOneDay(value: string): string {
-  const date = new Date(`${value}T00:00:00+03:00`);
-  date.setUTCDate(date.getUTCDate() + 1);
-  return date.toISOString().slice(0, 10);
-}
-
 function positiveIntegerOrDefault(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0
     ? Math.max(1, Math.round(value))
@@ -168,13 +163,18 @@ function bookingBlocksAvailability(booking: AvailabilityBooking): boolean {
   return new Date(booking.paymentHoldExpiresAt).getTime() > Date.now();
 }
 
+// The last night of a stay: the day before check-out.
 function occupiedEndDate(checkIn: string, checkOut: string): string {
-  const start = new Date(`${checkIn}T00:00:00+03:00`).getTime();
-  const end = new Date(`${checkOut}T00:00:00+03:00`).getTime();
-  if (end === start) return checkOut;
-  const d = new Date(end);
-  d.setUTCDate(d.getUTCDate() - 1);
-  return d.toISOString().slice(0, 10);
+  return checkOut === checkIn ? checkOut : addCalendarDays(checkOut, -1);
+}
+
+/** A shared departure can be booked until it leaves; its date and time are Kenya's. */
+function isUpcomingDeparture(departure: { date: string; time: string }): boolean {
+  try {
+    return new Date(kenyaDateTimeToIso(departure.date, departure.time)).getTime() > Date.now();
+  } catch {
+    return false;
+  }
 }
 
 const bookingInventoryColumns = {
@@ -795,7 +795,7 @@ export async function searchExperiences(
         x.customQuoteEnabled ? "experience-custom-offer" : null,
       ].filter(Boolean),
       shared_departures: x.sharedEnabled
-        ? (x.sharedDepartures || []).filter((departure) => departure.date >= new Date().toISOString().slice(0, 10)).slice(0, 5)
+        ? (x.sharedDepartures || []).filter(isUpcomingDeparture).slice(0, 5)
         : [],
       inclusions: x.inclusions,
       rating: x.rating,
@@ -1877,7 +1877,8 @@ export async function createServiceBooking(
   // A standalone service booking occupies that service on its requested day.
   // Ignore unpaid drafts, but respect a paid booking, deposit, or active
   // checkout hold so two customers cannot secure the same provider at once.
-  const nextDate = addOneDay(serviceCheckOut);
+  // As on the site, a car's return day is free for the next hire, like a
+  // stay's check-out day.
   const serviceBookings = await db
     .select({
       status: bookings.status,
@@ -1893,7 +1894,7 @@ export async function createServiceBooking(
       sql`${bookings.selectedServices} @> ARRAY[${args.service_id}]::text[]`,
       ne(bookings.status, "cancelled"),
       or(
-        and(lt(bookings.checkIn, nextDate), gt(bookings.checkOut, args.date)),
+        and(lt(bookings.checkIn, serviceCheckOut), gt(bookings.checkOut, args.date)),
         eq(bookings.checkIn, args.date),
       ),
     ))
@@ -2443,6 +2444,8 @@ function queueCustomOfferBookingNotification(args: {
   bookingId: string;
   paymentLink: string;
   feeUsd: number;
+  /** The fee exactly as the customer was quoted it ("KSh 2,500"). */
+  feeDisplay?: string;
   /** The currency the customer was quoted in. */
   currency?: "USD" | "KES";
   customerName: string;
@@ -2461,7 +2464,7 @@ function queueCustomOfferBookingNotification(args: {
       customerPhone: args.customerPhone ?? "",
       kind: "service",
       summary: args.notificationSummary ?? `Custom ${args.requestDetails.slice(0, 100)}`,
-      totalDisplay: await formatPrice(args.feeUsd, args.sessionId, args.currency),
+      totalDisplay: args.feeDisplay ?? await formatPrice(args.feeUsd, args.sessionId, args.currency),
       paymentLink: args.paymentLink,
       sessionId: args.sessionId,
     }))(),
@@ -2679,12 +2682,15 @@ export async function createListingVerificationRequest(
     return { ...created, task };
   });
 
+  const feeDisplay = currency === "KES" ? `KSh ${feeKes.toLocaleString("en-KE")}` : await formatPrice(feeUsd, sessionId);
+
   // The team hears about the request as soon as Zaina creates it (as with
   // custom offers), clearly marked unpaid; dispatch still waits for payment.
   queueCustomOfferBookingNotification({
     bookingId: booking.id,
     paymentLink,
     feeUsd,
+    feeDisplay,
     customerName: contact.name,
     customerEmail: contact.email,
     customerPhone: customerPhone ?? undefined,
@@ -2716,7 +2722,7 @@ export async function createListingVerificationRequest(
     booking_id: booking.id,
     payment_link: paymentLink,
     fee_usd: feeUsd,
-    fee_display: currency === "KES" ? `KSh ${feeKes.toLocaleString("en-KE")}` : await formatPrice(feeUsd, sessionId),
+    fee_display: feeDisplay,
     fee_kes: feeKes,
     fee_creditable: true,
     status: "awaiting_payment",
@@ -2789,7 +2795,7 @@ export async function createCustomOffer(
   // payment link back. Found by its booking: before the offer and its booking
   // were written together, a failure part-way could leave an offer with no booking.
   const [existingBooking] = await db
-    .select({ id: bookings.id })
+    .select({ id: bookings.id, feeKes: bookings.serviceRequestFeeKes })
     .from(bookings)
     .where(eq(bookings.idempotencyKey, args.idempotency_key))
     .limit(1);
@@ -2807,7 +2813,9 @@ export async function createCustomOffer(
       offer_id: args.idempotency_key,
       idempotent_replay: true,
       tier: existingOffer?.feeTier ?? "intake",
-      fee_display: await formatPrice(existingOffer?.feeUsd ?? CUSTOM_OFFER_FEES_USD.intake, sessionId, currency),
+      fee_display: currency === "KES" && existingBooking.feeKes
+        ? `KSh ${existingBooking.feeKes.toLocaleString("en-KE")}`
+        : await formatPrice(existingOffer?.feeUsd ?? CUSTOM_OFFER_FEES_USD.intake, sessionId, currency),
       booking_id: existingBooking.id,
       payment_link: customOfferPaymentLink(existingBooking.id, currency),
     };
@@ -2880,9 +2888,11 @@ export async function createCustomOffer(
 
   const feeUsd = CUSTOM_OFFER_FEES_USD[tier];
   // The fee is quoted in the currency the customer spoke in: their budget's,
-  // or the chat's when they gave no budget.
+  // or the chat's when they gave no budget. A fee quoted in KSh is kept as
+  // that KSh amount, so M-Pesa charges exactly what the customer was told.
   const currency = budget?.currency ?? await getSessionCurrency(sessionId);
-  const feeDisplay = await formatPrice(feeUsd, sessionId, currency);
+  const feeKes = currency === "KES" ? Math.round(feeUsd * (await getUsdToKesRate()).usdToKes) : null;
+  const feeDisplay = feeKes !== null ? `KSh ${feeKes.toLocaleString("en-KE")}` : await formatPrice(feeUsd, sessionId, currency);
   const flexibleDates = textArg(args.travel_dates);
   const time = timeArg(args.time);
   const requestDetails = describeCustomRequest({
@@ -2943,6 +2953,7 @@ export async function createCustomOffer(
       serviceLocation: location,
       serviceStartTime: time,
       budgetUsd: budget?.usd,
+      serviceRequestFeeKes: feeKes,
       currency,
       idempotencyKey: args.idempotency_key,
       sessionId,
@@ -2958,6 +2969,7 @@ export async function createCustomOffer(
     bookingId: booking.id,
     paymentLink,
     feeUsd,
+    feeDisplay,
     currency,
     customerName: contact.name,
     customerEmail: contact.email,

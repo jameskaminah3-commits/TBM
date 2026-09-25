@@ -26,6 +26,7 @@ import { RequestBriefAccordion } from "@/components/request-brief-accordion";
 import { calculateBookingDepositAmount, getBookingAmountPaid, getBookingCheckoutAmount, getBookingOutstandingAmount, hasLockedInBookingDeposit, isFullPaymentOnlyBooking, supportsBookingDeposit } from "@shared/booking-payments";
 import type { Booking, Stay, Car as CarType, Cook, Errand, Experience } from "@shared/schema";
 import { bookingStatus } from "@shared/schema";
+import { formatCalendarDate, isCalendarDate } from "@shared/calendar-dates";
 
 type BookingStatus = typeof bookingStatus.options[number];
 
@@ -703,6 +704,8 @@ export default function AdminBookings() {
   };
 
   const formatDate = (dateString: string) => {
+    // Booking dates are calendar dates: the same day in every time zone.
+    if (isCalendarDate(dateString)) return formatCalendarDate(dateString);
     const date = new Date(dateString);
     return date.toLocaleDateString("en-US", {
       month: "short",
