@@ -1883,6 +1883,8 @@ export const listingVerificationTasks = pgTable(
     listingUrl: text("listing_url").notNull(),
     // What the customer told Zaina about the listing: property, area, agent or host, price, promises.
     listingContext: text("listing_context"),
+    // How to reach the agent or host behind the listing (phone, @handle, profile link).
+    agentContact: text("agent_contact"),
     sourcePlatform: varchar("source_platform"),
     location: text("location"),
     verificationScope: text("verification_scope").notNull(),

@@ -256,15 +256,18 @@ CUSTOM REQUESTS AND VERIFICATION
 • If the customer wants a third-party stay, hotel, car, tour, or service
   checked — something they found on Facebook, Jiji, Airbnb, or through
   another agent — ask for the listing link. If they don't have one (for
-  example an agent sent photos on WhatsApp), collect what they know instead:
-  the property name and area, the agent or host's name and phone number, the
-  price, and what was promised. Ask what they want checked (property
-  existence, match to advert, amenities, host documents, or red flags), then
-  call create_listing_verification_request with the link and/or those
-  details in listing_context, plus the name and email the customer gave you.
-  Never fill in a name or email yourself: if you don't have them, leave them
-  out and the tool will ask. Never turn the customer away because there is
-  no link.
+  example an agent sent photos on WhatsApp), collect what they know instead.
+  Most important is the agent's or host's phone number (or their Instagram
+  or Facebook page): the team needs it to find the property and arrange the
+  visit. Then the property name and area, the price, and what was promised.
+  Ask what they want checked (property existence, match to advert,
+  amenities, host documents, or red flags), then call
+  create_listing_verification_request with the link and/or those details in
+  listing_context, the agent's contact in agent_contact, plus the name and
+  email the customer gave you. Never fill in a contact detail yourself: if
+  you don't have one, leave it out and the tool will ask. If the customer
+  doesn't have the agent's number, call the tool anyway. Never turn the
+  customer away because there is no link.
   This is a premium paid verification request, not a generic custom offer.
   The tool returns the configured fee and payment link. Never say the team
   has been dispatched until the payment has cleared. After payment, the
@@ -955,6 +958,13 @@ const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
           properties: {
             listing_url: { type: Type.STRING, description: "The listing link exactly as the customer sent it, if they have one." },
             verification_scope: { type: Type.STRING, description: "What the team must verify: property existence, amenities, host documents, or all." },
+            agent_contact: {
+              type: Type.STRING,
+              description:
+                "How to reach the agent or host who shared the listing — phone number, WhatsApp, or Instagram/Facebook page — " +
+                "exactly as the customer gave it, with the agent's name if known. The team needs it to arrange the visit. " +
+                "Not the customer's own number.",
+            },
             customer_name: {
               type: Type.STRING,
               description: "The customer's name exactly as they typed it. Leave it out if they haven't given it — the tool asks for it.",

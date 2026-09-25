@@ -548,9 +548,10 @@ export const INVENTORY_CATALOG = {
       "Any listing on any platform",
     ],
     no_link:
-      "If there is no link (an agent sent photos or a phone number), still create the request: " +
-      "collect the property name and area, the agent or host's name and phone number, the price, " +
-      "and what was promised, and pass them as listing_context.",
+      "If there is no link (an agent sent photos or a phone number), still create the request. " +
+      "First get the agent's or host's phone number (or Instagram/Facebook page) and pass it as agent_contact — " +
+      "the team needs it to find the property and arrange the visit. Then collect the property name and area, " +
+      "the price, and what was promised, and pass them as listing_context.",
     guidance:
       "This is a signature TBM service. Never downplay it. If a customer says " +
       "'I found this on Facebook', respond enthusiastically — this is exactly what " +

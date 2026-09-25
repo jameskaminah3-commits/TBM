@@ -1374,6 +1374,7 @@ export interface IStorage {
     customerPhone?: string | null;
     listingUrl: string;
     listingContext?: string | null;
+    agentContact?: string | null;
     sourcePlatform?: string | null;
     location?: string | null;
     verificationScope: string;
@@ -1868,6 +1869,7 @@ export class DatabaseStorage implements IStorage {
         customer_phone varchar,
         listing_url text NOT NULL,
         listing_context text,
+        agent_contact text,
         source_platform varchar,
         location text,
         verification_scope text NOT NULL,
@@ -1890,6 +1892,7 @@ export class DatabaseStorage implements IStorage {
     `);
     // Added after the table first shipped: listings shared without a link.
     await pool.query(`ALTER TABLE listing_verification_tasks ADD COLUMN IF NOT EXISTS listing_context text;`);
+    await pool.query(`ALTER TABLE listing_verification_tasks ADD COLUMN IF NOT EXISTS agent_contact text;`);
     await pool.query(`CREATE INDEX IF NOT EXISTS listing_verification_tasks_booking_idx ON listing_verification_tasks (booking_id);`);
     await pool.query(`CREATE INDEX IF NOT EXISTS listing_verification_tasks_status_idx ON listing_verification_tasks (status, created_at DESC);`);
     this.listingVerificationTablesEnsured = true;
@@ -1906,6 +1909,7 @@ export class DatabaseStorage implements IStorage {
       customerPhone: row.customer_phone ?? null,
       listingUrl: row.listing_url,
       listingContext: row.listing_context ?? null,
+      agentContact: row.agent_contact ?? null,
       sourcePlatform: row.source_platform ?? null,
       location: row.location ?? null,
       verificationScope: row.verification_scope,
@@ -1937,6 +1941,7 @@ export class DatabaseStorage implements IStorage {
     customerPhone?: string | null;
     listingUrl: string;
     listingContext?: string | null;
+    agentContact?: string | null;
     sourcePlatform?: string | null;
     location?: string | null;
     verificationScope: string;
@@ -1960,6 +1965,7 @@ export class DatabaseStorage implements IStorage {
         customerPhone: data.customerPhone ?? null,
         listingUrl: data.listingUrl,
         listingContext: data.listingContext ?? null,
+        agentContact: data.agentContact ?? null,
         sourcePlatform: data.sourcePlatform ?? null,
         location: data.location ?? null,
         verificationScope: data.verificationScope,

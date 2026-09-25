@@ -36,13 +36,48 @@ function mentionsWord(text: string, word: string): boolean {
   return new RegExp(`(^|[^\\p{L}])${escaped}($|[^\\p{L}])`, "u").test(text);
 }
 
-/** The phone number, if the customer typed it (compared by its last nine digits). */
+/** Phone numbers in a piece of text, as written ("0712 345 678"). */
+export function phoneNumbersWritten(text: string): string[] {
+  return (text.match(/\+?\d[\d\s().-]{5,}\d/g) ?? [])
+    .map((number) => number.trim())
+    .filter((number) => number.replace(/\D/g, "").length >= 7);
+}
+
+/** Phone numbers in a piece of text, as digits only ("0712 345 678" → "0712345678"). */
+function phoneNumbersIn(text: string): string[] {
+  return phoneNumbersWritten(text).map((number) => number.replace(/\D/g, ""));
+}
+
+// "0712 345 678" and "+254 712 345 678" are the same number: compare the
+// last nine digits.
+function isSameNumber(a: string, b: string): boolean {
+  const length = Math.min(9, a.length, b.length);
+  return a.slice(-length) === b.slice(-length);
+}
+
+/** Whether two pieces of text contain the same phone number. */
+export function sharesPhoneNumber(a: string, b: string): boolean {
+  const numbers = phoneNumbersIn(b);
+  return phoneNumbersIn(a).some((number) => numbers.some((other) => isSameNumber(number, other)));
+}
+
+/** The phone number, if the customer typed it. */
 function phoneTheCustomerTyped(value: unknown, written: string): string | null {
   const phone = textArg(value);
-  const tail = phone.replace(/\D/g, "").slice(-9);
-  if (tail.length < 7) return null;
-  const typed = (written.match(/\+?\d[\d\s().-]{5,}\d/g) ?? []).map((number) => number.replace(/\D/g, ""));
-  return typed.some((digits) => digits.length >= 7 && digits.endsWith(tail)) ? phone : null;
+  return sharesPhoneNumber(phone, written) ? phone : null;
+}
+
+/**
+ * How to reach the agent or host behind a listing — a phone number, an
+ * @handle, or a profile link — if it is one the customer actually gave.
+ */
+export function resolveAgentContact(value: unknown, customerTexts: string[]): string | null {
+  const contact = textArg(value).replace(/\s+/g, " ");
+  if (!contact) return null;
+  const written = customerTexts.join("\n").toLowerCase();
+  if (sharesPhoneNumber(contact, written)) return contact;
+  const handles = contact.toLowerCase().match(/@[\w.]{3,}|(?:https?:\/\/)?[a-z0-9-]+(?:\.[a-z0-9-]+)+\/\S+/g) ?? [];
+  return handles.some((handle) => written.includes(handle.replace(/^https?:\/\//, ""))) ? contact : null;
 }
 
 /**

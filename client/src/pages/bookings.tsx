@@ -287,6 +287,7 @@ function ListingVerificationPanel({ booking, formatAmount }: { booking: Booking;
         ) : (
           <div><span className="font-medium">Listing:</span> shared without a link</div>
         )}
+        {task.agentContact ? <div className="break-words"><span className="font-medium">Agent or host:</span> {task.agentContact}</div> : null}
         {task.listingContext ? <div className="whitespace-pre-wrap"><span className="font-medium">Details you shared:</span> {task.listingContext}</div> : null}
         <div><span className="font-medium">Scope:</span> {task.verificationScope}</div>
         {task.location ? <div><span className="font-medium">Location:</span> {task.location}</div> : null}

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ExternalLink, ShieldCheck, AlertTriangle } from "lucide-react";
+import { ExternalLink, ShieldCheck, AlertTriangle, Phone } from "lucide-react";
 import { AdminLayout } from "@/components/admin-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +13,16 @@ import type { ListingVerificationTask } from "@shared/schema";
 
 function statusLabel(status: string) {
   return status.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+// Call and WhatsApp links for the first phone number in an agent's contact.
+// Kenyan numbers are written locally ("0712 345 678"); links need +254.
+function phoneLinks(contact: string) {
+  const number = contact.match(/\+?\d[\d\s().-]{5,}\d/)?.[0];
+  const digits = number?.replace(/\D/g, "") ?? "";
+  if (digits.length < 9) return null;
+  const international = digits.startsWith("0") ? `254${digits.slice(1)}` : digits.length === 9 ? `254${digits}` : digits;
+  return { call: `tel:+${international}`, whatsapp: `https://wa.me/${international}` };
 }
 
 export default function AdminListingVerifications() {
@@ -60,6 +70,23 @@ export default function AdminListingVerifications() {
                         {task.listingUrl
                           ? <a href={task.listingUrl} target="_blank" rel="noreferrer" className="mt-2 flex items-start gap-2 break-all text-primary underline underline-offset-2"><ExternalLink className="mt-0.5 h-4 w-4 shrink-0" />{task.listingUrl}</a>
                           : <div className="mt-2 text-muted-foreground">No link — shared by an agent or privately. Use the details below.</div>}
+                        {task.agentContact ? (
+                          <div className="mt-3 rounded-md border bg-background p-3">
+                            <div className="flex items-center gap-2 font-medium"><Phone className="h-4 w-4 shrink-0" />Agent or host contact</div>
+                            <div className="mt-1 break-words">{task.agentContact}</div>
+                            {(() => {
+                              const links = phoneLinks(task.agentContact);
+                              return links ? (
+                                <div className="mt-2 flex gap-4">
+                                  <a href={links.call} className="text-primary underline underline-offset-2">Call</a>
+                                  <a href={links.whatsapp} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2">WhatsApp</a>
+                                </div>
+                              ) : null;
+                            })()}
+                          </div>
+                        ) : !task.listingUrl ? (
+                          <div className="mt-3 text-amber-700">Agent or host contact: not given — ask the guest before dispatching.</div>
+                        ) : null}
                         {task.listingContext ? <div className="mt-3 whitespace-pre-wrap"><span className="font-medium">Listing details from the guest:</span> {task.listingContext}</div> : null}
                         <div className="mt-3"><span className="font-medium">Scope:</span> {task.verificationScope}</div>
                         <div className="mt-1"><span className="font-medium">Fee:</span> {task.feeKes ? `KSh ${task.feeKes.toLocaleString("en-KE")}` : `USD ${task.feeUsd}`}</div>

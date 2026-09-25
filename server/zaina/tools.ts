@@ -40,7 +40,7 @@ import { INVENTORY_CATALOG } from "./catalog";
 import { describeInputAmount, toUsdAmount } from "./money-input";
 import { getPublicSiteUrl } from "./reply-policy";
 import { describeListingSource, MIN_LISTING_DETAILS_LENGTH, normalizeListingLink } from "./listing-verification";
-import { resolveCustomerContact, textArg } from "./tool-args";
+import { phoneNumbersWritten, resolveAgentContact, resolveCustomerContact, sharesPhoneNumber, textArg } from "./tool-args";
 import { getPublicListingPath } from "@shared/seo";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -2453,11 +2453,26 @@ function askForVerificationContact(missing: Array<"name" | "email">): string {
     : "Before I open the verification request, may I have your full name?";
 }
 
+/** Whether Zaina already asked this customer for the agent's or host's contact. */
+async function hasAskedForAgentContact(sessionId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: zainaAuditLogs.id })
+    .from(zainaAuditLogs)
+    .where(and(
+      eq(zainaAuditLogs.sessionId, sessionId),
+      eq(zainaAuditLogs.toolName, "create_listing_verification_request"),
+      sql`${zainaAuditLogs.toolResponse}->>'error' = 'agent_contact_required'`,
+    ))
+    .limit(1);
+  return Boolean(row);
+}
+
 export async function createListingVerificationRequest(
   // Read through textArg: the model can send any JSON type for these.
   args: {
     listing_url?: unknown;
     verification_scope?: unknown;
+    agent_contact?: unknown;
     customer_name?: unknown;
     customer_email?: unknown;
     customer_phone?: unknown;
@@ -2493,15 +2508,36 @@ export async function createListingVerificationRequest(
   if (verificationScope.length < 10) {
     return { ok: false, error: "verification_scope_required", tell_customer: "What would you like us to verify — the property, amenities, host documents, or all three?" };
   }
+  const customerMessages = await getCustomerMessages(sessionId);
+  // How to reach the agent or host, if the customer gave it — passed on its
+  // own or left inside the listing details.
+  const agentContact = resolveAgentContact(args.agent_contact, customerMessages)
+    ?? resolveAgentContact(phoneNumbersWritten(listingDetails).join(", "), customerMessages);
+  // Without a link, the agent's or host's number is how the team finds the
+  // property and arranges the visit, so ask for it first. Ask once: some
+  // customers don't have it, and the request goes ahead without it.
+  if (!listingLink && !agentContact && !(await hasAskedForAgentContact(sessionId))) {
+    return {
+      ok: false,
+      error: "agent_contact_required",
+      tell_customer:
+        "What's the phone number of the agent or host who shared this listing (or their Instagram or Facebook page)? " +
+        "Our team needs it to find the property and arrange the visit. If you don't have it, just say so and I'll " +
+        "open the request with the details you've shared.",
+    };
+  }
   // Only contact details the customer actually gave: a name or email the
   // model filled in would send the payment link and report to nobody.
   const contact = resolveCustomerContact(
     { name: args.customer_name, email: args.customer_email, phone: args.customer_phone },
-    await getCustomerMessages(sessionId),
+    customerMessages,
   );
   if (!contact.ok) {
     return { ok: false, error: "customer_contact_required", tell_customer: askForVerificationContact(contact.missing) };
   }
+  // The number the customer typed may be the agent's, not their own.
+  const customerPhone = contact.phone && agentContact && sharesPhoneNumber(contact.phone, agentContact) ? null : contact.phone;
+  const agentContactNote = agentContact ?? (listingLink ? null : "Not given — the guest didn't have it; ask them if needed");
   const travelDates = textArg(args.travel_dates);
 
   const existing = await storage.getListingVerificationTask(args.idempotency_key);
@@ -2534,6 +2570,7 @@ export async function createListingVerificationRequest(
     `Source platform: ${parsed.sourcePlatform}`,
     `Location: ${parsed.location ?? "To be confirmed by the operations team"}`,
     `Verification scope: ${verificationScope}`,
+    agentContactNote ? `Agent/host contact: ${agentContactNote}` : null,
     listingDetails ? `Customer-provided listing details: ${listingDetails}` : null,
   ].filter(Boolean).join("\n");
   const now = new Date().toISOString();
@@ -2542,7 +2579,7 @@ export async function createListingVerificationRequest(
     sessionId,
     customerName: contact.name,
     customerEmail: contact.email,
-    customerPhone: contact.phone,
+    customerPhone,
     offerType: "listing_verification",
     requestDetails,
     budgetUsd: null,
@@ -2569,7 +2606,7 @@ export async function createListingVerificationRequest(
       feeUsd,
       customerName: contact.name,
       customerEmail: contact.email,
-      customerPhone: contact.phone ?? undefined,
+      customerPhone: customerPhone ?? undefined,
       requestDetails,
       travelDates: travelDates || undefined,
       idempotencyKey: args.idempotency_key,
@@ -2588,11 +2625,12 @@ export async function createListingVerificationRequest(
       sessionId,
       customerName: contact.name,
       customerEmail: contact.email,
-      customerPhone: contact.phone,
+      customerPhone,
       // Empty when an agent shared the listing without a link; the details
       // the customer gave are stored alongside for the field team.
       listingUrl: listingLink ?? "",
       listingContext: listingDetails || null,
+      agentContact,
       sourcePlatform: parsed.sourcePlatform,
       location: parsed.location,
       verificationScope,
@@ -2611,7 +2649,7 @@ export async function createListingVerificationRequest(
     feeUsd,
     customerName: contact.name,
     customerEmail: contact.email,
-    customerPhone: contact.phone ?? undefined,
+    customerPhone: customerPhone ?? undefined,
     requestDetails,
     notificationSummary: `Listing verification (awaiting payment) — ${verificationLabel}`,
     sessionId,
@@ -2625,6 +2663,7 @@ export async function createListingVerificationRequest(
     details: {
       Status: "Awaiting payment — dispatch the on-ground check only after the fee is paid",
       "Listing link": listingLink ?? "No link — see the listing details",
+      "Agent/host contact": agentContactNote ?? undefined,
       "Listing details": listingDetails || "not provided",
       "Verification scope": verificationScope,
       Fee: `KSh ${feeKes.toLocaleString("en-KE")}`,
