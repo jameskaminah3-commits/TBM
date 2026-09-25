@@ -13,12 +13,12 @@
 // converted to text first (pdftotext).
 
 import "dotenv/config";
-import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { closePlatformDb, initPlatformDb } from "../db/platform-db.ts";
-import { faqToMarkdown, htmlToText, parseMarkdownSource, type ImportedSource } from "../knowledge/import.ts";
-import { deleteKnowledgeSource, listKnowledgeSources, saveKnowledgeSource, validateKnowledgeInput } from "../knowledge/store.ts";
+import { htmlToText, type ImportedSource } from "../knowledge/import.ts";
+import { describeOutcome, saveImportedSources, sourceFromFile, sourcesInDirectory } from "../knowledge/import-files.ts";
+import { deleteKnowledgeSource, listKnowledgeSources } from "../knowledge/store.ts";
 
 const { values } = parseArgs({
   options: {
@@ -32,18 +32,6 @@ const { values } = parseArgs({
     prune: { type: "boolean", default: false },
   },
 });
-
-function fromFile(file: string): ImportedSource {
-  const text = readFileSync(file, "utf8");
-  const name = path.basename(file).replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ");
-  if (file.endsWith(".json")) {
-    const data = JSON.parse(text);
-    if (Array.isArray(data)) return { title: name, kind: "faq", content: faqToMarkdown(data) ?? "" };
-    return { ...data, title: data.title ?? name, content: data.content ?? faqToMarkdown(data.faqs) ?? "" };
-  }
-  if (file.endsWith(".pdf")) throw new Error(`${file}: convert PDFs to text first (for example: pdftotext -layout file.pdf file.txt)`);
-  return parseMarkdownSource(text, name);
-}
 
 async function fromUrl(url: string): Promise<ImportedSource> {
   if (!/^https:\/\//.test(url)) throw new Error("--url must start with https://");
@@ -61,27 +49,19 @@ async function main() {
   initPlatformDb(url, { max: 2 });
 
   const sources: Array<{ label: string; source: ImportedSource }> = [];
-  if (values.dir) {
-    for (const entry of readdirSync(values.dir).sort()) {
-      const file = path.join(values.dir, entry);
-      if (statSync(file).isFile() && /\.(md|txt|json)$/i.test(entry)) sources.push({ label: entry, source: fromFile(file) });
-    }
-  }
-  if (values.file) sources.push({ label: path.basename(values.file), source: fromFile(values.file) });
+  if (values.dir) sources.push(...sourcesInDirectory(values.dir));
+  if (values.file) sources.push({ label: path.basename(values.file), source: sourceFromFile(values.file) });
   if (values.url) sources.push({ label: values.url, source: await fromUrl(values.url) });
   if (sources.length === 0) throw new Error("Nothing to import: pass --dir, --file or --url");
 
-  const titles = new Set<string>();
-  for (const { label, source } of sources) {
-    const overrides = { ...(values.title && !values.dir ? { title: values.title } : {}), ...(values.kind ? { kind: values.kind } : {}), ...(values.language ? { language: values.language } : {}) };
-    const checked = validateKnowledgeInput({ ...source, ...overrides });
-    if (!checked.ok) throw new Error(`${label}: ${checked.error}`);
-    const result = await saveKnowledgeSource(businessId, checked.value, null);
-    titles.add(checked.value.title);
-    const state = result!.unchanged ? "unchanged" : "saved";
-    const hidden = result!.hiddenAmounts ? `, ${result!.hiddenAmounts} amount(s) hidden from Zaina` : "";
-    console.log(`[knowledge] ${state}: "${checked.value.title}" (${result!.passages} passages${hidden})`);
-  }
+  const overrides = {
+    ...(values.title && !values.dir ? { title: values.title } : {}),
+    ...(values.kind ? { kind: values.kind } : {}),
+    ...(values.language ? { language: values.language } : {}),
+  } as Partial<ImportedSource>;
+  const outcomes = await saveImportedSources(businessId, sources, overrides);
+  const titles = new Set(outcomes.map((outcome) => outcome.title));
+  for (const outcome of outcomes) console.log(`[knowledge] ${describeOutcome(outcome)}`);
 
   if (values.prune && values.dir) {
     for (const source of await listKnowledgeSources(businessId)) {

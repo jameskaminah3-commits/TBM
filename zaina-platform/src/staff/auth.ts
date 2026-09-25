@@ -2,7 +2,10 @@
 //
 // Who is calling, and what they may do.
 //
-//   requireStaff          a valid staff token for an active account
+//   requireStaff          a valid staff token for an active account: an
+//                         "Authorization: Bearer" token (API clients), or the
+//                         console's sign-in cookie sent with the console's own
+//                         header (browsers)
 //   requireBusinessRole   a membership in the business named in the URL, with
 //                         at least the given role; the rest of the request
 //                         then runs inside that business's scope
@@ -12,6 +15,11 @@
 // manager (settings, staff, reports, deletion requests), owner (secrets,
 // managers and owners). Platform admins act as owner in any business, for
 // support.
+//
+// The console's cookie is HttpOnly (page scripts can't read it) and
+// SameSite=Strict; a request authenticated by it must also carry the
+// X-Zaina-Console header, which another website's page can't add without the
+// platform's permission (CORS), so a cross-site request can't use it.
 
 import type { NextFunction, Request, Response } from "express";
 import { and, eq } from "drizzle-orm";
@@ -19,11 +27,14 @@ import { businessById } from "../businesses/registry.ts";
 import { getStaffUser } from "../db/platform-scope.ts";
 import { staffMemberships, type Business, type StaffRole, type StaffUser } from "../db/schema.ts";
 import { inBusiness, runForBusiness } from "../db/tenant.ts";
-import { verifyStaffToken } from "./tokens.ts";
+import { STAFF_TOKEN_TTL_SECONDS, verifyStaffToken } from "./tokens.ts";
 
 export const ROLE_RANK: Record<StaffRole, number> = { viewer: 1, agent: 2, manager: 3, owner: 4 };
 
-export type StaffContext = { user: StaffUser; business?: Business; role?: StaffRole };
+export const CONSOLE_COOKIE = "zaina_console";
+export const CONSOLE_HEADER = "x-zaina-console";
+
+export type StaffContext = { user: StaffUser; business?: Business; role?: StaffRole; via: "bearer" | "cookie" };
 
 export function staffOf(req: Request): StaffContext {
   const context = (req as Request & { staff?: StaffContext }).staff;
@@ -31,17 +42,35 @@ export function staffOf(req: Request): StaffContext {
   return context;
 }
 
+/** The console's token from its cookie. */
+function cookieToken(req: Request): string | null {
+  for (const part of (req.header("cookie") ?? "").split(";")) {
+    const [name, ...value] = part.trim().split("=");
+    if (name === CONSOLE_COOKIE) return decodeURIComponent(value.join("="));
+  }
+  return null;
+}
+
+export function setConsoleCookie(res: Response, token: string) {
+  res.setHeader("Set-Cookie", `${CONSOLE_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${STAFF_TOKEN_TTL_SECONDS}`);
+}
+
+export function clearConsoleCookie(res: Response) {
+  res.setHeader("Set-Cookie", `${CONSOLE_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`);
+}
+
 export function requireStaff(secret: string) {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const token = /^Bearer\s+(\S+)$/i.exec(req.header("authorization") ?? "")?.[1];
-      const claims = verifyStaffToken(secret, token);
+      const bearer = /^Bearer\s+(\S+)$/i.exec(req.header("authorization") ?? "")?.[1];
+      const fromConsole = !bearer && req.header(CONSOLE_HEADER) === "1" ? cookieToken(req) : null;
+      const claims = verifyStaffToken(secret, bearer ?? fromConsole);
       const user = claims ? await getStaffUser(claims.userId) : undefined;
       if (!claims || !user || user.disabledAt || user.tokenVersion !== claims.tokenVersion) {
         res.status(401).json({ error: "unauthorized", message: "Please sign in again." });
         return;
       }
-      (req as Request & { staff?: StaffContext }).staff = { user };
+      (req as Request & { staff?: StaffContext }).staff = { user, via: bearer ? "bearer" : "cookie" };
       next();
     } catch (error) {
       next(error);

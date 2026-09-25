@@ -24,7 +24,7 @@ import { getSecret } from "../businesses/secrets.ts";
 import { getBusinessSettings, replyRulesFor } from "../businesses/settings.ts";
 import { connectorFor } from "../connectors/registry.ts";
 import type { BusinessConnector } from "../connectors/types.ts";
-import type { Business, ChatLanguage, ChatSession } from "../db/schema.ts";
+import type { Business, ChatLanguage, ChatMedia, ChatSession } from "../db/schema.ts";
 import { inBusiness, runForBusiness } from "../db/tenant.ts";
 import { requestHandoff } from "../conversations/handoff.ts";
 import {
@@ -35,7 +35,9 @@ import {
   recentZainaReplies,
   setConsecutiveFailures,
   setSessionLanguage,
+  whatsappNumberLine,
 } from "../conversations/store.ts";
+import { alertTeam, type AlertEvent } from "../conversations/team-alerts.ts";
 import { businessDay, claimCapAlert, isOverCap, recordUsage, usageOn } from "../gateway/spend-cap.ts";
 import { runSearchKnowledge, SEARCH_KNOWLEDGE } from "../knowledge/tool.ts";
 import { afterFailedTurn } from "./failure-policy.ts";
@@ -90,6 +92,20 @@ function queue(label: string, task: Promise<unknown>) {
   task.catch((error) => console.error(`[engine] ${label} failed:`, error));
 }
 
+/** The business's connector and its people hear about an event; never holds up the reply. */
+function alert(business: Business, label: string, event: AlertEvent) {
+  queue(label, alertTeam(business, event));
+}
+
+type TurnInput = {
+  business: Business;
+  sessionId: string;
+  message: string;
+  options: EngineOptions;
+  /** Photos, voice notes or documents that came with the message (WhatsApp). */
+  media?: ChatMedia[];
+};
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -137,21 +153,11 @@ function maskPII(value: any): any {
  * Handles one customer message. Never throws: whatever happens, the customer
  * gets a reply and the turn is measured.
  */
-export async function handleChatTurn(input: {
-  business: Business;
-  sessionId: string;
-  message: string;
-  options: EngineOptions;
-}): Promise<ChatReply> {
+export async function handleChatTurn(input: TurnInput): Promise<ChatReply> {
   return runForBusiness(input.business.id, () => handleScopedTurn(input));
 }
 
-async function handleScopedTurn(input: {
-  business: Business;
-  sessionId: string;
-  message: string;
-  options: EngineOptions;
-}): Promise<ChatReply> {
+async function handleScopedTurn(input: TurnInput): Promise<ChatReply> {
   const recorder = new TurnRecorder();
   let result: TurnResult;
   let contactLine = "";
@@ -186,11 +192,7 @@ async function handleScopedTurn(input: {
   return result.reply;
 }
 
-async function runTurn(
-  input: { business: Business; sessionId: string; message: string; options: EngineOptions },
-  connector: BusinessConnector,
-  recorder: TurnRecorder,
-): Promise<TurnResult> {
+async function runTurn(input: TurnInput, connector: BusinessConnector, recorder: TurnRecorder): Promise<TurnResult> {
   const { business, sessionId, message } = input;
   const session = await getSession(sessionId);
   if (!session || session.businessId !== business.id) {
@@ -199,7 +201,8 @@ async function runTurn(
 
   // Staff are handling the chat: keep the message for them; Zaina stays quiet.
   if (session.managedBy !== "AI") {
-    await appendEvent({ businessId: business.id, sessionId, actor: "USER", content: message });
+    await appendEvent({ businessId: business.id, sessionId, actor: "USER", content: message, media: input.media });
+    alert(business, "customer-replied alert", { kind: "customer-replied", sessionId, preview: redactCardNumbers(message).slice(0, 140) });
     return { reply: { status: "human_managed" }, outcome: "human_managed" };
   }
 
@@ -214,12 +217,7 @@ async function runTurn(
   }
 }
 
-async function runLockedTurn(
-  input: { business: Business; sessionId: string; message: string; options: EngineOptions },
-  connector: BusinessConnector,
-  recorder: TurnRecorder,
-  session: ChatSession,
-): Promise<TurnResult> {
+async function runLockedTurn(input: TurnInput, connector: BusinessConnector, recorder: TurnRecorder, session: ChatSession): Promise<TurnResult> {
   const { business, sessionId, message, options } = input;
   const { consecutiveFailures } = session;
   const say = async (text: string) => {
@@ -227,13 +225,13 @@ async function runLockedTurn(
   };
 
   const isFirstMessage = !(await hasCustomerMessages(sessionId));
-  await appendEvent({ businessId: business.id, sessionId, actor: "USER", content: message });
+  await appendEvent({ businessId: business.id, sessionId, actor: "USER", content: message, media: input.media });
   if (isFirstMessage) {
-    queue("conversation-started alert", connector.notifyTeam(business, {
+    alert(business, "conversation-started alert", {
       kind: "conversation-started",
       sessionId,
       firstMessage: redactCardNumbers(message),
-    }));
+    });
   }
 
   // The customer's language decides the fixed texts the server adds.
@@ -258,12 +256,12 @@ async function runLockedTurn(
   const usage = await usageOn(business.id, day);
   if (isOverCap(usage, business.dailyTokenCap)) {
     if (await claimCapAlert(business.id, day)) {
-      queue("spend-cap alert", connector.notifyTeam(business, {
+      alert(business, "spend-cap alert", {
         kind: "spend-cap",
         day,
         usedTokens: usage.inputTokens + usage.outputTokens,
         capTokens: business.dailyTokenCap ?? 0,
-      }));
+      });
     }
     const reply = texts(language).spendCapped(await connector.contactLine(business, language));
     await say(reply);
@@ -275,7 +273,8 @@ async function runLockedTurn(
   // with it, so the instructions themselves never change.
   const historyRows = await recentHistory(sessionId, MAX_EVENTS * 2);
   const contents: Content[] = buildHistory(historyRows);
-  const context = { text: turnContext({ timeZone: business.timeZone, now: new Date(), currency: session.displayCurrency, language }) };
+  const whatsappNumber = session.channel === "whatsapp" ? session.customerAddress : null;
+  const context = { text: turnContext({ timeZone: business.timeZone, now: new Date(), currency: session.displayCurrency, language, whatsappNumber }) };
   const latest = contents.at(-1);
   if (latest?.role === "user" && !latest.parts?.some((part) => typeof part.text === "string" && part.text.startsWith("<tool_result"))) {
     latest.parts = [...(latest.parts ?? []), context];
@@ -286,6 +285,7 @@ async function runLockedTurn(
   const customerTexts = historyRows
     .filter((row) => row.actor === "USER" && typeof row.content === "string")
     .map((row) => row.content as string);
+  if (whatsappNumber) customerTexts.push(whatsappNumberLine(whatsappNumber));
   const customerLinks: CustomerLink[] = [];
   const turnCustomerLinks: CustomerLink[] = [];
   for (const row of historyRows) collectCustomerLinks(row.toolResponse, customerLinks);
@@ -514,12 +514,12 @@ async function failedTurn(args: {
     await setConsecutiveFailures(sessionId, decision.failures);
     if (decision.handOff) {
       const reason = `Zaina failed ${decision.failures} turns in a row (${(error as Error)?.message ?? error}).`;
-      queue("system-error alert", connector.notifyTeam(business, {
+      alert(business, "system-error alert", {
         kind: "system-error",
         sessionId,
         summary: `Zaina system error: ${(error as Error)?.message ?? error}`,
         details: { "Failed turns in a row": decision.failures },
-      }));
+      });
       const handoff = await requestHandoff(business, sessionId, reason, new Date(), language);
       escalated = handoff.status !== "callback";
       text = handoff.status === "callback" ? handoff.tellCustomer : texts(language).handedOverAfterFailures;
@@ -570,24 +570,24 @@ async function recordPaymentCode(
     [business.id, code],
   ));
   if (claim && claim.session_id !== sessionId) {
-    queue("reused-code alert", connector.notifyTeam(business, {
+    alert(business, "reused-code alert", {
       kind: "system-error",
       sessionId,
       summary: `M-Pesa code ${code} was sent again for a different booking`,
       details: { Code: code, "First used for booking": claim.booking_ref },
-    }));
+    });
     return say.mpesaUsedElsewhere;
   }
 
   const result = await connector.recordChatPayment(business, { sessionId, code });
   if (!result.ok) {
     if (result.reason !== "failed") return null;
-    queue("payment-code alert", connector.notifyTeam(business, {
+    alert(business, "payment-code alert", {
       kind: "system-error",
       sessionId,
       summary: `Couldn't record M-Pesa code ${code} sent in the chat`,
       details: { Code: code, Error: result.detail ?? "" },
-    }));
+    });
     return say.mpesaUnmatched(code);
   }
   if (result.alreadyRecorded) {

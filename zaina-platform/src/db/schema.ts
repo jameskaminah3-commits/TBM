@@ -49,26 +49,47 @@ export const businesses = pgTable("businesses", {
 });
 export type Business = typeof businesses.$inferSelect;
 
+/** Where a conversation happens. */
+export const channels = ["web", "whatsapp"] as const;
+export type Channel = (typeof channels)[number];
+
+const at = (name: string) => timestamp(name, { withTimezone: true, mode: "date" });
+
 export const chatSessions = pgTable("chat_sessions", {
   id: uuid("id").primaryKey().defaultRandom(),
   businessId: text("business_id").notNull(),
   managedBy: text("managed_by").notNull().default("AI"),
   assignedAgentId: text("assigned_agent_id"),
   handoffReason: text("handoff_reason"),
-  handoffAt: timestamp("handoff_at", { withTimezone: true, mode: "date" }),
-  claimedAt: timestamp("claimed_at", { withTimezone: true, mode: "date" }),
-  callbackRequestedAt: timestamp("callback_requested_at", { withTimezone: true, mode: "date" }),
+  handoffAt: at("handoff_at"),
+  claimedAt: at("claimed_at"),
+  callbackRequestedAt: at("callback_requested_at"),
   displayCurrency: text("display_currency").notNull().default("USD"),
   language: text("language").$type<ChatLanguage>().notNull().default("en"),
   visitorKey: text("visitor_key"),
   consecutiveFailures: integer("consecutive_failures").notNull().default(0),
   turnLockId: uuid("turn_lock_id"),
-  turnLockUntil: timestamp("turn_lock_until", { withTimezone: true, mode: "date" }),
+  turnLockUntil: at("turn_lock_until"),
+  channel: text("channel").$type<Channel>().notNull().default("web"),
+  customerAddress: text("customer_address"),
+  customerName: text("customer_name"),
+  customerLastMessageAt: at("customer_last_message_at"),
+  deliveredEventId: bigint("delivered_event_id", { mode: "number" }).notNull().default(0),
+  deliveryLockUntil: at("delivery_lock_until"),
+  followupSentAt: at("followup_sent_at"),
+  firstHandoffAt: at("first_handoff_at"),
+  claimedBy: uuid("claimed_by"),
+  routedTo: uuid("routed_to"),
+  routedAt: at("routed_at"),
+  teamAlertedAt: at("team_alerted_at"),
   createdAt: createdAt(),
-  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
-  lastActivityAt: timestamp("last_activity_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  updatedAt: at("updated_at").notNull().defaultNow(),
+  lastActivityAt: at("last_activity_at").notNull().defaultNow(),
 });
 export type ChatSession = typeof chatSessions.$inferSelect;
+
+/** Something the customer sent that isn't text, by its channel's media id. */
+export type ChatMedia = { kind: string; id: string; mimeType?: string | null; caption?: string | null; fileName?: string | null };
 
 export const chatEvents = pgTable("chat_events", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
@@ -80,6 +101,9 @@ export const chatEvents = pgTable("chat_events", {
   toolName: text("tool_name"),
   toolArguments: jsonb("tool_arguments"),
   toolResponse: jsonb("tool_response"),
+  media: jsonb("media").$type<ChatMedia[] | null>(),
+  /** The staff member who wrote a team reply. */
+  author: uuid("author"),
 });
 export type ChatEvent = typeof chatEvents.$inferSelect;
 
@@ -143,8 +167,28 @@ export const staffMemberships = pgTable("staff_memberships", {
   businessId: text("business_id").notNull(),
   userId: uuid("user_id").notNull(),
   role: text("role").$type<StaffRole>().notNull(),
+  alertEmail: boolean("alert_email").notNull().default(true),
   createdAt: createdAt(),
 }, (table) => [primaryKey({ columns: [table.businessId, table.userId] })]);
+
+export const staffPresence = pgTable("staff_presence", {
+  businessId: text("business_id").notNull(),
+  userId: uuid("user_id").notNull(),
+  available: boolean("available").notNull().default(false),
+  lastSeenAt: at("last_seen_at").notNull().defaultNow(),
+  lastRoutedAt: at("last_routed_at"),
+}, (table) => [primaryKey({ columns: [table.businessId, table.userId] })]);
+
+export const staffPushSubscriptions = pgTable("staff_push_subscriptions", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  userId: uuid("user_id").notNull(),
+  endpoint: text("endpoint").notNull(),
+  p256dh: text("p256dh").notNull(),
+  auth: text("auth").notNull(),
+  userAgent: text("user_agent"),
+  createdAt: createdAt(),
+  lastUsedAt: at("last_used_at"),
+});
 
 export const businessSettings = pgTable("business_settings", {
   businessId: text("business_id").primaryKey(),
@@ -158,6 +202,9 @@ export const businessSettings = pgTable("business_settings", {
   allowedLinkHosts: text("allowed_link_hosts").array().notNull().default([]),
   allowedLinkHostSuffixes: text("allowed_link_host_suffixes").array().notNull().default([]),
   defaultCurrency: text("default_currency").notNull().default("USD"),
+  widgetColor: text("widget_color").notNull().default("#0f766e"),
+  widgetPosition: text("widget_position").$type<"right" | "left">().notNull().default("right"),
+  widgetGreeting: text("widget_greeting"),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
   updatedBy: uuid("updated_by"),
 });
@@ -220,4 +267,51 @@ export const knowledgeMisses = pgTable("knowledge_misses", {
   sessionId: uuid("session_id"),
   query: text("query").notNull(),
   createdAt: createdAt(),
+});
+
+export const followupParameters = ["none", "business_name", "customer_name"] as const;
+export type FollowupParameter = (typeof followupParameters)[number];
+
+export const whatsappNumbers = pgTable("whatsapp_numbers", {
+  businessId: text("business_id").primaryKey(),
+  phoneNumberId: text("phone_number_id").notNull(),
+  wabaId: text("waba_id"),
+  displayPhoneNumber: text("display_phone_number"),
+  verifiedName: text("verified_name"),
+  followupTemplate: text("followup_template"),
+  followupTemplateLanguage: text("followup_template_language").notNull().default("en"),
+  followupTemplateParameter: text("followup_template_parameter").$type<FollowupParameter>().notNull().default("none"),
+  status: text("status").$type<"active" | "paused">().notNull().default("active"),
+  connectedAt: at("connected_at").notNull().defaultNow(),
+  connectedBy: uuid("connected_by"),
+  updatedAt: at("updated_at").notNull().defaultNow(),
+});
+export type WhatsappNumber = typeof whatsappNumbers.$inferSelect;
+
+export const whatsappInbound = pgTable("whatsapp_inbound", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  businessId: text("business_id").notNull(),
+  sessionId: uuid("session_id").notNull(),
+  messageId: text("message_id").notNull(),
+  kind: text("kind").notNull(),
+  body: text("body"),
+  media: jsonb("media").$type<ChatMedia | null>(),
+  receivedAt: at("received_at").notNull().defaultNow(),
+  status: text("status").$type<"pending" | "processing" | "done" | "ignored" | "failed">().notNull().default("pending"),
+  attempts: integer("attempts").notNull().default(0),
+  processedAt: at("processed_at"),
+});
+
+export const whatsappOutbound = pgTable("whatsapp_outbound", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  businessId: text("business_id").notNull(),
+  sessionId: uuid("session_id").notNull(),
+  eventId: bigint("event_id", { mode: "number" }),
+  messageId: text("message_id"),
+  kind: text("kind").$type<"text" | "template">().notNull(),
+  status: text("status").$type<"sent" | "delivered" | "read" | "failed">().notNull().default("sent"),
+  errorCode: integer("error_code"),
+  errorTitle: text("error_title"),
+  createdAt: createdAt(),
+  updatedAt: at("updated_at").notNull().defaultNow(),
 });

@@ -17,10 +17,12 @@ import type { BusinessConnector, TeamEvent } from "../../src/connectors/types.ts
 import {
   claimSession,
   closeSession,
+  configureHandoffs,
   releaseSession,
   requestHandoff,
   sweepUnclaimedHandoffs,
 } from "../../src/conversations/handoff.ts";
+import { availablePeople, setPresence } from "../../src/conversations/routing.ts";
 import { deleteConversation, deleteExpiredConversations, eraseCustomer } from "../../src/conversations/retention.ts";
 import {
   appendEvent,
@@ -33,7 +35,7 @@ import {
   toolSuccesses,
 } from "../../src/conversations/store.ts";
 import { appPool, assertAppRole, closePlatformDb, initPlatformDb, ownerPool } from "../../src/db/platform-db.ts";
-import { createStaffUser, membershipsOf } from "../../src/db/platform-scope.ts";
+import { createStaffUser, deletePushSubscription, membershipsOf, pushSubscriptionCount, savePushSubscription } from "../../src/db/platform-scope.ts";
 import { businessSettings, chatSessions, leads, staffMemberships, type Business } from "../../src/db/schema.ts";
 import { currentBusinessId, inBusiness, runForBusiness } from "../../src/db/tenant.ts";
 import { migrate, pendingMigrations, readMigrations } from "../../src/db/migrate.ts";
@@ -603,4 +605,120 @@ test("TBM is a travel concierge; a chat remembers the customer's language", asyn
   await acme(() => setSessionLanguage(chat.id, "sw"));
   assert.equal((await acme(() => getSession(chat.id)))?.language, "sw");
   await assert.rejects(() => asBusiness("acme", "update chat_sessions set language = 'fr' where id = $1", [chat.id]), /check constraint/);
+});
+
+// ── Phase 3: channels, routing, alerts ───────────────────────────────
+
+test("a WhatsApp number belongs to one business; the webhook finds its business and nothing else", async () => {
+  await asBusiness("acme", "insert into whatsapp_numbers (business_id, phone_number_id) values ('acme', '100200300400')");
+  // The service, with no business in scope, gets only the business id for an active number.
+  const lookup = async (id: string) => (await appPool().query("select whatsapp_number_business($1) as business_id", [id])).rows[0].business_id;
+  assert.equal(await lookup("100200300400"), "acme");
+  assert.equal(await lookup("999999999999"), null);
+  // …but can't read the numbers themselves.
+  assert.deepEqual((await appPool().query("select * from whatsapp_numbers")).rows, []);
+  assert.deepEqual((await asBusiness("tbm", "select * from whatsapp_numbers")).rows, [], "TBM doesn't see Acme's number");
+  // Another business can't take the number, or write a row for Acme.
+  await assert.rejects(() => asBusiness("tbm", "insert into whatsapp_numbers (business_id, phone_number_id) values ('tbm', '100200300400')"), /duplicate key/);
+  await assert.rejects(() => asBusiness("tbm", "insert into whatsapp_numbers (business_id, phone_number_id) values ('acme', '555555555555')"), /row-level security/);
+  // A paused number stops routing.
+  await asBusiness("acme", "update whatsapp_numbers set status = 'paused' where business_id = 'acme'");
+  assert.equal(await lookup("100200300400"), null);
+  await asBusiness("acme", "delete from whatsapp_numbers where business_id = 'acme'");
+});
+
+test("WhatsApp messages in and out stay with their business and go with the conversation", async () => {
+  const chat = await newChat("acme");
+  await asBusiness("acme", "update chat_sessions set channel = 'whatsapp', customer_address = '254712345678' where id = $1", [chat.id]);
+  await asBusiness("acme", "insert into whatsapp_inbound (business_id, session_id, message_id, kind, body) values ('acme', $1, 'wamid.1', 'text', 'Hi')", [chat.id]);
+  await assert.rejects(
+    () => asBusiness("acme", "insert into whatsapp_inbound (business_id, session_id, message_id, kind) values ('acme', $1, 'wamid.1', 'text')", [chat.id]),
+    /duplicate key/,
+    "the same message is never taken twice",
+  );
+  await asBusiness("acme", "insert into whatsapp_outbound (business_id, session_id, event_id, message_id, kind) values ('acme', $1, 1, 'wamid.out', 'text')", [chat.id]);
+  assert.deepEqual((await asBusiness("tbm", "select * from whatsapp_inbound")).rows, []);
+  assert.deepEqual((await asBusiness("tbm", "select * from whatsapp_outbound")).rows, []);
+  // A row can't point at another business's conversation.
+  const tbmChat = await newChat("tbm");
+  await assert.rejects(
+    () => asBusiness("acme", "insert into whatsapp_inbound (business_id, session_id, message_id, kind) values ('acme', $1, 'wamid.x', 'text')", [tbmChat.id]),
+    /foreign key/,
+  );
+  // Deleting the conversation deletes its WhatsApp messages too.
+  await acme(() => deleteConversation(chat.id));
+  const left = await ownerPool().query(
+    "select (select count(*)::int from whatsapp_inbound where session_id = $1) as inbound, (select count(*)::int from whatsapp_outbound where session_id = $1) as outbound",
+    [chat.id],
+  );
+  assert.deepEqual(left.rows[0], { inbound: 0, outbound: 0 });
+});
+
+test("a WhatsApp customer's number counts as a detail they gave, and finds their chats for deletion", async () => {
+  const chat = await newChat("acme");
+  await asBusiness("acme", "update chat_sessions set channel = 'whatsapp', customer_address = '254712999888' where id = $1", [chat.id]);
+  await appendEvent({ businessId: "acme", sessionId: chat.id, actor: "USER", content: "Hi, I need a room" });
+  assert.deepEqual(await acme(() => customerMessages(chat.id)), ["Hi, I need a room", "My WhatsApp number: +254712999888"]);
+  const erased = await acme(() => eraseCustomer({ phone: "0712 999 888" }));
+  assert.equal(erased.conversations, 1);
+  assert.equal(await acme(() => getSession(chat.id)), undefined);
+});
+
+test("a waiting chat is offered to the available person with the fewest chats; everyone hears after a few minutes", async () => {
+  configureHandoffs({ availabilityHours: 2, routeEscalateMinutes: 3 });
+  const userA = await createStaffUser({ email: "a-agent@example.com", name: "Asha", passwordHash: "x" });
+  const userB = await createStaffUser({ email: "b-agent@example.com", name: "Baraka", passwordHash: "x" });
+  const userC = await createStaffUser({ email: "c-viewer@example.com", name: "Chege", passwordHash: "x" });
+  await asBusiness("acme", "insert into staff_memberships (business_id, user_id, role) values ('acme', $1, 'agent'), ('acme', $2, 'agent'), ('acme', $3, 'viewer')", [userA.id, userB.id, userC.id]);
+  // Nobody is available: nobody is picked, the chat is marked as alerted to everyone.
+  const first = await newChat("acme");
+  await requestHandoff(business, first.id, "Wants a person");
+  let row = await acme(() => getSession(first.id));
+  assert.equal(row?.routedTo, null);
+  assert.ok(row?.teamAlertedAt, "everyone was alerted");
+  assert.ok(row?.firstHandoffAt);
+  const handoffEvent = events.find((event) => event.kind === "handoff") as Extract<TeamEvent, { kind: "handoff" }>;
+  assert.equal(handoffEvent.routedTo, null);
+
+  // Both agents available; the viewer's availability doesn't count. Asha already has a chat in hand.
+  await acme(() => setPresence("acme", userA.id, true));
+  await acme(() => setPresence("acme", userB.id, true));
+  await asBusiness("acme", "insert into staff_presence (business_id, user_id, available) values ('acme', $1, true)", [userC.id]);
+  await acme(() => claimSession(first.id, "Asha <a-agent@example.com>", userA.id));
+  const second = await newChat("acme");
+  await requestHandoff(business, second.id, "Group booking");
+  row = await acme(() => getSession(second.id));
+  assert.equal(row?.routedTo, userB.id, "Baraka has fewer chats in hand");
+  assert.equal(row?.teamAlertedAt, null);
+
+  // Someone who hasn't been seen for hours isn't offered chats.
+  await asBusiness("acme", "update staff_presence set last_seen_at = now() - interval '5 hours' where user_id = $1", [userB.id]);
+  const third = await newChat("acme");
+  await requestHandoff(business, third.id, "Question");
+  assert.equal((await acme(() => getSession(third.id)))?.routedTo, userA.id);
+
+  // Unclaimed for longer than the routing window: marked for everyone, once.
+  await asBusiness("acme", "update chat_sessions set routed_at = now() - interval '4 minutes' where id = $1", [second.id]);
+  events.length = 0;
+  await sweepUnclaimedHandoffs();
+  assert.ok((await acme(() => getSession(second.id)))?.teamAlertedAt);
+  await sweepUnclaimedHandoffs();
+  const people = await acme(() => availablePeople("acme", 2));
+  assert.deepEqual(people.map((person) => [person.name, person.available]).sort(), [["Asha", true], ["Baraka", false], ["Chege", true]]);
+  await asBusiness("acme", "update chat_sessions set managed_by = 'CLOSED' where business_id = 'acme' and managed_by = 'HUMAN'");
+});
+
+test("phones and browsers for alerts: each business reads only its own people's", async () => {
+  const outsider = await createStaffUser({ email: "tbm-only@example.com", name: "Tbm Agent", passwordHash: "x" });
+  await asBusiness("tbm", "insert into staff_memberships (business_id, user_id, role) values ('tbm', $1, 'agent')", [outsider.id]);
+  await savePushSubscription(outsider.id, { endpoint: "https://push.example/tbm-only", p256dh: "k".repeat(60), auth: "a".repeat(20) }, null);
+  const acmeMember = (await ownerPool().query("select id from staff_users where email = 'a-agent@example.com'")).rows[0].id;
+  await savePushSubscription(acmeMember, { endpoint: "https://push.example/asha", p256dh: "k".repeat(60), auth: "a".repeat(20) }, null);
+  const seenByAcme = (await asBusiness("acme", "select endpoint from staff_push_subscriptions")).rows.map((row) => row.endpoint);
+  assert.deepEqual(seenByAcme, ["https://push.example/asha"]);
+  assert.deepEqual((await asBusiness("tbm", "select endpoint from staff_push_subscriptions")).rows.map((row) => row.endpoint), ["https://push.example/tbm-only"]);
+  await assert.rejects(() => asBusiness("acme", "delete from staff_push_subscriptions"), /permission denied/, "only the platform writes them");
+  assert.equal(await pushSubscriptionCount(acmeMember), 1);
+  assert.equal(await deletePushSubscription("https://push.example/asha", outsider.id), false, "not someone else's");
+  assert.equal(await deletePushSubscription("https://push.example/asha", acmeMember), true);
 });

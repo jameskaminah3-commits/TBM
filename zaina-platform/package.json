@@ -7,12 +7,14 @@
   "scripts": {
     "dev": "cd .. && tsx zaina-platform/src/server.ts",
     "start": "cd .. && node zaina-platform/dist/server.js",
-    "build": "cd .. && esbuild zaina-platform/src/server.ts --platform=node --packages=external --bundle --format=esm --outdir=zaina-platform/dist",
+    "build": "cd .. && node zaina-platform/scripts/build.mjs",
+    "build:web": "cd .. && node zaina-platform/scripts/build.mjs --web",
+    "release": "cd .. && node zaina-platform/dist/release.js",
     "migrate": "cd .. && tsx zaina-platform/src/db/migrate-cli.ts",
     "test": "cd .. && tsx --test --test-concurrency=1 zaina-platform/test/unit/*.test.ts",
     "test:db": "cd .. && tsx --test --test-concurrency=1 zaina-platform/test/db/*.test.ts",
-    "check": "cd .. && tsc -p zaina-platform/tsconfig.json",
-    "test:e2e": "cd .. && tsx --test --test-concurrency=1 zaina-platform/test/e2e/e2e.test.ts",
+    "check": "cd .. && tsc -p zaina-platform/tsconfig.json && tsc -p zaina-platform/web/tsconfig.json",
+    "test:e2e": "cd .. && tsx --test --test-concurrency=1 zaina-platform/test/e2e/*.test.ts",
     "staff:create": "cd .. && tsx zaina-platform/src/cli/create-staff.ts",
     "knowledge:import": "cd .. && tsx zaina-platform/src/cli/import-knowledge.ts",
     "eval": "cd .. && tsx zaina-platform/test/eval/run.ts"

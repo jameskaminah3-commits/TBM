@@ -12,23 +12,30 @@ TBM is moved onto this service.
 ## How it fits together
 
 ```
-website widget ──▶ gateway ──▶ engine ──────────▶ connector ──▶ the business's own system
-                   (tokens,     (one turn: a        (TBM: TBM's listings, prices,
-                    limits,      static prompt,      bookings, alerts;
-                    websites)    the turn's context, others: leads for their team)
-                                 short history,
-                                 tools by business type,
-                                 knowledge search, replies)
-                       │            │
-staff console ─────────┤            │
-(sign-in, roles,       ▼            ▼
- knowledge)    platform database: businesses, conversations, telemetry, usage,
-               rate limits, M-Pesa claims, staff, settings, encrypted secrets,
-               leads, knowledge. Every business's rows are kept apart by Postgres.
+website widget ──┐
+(one script tag) ├──▶ gateway ──▶ engine ─────────▶ connector ──▶ the business's own system
+WhatsApp ────────┘   (tokens,     (one turn: static  (TBM or       (TBM: listings, prices,
+(Meta's signed        limits,      prompt, context,   basic)         bookings; others: leads)
+ webhook)             websites)    history, tools,
+     ▲                             knowledge search)
+     │                                  │
+     └──── delivery ◀───────────────────┘
+           (in order, within WhatsApp's 24-hour rule)
+
+staff console ──▶ staff API ──▶ platform database: businesses, conversations (web and WhatsApp),
+(inbox, knowledge,  (cookie or     telemetry, usage, limits, staff, presence, settings, encrypted
+ reports, settings,  token;        secrets, leads, knowledge, WhatsApp numbers and messages.
+ team, platform)     roles)        Every business's rows are kept apart by Postgres.
+     ▲
+     └── alerts: web push to staff phones and browsers, and email
 ```
 
 - `src/gateway/` — the public chat API: signed session tokens, shared rate
-  limits, allowed websites, daily model budget.
+  limits, allowed websites, daily model budget, and the widget's settings.
+- `src/channels/whatsapp/` — WhatsApp: the signed webhook, messages in
+  (stored once, answered together), replies out (in order, within the
+  24-hour window, with the follow-up template), statuses, the number's
+  connection and the team's view of customers' photos.
 - `src/engine/` — one chat turn (`agent.ts`, ported from the TBM app's
   `router.ts`) and the rules it runs on: reply policy, idempotency, contact
   checks, turn budget, session lock, failure policy, telemetry; the turn's
@@ -39,7 +46,11 @@ staff console ─────────┤            │
   ranked search that names its source, amounts hidden, the questions nothing
   answered, staff routes.
 - `src/conversations/` — conversations in the platform database, the
-  handoff lifecycle, the team's inbox routes, retention and deletion requests.
+  handoff lifecycle and its routing (who hears first), the team's alerts
+  (web push and email), the inbox routes, retention and deletion requests.
+- `src/console/` — serves the console and the widget script; the console's
+  sign-in (an HttpOnly cookie) and phone alerts.
+- `src/reports/` — each business's report.
 - `src/connectors/` — what a business plugs in. `tbm/` is TBM: its prompt and
   tools, its team alerts and chat M-Pesa recording; `tbm/tbm-app.ts` is the
   only file that reaches into the TBM app's code. `basic/` serves any other
@@ -51,9 +62,12 @@ staff console ─────────┤            │
   its encrypted secrets.
 - `src/staff/` — staff accounts, sign-in, roles, and the business console
   routes (settings, people, secrets, leads, reports, deletion requests).
-- `src/platform/` — the platform's own console: adding businesses.
+- `src/platform/` — the platform's own routes: adding businesses, and every business's day.
 - `src/db/` — the two database connections and business scope (`tenant.ts`).
-- `src/cli/` — creating the first staff accounts; importing knowledge.
+- `src/cli/` — creating the first staff accounts; importing knowledge; the
+  release step run before each deploy.
+- `web/widget/` — the website widget (plain TypeScript, in a shadow root).
+- `web/console/` — the business console (React), its service worker and styles.
 - `migrations/` — reviewed SQL, applied in order and never edited once run.
 - `test/eval/` — the evaluation suite: 110 conversations, graded.
 
@@ -153,8 +167,50 @@ Decisions to confirm:
   staffed hours proposed in Phase 0 are every day, 07:00 to 22:00. Which
   should handoffs follow?
 
-**Next: Phase 3 — channels and console.** The embeddable widget, WhatsApp,
-the business inbox and basic reports.
+**Phase 3 — channels and console: built; a real WhatsApp number needs the
+platform's Meta app.** Customers reach a business on its website and on
+WhatsApp, and its team works from a console:
+
+| Part | What it does |
+|---|---|
+| Website widget | One script tag per business (its public key). Only the business's own websites can use it. It has the business's name, colour, corner and greeting. The chat resumes on the next visit, and the team's replies appear while they have the chat. Shadow DOM, keyboard and screen-reader friendly, full screen on phones, 12 KB |
+| WhatsApp | The WhatsApp Cloud API through one webhook for the platform, checked against Meta's signature. Messages are stored once (Meta retries) and answered together when they arrive together. Replies go out in order: free-form within 24 hours of the customer's last message; after that, the business's approved follow-up template and the reply waits for the customer. Delivery statuses, retries when Meta is busy, and a failed message skipped rather than blocking the chat. Photos, voice notes and documents are kept for the team, and Zaina says she reads text only. The customer's number counts as a contact they gave. Blue ticks and "typing…" |
+| Connecting a number | An owner enters the phone number ID, account ID and a permanent token. Meta checks the token before anything is saved; the token is stored encrypted and never shown again. A number can belong to one business only |
+| Handoff routing | A waiting chat goes first to one person who is taking chats (the one with the fewest in hand), then to everyone after 3 minutes. The unclaimed timeout, callbacks and "hand back to Zaina" work as before. People show they're taking chats in the console |
+| Alerts | Web push to staff phones and browsers (the console can be installed on the home screen) and email: a waiting chat, still waiting, a callback, a reply from the customer they're helping, and trouble for managers. Each person can turn emails off |
+| Console | Sign-in with an HttpOnly cookie and a strict content policy. Inbox (waiting, mine, with the team, callbacks, all) with claim, reply, hand back and close, WhatsApp ticks and the 24-hour window, and customers' photos. Knowledge (documents, "what would Zaina find?", unanswered questions). Reports. Settings (business, widget and embed code, WhatsApp, hours). Team and secrets. A platform view for its admins. Works on phones, light and dark |
+| Reports | Chats by channel, handled by Zaina alone, handoffs picked up within 15 minutes (the plan's 90% target), time to claim and to first reply, Zaina's reply times and failures, bookings and deposits asked in chat, unanswered questions, cost; chats per day. The platform view shows every business's model use against its budget |
+| Deploying | Its own Railway service (`railway.json`) and Postgres (`zaina-db`). The release step runs migrations, sets the restricted role's password, creates the first admin and imports TBM's knowledge. See DEPLOY.md |
+
+Exit check (the plan's: "a pilot business answers its WhatsApp customers
+end to end"):
+
+- **End to end on WhatsApp, as a pilot would use it.** Acme Guesthouse
+  connects its number (Meta checks the token). Meta's signed webhook reaches
+  Zaina, who answers from Acme's knowledge on WhatsApp, citing it. Asking for
+  a person reaches the available agent's phone first. She claims the chat in
+  the console and her reply goes out on WhatsApp under her name. The
+  customer's answer buzzes her phone. After 24 hours her reply waits behind
+  Acme's approved template and goes out when the customer writes. The
+  inbound and outbound Graph API run on a stand-in with Meta's formats
+  (`test/e2e/channels.test.ts`, 19 tests); a real number needs the platform's
+  Meta app (DEPLOY.md, section 4).
+- **In a browser.** The widget and console, driven in Chromium on desktop
+  and phone widths, light and dark: no content-policy violations, no page
+  errors, no sideways scrolling.
+- **TBM unchanged where it matters.** The same 13 scripted conversations
+  still produce word-for-word the same replies here as in the live Zaina,
+  and web chats cost the same tokens per call as in Phase 2.
+
+Decisions to confirm:
+
+- The platform's Meta app: who owns it, and the first pilot number.
+- The follow-up template's wording (a utility template, approved by Meta).
+- Routing: first to one available person for 3 minutes, then everyone.
+- Where the platform lives: `zaina.tembeabilamatata.com` or another domain.
+
+**Next: Phase 4 — hospitality pilot.** Generic offerings with room-type
+counts, shared pricing rules, each business's own payment account.
 
 ## Running it locally
 
@@ -169,6 +225,14 @@ GEMINI_API_KEY          the model key (a business's own gemini_api_key secret ov
 TBM_DATABASE_URL        TBM's database, for the TBM connector; without it TBM's chats are refused
 ```
 
+Phase 3, each optional: `PUBLIC_BASE_URL` (the service's address: the widget
+snippet, the webhook, links in alerts), `WHATSAPP_APP_SECRET` and
+`WHATSAPP_VERIFY_TOKEN` (the platform's Meta app; both, or WhatsApp is off),
+`WHATSAPP_GRAPH_VERSION` (`v23.0`), `WEB_PUSH_PUBLIC_KEY`,
+`WEB_PUSH_PRIVATE_KEY` and `WEB_PUSH_SUBJECT` (alerts on phones),
+`RESEND_API_KEY` and `ALERT_FROM_EMAIL` (alert emails), `ROUTE_ESCALATE_MINUTES`
+(3) and `AVAILABILITY_HOURS` (2).
+
 Optional: `PLATFORM_APP_DATABASE_URL` (see below), `PLATFORM_SECRETS_KEY_ID`
 (`k1`) and `PLATFORM_SECRETS_OLD_KEYS` (`id:key,…`, to rotate the secrets
 key), `PORT` (5070), `TURN_BUDGET_MS` (25000), `TRUST_PROXY` (1), `LIMIT_*`
@@ -182,8 +246,11 @@ cd zaina-platform
 npm run migrate     # apply migrations (a release step in production)
 npm run knowledge:import -- --business tbm --dir zaina-platform/knowledge/tbm   # TBM's knowledge (also a release step)
 STAFF_PASSWORD='…' npm run staff:create -- --email you@example.com --name "You" --platform-admin
-npm run dev         # start with tsx
-npm run build       # bundle to dist/, then npm start
+npm run build:web   # the widget and console, into dist/public (the server serves them)
+npm run dev         # start with tsx: the console is at http://localhost:5070/console/
+npm run build       # bundle the service, the release step and the web assets to dist/
+npm run release     # the release step (after build): migrations, the zaina_app password, first admin, TBM's knowledge
+npm start
 ```
 
 `staff:create` also adds someone to a business: `--business tbm --role owner`.
@@ -247,15 +314,37 @@ retention_days?, owner: { email, name, password } }`, which returns the
 business's widget key. `business_type` is `general` (the default) or
 `guesthouse`; a `travel_concierge` needs its own connector first, as TBM has.
 
+Phase 3:
+
+| Route | Who |
+|---|---|
+| `GET /widget.js` | any website (it only works on the business's own) |
+| `GET /v1/widget/config?key=<public key>` | the business's websites: name, colour, corner, greeting |
+| `GET`, `POST /v1/whatsapp/webhook` | Meta: the handshake, then signed deliveries |
+| `POST`, `DELETE /v1/console/session`, `GET /v1/console/me` | the console: sign in and out (cookie), who is signed in |
+| `POST`, `DELETE /v1/console/push-subscriptions` | anyone signed in: alerts on this phone or browser |
+| `GET`, `POST presence` (`{ available? }`) | viewer (only people who answer chats can take them) |
+| `GET members/me`, `PATCH members/me` (`{ alert_email }`) | viewer: my role and alert emails |
+| `GET operations`, `PATCH operations` (`{ time_zone?, staffed_hours?, unclaimed_timeout_minutes?, allowed_origins? }`) | viewer / manager (websites: owner) |
+| `GET reports?days=30` | manager |
+| `GET whatsapp` / `PUT`, `DELETE whatsapp` | manager / owner |
+| `GET whatsapp/media/:mediaId` | viewer: a photo or document a customer sent to this business |
+| `GET /v1/platform/overview` | platform admins |
+
+The sessions list also takes `filter=mine` and `filter=everything`, and
+answers with each chat's channel, customer and WhatsApp window. A team reply
+to a WhatsApp chat answers with its delivery (`delivered`, `window_closed`, …).
+
 ## Tests
 
 ```
-npm test            # unit tests (no database)
-npm run test:db     # database checks, including separation between businesses:
+npm test            # unit tests (no database): 125
+npm run test:db     # database checks, including separation between businesses: 31
                     # PLATFORM_TEST_DATABASE_URL, a local database ending in _test (wiped)
-npm run test:e2e    # the whole service with a scripted model, TBM and a second business:
+npm run test:e2e    # the whole service with a scripted model, TBM and a second business,
+                    # and the Phase 3 channels (WhatsApp, alerts, console, widget): 54
                     # also TBM_TEST_DATABASE_URL, a local copy of TBM's schema ending in _test
-npm run check       # type check
+npm run check       # type check (the service, and the widget and console)
 
 npm run eval -- --offline         # knowledge search for every question in the evaluation (no model, no database)
 GEMINI_API_KEY=… npm run eval     # the evaluation with the real model, graded; same local *_test databases
@@ -263,9 +352,9 @@ npm run eval -- --scripted        # the evaluation harness itself, with the scri
 ```
 
 The end-to-end run uses `test/e2e/scripted-model.mjs` in place of the model,
-email and exchange-rate services, and refuses to run against any database
-that isn't local and named `*_test`. `E2E_SERVER_LOG=<file>` keeps the
-server's output.
+email, exchange-rate, WhatsApp (Graph API) and web push services, and
+refuses to run against any database that isn't local and named `*_test`.
+`E2E_SERVER_LOG=<file>` keeps the server's output.
 
 The evaluation (`test/eval/`) runs 110 conversations through the whole
 service: TBM on a richer test seed (`tbm-eval-seed.sql`) and Acme Guesthouse

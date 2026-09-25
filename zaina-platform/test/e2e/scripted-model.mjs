@@ -177,8 +177,91 @@ const sleep = (ms, signal) => new Promise((resolve, reject) => {
   }, { once: true });
 });
 
+// ── A stand-in for WhatsApp's Cloud API (graph.facebook.com) ──────────
+// Tokens: FAKE_WHATSAPP_TOKEN is the one Meta accepts. Customers' numbers
+// choose what happens to messages sent to them:
+//   254700000047  text refused: the 24-hour window has closed (templates go through)
+//   254700000429  rate limited twice, then accepted
+//   254700000026  never deliverable
+// Every call is logged to FAKE_WHATSAPP_LOG.
+let whatsappSent = 0;
+const throttled = new Map();
+function graphAnswer(status, body) {
+  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+}
+function logWhatsapp(entry) {
+  if (process.env.FAKE_WHATSAPP_LOG) appendFileSync(process.env.FAKE_WHATSAPP_LOG, JSON.stringify({ at: new Date().toISOString(), ...entry }) + "\n");
+}
+async function fakeGraph(url, init) {
+  const { pathname, hostname } = new URL(url);
+  const token = /^Bearer (.+)$/.exec(init?.headers?.authorization ?? init?.headers?.Authorization ?? "")?.[1];
+  if (hostname === "lookaside.fbsbx.com") {
+    // A tiny JPEG, as Meta serves a customer's photo.
+    return new Response(Buffer.from("ffd8ffe000104a46494600010100000100010000ffd9", "hex"), { status: 200, headers: { "content-type": "image/jpeg" } });
+  }
+  if (token !== (process.env.FAKE_WHATSAPP_TOKEN || "EAAG-test-token-0000000000")) {
+    logWhatsapp({ kind: "refused", path: pathname });
+    return graphAnswer(401, { error: { message: "Invalid OAuth access token - Cannot parse access token", type: "OAuthException", code: 190 } });
+  }
+  const parts = pathname.split("/").filter(Boolean); // [version, id, edge?]
+  const method = (init?.method ?? "GET").toUpperCase();
+  if (method === "GET" && parts.length === 2 && /^\d+$/.test(parts[1]) && parts[1].length > 12) {
+    // A media id is long; a phone number id shorter (in these tests).
+    return graphAnswer(200, { url: `https://lookaside.fbsbx.com/whatsapp_business/attachments/?mid=${parts[1]}`, mime_type: "image/jpeg", id: parts[1] });
+  }
+  if (method === "GET" && parts.length === 2) {
+    return graphAnswer(200, { display_phone_number: "+254 700 123 456", verified_name: "Acme Guesthouse", quality_rating: "GREEN", id: parts[1] });
+  }
+  if (method === "POST" && parts[2] === "subscribed_apps") {
+    logWhatsapp({ kind: "subscribed", waba: parts[1] });
+    return graphAnswer(200, { success: true });
+  }
+  if (method === "POST" && parts[2] === "messages") {
+    const body = JSON.parse(init?.body ?? "{}");
+    if (body.status === "read") {
+      logWhatsapp({ kind: "read", phoneNumberId: parts[1], messageId: body.message_id, typing: Boolean(body.typing_indicator) });
+      return graphAnswer(200, { success: true });
+    }
+    const to = String(body.to ?? "");
+    if (to === "254700000047" && body.type === "text") {
+      logWhatsapp({ kind: "refused-window", to });
+      return graphAnswer(400, { error: { message: "(#131047) Re-engagement message", type: "OAuthException", code: 131047, error_data: { details: "Message failed to send because more than 24 hours have passed since the customer last replied to this number." } } });
+    }
+    if (to === "254700000429" && (throttled.get(to) ?? 0) < 2) {
+      throttled.set(to, (throttled.get(to) ?? 0) + 1);
+      logWhatsapp({ kind: "throttled", to });
+      return graphAnswer(400, { error: { message: "(#130429) Rate limit hit", type: "OAuthException", code: 130429 } });
+    }
+    if (to === "254700000026") {
+      logWhatsapp({ kind: "undeliverable", to });
+      return graphAnswer(400, { error: { message: "(#131026) Message undeliverable", type: "OAuthException", code: 131026 } });
+    }
+    whatsappSent += 1;
+    const id = `wamid.fake-${whatsappSent}`;
+    logWhatsapp({
+      kind: body.type,
+      phoneNumberId: parts[1],
+      to,
+      id,
+      text: body.text?.body ?? null,
+      template: body.template ? { name: body.template.name, language: body.template.language?.code, parameters: body.template.components?.[0]?.parameters?.map((p) => p.text) ?? [] } : null,
+    });
+    return graphAnswer(200, { messaging_product: "whatsapp", contacts: [{ input: to, wa_id: to }], messages: [{ id }] });
+  }
+  return graphAnswer(400, { error: { message: `Unsupported request ${method} ${pathname}`, code: 100 } });
+}
+
 globalThis.fetch = async (input, init) => {
   const url = typeof input === "string" ? input : input?.url ?? String(input);
+  if (url.startsWith("https://graph.facebook.com/") || url.startsWith("https://lookaside.fbsbx.com/")) return fakeGraph(url, init);
+  if (url.startsWith("https://push.example/")) {
+    // A stand-in push service: an endpoint with "gone" in it has been dropped by the browser.
+    if (process.env.FAKE_PUSH_LOG) {
+      const headers = Object.fromEntries(Object.entries(init?.headers ?? {}).map(([name, value]) => [name.toLowerCase(), String(value)]));
+      appendFileSync(process.env.FAKE_PUSH_LOG, JSON.stringify({ at: new Date().toISOString(), endpoint: url, urgency: headers.urgency, ttl: headers.ttl, encrypted: headers["content-encoding"] === "aes128gcm", vapid: /^vapid t=/.test(headers.authorization ?? "") }) + "\n");
+    }
+    return new Response(null, { status: url.includes("gone") ? 410 : 201 });
+  }
   // Simulated live exchange rate (the sandbox can't reach the real sources).
   if (process.env.FAKE_USD_TO_KES && url.includes("api.frankfurter.app")) {
     return new Response(JSON.stringify({ amount: 1, base: "USD", date: "2026-09-25", rates: { KES: Number(process.env.FAKE_USD_TO_KES) } }), {

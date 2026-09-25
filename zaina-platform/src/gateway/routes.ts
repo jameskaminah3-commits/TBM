@@ -9,12 +9,14 @@
 //   POST /v1/chat                send a message (Authorization: Bearer <token>)
 //   GET  /v1/session             the chat's state (who is handling it)
 //   GET  /v1/chat/messages       messages after ?after=<id> (replies during a handoff)
+//   GET  /v1/widget/config       ?key=<public key>: the widget's name, colour, position and greeting
 
 import type { Express, NextFunction, Request, Response } from "express";
 import type { PlatformConfig } from "../config.ts";
 import type { Business } from "../db/schema.ts";
 import { runForBusiness } from "../db/tenant.ts";
 import { allowedOriginsFor, businessById, businessByPublicKey } from "../businesses/registry.ts";
+import { getBusinessSettings } from "../businesses/settings.ts";
 import { createSession, customerVisibleEvents, getSession, setDisplayCurrency } from "../conversations/store.ts";
 import { handleChatTurn, type EngineOptions } from "../engine/agent.ts";
 import { recordTurn, TurnRecorder } from "../engine/telemetry.ts";
@@ -155,6 +157,30 @@ export function registerGatewayRoutes(app: Express, config: PlatformConfig, engi
     }
   });
 
+  // What the website widget needs before the first message: public, per business.
+  app.get("/v1/widget/config", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const key = typeof req.query.key === "string" ? req.query.key.trim() : "";
+      const business = key ? await businessByPublicKey(key) : undefined;
+      if (!business) return refuse(res, 404, "unknown_business", "This chat is not available.");
+      if (!isOriginAllowed(req.header("origin"), allowedOriginsFor(business))) {
+        return refuse(res, 403, "origin_not_allowed", "This website can't use this chat.");
+      }
+      const settings = await getBusinessSettings(business.id);
+      res.setHeader("Cache-Control", "no-store");
+      res.json({
+        name: settings?.displayName ?? business.name,
+        assistant_name: settings?.assistantName ?? "Zaina",
+        color: settings?.widgetColor ?? "#0f766e",
+        position: settings?.widgetPosition ?? "right",
+        greeting: settings?.widgetGreeting ?? null,
+        currency: settings?.defaultCurrency ?? "USD",
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get("/v1/chat/messages", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const auth = await authorize(req, res);
@@ -167,6 +193,8 @@ export function registerGatewayRoutes(app: Express, config: PlatformConfig, engi
           from: event.actor === "USER" ? "customer" : event.actor === "AGENT" ? "team" : "zaina",
           text: event.content,
           at: event.createdAt,
+          // A team reply shows who wrote it (first name only).
+          ...(event.actor === "AGENT" && event.authorName ? { author: event.authorName } : {}),
         })),
       });
     } catch (error) {

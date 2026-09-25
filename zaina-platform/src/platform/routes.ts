@@ -3,6 +3,8 @@
 // The platform's own console (platform admins only):
 //
 //   GET  /v1/platform/businesses   every business on the platform
+//   GET  /v1/platform/overview     every business's day: model use against its budget, chats,
+//                                  waiting handoffs, failed turns, WhatsApp; and what the platform has switched on
 //   POST /v1/platform/businesses   { id, name, allowed_origins, business_type?, time_zone?, daily_token_cap?,
 //                                    retention_days?, owner: { email, name, password } }
 //                                  → the business, its settings and its first owner
@@ -14,6 +16,8 @@ import { randomBytes } from "node:crypto";
 import type { Express, NextFunction, Request, Response } from "express";
 import type { PlatformConfig } from "../config.ts";
 import { allBusinesses, clearBusinessCache } from "../businesses/registry.ts";
+import { inBusiness, runForBusiness } from "../db/tenant.ts";
+import { businessDay } from "../gateway/spend-cap.ts";
 import { createBusinessWithOwner, findStaffByEmail } from "../db/platform-scope.ts";
 import { businessTypes, type BusinessType } from "../db/schema.ts";
 import { TYPES_WITH_OWN_CONNECTOR } from "../engine/tool-sets.ts";
@@ -47,6 +51,54 @@ export function registerPlatformRoutes(app: Express, config: PlatformConfig): vo
           time_zone: business.timeZone,
           created_at: business.createdAt,
         })),
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/v1/platform/overview", staff, requirePlatformAdmin, async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      const businesses = await allBusinesses();
+      const rows = await Promise.all(businesses.map((business) => runForBusiness(business.id, () => inBusiness(async (_db, client) => {
+        const { rows: [row] } = await client.query<{
+          tokens_today: string | null; chats_7d: number; waiting: number; turns_24h: number; failed_24h: number;
+          last_activity: Date | null; whatsapp: boolean;
+        }>(
+          `select
+             (select input_tokens + output_tokens from usage_daily where business_id = $1 and day = $2) as tokens_today,
+             (select count(*)::int from chat_sessions as s where s.business_id = $1 and s.created_at > now() - interval '7 days'
+                and exists (select 1 from chat_events as e where e.business_id = s.business_id and e.session_id = s.id and e.actor = 'USER')) as chats_7d,
+             (select count(*)::int from chat_sessions where business_id = $1 and managed_by = 'HUMAN' and assigned_agent_id is null) as waiting,
+             (select count(*)::int from turn_metrics where business_id = $1 and started_at > now() - interval '24 hours') as turns_24h,
+             (select count(*)::int from turn_metrics where business_id = $1 and started_at > now() - interval '24 hours'
+                and outcome in ('timeout', 'model_error', 'error')) as failed_24h,
+             (select max(last_activity_at) from chat_sessions where business_id = $1) as last_activity,
+             exists (select 1 from whatsapp_numbers where business_id = $1 and status = 'active') as whatsapp`,
+          [business.id, businessDay(business.timeZone)],
+        );
+        return {
+          id: business.id,
+          name: business.name,
+          business_type: business.businessType,
+          tokens_today: Number(row.tokens_today ?? 0),
+          daily_token_cap: business.dailyTokenCap,
+          chats_7d: row.chats_7d,
+          waiting: row.waiting,
+          turns_24h: row.turns_24h,
+          failed_24h: row.failed_24h,
+          last_activity_at: row.last_activity,
+          whatsapp: row.whatsapp,
+        };
+      }, business.id))));
+      res.json({
+        businesses: rows,
+        platform: {
+          whatsapp: Boolean(config.whatsapp),
+          web_push: Boolean(config.webPush),
+          alert_email: Boolean(config.alertEmail),
+          public_base_url: config.publicBaseUrl,
+        },
       });
     } catch (error) {
       next(error);

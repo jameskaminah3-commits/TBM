@@ -3,10 +3,11 @@
 // How long conversations are kept (I17). Each business sets a retention
 // period; conversations untouched for longer are deleted with everything in
 // them. A customer can also ask for their data to be deleted: every
-// conversation where they typed their email or phone number goes, with any
-// lead they left. Telemetry keeps no message text and stays, unlinked from
-// the deleted chat. Everything runs inside one business's scope, and names
-// the business too: row-level security is the second guard, not the only one.
+// conversation where they typed their email or phone number, or wrote from
+// that number on WhatsApp, goes, with any lead they left. Telemetry keeps no
+// message text and stays, unlinked from the deleted chat. Everything runs
+// inside one business's scope, and names the business too: row-level
+// security is the second guard, not the only one.
 
 import { sql } from "drizzle-orm";
 import { allBusinesses } from "../businesses/registry.ts";
@@ -50,16 +51,20 @@ export async function eraseCustomer(contact: { email?: string; phone?: string })
   if (!email && !phone) return { conversations: 0, leads: 0 };
   const businessId = currentBusinessId();
   return inBusiness(async (db) => {
+    // A WhatsApp customer is found by the number they write from, too.
     const conversations = await db.execute(sql`
       delete from chat_sessions as s
-      where s.business_id = ${businessId} and exists (
-        select 1 from chat_events as e
-        where e.session_id = s.id
-          and e.actor = 'USER'
-          and (
-            (${email}::text is not null and position(${email}::text in lower(e.content)) > 0)
-            or (${phone}::text is not null and position(${phone}::text in regexp_replace(e.content, '\\D', '', 'g')) > 0)
-          )
+      where s.business_id = ${businessId} and (
+        exists (
+          select 1 from chat_events as e
+          where e.session_id = s.id
+            and e.actor = 'USER'
+            and (
+              (${email}::text is not null and position(${email}::text in lower(e.content)) > 0)
+              or (${phone}::text is not null and position(${phone}::text in regexp_replace(e.content, '\\D', '', 'g')) > 0)
+            )
+        )
+        or (${phone}::text is not null and s.channel = 'whatsapp' and right(s.customer_address, 9) = ${phone}::text)
       )
     `);
     const leadRows = await db.execute(sql`

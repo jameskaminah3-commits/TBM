@@ -22,7 +22,7 @@ export async function getBusinessSettings(businessId: string): Promise<BusinessS
 
 export type SettingsPatch = Partial<Pick<BusinessSettings,
   | "displayName" | "assistantName" | "about" | "contactPhone" | "contactPhoneDisplay" | "websiteUrl" | "supportEmail"
-  | "allowedLinkHosts" | "allowedLinkHostSuffixes" | "defaultCurrency">>;
+  | "allowedLinkHosts" | "allowedLinkHostSuffixes" | "defaultCurrency" | "widgetColor" | "widgetPosition" | "widgetGreeting">>;
 
 const TEXT_FIELDS = ["displayName", "assistantName", "about", "contactPhone", "contactPhoneDisplay", "websiteUrl", "supportEmail"] as const;
 const HOST_PATTERN = /^(?:[a-z0-9-]+\.)+[a-z]{2,}$/;
@@ -66,6 +66,21 @@ export function validateSettingsPatch(input: Record<string, unknown>): { ok: tru
   if ("defaultCurrency" in input) {
     if (input.defaultCurrency !== "USD" && input.defaultCurrency !== "KES") return { ok: false, error: "defaultCurrency must be USD or KES" };
     patch.defaultCurrency = input.defaultCurrency;
+  }
+  // The website widget's look and first words.
+  if ("widgetColor" in input) {
+    if (typeof input.widgetColor !== "string" || !/^#[0-9a-fA-F]{6}$/.test(input.widgetColor)) return { ok: false, error: "widgetColor is a colour like #0f766e" };
+    patch.widgetColor = input.widgetColor.toLowerCase();
+  }
+  if ("widgetPosition" in input) {
+    if (input.widgetPosition !== "right" && input.widgetPosition !== "left") return { ok: false, error: "widgetPosition is right or left" };
+    patch.widgetPosition = input.widgetPosition;
+  }
+  if ("widgetGreeting" in input) {
+    const greeting = input.widgetGreeting;
+    if (greeting === null || greeting === "") patch.widgetGreeting = null;
+    else if (typeof greeting !== "string" || greeting.length > 300) return { ok: false, error: "widgetGreeting is up to 300 characters" };
+    else patch.widgetGreeting = greeting.trim();
   }
   return { ok: true, patch };
 }

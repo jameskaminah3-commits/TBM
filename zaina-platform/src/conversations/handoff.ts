@@ -1,32 +1,47 @@
 // zaina-platform/src/conversations/handoff.ts
 //
-// Handing a conversation to a person, and back (C4c).
+// Handing a conversation to a person, and back (C4c, routing in Phase 3).
 //
-//   AI ──escalate, staff on──▶ HUMAN, waiting ──claimed──▶ HUMAN, with an agent
+//   AI ──escalate, staff on──▶ HUMAN, waiting ──claimed──▶ HUMAN, with a person
 //    ▲                              │                            │
 //    │   nobody claims it in time ──┘   staff hand it back ──────┤
 //    └──────────────────────────────────────────────────────────┘
 //                                                   staff close it ──▶ CLOSED
+//
+// A waiting chat is offered first to one available person (routing.ts); if
+// they don't claim it within a few minutes, everyone is alerted.
 //
 // Outside staffed hours nobody would answer, so the customer isn't left
 // waiting: Zaina says when the team is back, asks the team for a callback and
 // keeps helping. A waiting handoff nobody claims within the business's
 // timeout goes the same way.
 
-import { and, eq, inArray, isNull, lt } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 import { allBusinesses } from "../businesses/registry.ts";
-import { connectorFor } from "../connectors/registry.ts";
 import { chatSessions, type Business, type ChatLanguage, type ChatSession } from "../db/schema.ts";
 import { inBusiness, runForBusiness } from "../db/tenant.ts";
 import { describeOpeningSwahili, swahiliTimeZoneLabel, texts } from "../engine/messages.ts";
 import { phoneNumbersWritten } from "../engine/tool-args.ts";
+import { chatsToEscalate, routeHandoff } from "./routing.ts";
 import { describeOpening, isStaffedAt, nextStaffedAt, timeZoneLabel } from "./staffed-hours.ts";
 import { appendEvent, customerMessages } from "./store.ts";
+import { alertTeam, type AlertEvent } from "./team-alerts.ts";
 
 export type HandoffResult =
   | { status: "escalated" }
   | { status: "already_escalated" }
   | { status: "callback"; tellCustomer: string };
+
+const policy = { availabilityHours: 2, routeEscalateMinutes: 3 };
+
+/** The notes a callback leaves in the chat (reports count them). */
+export const CALLBACK_OFFLINE_NOTE = "Team offline: callback requested";
+export const CALLBACK_UNCLAIMED_NOTE = "Nobody claimed the handoff in time";
+
+export function configureHandoffs(options: { availabilityHours: number; routeEscalateMinutes: number }) {
+  policy.availabilityHours = options.availabilityHours;
+  policy.routeEscalateMinutes = options.routeEscalateMinutes;
+}
 
 /** Whether the customer has typed an email or phone number the team can use. */
 export function customerGaveContact(messages: string[]): boolean {
@@ -34,8 +49,8 @@ export function customerGaveContact(messages: string[]): boolean {
   return /[^\s@]+@[^\s@]+\.[^\s@]{2,}/.test(written) || phoneNumbersWritten(written).length > 0;
 }
 
-function queue(label: string, task: Promise<unknown>) {
-  task.catch((error) => console.error(`[handoff] ${label} failed:`, error));
+function alert(business: Business, event: AlertEvent) {
+  alertTeam(business, event).catch((error) => console.error(`[handoff] ${event.kind} alert failed:`, error));
 }
 
 export async function requestHandoff(
@@ -57,23 +72,19 @@ function backAt(opensAt: Date | null, timeZone: string, now: Date, language: Cha
 }
 
 async function handoffInScope(business: Business, sessionId: string, reason: string, now: Date, language: ChatLanguage): Promise<HandoffResult> {
-  const connector = await connectorFor(business.id);
-
   if (!isStaffedAt(business.staffedHours ?? null, business.timeZone, now)) {
     await inBusiness((db) => db
       .update(chatSessions)
-      .set({ callbackRequestedAt: now, handoffReason: reason, updatedAt: now })
+      .set({ callbackRequestedAt: now, handoffReason: reason, firstHandoffAt: sql`coalesce(${chatSessions.firstHandoffAt}, ${now})`, updatedAt: now })
       .where(eq(chatSessions.id, sessionId)), business.id);
     const opensAt = nextStaffedAt(business.staffedHours ?? null, business.timeZone, now);
     await appendEvent({
       businessId: business.id,
       sessionId,
       actor: "SYSTEM",
-      content: `Team offline: callback requested (${reason}).`,
+      content: `${CALLBACK_OFFLINE_NOTE} (${reason}).`,
     });
-    queue("callback alert", connector.notifyTeam(business, {
-      kind: "callback", sessionId, reason, why: "offline", staffBackAt: opensAt,
-    }));
+    alert(business, { kind: "callback", sessionId, reason, why: "offline", staffBackAt: opensAt });
     const askContact = !customerGaveContact(await customerMessages(sessionId));
     return {
       status: "callback",
@@ -87,22 +98,34 @@ async function handoffInScope(business: Business, sessionId: string, reason: str
       managedBy: "HUMAN",
       handoffReason: reason,
       handoffAt: now,
+      firstHandoffAt: sql`coalesce(${chatSessions.firstHandoffAt}, ${now})`,
       assignedAgentId: null,
       claimedAt: null,
+      claimedBy: null,
+      routedTo: null,
+      routedAt: null,
+      teamAlertedAt: null,
       updatedAt: now,
     })
     .where(and(eq(chatSessions.id, sessionId), eq(chatSessions.managedBy, "AI")))
     .returning({ id: chatSessions.id }), business.id);
   if (claimed.length === 0) return { status: "already_escalated" };
 
-  queue("handoff alert", connector.notifyTeam(business, { kind: "handoff", sessionId, reason }));
+  const routedTo = await routeHandoff(business, sessionId, now, policy.availabilityHours).catch((error) => {
+    console.error("[handoff] routing failed; alerting everyone:", error);
+    return null;
+  });
+  if (!routedTo) {
+    await inBusiness((db) => db.update(chatSessions).set({ teamAlertedAt: now }).where(eq(chatSessions.id, sessionId)), business.id);
+  }
+  alert(business, { kind: "handoff", sessionId, reason, routedTo });
   return { status: "escalated" };
 }
 
-export async function claimSession(sessionId: string, agentId: string): Promise<ChatSession | undefined> {
+export async function claimSession(sessionId: string, agentId: string, userId: string | null = null): Promise<ChatSession | undefined> {
   const [row] = await inBusiness((db) => db
     .update(chatSessions)
-    .set({ managedBy: "HUMAN", assignedAgentId: agentId, claimedAt: new Date(), updatedAt: new Date() })
+    .set({ managedBy: "HUMAN", assignedAgentId: agentId, claimedBy: userId, claimedAt: new Date(), updatedAt: new Date() })
     .where(and(eq(chatSessions.id, sessionId), inArray(chatSessions.managedBy, ["AI", "HUMAN"])))
     .returning());
   return row;
@@ -112,7 +135,7 @@ export async function claimSession(sessionId: string, agentId: string): Promise<
 export async function releaseSession(sessionId: string, agentId: string): Promise<ChatSession | undefined> {
   const [row] = await inBusiness((db) => db
     .update(chatSessions)
-    .set({ managedBy: "AI", assignedAgentId: null, consecutiveFailures: 0, updatedAt: new Date() })
+    .set({ managedBy: "AI", assignedAgentId: null, claimedBy: null, routedTo: null, consecutiveFailures: 0, updatedAt: new Date() })
     .where(and(eq(chatSessions.id, sessionId), eq(chatSessions.managedBy, "HUMAN")))
     .returning());
   if (row) {
@@ -131,9 +154,10 @@ export async function closeSession(sessionId: string): Promise<ChatSession | und
 }
 
 /**
- * Hands back to Zaina every waiting handoff nobody claimed in time, tells the
- * customer the team will call them back, and alerts the team. Goes business
- * by business, each in its own scope. Returns the sessions handed back.
+ * The handoff clock, business by business: waiting chats offered to one
+ * person who hasn't claimed them go to everyone; chats nobody claimed within
+ * the business's timeout go back to Zaina with a callback request, and the
+ * customer is told. Returns the sessions handed back.
  */
 export async function sweepUnclaimedHandoffs(now: Date = new Date()): Promise<string[]> {
   const handedBack: string[] = [];
@@ -148,10 +172,14 @@ export async function sweepUnclaimedHandoffs(now: Date = new Date()): Promise<st
 }
 
 async function sweepBusiness(business: Business, now: Date): Promise<string[]> {
+  for (const chat of await chatsToEscalate(business, now, policy.routeEscalateMinutes)) {
+    alert(business, { kind: "handoff-unclaimed", sessionId: chat.id, reason: chat.reason, routedTo: chat.routedTo });
+  }
+
   const cutoff = new Date(now.getTime() - business.unclaimedTimeoutMinutes * 60_000);
   const rows = await inBusiness((db) => db
     .update(chatSessions)
-    .set({ managedBy: "AI", callbackRequestedAt: now, consecutiveFailures: 0, updatedAt: now })
+    .set({ managedBy: "AI", callbackRequestedAt: now, consecutiveFailures: 0, routedTo: null, updatedAt: now })
     .where(and(
       eq(chatSessions.businessId, business.id),
       eq(chatSessions.managedBy, "HUMAN"),
@@ -161,7 +189,6 @@ async function sweepBusiness(business: Business, now: Date): Promise<string[]> {
     .returning({ id: chatSessions.id, handoffReason: chatSessions.handoffReason, language: chatSessions.language }));
   if (rows.length === 0) return [];
 
-  const connector = await connectorFor(business.id);
   const handedBack: string[] = [];
   for (const row of rows) {
     try {
@@ -176,15 +203,15 @@ async function sweepBusiness(business: Business, now: Date): Promise<string[]> {
         businessId: business.id,
         sessionId: row.id,
         actor: "SYSTEM",
-        content: "Nobody claimed the handoff in time: handed back to Zaina, callback requested.",
+        content: `${CALLBACK_UNCLAIMED_NOTE}: handed back to Zaina, callback requested.`,
       });
-      queue("unclaimed callback alert", connector.notifyTeam(business, {
+      alert(business, {
         kind: "callback",
         sessionId: row.id,
         reason: row.handoffReason ?? "Handoff",
         why: "unclaimed",
         staffBackAt: null,
-      }));
+      });
       handedBack.push(row.id);
     } catch (error) {
       console.error(`[handoff] handing ${row.id} back failed:`, error);

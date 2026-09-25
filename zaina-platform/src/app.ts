@@ -10,9 +10,15 @@ import { GoogleGenAI } from "@google/genai";
 import type { PlatformConfig } from "./config.ts";
 import { anyAllowedOrigins, setExtraAllowedOrigins } from "./businesses/registry.ts";
 import { loadSecretKeys, setSecretKeys } from "./businesses/secrets.ts";
-import { sweepUnclaimedHandoffs } from "./conversations/handoff.ts";
+import type { WhatsappContext } from "./channels/whatsapp/context.ts";
+import { registerWhatsappRoutes, WEBHOOK_PATH } from "./channels/whatsapp/routes.ts";
+import { setWhatsappRuntime } from "./channels/whatsapp/runtime.ts";
+import { sweepWhatsapp } from "./channels/whatsapp/worker.ts";
+import { configureHandoffs, sweepUnclaimedHandoffs } from "./conversations/handoff.ts";
 import { deleteExpiredConversations } from "./conversations/retention.ts";
 import { registerStaffConversationRoutes } from "./conversations/staff-routes.ts";
+import { configureTeamAlerts } from "./conversations/team-alerts.ts";
+import { registerConsoleRoutes } from "./console/routes.ts";
 import { assertAppRole, closePlatformDb, initPlatformDb, ownerPool } from "./db/platform-db.ts";
 import { migrate, pendingMigrations } from "./db/migrate.ts";
 import type { EngineOptions } from "./engine/agent.ts";
@@ -49,20 +55,34 @@ function cors() {
   };
 }
 
-export function createApp(config: PlatformConfig, engine: EngineOptions): Express {
+/** The WhatsApp channel, when the platform's Meta app is configured. */
+export function whatsappContextFor(config: PlatformConfig, engine: EngineOptions): WhatsappContext | null {
+  return config.whatsapp
+    ? { whatsapp: config.whatsapp, engine, sessionSecret: config.sessionTokenSecret, limits: config.rateLimits }
+    : null;
+}
+
+export function createApp(config: PlatformConfig, engine: EngineOptions, whatsapp: WhatsappContext | null = whatsappContextFor(config, engine)): Express {
+  configureTeamAlerts(config);
+  configureHandoffs(config);
+  setWhatsappRuntime(whatsapp);
+
   const app = express();
   app.disable("x-powered-by");
   app.set("trust proxy", config.trustProxy);
-  // Knowledge routes parse their own, bigger bodies (documents).
+  // Knowledge routes parse their own, bigger bodies (documents); the WhatsApp
+  // webhook needs the raw body to check Meta's signature.
   const json = express.json({ limit: "32kb" });
-  app.use((req: Request, res: Response, next: NextFunction) => (KNOWLEDGE_PATH.test(req.path) ? next() : json(req, res, next)));
+  app.use((req: Request, res: Response, next: NextFunction) => (KNOWLEDGE_PATH.test(req.path) || req.path === WEBHOOK_PATH ? next() : json(req, res, next)));
   app.use(cors());
 
   registerGatewayRoutes(app, config, engine);
   registerStaffAccountRoutes(app, config);
-  registerStaffConversationRoutes(app, config.sessionTokenSecret);
+  registerStaffConversationRoutes(app, config);
   registerKnowledgeRoutes(app, config.sessionTokenSecret);
   registerPlatformRoutes(app, config);
+  registerWhatsappRoutes(app, config, whatsapp);
+  registerConsoleRoutes(app, config);
 
   app.use((_req: Request, res: Response) => {
     res.status(404).json({ error: "not_found" });
@@ -115,7 +135,8 @@ export async function startServer(config: PlatformConfig): Promise<{ server: Ser
     turnBudgetMs: config.turnBudgetMs,
     prices: config.modelPriceUsdPerMillion,
   };
-  const app = createApp(config, engine);
+  const whatsapp = whatsappContextFor(config, engine);
+  const app = createApp(config, engine, whatsapp);
   const server = await new Promise<Server>((resolve) => {
     const listening = app.listen(config.port, () => resolve(listening));
   });
@@ -132,10 +153,12 @@ export async function startServer(config: PlatformConfig): Promise<{ server: Ser
       if (deleted) console.log(`[platform] deleted ${deleted} expired conversation(s)`);
     }),
     every("rate-limit counters", 60 * 60_000, () => pruneRateLimitCounters()),
+    ...(whatsapp ? [every("whatsapp", Number(process.env.WHATSAPP_SWEEP_INTERVAL_MS ?? "") || 5_000, () => sweepWhatsapp(whatsapp))] : []),
   ];
 
   const stop = async () => {
     jobs.forEach(clearInterval);
+    setWhatsappRuntime(null);
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await closePlatformDb();
   };

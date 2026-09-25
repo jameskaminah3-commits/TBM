@@ -5,9 +5,19 @@
 // of a person's businesses, and creating businesses. Nothing here reads a
 // business's conversations or data.
 
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { ownerDb } from "./platform-db.ts";
-import { businessSettings, businesses, staffMemberships, staffUsers, type BusinessType, type StaffRole, type StaffUser } from "./schema.ts";
+import {
+  businessSettings,
+  businesses,
+  staffMemberships,
+  staffPushSubscriptions,
+  staffUsers,
+  type BusinessType,
+  type StaffedHours,
+  type StaffRole,
+  type StaffUser,
+} from "./schema.ts";
 
 export async function findStaffByEmail(email: string): Promise<StaffUser | undefined> {
   const [row] = await ownerDb().select().from(staffUsers).where(eq(staffUsers.email, email.trim().toLowerCase())).limit(1);
@@ -80,4 +90,53 @@ export async function createBusinessWithOwner(input: {
     await tx.insert(staffMemberships).values({ businessId: input.business.id, userId: owner.id, role: "owner" });
     return owner;
   });
+}
+
+// ── Alerts on a person's phones and browsers ─────────────────────────
+// Subscriptions belong to the person, not to one business: written here on
+// their behalf; each business reads only its own people's (row-level security).
+
+export async function savePushSubscription(userId: string, subscription: { endpoint: string; p256dh: string; auth: string }, userAgent: string | null): Promise<void> {
+  await ownerDb()
+    .insert(staffPushSubscriptions)
+    .values({ userId, ...subscription, userAgent })
+    .onConflictDoUpdate({
+      target: staffPushSubscriptions.endpoint,
+      set: { userId, p256dh: subscription.p256dh, auth: subscription.auth, userAgent, createdAt: new Date() },
+    });
+}
+
+/** Removes a subscription: the person's own (turning alerts off), or any that the push service says is gone. */
+export async function deletePushSubscription(endpoint: string, userId?: string): Promise<boolean> {
+  const where = userId
+    ? and(eq(staffPushSubscriptions.endpoint, endpoint), eq(staffPushSubscriptions.userId, userId))
+    : eq(staffPushSubscriptions.endpoint, endpoint);
+  const rows = await ownerDb().delete(staffPushSubscriptions).where(where).returning({ id: staffPushSubscriptions.id });
+  return rows.length > 0;
+}
+
+export async function markPushSubscriptionUsed(endpoint: string): Promise<void> {
+  await ownerDb().update(staffPushSubscriptions).set({ lastUsedAt: new Date() }).where(eq(staffPushSubscriptions.endpoint, endpoint));
+}
+
+export async function pushSubscriptionCount(userId: string): Promise<number> {
+  const [row] = await ownerDb().select({ count: sql<number>`count(*)::int` }).from(staffPushSubscriptions).where(eq(staffPushSubscriptions.userId, userId));
+  return row?.count ?? 0;
+}
+
+// ── The business directory, changed by the business's own people ─────
+// The directory is read-only to the service (a business must not lift its
+// own model budget), so the few fields a business runs itself change here,
+// after the route has checked the person's role.
+
+export type DirectoryPatch = {
+  allowedOrigins?: string[];
+  timeZone?: string;
+  staffedHours?: StaffedHours | null;
+  unclaimedTimeoutMinutes?: number;
+};
+
+export async function updateBusinessDirectory(businessId: string, patch: DirectoryPatch): Promise<void> {
+  if (Object.keys(patch).length === 0) return;
+  await ownerDb().update(businesses).set({ ...patch, updatedAt: new Date() }).where(eq(businesses.id, businessId));
 }

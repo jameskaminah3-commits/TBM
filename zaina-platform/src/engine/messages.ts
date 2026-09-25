@@ -53,7 +53,11 @@ type Texts = {
   mpesaUnmatched: (code: string) => string;
   mpesaAlreadyHave: (code: string, bookingRef: string) => string;
   mpesaRecorded: (code: string, bookingRef: string, amount: string, dates: "none" | "held" | "conflict") => string;
+  /** WhatsApp: the customer sent something Zaina can't read (a photo, a voice note…) without any text. */
+  mediaNotRead: (kind: MediaKind) => string;
 };
+
+export type MediaKind = "photo" | "voice" | "video" | "document" | "other";
 
 const ENGLISH: Texts = {
   busy: "I'm still working on your last message — send this one again in a moment.",
@@ -77,6 +81,13 @@ const ENGLISH: Texts = {
     + (dates === "conflict"
       ? " One thing: another guest paid for those dates in the meantime, so the team will contact you to move your booking or refund you."
       : dates === "held" ? " Your dates are held while they check." : ""),
+  mediaNotRead: (kind) => ({
+    photo: "Thanks for the photo! I can't see images yet — please tell me in a message what you'd like to know.",
+    voice: "I can't listen to voice notes yet — could you type your message instead?",
+    video: "Thanks! I can't watch videos yet — please tell me in a message what you'd like to know.",
+    document: "Thanks for the document! I can't open it myself — please tell me in a message what you need, and the team can see it too.",
+    other: "I can only read text messages for now — please type your question.",
+  })[kind],
 };
 
 const SWAHILI: Texts = {
@@ -101,6 +112,13 @@ const SWAHILI: Texts = {
     + (dates === "conflict"
       ? " Jambo moja: mgeni mwingine amelipia tarehe hizo kwa sasa, kwa hivyo timu itawasiliana nawe kubadilisha uhifadhi wako au kukurudishia pesa."
       : dates === "held" ? " Tarehe zako zimeshikiliwa wakati wanakagua." : ""),
+  mediaNotRead: (kind) => ({
+    photo: "Asante kwa picha! Siwezi kuona picha kwa sasa — tafadhali niandikie unachotaka kujua.",
+    voice: "Siwezi kusikiliza ujumbe wa sauti kwa sasa — tafadhali andika ujumbe wako.",
+    video: "Asante! Siwezi kutazama video kwa sasa — tafadhali niandikie unachotaka kujua.",
+    document: "Asante kwa hati! Siwezi kuifungua mwenyewe — tafadhali niandikie unachohitaji, na timu itaiona pia.",
+    other: "Kwa sasa ninasoma ujumbe wa maandishi pekee — tafadhali andika swali lako.",
+  })[kind],
 };
 
 export function texts(language: ChatLanguage = "en"): Texts {

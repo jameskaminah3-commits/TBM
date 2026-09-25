@@ -13,8 +13,8 @@ export type ToolContext = { business: Business; sessionId: string };
 
 export type TeamEvent =
   | { kind: "conversation-started"; sessionId: string; firstMessage: string }
-  /** A customer is waiting for a person. */
-  | { kind: "handoff"; sessionId: string; reason: string }
+  /** A customer is waiting for a person (offered first to routedTo, when someone was available). */
+  | { kind: "handoff"; sessionId: string; reason: string; routedTo?: { userId: string; name: string } | null }
   /** No one can answer now (outside staffed hours, or nobody claimed it): call the customer back. */
   | { kind: "callback"; sessionId: string; reason: string; why: "offline" | "unclaimed"; staffBackAt: Date | null }
   | { kind: "system-error"; sessionId: string; summary: string; details?: Record<string, unknown> }

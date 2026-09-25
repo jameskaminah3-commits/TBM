@@ -16,7 +16,14 @@ function weekday(at: Date, timeZone: string): string {
   return at.toLocaleDateString("en-GB", { timeZone, weekday: "long" });
 }
 
-export function turnContext(input: { timeZone: string; now: Date; currency: string; language: ChatLanguage }): string {
+export function turnContext(input: {
+  timeZone: string;
+  now: Date;
+  currency: string;
+  language: ChatLanguage;
+  /** On WhatsApp: the customer's number (digits), which they don't need to type. */
+  whatsappNumber?: string | null;
+}): string {
   const { timeZone, now } = input;
   const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
   const time = now.toLocaleTimeString("en-GB", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
@@ -24,6 +31,9 @@ export function turnContext(input: { timeZone: string; now: Date; currency: stri
     "<turn_context>",
     `Now: ${weekday(now, timeZone)} ${businessDay(timeZone, now)}, ${time} ${timeZoneLabel(timeZone)}. Tomorrow: ${weekday(tomorrow, timeZone)} ${businessDay(timeZone, tomorrow)}.`,
     `Prices are shown in ${input.currency}. The customer writes in ${LANGUAGE_NAMES[input.language]}.`,
+    ...(input.whatsappNumber
+      ? [`This chat is on WhatsApp. The customer's WhatsApp number is +${input.whatsappNumber}: use it when a tool needs their phone number, unless they give another. Don't ask for it.`]
+      : []),
     "</turn_context>",
   ].join("\n");
 }

@@ -1,0 +1,13 @@
+{
+  "name": "Zaina console",
+  "short_name": "Zaina",
+  "description": "Your business's chats, knowledge and reports.",
+  "start_url": "/console/",
+  "scope": "/console/",
+  "display": "standalone",
+  "background_color": "#f6f7f5",
+  "theme_color": "#0f766e",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

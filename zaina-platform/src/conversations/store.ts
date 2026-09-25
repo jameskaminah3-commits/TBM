@@ -10,7 +10,7 @@
 
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { inBusiness } from "../db/tenant.ts";
-import { chatEvents, chatSessions, type ChatLanguage, type ChatSession } from "../db/schema.ts";
+import { chatEvents, chatSessions, staffUsers, type ChatLanguage, type ChatMedia, type ChatSession } from "../db/schema.ts";
 import { redactCardNumbers } from "../engine/redaction.ts";
 
 export type Actor = "USER" | "ZAINA_REASONING" | "SYSTEM_TOOL" | "AGENT" | "SYSTEM";
@@ -63,6 +63,10 @@ export async function appendEvent(event: {
   toolName?: string | null;
   toolArguments?: unknown;
   toolResponse?: unknown;
+  /** Photos, voice notes or documents the customer sent with this message. */
+  media?: ChatMedia[] | null;
+  /** The staff member who wrote a team reply. */
+  author?: string | null;
 }): Promise<number> {
   const content = typeof event.content === "string" && event.actor === "USER"
     ? redactCardNumbers(event.content)
@@ -78,6 +82,8 @@ export async function appendEvent(event: {
         toolName: event.toolName ?? null,
         toolArguments: event.toolArguments ?? null,
         toolResponse: event.toolResponse ?? null,
+        media: event.media?.length ? event.media : null,
+        author: event.author ?? null,
       })
       .returning({ id: chatEvents.id });
     await db
@@ -126,7 +132,15 @@ export async function recentHistory(sessionId: string, limit: number): Promise<H
   });
 }
 
-/** Everything the customer typed in this conversation, oldest first. */
+/** How a WhatsApp customer's own number counts as a detail they gave: their number is where they write from. */
+export function whatsappNumberLine(customerAddress: string): string {
+  return `My WhatsApp number: +${customerAddress}`;
+}
+
+/**
+ * Everything the customer typed in this conversation, oldest first. On
+ * WhatsApp their number is known without typing it, so it counts as given.
+ */
 export async function customerMessages(sessionId: string): Promise<string[]> {
   return inBusiness(async (db) => {
     const rows = await db
@@ -134,7 +148,13 @@ export async function customerMessages(sessionId: string): Promise<string[]> {
       .from(chatEvents)
       .where(and(eq(chatEvents.sessionId, sessionId), eq(chatEvents.actor, "USER")))
       .orderBy(asc(chatEvents.id));
-    return rows.map((row) => row.content ?? "").filter(Boolean);
+    const [session] = await db
+      .select({ channel: chatSessions.channel, customerAddress: chatSessions.customerAddress })
+      .from(chatSessions)
+      .where(eq(chatSessions.id, sessionId))
+      .limit(1);
+    const typed = rows.map((row) => row.content ?? "").filter(Boolean);
+    return session?.channel === "whatsapp" && session.customerAddress ? [...typed, whatsappNumberLine(session.customerAddress)] : typed;
   });
 }
 
@@ -197,11 +217,18 @@ export async function transcript(sessionId: string): Promise<Array<{ actor: stri
   });
 }
 
-/** Messages the customer may see, after a cursor (for the widget during a handoff). */
+/** Messages the customer may see, after a cursor (for the widget during a handoff). Team replies carry the writer's first name. */
 export async function customerVisibleEvents(sessionId: string, afterId: number) {
-  return inBusiness((db) => db
-    .select({ id: chatEvents.id, actor: chatEvents.actor, content: chatEvents.content, createdAt: chatEvents.createdAt })
+  const rows = await inBusiness((db) => db
+    .select({
+      id: chatEvents.id,
+      actor: chatEvents.actor,
+      content: chatEvents.content,
+      createdAt: chatEvents.createdAt,
+      authorName: staffUsers.name,
+    })
     .from(chatEvents)
+    .leftJoin(staffUsers, eq(staffUsers.id, chatEvents.author))
     .where(and(
       eq(chatEvents.sessionId, sessionId),
       inArray(chatEvents.actor, ["USER", "ZAINA_REASONING", "AGENT"]),
@@ -209,6 +236,12 @@ export async function customerVisibleEvents(sessionId: string, afterId: number) 
     ))
     .orderBy(asc(chatEvents.id))
     .limit(200));
+  return rows.map((row) => ({ ...row, authorName: row.authorName ? firstName(row.authorName) : null }));
+}
+
+/** "Amina" from "Amina Otieno": what a customer sees of the person answering. */
+export function firstName(name: string): string {
+  return name.trim().split(/\s+/)[0] ?? name;
 }
 
 /** Sets or clears the session's count of failed turns in a row (C4b). */

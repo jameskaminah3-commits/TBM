@@ -14,8 +14,37 @@ export type RateLimits = {
   businessMessagesPerHour: number;
 };
 
+export type WhatsappConfig = {
+  /** The Meta app's secret: every webhook delivery is signed with it. */
+  appSecret: string;
+  /** What Meta sends back when the webhook is set up (hub.verify_token). */
+  verifyToken: string;
+  /** Graph API version, e.g. v23.0. */
+  graphVersion: string;
+  /** How long to wait for more messages from the same customer before answering. */
+  batchMs: number;
+};
+
+export type WebPushConfig = { publicKey: string; privateKey: string; subject: string };
+
+export type AlertEmailConfig = { resendApiKey: string; from: string };
+
 export type PlatformConfig = {
   port: number;
+  /** The service's public address (https://…): widget snippet, webhook address, links in alerts. */
+  publicBaseUrl: string | null;
+  /** Where the built widget and console are served from (default: dist/public next to the service). */
+  publicDir: string | null;
+  /** WhatsApp Cloud API; null until the platform's Meta app is configured. */
+  whatsapp: WhatsappConfig | null;
+  /** Alerts on staff phones and browsers; null when no VAPID keys are set. */
+  webPush: WebPushConfig | null;
+  /** Alert emails to staff; null when no email provider is set. */
+  alertEmail: AlertEmailConfig | null;
+  /** A waiting chat offered to one person goes to everyone after this many minutes. */
+  routeEscalateMinutes: number;
+  /** How long a person who said they're available counts as available without the console open. */
+  availabilityHours: number;
   /** The database owner: migrations and the platform's own work. */
   platformDatabaseUrl: string;
   /**
@@ -61,6 +90,52 @@ function price(env: NodeJS.ProcessEnv, name: string): number | null {
   return value;
 }
 
+function publicBaseUrl(env: NodeJS.ProcessEnv): string | null {
+  const raw = env.PUBLIC_BASE_URL?.trim();
+  if (!raw) return null;
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error("PUBLIC_BASE_URL must be an address like https://zaina.example.com");
+  }
+  const local = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+  if (url.protocol !== "https:" && !local) throw new Error("PUBLIC_BASE_URL must start with https://");
+  return url.origin;
+}
+
+/** WhatsApp is on when the Meta app's secret and the webhook's verify token are both set. */
+function whatsappConfig(env: NodeJS.ProcessEnv): WhatsappConfig | null {
+  const appSecret = env.WHATSAPP_APP_SECRET?.trim();
+  const verifyToken = env.WHATSAPP_VERIFY_TOKEN?.trim();
+  if (!appSecret && !verifyToken) return null;
+  if (!appSecret || !verifyToken) throw new Error("Set both WHATSAPP_APP_SECRET and WHATSAPP_VERIFY_TOKEN, or neither");
+  if (verifyToken.length < 16) throw new Error("WHATSAPP_VERIFY_TOKEN must be at least 16 characters");
+  const graphVersion = env.WHATSAPP_GRAPH_VERSION?.trim() || "v23.0";
+  if (!/^v\d{1,3}\.\d$/.test(graphVersion)) throw new Error("WHATSAPP_GRAPH_VERSION looks like v23.0");
+  const batchRaw = env.WHATSAPP_BATCH_MS?.trim();
+  const batchMs = batchRaw === undefined || batchRaw === "" ? 2000 : Number(batchRaw);
+  if (!Number.isInteger(batchMs) || batchMs < 0 || batchMs > 30_000) throw new Error("WHATSAPP_BATCH_MS is 0 to 30000");
+  return { appSecret, verifyToken, graphVersion, batchMs };
+}
+
+function webPushConfig(env: NodeJS.ProcessEnv): WebPushConfig | null {
+  const publicKey = env.WEB_PUSH_PUBLIC_KEY?.trim();
+  const privateKey = env.WEB_PUSH_PRIVATE_KEY?.trim();
+  if (!publicKey && !privateKey) return null;
+  if (!publicKey || !privateKey) throw new Error("Set both WEB_PUSH_PUBLIC_KEY and WEB_PUSH_PRIVATE_KEY, or neither");
+  const subject = env.WEB_PUSH_SUBJECT?.trim() || "mailto:alerts@example.com";
+  if (!/^(mailto:|https:\/\/)/.test(subject)) throw new Error("WEB_PUSH_SUBJECT is a mailto: or https:// address");
+  return { publicKey, privateKey, subject };
+}
+
+function alertEmailConfig(env: NodeJS.ProcessEnv): AlertEmailConfig | null {
+  const resendApiKey = env.RESEND_API_KEY?.trim();
+  const from = env.ALERT_FROM_EMAIL?.trim() || env.RESEND_FROM_EMAIL?.trim();
+  if (!resendApiKey || !from) return null;
+  return { resendApiKey, from };
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): PlatformConfig {
   const sessionTokenSecret = required(env, "SESSION_TOKEN_SECRET");
   if (sessionTokenSecret.length < 32) throw new Error("SESSION_TOKEN_SECRET must be at least 32 characters");
@@ -70,6 +145,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): PlatformConfig
 
   return {
     port: positiveInt(env, "PORT", 5070),
+    publicBaseUrl: publicBaseUrl(env),
+    publicDir: env.PLATFORM_PUBLIC_DIR?.trim() || null,
+    whatsapp: whatsappConfig(env),
+    webPush: webPushConfig(env),
+    alertEmail: alertEmailConfig(env),
+    routeEscalateMinutes: positiveInt(env, "ROUTE_ESCALATE_MINUTES", 3),
+    availabilityHours: positiveInt(env, "AVAILABILITY_HOURS", 2),
     platformDatabaseUrl: required(env, "PLATFORM_DATABASE_URL"),
     platformAppDatabaseUrl: env.PLATFORM_APP_DATABASE_URL?.trim() || null,
     tbmDatabaseUrl: env.TBM_DATABASE_URL?.trim() || null,
