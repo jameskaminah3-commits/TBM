@@ -153,7 +153,7 @@ type AvailabilityBooking = {
  * booking routes and prevents abandoned Zaina drafts from making inventory
  * appear permanently unavailable.
  */
-function bookingBlocksAvailability(booking: AvailabilityBooking): boolean {
+export function bookingBlocksAvailability(booking: AvailabilityBooking): boolean {
   if (booking.status === "cancelled" || booking.status === "completed") return false;
   if (getBookingAmountPaid(booking) >= Math.max(0, booking.totalPrice)) return true;
   if (hasLockedInBookingDeposit(booking)) return true;

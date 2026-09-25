@@ -17,6 +17,7 @@ import { db } from "../db";
 import { chatSessions, zainaAuditLogs } from "@shared/schema";
 import { and, asc, eq } from "drizzle-orm";
 import { handleZainaMessage } from "./router";
+import { consumeLimits, visitorKey, ZAINA_LIMITS } from "./limits";
 
 // ═══════════════════════════════════════════════════════════════════
 // FEATURE FLAG
@@ -25,12 +26,11 @@ import { handleZainaMessage } from "./router";
 const ZAINA_ENABLED = process.env.ZAINA_ENABLED === "true";
 
 // ═══════════════════════════════════════════════════════════════════
-// RATE LIMITING (in-memory, per-instance)
+// RATE LIMITING
 //
-// Guards against a single session hammering the endpoint.
-// If you later run multiple server instances behind a load balancer,
-// switch to Redis-backed rate limiting — this in-memory version is
-// per-process only.
+// The shared limits in limits.ts (Postgres, per visitor and site-wide) do
+// the real work. This in-memory per-session limit stays as a second line in
+// case the shared check can't run.
 // ═══════════════════════════════════════════════════════════════════
 
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
@@ -97,6 +97,17 @@ export function registerZainaRoutes(app: Express): void {
   // ─── Create session ───────────────────────────────────────────
   app.post("/api/zaina/session", async (req: Request, res: Response) => {
     try {
+      // Opening chats is free for the visitor but not for us: a visitor can
+      // open a limited number per hour (C6).
+      const verdict = await consumeLimits([
+        { key: `zaina:sessions:visitor:${visitorKey(req)}`, limit: ZAINA_LIMITS.sessionsPerVisitorPerHour, windowSeconds: 3600 },
+      ]);
+      if (!verdict.allowed) {
+        res.setHeader("Retry-After", String(verdict.retryAfterSeconds));
+        res.status(429).json({ error: "Too many chats opened. Please try again later." });
+        return;
+      }
+
       const requested = req.body?.display_currency;
       const displayCurrency = requested === "KES" ? "KES" : "USD";
       const now = new Date().toISOString();
@@ -139,7 +150,15 @@ export function registerZainaRoutes(app: Express): void {
       res.status(413).json({ error: "Message is too long." });
       return;
     }
-    if (!checkRateLimit(sessionId)) {
+    // Per chat, per visitor, and for the whole site (C6): no one can keep
+    // sending messages to run up the model bill.
+    const verdict = await consumeLimits([
+      { key: `zaina:messages:session:${sessionId}`, limit: ZAINA_LIMITS.messagesPerSessionPerMinute, windowSeconds: 60 },
+      { key: `zaina:messages:visitor:${visitorKey(req)}`, limit: ZAINA_LIMITS.messagesPerVisitorPer10Minutes, windowSeconds: 600 },
+      { key: "zaina:messages:site", limit: ZAINA_LIMITS.messagesPerHour, windowSeconds: 3600 },
+    ]);
+    if (!verdict.allowed || !checkRateLimit(sessionId)) {
+      if (!verdict.allowed) res.setHeader("Retry-After", String(verdict.retryAfterSeconds));
       res.status(429).json({ error: "Too many messages. Please slow down." });
       return;
     }
