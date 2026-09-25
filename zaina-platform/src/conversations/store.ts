@@ -10,7 +10,7 @@
 
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { inBusiness } from "../db/tenant.ts";
-import { chatEvents, chatSessions, type ChatSession } from "../db/schema.ts";
+import { chatEvents, chatSessions, type ChatLanguage, type ChatSession } from "../db/schema.ts";
 import { redactCardNumbers } from "../engine/redaction.ts";
 
 export type Actor = "USER" | "ZAINA_REASONING" | "SYSTEM_TOOL" | "AGENT" | "SYSTEM";
@@ -216,5 +216,13 @@ export async function setConsecutiveFailures(sessionId: string, failures: number
   await inBusiness((db) => db
     .update(chatSessions)
     .set({ consecutiveFailures: failures })
+    .where(eq(chatSessions.id, sessionId)));
+}
+
+/** Records the language the customer now writes in. */
+export async function setSessionLanguage(sessionId: string, language: ChatLanguage): Promise<void> {
+  await inBusiness((db) => db
+    .update(chatSessions)
+    .set({ language })
     .where(eq(chatSessions.id, sessionId)));
 }

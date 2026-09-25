@@ -28,6 +28,7 @@ import {
   customerMessages,
   customerVisibleEvents,
   getSession,
+  setSessionLanguage,
   toolErrorResponses,
   toolSuccesses,
 } from "../../src/conversations/store.ts";
@@ -39,6 +40,10 @@ import { migrate, pendingMigrations, readMigrations } from "../../src/db/migrate
 import { CARD_NUMBER_PLACEHOLDER } from "../../src/engine/redaction.ts";
 import { recordTurn, summarizeTurns, TurnRecorder } from "../../src/engine/telemetry.ts";
 import { acquireTurnLock, releaseTurnLock } from "../../src/engine/turn-lock.ts";
+import { HIDDEN_AMOUNT } from "../../src/knowledge/money.ts";
+import { searchKnowledge } from "../../src/knowledge/search.ts";
+import { deleteKnowledgeSource, listKnowledgeMisses, listKnowledgeSources, saveKnowledgeSource, type KnowledgeInput } from "../../src/knowledge/store.ts";
+import { runSearchKnowledge } from "../../src/knowledge/tool.ts";
 import { consumeLimits } from "../../src/gateway/rate-limit.ts";
 import { claimCapAlert, isOverCap, recordUsage, usageOn } from "../../src/gateway/spend-cap.ts";
 import { roleIn } from "../../src/staff/auth.ts";
@@ -526,4 +531,76 @@ test("updating a chat in scope uses the business's row only", async () => {
   assert.ok(touched.some((row) => row.id === acmeChat.id));
   assert.ok(!touched.some((row) => row.id === tbmChat.id));
   assert.equal((await tbm(() => getSession(tbmChat.id)))?.displayCurrency, "USD");
+});
+
+// ── Phase 2: knowledge, business types, chat language ──────────────────
+
+const source = (fields: Partial<KnowledgeInput> & { title: string; content: string }): KnowledgeInput => ({
+  kind: "page", url: null, language: "en", status: "published", ...fields,
+});
+
+test("a business's knowledge is saved as passages, found by search and kept to itself", async () => {
+  const saved = await saveKnowledgeSource("acme", source({
+    title: "House rules",
+    kind: "policy",
+    url: "https://acme.example/rules",
+    content: "# House rules\n\n## Pets\n\nSmall dogs are welcome; tell us in advance.\n\n## Check-in\n\nFrom 2 pm. Rooms from KSh 6,000 per night.",
+  }), null);
+  assert.equal(saved?.passages, 2);
+  assert.equal(saved?.hiddenAmounts, 1, "the price is reported, and hidden from Zaina");
+  assert.equal((await saveKnowledgeSource("acme", source({ title: "House rules", kind: "policy", url: "https://acme.example/rules", content: "# House rules\n\n## Pets\n\nSmall dogs are welcome; tell us in advance.\n\n## Check-in\n\nFrom 2 pm. Rooms from KSh 6,000 per night." }), null))?.unchanged, true);
+  await saveKnowledgeSource("tbm", source({ title: "Coast areas", content: "## Diani\n\nWhite sand beaches on the south coast." }), null);
+
+  const [hit] = await searchKnowledge("acme", "can I bring my dog?");
+  assert.equal(hit.title, "House rules");
+  assert.equal(hit.section, "Pets");
+  assert.equal(hit.url, "https://acme.example/rules");
+  const [checkIn] = await searchKnowledge("acme", "check-in time");
+  assert.equal(checkIn.text, `From 2 pm. Rooms from ${HIDDEN_AMOUNT}.`);
+  assert.doesNotMatch(checkIn.text, /6,000/);
+  // Each business searches only its own knowledge.
+  assert.deepEqual(await searchKnowledge("tbm", "can I bring my dog?"), []);
+  assert.deepEqual(await searchKnowledge("acme", "Diani beaches"), []);
+  assert.deepEqual((await listKnowledgeSources("tbm")).map((row) => row.title), ["Coast areas"]);
+  // Postgres keeps them apart too.
+  assert.deepEqual((await asBusiness("tbm", "select distinct business_id from knowledge_chunks")).rows.map((row) => row.business_id), ["tbm"]);
+  await assert.rejects(
+    () => asBusiness("tbm", "insert into knowledge_chunks (business_id, source_id, position, content) values ('tbm', $1, 9, 'x')", [saved!.source.id]),
+    /foreign key/,
+    "a passage can't be attached to another business's source",
+  );
+  await assert.rejects(() => asBusiness("tbm", "insert into knowledge_sources (business_id, title, content, content_hash) values ('acme', 'x', 'y', 'z')"), /row-level security/);
+});
+
+test("changed knowledge is searched at once; removed knowledge is gone", async () => {
+  const saved = await saveKnowledgeSource("acme", source({ title: "Parking", content: "Two parking spaces behind the house." }), null);
+  assert.equal((await searchKnowledge("acme", "parking"))[0]?.title, "Parking");
+  await saveKnowledgeSource("acme", source({ title: "Parking", content: "Street parking only; the garage is closed for repairs." }), null, saved!.source.id);
+  assert.match((await searchKnowledge("acme", "parking"))[0]?.text ?? "", /garage is closed/);
+  assert.equal(await deleteKnowledgeSource("tbm", saved!.source.id), false, "not TBM's to delete");
+  assert.equal(await deleteKnowledgeSource("acme", saved!.source.id), true);
+  assert.deepEqual(await searchKnowledge("acme", "parking garage"), []);
+});
+
+test("questions nothing answers are kept for the business to fill", async () => {
+  const chat = await newChat("acme");
+  const missed = await runSearchKnowledge({ query: "Do you have a helipad?" }, { businessId: "acme", sessionId: chat.id });
+  assert.deepEqual(missed.passages, []);
+  assert.match(String(missed.note), /Don't guess/);
+  await runSearchKnowledge({ query: "do you have a helipad?" }, { businessId: "acme", sessionId: chat.id });
+  const found = await runSearchKnowledge({ query: "pets allowed?" }, { businessId: "acme", sessionId: chat.id });
+  assert.equal((found.passages as Array<{ source: string }>)[0]?.source, "House rules");
+  const misses = await listKnowledgeMisses("acme", 30);
+  assert.deepEqual(misses.map((miss) => [miss.query, miss.times]), [["do you have a helipad?", 2]]);
+  assert.deepEqual(await listKnowledgeMisses("tbm", 30), []);
+});
+
+test("TBM is a travel concierge; a chat remembers the customer's language", async () => {
+  assert.equal((await businessById("tbm"))?.businessType, "travel_concierge");
+  assert.equal((await businessById("acme"))?.businessType, "general");
+  const chat = await newChat("acme");
+  assert.equal(chat.language, "en");
+  await acme(() => setSessionLanguage(chat.id, "sw"));
+  assert.equal((await acme(() => getSession(chat.id)))?.language, "sw");
+  await assert.rejects(() => asBusiness("acme", "update chat_sessions set language = 'fr' where id = $1", [chat.id]), /check constraint/);
 });

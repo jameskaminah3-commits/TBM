@@ -1,193 +1,147 @@
 // zaina-platform/src/connectors/tbm/declarations.ts
 //
 // The tools TBM gives Zaina, as the model sees them. Copied from the TBM
-// app's router.ts, except that the booking tools no longer require contact
-// details: the server takes them only as the customer typed them.
+// app's router.ts, except that the booking tools don't require contact
+// details (the server takes them only as the customer typed them). Phase 2:
+// the same tools, names and parameters with shorter descriptions: rules the
+// prompt already states aren't repeated here, and escalate_to_human is a
+// tool every business gets from the engine (engine/tool-sets.ts).
 
 import { Type, type FunctionDeclaration } from "@google/genai";
+
+/** A contact detail: only as the customer typed it (the server checks). */
+const typed = { type: Type.STRING, description: "As the customer typed it; leave out if not given." };
+const isoDate = { type: Type.STRING, description: "YYYY-MM-DD" };
+const clockTime = { type: Type.STRING, description: "HH:MM" };
 
 export const tbmToolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
   {
     functionDeclarations: [
-            {
+      {
         name: "search_stays",
-        description:
-          "Find stays (villas, apartments, studios, beach houses) matching a region, " +
-          "guest count, and/or a keyword in the title. Always pass a `keyword` when " +
-          "the customer names a specific type of unit (studio, villa, apartment, " +
-          "bedroom). Returns a public_url for the listing page — never an image URL.",
+        description: "Find stays (villas, apartments, studios, beach houses) by region, guests and a title keyword. Returns each listing's public_url.",
         parameters: {
           type: Type.OBJECT,
           properties: {
             region: { type: Type.STRING, description: "e.g. Nyali, Diani, Watamu" },
             guests: { type: Type.NUMBER },
-            keyword: {
-              type: Type.STRING,
-              description:
-                "Free-text filter on the listing title. Use 'studio' if the " +
-                "customer asks for studios, 'villa' for villas, '2 bedroom' for " +
-                "two-bedroom units, etc.",
-            },
+            keyword: { type: Type.STRING, description: "Words from the listing title, e.g. studio, villa, 2 bedroom." },
           },
         },
       },
       {
         name: "search_cooks",
-        description:
-          "Find private chefs/cooks. Returns their pricing models (per-plate, per-meal, session), " +
-          "guest limits, and speciality.",
+        description: "Find private chefs, with their pricing models (per plate, single meal, session), guest limits and speciality.",
         parameters: {
           type: Type.OBJECT,
           properties: {
             region: { type: Type.STRING },
             guests: { type: Type.NUMBER },
-            keyword: { type: Type.STRING, description: "Optional food or chef speciality keyword." },
+            keyword: { type: Type.STRING, description: "Food or speciality." },
           },
         },
       },
       {
         name: "search_cars",
-        description:
-          "Find cars for self-drive or chauffeur. Returns daily and hourly pricing, " +
-          "seating, and zone-specific rates.",
+        description: "Find cars for self-drive or chauffeur, with daily, hourly and zone prices and seating.",
         parameters: {
           type: Type.OBJECT,
           properties: {
             region: { type: Type.STRING },
             guests: { type: Type.NUMBER },
-            keyword: { type: Type.STRING, description: "Optional vehicle keyword such as SUV or van." },
+            keyword: { type: Type.STRING, description: "e.g. SUV, van." },
           },
         },
       },
       {
         name: "search_errands",
-        description:
-          "Find errand services (shopping, laundry, house cleaning, MamaCare). " +
-          "Returns base prices and any configured pricing tiers.",
+        description: "Find errand services (shopping, laundry, house cleaning, MamaCare) with their prices and tiers.",
         parameters: {
           type: Type.OBJECT,
           properties: {
             region: { type: Type.STRING },
-            keyword: { type: Type.STRING, description: "Optional service keyword such as shopping, laundry, cleaning, or childcare." },
+            keyword: { type: Type.STRING, description: "e.g. shopping, laundry, cleaning, childcare." },
           },
         },
       },
       {
         name: "search_experiences",
-        description:
-          "Find experiences (tours, activities, day trips). Returns private and shared " +
-          "pricing per person, guest limits, and inclusions.",
+        description: "Find experiences (tours, activities, day trips) with private and shared prices per person, guest limits and inclusions.",
         parameters: {
           type: Type.OBJECT,
           properties: {
             region: { type: Type.STRING },
             guests: { type: Type.NUMBER },
-            keyword: { type: Type.STRING, description: "Optional activity keyword such as dhow, snorkeling, food, or culture." },
+            keyword: { type: Type.STRING, description: "e.g. dhow, snorkeling, food, culture." },
           },
         },
       },
       {
         name: "check_stay_availability",
-        description:
-          "Check whether a specific stay is available for given dates. " +
-          "Returns available: true/false. Always call before confirming a booking.",
+        description: "Whether a stay is free for the dates. Call it before confirming a booking.",
         parameters: {
           type: Type.OBJECT,
           properties: {
             stay_id: { type: Type.STRING },
-            check_in: { type: Type.STRING, description: "ISO date, e.g. 2026-11-12" },
-            check_out: { type: Type.STRING, description: "ISO date" },
+            check_in: isoDate,
+            check_out: isoDate,
           },
           required: ["stay_id", "check_in", "check_out"],
         },
       },
       {
         name: "calculate_chef_price",
-        description:
-          "Compute the authoritative price for a chef booking. Never guess chef prices — always call this.",
+        description: "The exact price of a chef booking. Always call it; never estimate.",
         parameters: {
           type: Type.OBJECT,
           properties: {
             cook_id: { type: Type.STRING },
-            mode: {
-              type: Type.STRING,
-              enum: ["per_plate", "single_meal", "session"],
-              description: "The pricing model to use",
-            },
-            quantity: {
-              type: Type.NUMBER,
-              description: "Number of plates, meals, or sessions",
-            },
+            mode: { type: Type.STRING, enum: ["per_plate", "single_meal", "session"] },
+            quantity: { type: Type.NUMBER, description: "Plates, meals or sessions." },
           },
           required: ["cook_id", "mode", "quantity"],
         },
       },
       {
         name: "calculate_mamacare_price",
-        description:
-          "Compute the authoritative price for a MamaCare (childcare) booking. " +
-          "Never guess MamaCare prices — always call this.",
+        description: "The exact price of a MamaCare (childcare) booking. Always call it; never estimate.",
         parameters: {
           type: Type.OBJECT,
           properties: {
             errand_id: { type: Type.STRING },
-            age_band_id: { type: Type.STRING, description: "Optional — defaults to first band" },
-            mode: {
-              type: Type.STRING,
-              enum: ["hourly_daytime", "hourly_evening", "overnight", "full_day"],
-            },
-            quantity: {
-              type: Type.NUMBER,
-              description: "Hours for hourly modes (minimum 3), otherwise ignored",
-            },
+            age_band_id: { type: Type.STRING, description: "Optional; defaults to the first band." },
+            mode: { type: Type.STRING, enum: ["hourly_daytime", "hourly_evening", "overnight", "full_day"] },
+            quantity: { type: Type.NUMBER, description: "Hours for hourly modes (at least 3)." },
           },
           required: ["errand_id", "mode", "quantity"],
         },
       },
       {
         name: "compose_trip_package",
-        description:
-          "Build a full trip package (stay + chauffeur transport + one experience) " +
-          "for a customer who gave people, dates, and budget. Returns a complete " +
-          "package with pricing and whether it fits the budget.",
+        description: "A trip package (stay, chauffeur transport, one experience) for people, dates and a budget, with its total and whether it fits.",
         parameters: {
           type: Type.OBJECT,
           properties: {
             people: { type: Type.NUMBER },
-            check_in: { type: Type.STRING },
-            check_out: { type: Type.STRING },
-            budget_amount: {
-              type: Type.NUMBER,
-              description: "Total budget exactly as the customer stated it, e.g. 60000. Never convert it yourself.",
-            },
-            budget_currency: {
-              type: Type.STRING,
-              enum: ["USD", "KES"],
-              description: "Currency of budget_amount as the customer stated it. The server converts.",
-            },
-            destination_preference: {
-              type: Type.STRING,
-              description: "Optional — e.g. Diani, Watamu, Mtwapa",
-            },
-            include_experience: {
-              type: Type.BOOLEAN,
-              description: "Default true. Set false only if customer explicitly opts out.",
-            },
+            check_in: isoDate,
+            check_out: isoDate,
+            budget_amount: { type: Type.NUMBER, description: "Total budget as the customer said it, e.g. 60000; don't convert." },
+            budget_currency: { type: Type.STRING, enum: ["USD", "KES"], description: "As the customer said it; the server converts." },
+            destination_preference: { type: Type.STRING, description: "e.g. Diani" },
+            include_experience: { type: Type.BOOLEAN, description: "false only if the customer opts out." },
           },
           required: ["people", "check_in", "check_out", "budget_amount", "budget_currency"],
         },
       },
       {
         name: "check_service_availability",
-        description:
-          "Check live availability for a car, chef, errand, or experience on a requested date. " +
-          "For cars, pass check_out for multi-day rentals. For shared experiences, pass the departure id.",
+        description: "Live availability of a car, chef, errand or experience on a date. A car day rental needs check_out; a shared experience its departure id.",
         parameters: {
           type: Type.OBJECT,
           properties: {
             service_id: { type: Type.STRING },
-            date: { type: Type.STRING, description: "ISO date" },
-            check_out: { type: Type.STRING, description: "ISO return date for a car day rental" },
+            date: isoDate,
+            check_out: isoDate,
             mode: { type: Type.STRING },
             guests: { type: Type.NUMBER },
             service_departure_id: { type: Type.STRING },
@@ -198,35 +152,19 @@ export const tbmToolDeclarations: { functionDeclarations: FunctionDeclaration[] 
       {
         name: "create_draft_booking",
         description:
-          "Create a draft booking and return a payment link. " +
-          "IMPORTANT: Do NOT pass a price — the server calculates the total from " +
-          "the stay and services you specify. Needs the customer's name, email and phone " +
-          "as they typed them, guests, dates, and a stay_id; the tool asks for any contact " +
-          "detail still missing. Duplicate protection is handled by the server.",
+          "Book a stay (with optional add-on services) and get its payment link. The server calculates the total: never pass a price. " +
+          "The tool asks for anything missing.",
         parameters: {
           type: Type.OBJECT,
           properties: {
-            customer_name: {
-              type: Type.STRING,
-              description: "The customer's full name exactly as they typed it. Leave it out if they haven't given it — the tool asks for it.",
-            },
-            customer_email: {
-              type: Type.STRING,
-              description: "The customer's email exactly as they typed it. Leave it out if they haven't given it — never make one up.",
-            },
-            customer_phone: {
-              type: Type.STRING,
-              description: "The customer's phone number exactly as they typed it. Leave it out if they haven't given it.",
-            },
+            customer_name: typed,
+            customer_email: typed,
+            customer_phone: typed,
             guests: { type: Type.NUMBER },
-            check_in: { type: Type.STRING },
-            check_out: { type: Type.STRING },
+            check_in: isoDate,
+            check_out: isoDate,
             stay_id: { type: Type.STRING },
-            service_ids: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-              description: "Optional list of service IDs (chefs, cars, experiences, errands)",
-            },
+            service_ids: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Add-on service ids." },
           },
           // Contact details are checked by the server against what the
           // customer typed; requiring them here pushed the model to invent them.
@@ -236,73 +174,34 @@ export const tbmToolDeclarations: { functionDeclarations: FunctionDeclaration[] 
       {
         name: "create_custom_offer",
         description:
-          "Create a saved custom request and payment link for something outside our " +
-          "listed inventory, or when nothing listed fits the customer's budget or exactly " +
-          "what they want. Pass every detail the customer gave as its own field; the tool " +
-          "asks for anything the team still needs (for a stay: check-in and check-out " +
-          "dates, guests, area and budget). For external listing verification, use " +
-          "create_listing_verification_request instead. Call it only after the customer " +
-          "agreed to the summary and the small request fee, which is credited in full " +
-          "against the final quotation. The exact fee, in the customer's currency, is " +
-          "returned as fee_display — never quote it from memory.",
+          "Create a custom request and its payment link, for something TBM doesn't list or when nothing listed fits the budget or needs. " +
+          "Pass each detail as its own field; the tool asks for anything missing. Only after the customer agreed to the summary and the " +
+          "request fee; give the fee exactly as fee_display. Not for checking listings found elsewhere.",
         parameters: {
           type: Type.OBJECT,
           properties: {
             category: {
               type: Type.STRING,
               enum: ["stay", "transport", "experience", "dining", "event", "service", "other"],
-              description:
-                "stay = villa, apartment, hotel; transport = car hire, transfers; experience = tours, safaris, " +
-                "trips, itineraries; dining = private chef, restaurant; event = wedding, birthday, retreat; " +
-                "service = photographer or other services; other = anything else.",
+              description: "experience includes tours, safaris and itineraries; dining includes restaurants; service e.g. a photographer.",
             },
-            offer_type: {
-              type: Type.STRING,
-              description: "Short label: 'safari', 'photographer', 'bespoke_itinerary', 'restaurant_reservation', etc.",
-            },
-            request_details: {
-              type: Type.STRING,
-              description: "What the customer wants, in their words: the kind of place or service and anything else they said.",
-            },
-            start_date: { type: Type.STRING, description: "YYYY-MM-DD: check-in, pickup, activity or event date." },
-            end_date: { type: Type.STRING, description: "YYYY-MM-DD: check-out or return date, or the last day." },
-            time: { type: Type.STRING, description: "HH:MM (24-hour), if the customer gave a time." },
-            guests: { type: Type.NUMBER, description: "Number of people: guests, passengers or party size." },
-            location: { type: Type.STRING, description: "Area or place, e.g. Nyali or Diani; for transport, pickup and drop-off." },
-            preferences: {
-              type: Type.STRING,
-              description: "Must-haves and nice-to-haves: bedrooms, pool, beach access, dietary needs, style.",
-            },
-            tier: {
-              type: Type.STRING,
-              enum: ["intake", "proposal"],
-              description: "proposal for a whole trip or itinerary; intake for everything else. Default to intake if unsure.",
-            },
-            customer_name: {
-              type: Type.STRING,
-              description: "The customer's name exactly as they typed it. Leave it out if they haven't given it — the tool asks for it.",
-            },
-            customer_email: {
-              type: Type.STRING,
-              description: "The customer's email exactly as they typed it. Leave it out if they haven't given it — never make one up.",
-            },
-            customer_phone: { type: Type.STRING, description: "The customer's phone number, only if they gave it." },
-            listing_url: { type: Type.STRING, description: "Full https:// link for a third-party listing being verified." },
-            budget_amount: { type: Type.NUMBER, description: "The customer's budget exactly as they stated it; always pass it when they gave one. Never convert it yourself." },
-            budget_currency: {
-              type: Type.STRING,
-              enum: ["USD", "KES"],
-              description: "Required whenever budget_amount is given: the currency the customer used. The fee is quoted in it.",
-            },
-            budget_basis: {
-              type: Type.STRING,
-              enum: ["total", "per_night", "per_day", "per_person"],
-              description: "What the budget covers, as the customer said it.",
-            },
-            travel_dates: {
-              type: Type.STRING,
-              description: "Only when the customer's dates are flexible: how they described them, e.g. 'flexible, mid-December'.",
-            },
+            offer_type: { type: Type.STRING, description: "Short label, e.g. photographer, safari, restaurant_reservation." },
+            request_details: { type: Type.STRING, description: "What the customer wants, in their words." },
+            start_date: { type: Type.STRING, description: "YYYY-MM-DD: check-in, pickup or event date." },
+            end_date: { type: Type.STRING, description: "YYYY-MM-DD: check-out, return or last day." },
+            time: clockTime,
+            guests: { type: Type.NUMBER, description: "Number of people." },
+            location: { type: Type.STRING, description: "Area or place; for transport, pickup and drop-off." },
+            preferences: { type: Type.STRING, description: "Must-haves: bedrooms, pool, beach, dietary needs, style." },
+            tier: { type: Type.STRING, enum: ["intake", "proposal"], description: "proposal for a whole trip or itinerary, otherwise intake." },
+            customer_name: typed,
+            customer_email: typed,
+            customer_phone: typed,
+            listing_url: { type: Type.STRING, description: "A listing link the customer sent." },
+            budget_amount: { type: Type.NUMBER, description: "As the customer said it; don't convert." },
+            budget_currency: { type: Type.STRING, enum: ["USD", "KES"], description: "Required with budget_amount." },
+            budget_basis: { type: Type.STRING, enum: ["total", "per_night", "per_day", "per_person"] },
+            travel_dates: { type: Type.STRING, description: "Flexible dates in the customer's words, e.g. mid-December." },
           },
           // Contact details and the other details are checked by the server
           // against what the customer wrote and what the team needs; requiring
@@ -313,38 +212,19 @@ export const tbmToolDeclarations: { functionDeclarations: FunctionDeclaration[] 
       {
         name: "create_listing_verification_request",
         description:
-          "Create a paid listing-verification request for an external stay or service the customer found on Facebook, Jiji, Airbnb, " +
-          "or through another agent. Works with a link, with the customer's details when there is no link, or both. " +
-          "Creates a booking payment link and dispatches the on-ground team only after payment clears. " +
-          "The configured verification fee is credited to the final TBM booking if the customer proceeds.",
+          "Create a paid verification request for a stay, car or tour the customer found elsewhere (Airbnb, Facebook, Jiji, an agent), " +
+          "with its link, its details, or both. Returns the fee and payment link.",
         parameters: {
           type: Type.OBJECT,
           properties: {
-            listing_url: { type: Type.STRING, description: "The listing link exactly as the customer sent it, if they have one." },
-            verification_scope: { type: Type.STRING, description: "What the team must verify: property existence, amenities, host documents, or all." },
-            agent_contact: {
-              type: Type.STRING,
-              description:
-                "How to reach the agent or host who shared the listing — phone number, WhatsApp, or Instagram/Facebook page — " +
-                "exactly as the customer gave it, with the agent's name if known. The team needs it to arrange the visit. " +
-                "Not the customer's own number.",
-            },
-            customer_name: {
-              type: Type.STRING,
-              description: "The customer's name exactly as they typed it. Leave it out if they haven't given it — the tool asks for it.",
-            },
-            customer_email: {
-              type: Type.STRING,
-              description: "The customer's email exactly as they typed it. Leave it out if they haven't given it — never make one up.",
-            },
-            customer_phone: { type: Type.STRING, description: "The customer's own phone number, only if they gave it." },
-            location: { type: Type.STRING, description: "Coast location if it is not clear from the link, e.g. Nyali, Diani, or Shanzu." },
-            listing_context: {
-              type: Type.STRING,
-              description:
-                "Everything the customer knows about the listing: property name and area, agent or host name and phone, " +
-                "price, what was promised, text copied from the advert. Required when there is no link.",
-            },
+            listing_url: { type: Type.STRING, description: "The listing link as the customer sent it." },
+            verification_scope: { type: Type.STRING, description: "What to verify: the property, amenities, host documents, or all." },
+            agent_contact: { type: Type.STRING, description: "The agent's or host's phone, WhatsApp or social page as given (not the customer's own)." },
+            customer_name: typed,
+            customer_email: typed,
+            customer_phone: typed,
+            location: { type: Type.STRING, description: "Area, if not clear from the link." },
+            listing_context: { type: Type.STRING, description: "What the customer knows: name, area, price, what was promised, advert text. Required without a link." },
             travel_dates: { type: Type.STRING },
           },
           // Name and email are checked by the server against what the customer
@@ -354,7 +234,7 @@ export const tbmToolDeclarations: { functionDeclarations: FunctionDeclaration[] 
       },
       {
         name: "create_lead",
-        description: "Capture a lead when the customer isn't ready to book yet.",
+        description: "Note a customer's interest when they aren't ready to book.",
         parameters: {
           type: Type.OBJECT,
           properties: {
@@ -368,139 +248,60 @@ export const tbmToolDeclarations: { functionDeclarations: FunctionDeclaration[] 
         },
       },
       {
-        name: "escalate_to_human",
-        description:
-          "Hand the session to a human agent. Use when the customer asks for a " +
-          "human, requests a discount we can't offer, refuses the custom offer " +
-          "pathway, or when you lack verified information.",
-        parameters: {
-          type: Type.OBJECT,
-          properties: {
-            reason: { type: Type.STRING, description: "Short internal reason for the handoff" },
-          },
-          required: ["reason"],
-        },
-      },
-      {
         name: "create_service_booking",
         description:
-          "Create a draft booking for a ONE-OFF SERVICE where the customer is " +
-          "NOT booking a stay. Use this for car rentals/chauffeur, MamaCare/childcare, " +
-          "private chefs (session mode), standalone experiences, or base errands. " +
-          "Cars use date plus check_out for day rentals, or one date for hourly chauffeur. " +
-          "The server calculates the total — never pass a price.",
+          "Book a service without a stay (car or chauffeur, MamaCare, chef, experience or errand) and get its payment link. " +
+          "The server calculates the total: never pass a price.",
         parameters: {
           type: Type.OBJECT,
           properties: {
-            customer_name: {
-              type: Type.STRING,
-              description: "The customer's full name exactly as they typed it. Leave it out if they haven't given it — the tool asks for it.",
-            },
-            customer_email: {
-              type: Type.STRING,
-              description: "The customer's email exactly as they typed it. Leave it out if they haven't given it — never make one up.",
-            },
-            customer_phone: {
-              type: Type.STRING,
-              description: "The customer's phone number exactly as they typed it. Leave it out if they haven't given it.",
-            },
-            service_id: {
-              type: Type.STRING,
-              description: "The ID of the errand, cook, or experience being booked.",
-            },
-            date: {
-              type: Type.STRING,
-              description: "ISO date for the service, e.g. 2026-10-20.",
-            },
-            check_out: {
-              type: Type.STRING,
-              description: "For car day rentals only: checkout/return date after date.",
-            },
+            customer_name: typed,
+            customer_email: typed,
+            customer_phone: typed,
+            service_id: { type: Type.STRING, description: "The car, chef, errand or experience id." },
+            date: isoDate,
+            check_out: { type: Type.STRING, description: "Car day rental: return date, YYYY-MM-DD." },
             mode: {
               type: Type.STRING,
               description:
-                "Service mode. For MamaCare use 'errand-childcare'. " +
-                 "For cars: 'car-chauffeur-day', 'car-chauffeur-hourly', or 'car-self-drive-day'. " +
-                "For chefs: 'cook-service-fee', 'cook-inclusive', 'cook-per-plate', or 'cook-single-meal'. " +
-                "For base errands: 'errand-base'. " +
-                "For shopping, laundry, and house cleaning use the matching errand mode. " +
-                "For experiences use 'experience-private' or 'experience-shared'.",
+                "MamaCare: errand-childcare. Cars: car-chauffeur-day, car-chauffeur-hourly, car-self-drive-day. " +
+                "Chefs: cook-service-fee, cook-inclusive, cook-per-plate, cook-single-meal. " +
+                "Errands: errand-base, errand-shopping, errand-laundry, errand-house-cleaning. " +
+                "Experiences: experience-private, experience-shared.",
             },
-            guests: {
-              type: Type.NUMBER,
-              description: "Number of guests (defaults to 1; used for experience-private).",
-            },
+            guests: { type: Type.NUMBER, description: "Default 1." },
             service_location: { type: Type.STRING },
-            service_pickup_location: {
-              type: Type.STRING,
-              description: "For cars: pickup location.",
-            },
-            service_return_location: {
-              type: Type.STRING,
-              description: "For cars: return/drop-off location.",
-            },
-            service_zone: {
-              type: Type.STRING,
-              description: "Optional chauffeur/self-drive pricing zone from the car result.",
-            },
-            service_start_time: {
-              type: Type.STRING,
-              description: "HH:MM format, e.g. 18:00.",
-            },
-            service_end_time: {
-              type: Type.STRING,
-              description: "HH:MM format, e.g. 06:00.",
-            },
+            service_pickup_location: { type: Type.STRING, description: "Cars: pickup." },
+            service_return_location: { type: Type.STRING, description: "Cars: return or drop-off." },
+            service_zone: { type: Type.STRING, description: "Pricing zone from the car result." },
+            service_start_time: clockTime,
+            service_end_time: clockTime,
             service_request_details: { type: Type.STRING },
-            service_budget_amount: {
-              type: Type.NUMBER,
-              description: "For shopping: the estimated receipt budget exactly as the customer stated it, excluding the service fee. Never convert it yourself.",
-            },
-            service_budget_currency: {
-              type: Type.STRING,
-              enum: ["USD", "KES"],
-              description: "Required with service_budget_amount: the currency the customer used. The server converts.",
-            },
-            service_bedrooms: {
-              type: Type.NUMBER,
-              description: "For house cleaning (errand-house-cleaning): number of bedrooms to clean. Ask the customer; never assume.",
-            },
-            service_laundry_weight_kg: { type: Type.NUMBER, description: "For laundry: estimated weight in kilograms." },
-            service_addon_selections: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Errand add-on ids returned by search." },
+            service_budget_amount: { type: Type.NUMBER, description: "Shopping: budget for the items as the customer said it; don't convert." },
+            service_budget_currency: { type: Type.STRING, enum: ["USD", "KES"], description: "Required with service_budget_amount." },
+            service_bedrooms: { type: Type.NUMBER, description: "House cleaning: bedrooms, as the customer said." },
+            service_laundry_weight_kg: { type: Type.NUMBER },
+            service_addon_selections: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Add-on ids from search." },
             service_schedule_slots: {
               type: Type.ARRAY,
               items: { type: Type.OBJECT, properties: { date: { type: Type.STRING }, note: { type: Type.STRING } }, required: ["date"] },
-              description: "Optional errand schedule details.",
             },
-            service_departure_id: { type: Type.STRING, description: "Required for a shared experience; use a departure id returned by search." },
+            service_departure_id: { type: Type.STRING, description: "Shared experience: a departure id from search." },
             mamacare_children: {
               type: Type.ARRAY,
-              description: "For MamaCare only. Each entry is one child's age band and count.",
+              description: "MamaCare: children per age band.",
               items: {
                 type: Type.OBJECT,
                 properties: {
-                  age_band_id: {
-                    type: Type.STRING,
-                    description: "The age band id from the errand's helpMamaPricing (e.g. 'help-mama-toddler').",
-                  },
-                  count: { type: Type.NUMBER, description: "How many children in that band." },
+                  age_band_id: { type: Type.STRING, description: "From the errand's pricing, e.g. help-mama-toddler." },
+                  count: { type: Type.NUMBER },
                 },
                 required: ["age_band_id", "count"],
               },
             },
-            mamacare_care_mode: {
-              type: Type.STRING,
-              enum: ["hourly_daytime", "hourly_evening", "overnight", "full_day"],
-              description: "For MamaCare only. The type of care session.",
-            },
-            mamacare_hours: {
-              type: Type.NUMBER,
-              description: "For hourly MamaCare modes only. Minimum 3 hours.",
-            },
-            quantity: {
-              type: Type.NUMBER,
-              description: "Number of sessions/units (defaults to 1). Used for chef sessions and base errands.",
-            },
+            mamacare_care_mode: { type: Type.STRING, enum: ["hourly_daytime", "hourly_evening", "overnight", "full_day"] },
+            mamacare_hours: { type: Type.NUMBER, description: "Hourly MamaCare: at least 3." },
+            quantity: { type: Type.NUMBER, description: "Sessions or units, default 1." },
           },
           // Contact details are checked by the server against what the customer typed.
           required: ["service_id", "date", "mode"],

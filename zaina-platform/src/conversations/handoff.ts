@@ -16,8 +16,9 @@
 import { and, eq, inArray, isNull, lt } from "drizzle-orm";
 import { allBusinesses } from "../businesses/registry.ts";
 import { connectorFor } from "../connectors/registry.ts";
-import { chatSessions, type Business, type ChatSession } from "../db/schema.ts";
+import { chatSessions, type Business, type ChatLanguage, type ChatSession } from "../db/schema.ts";
 import { inBusiness, runForBusiness } from "../db/tenant.ts";
+import { describeOpeningSwahili, swahiliTimeZoneLabel, texts } from "../engine/messages.ts";
 import { phoneNumbersWritten } from "../engine/tool-args.ts";
 import { describeOpening, isStaffedAt, nextStaffedAt, timeZoneLabel } from "./staffed-hours.ts";
 import { appendEvent, customerMessages } from "./store.ts";
@@ -33,8 +34,6 @@ export function customerGaveContact(messages: string[]): boolean {
   return /[^\s@]+@[^\s@]+\.[^\s@]{2,}/.test(written) || phoneNumbersWritten(written).length > 0;
 }
 
-const ASK_FOR_CONTACT = " What's the best phone number or email for them to reach you on?";
-
 function queue(label: string, task: Promise<unknown>) {
   task.catch((error) => console.error(`[handoff] ${label} failed:`, error));
 }
@@ -44,11 +43,20 @@ export async function requestHandoff(
   sessionId: string,
   reason: string,
   now: Date = new Date(),
+  language: ChatLanguage = "en",
 ): Promise<HandoffResult> {
-  return runForBusiness(business.id, () => handoffInScope(business, sessionId, reason, now));
+  return runForBusiness(business.id, () => handoffInScope(business, sessionId, reason, now, language));
 }
 
-async function handoffInScope(business: Business, sessionId: string, reason: string, now: Date): Promise<HandoffResult> {
+/** When the team is back, in the customer's language: "on Monday at 8:00 AM (Kenya time)". */
+function backAt(opensAt: Date | null, timeZone: string, now: Date, language: ChatLanguage): string | null {
+  if (!opensAt) return null;
+  return language === "sw"
+    ? `${describeOpeningSwahili(opensAt, timeZone, now)} (${swahiliTimeZoneLabel(timeZone)})`
+    : `${describeOpening(opensAt, timeZone, now)} (${timeZoneLabel(timeZone)})`;
+}
+
+async function handoffInScope(business: Business, sessionId: string, reason: string, now: Date, language: ChatLanguage): Promise<HandoffResult> {
   const connector = await connectorFor(business.id);
 
   if (!isStaffedAt(business.staffedHours ?? null, business.timeZone, now)) {
@@ -66,13 +74,10 @@ async function handoffInScope(business: Business, sessionId: string, reason: str
     queue("callback alert", connector.notifyTeam(business, {
       kind: "callback", sessionId, reason, why: "offline", staffBackAt: opensAt,
     }));
-    const back = opensAt
-      ? `they're back ${describeOpening(opensAt, business.timeZone, now)} (${timeZoneLabel(business.timeZone)})`
-      : "they'll be back soon";
-    const contact = customerGaveContact(await customerMessages(sessionId)) ? "" : ASK_FOR_CONTACT;
+    const askContact = !customerGaveContact(await customerMessages(sessionId));
     return {
       status: "callback",
-      tellCustomer: `Our team is offline right now — ${back}. I've asked them to get back to you then.${contact} Meanwhile, I'm happy to keep helping here.`,
+      tellCustomer: texts(language).teamOffline(backAt(opensAt, business.timeZone, now, language), askContact),
     };
   }
 
@@ -153,19 +158,19 @@ async function sweepBusiness(business: Business, now: Date): Promise<string[]> {
       isNull(chatSessions.assignedAgentId),
       lt(chatSessions.handoffAt, cutoff),
     ))
-    .returning({ id: chatSessions.id, handoffReason: chatSessions.handoffReason }));
+    .returning({ id: chatSessions.id, handoffReason: chatSessions.handoffReason, language: chatSessions.language }));
   if (rows.length === 0) return [];
 
   const connector = await connectorFor(business.id);
   const handedBack: string[] = [];
   for (const row of rows) {
     try {
-      const contact = customerGaveContact(await customerMessages(row.id)) ? "" : ASK_FOR_CONTACT;
+      const askContact = !customerGaveContact(await customerMessages(row.id));
       await appendEvent({
         businessId: business.id,
         sessionId: row.id,
         actor: "ZAINA_REASONING",
-        content: `Sorry for the wait — the team is busy right now, so I've asked them to get back to you as soon as they can.${contact} I'm here to help in the meantime.`,
+        content: texts(row.language).teamBusy(askContact),
       });
       await appendEvent({
         businessId: business.id,

@@ -7,7 +7,7 @@
 
 import { eq, sql } from "drizzle-orm";
 import { ownerDb } from "./platform-db.ts";
-import { businessSettings, businesses, staffMemberships, staffUsers, type StaffRole, type StaffUser } from "./schema.ts";
+import { businessSettings, businesses, staffMemberships, staffUsers, type BusinessType, type StaffRole, type StaffUser } from "./schema.ts";
 
 export async function findStaffByEmail(email: string): Promise<StaffUser | undefined> {
   const [row] = await ownerDb().select().from(staffUsers).where(eq(staffUsers.email, email.trim().toLowerCase())).limit(1);
@@ -64,6 +64,7 @@ export async function createBusinessWithOwner(input: {
     timeZone: string;
     dailyTokenCap: number;
     retentionDays: number;
+    businessType: BusinessType;
   };
   owner: { email: string; name: string; passwordHash: string | null };
 }): Promise<StaffUser> {

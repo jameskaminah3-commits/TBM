@@ -37,7 +37,6 @@ import {
 } from "../../../../shared/booking-payments";
 import { getPublicListingPath } from "../../../../shared/seo";
 import { addCalendarDays, kenyaDateTimeToIso } from "../../../../shared/calendar-dates";
-import { INVENTORY_CATALOG } from "./catalog.ts";
 import { describeInputAmount, toUsdAmount } from "../../engine/money-input.ts";
 import { getPublicSiteUrl } from "../../engine/reply-policy.ts";
 import { describeListingSource, MIN_LISTING_DETAILS_LENGTH, normalizeListingLink } from "../../engine/listing-verification.ts";

@@ -12,39 +12,50 @@ TBM is moved onto this service.
 ## How it fits together
 
 ```
-website widget ──▶ gateway ──▶ engine ──▶ connector ──▶ the business's own system
-                   (tokens,     (one turn:   (TBM: TBM's listings, prices,
-                    limits,      model,       bookings, alerts;
-                    websites)    tools,       others: answers from their
-                                 replies)     settings, leads for their team)
+website widget ──▶ gateway ──▶ engine ──────────▶ connector ──▶ the business's own system
+                   (tokens,     (one turn: a        (TBM: TBM's listings, prices,
+                    limits,      static prompt,      bookings, alerts;
+                    websites)    the turn's context, others: leads for their team)
+                                 short history,
+                                 tools by business type,
+                                 knowledge search, replies)
                        │            │
 staff console ─────────┤            │
-(sign-in, roles)       ▼            ▼
-              platform database: businesses, conversations, telemetry, usage,
-              rate limits, M-Pesa claims, staff, settings, encrypted secrets,
-              leads. Every business's rows are kept apart by Postgres itself.
+(sign-in, roles,       ▼            ▼
+ knowledge)    platform database: businesses, conversations, telemetry, usage,
+               rate limits, M-Pesa claims, staff, settings, encrypted secrets,
+               leads, knowledge. Every business's rows are kept apart by Postgres.
 ```
 
 - `src/gateway/` — the public chat API: signed session tokens, shared rate
   limits, allowed websites, daily model budget.
 - `src/engine/` — one chat turn (`agent.ts`, ported from the TBM app's
   `router.ts`) and the rules it runs on: reply policy, idempotency, contact
-  checks, turn budget, session lock, failure policy, telemetry.
+  checks, turn budget, session lock, failure policy, telemetry; the turn's
+  context (`turn-context.ts`), a short history (`history.ts`), tools by
+  business type (`tool-sets.ts`), the customer's language (`language.ts`) and
+  the server's own texts in English and Swahili (`messages.ts`).
+- `src/knowledge/` — each business's knowledge: sources and passages,
+  ranked search that names its source, amounts hidden, the questions nothing
+  answered, staff routes.
 - `src/conversations/` — conversations in the platform database, the
   handoff lifecycle, the team's inbox routes, retention and deletion requests.
 - `src/connectors/` — what a business plugs in. `tbm/` is TBM: its prompt and
-  tools (copied from the TBM app), its team alerts and chat M-Pesa recording;
-  `tbm/tbm-app.ts` is the only file that reaches into the TBM app's code.
-  `basic/` serves any other business: it answers from the business's own
-  settings, takes leads and hands over to a person.
+  tools, its team alerts and chat M-Pesa recording; `tbm/tbm-app.ts` is the
+  only file that reaches into the TBM app's code. `basic/` serves any other
+  business: it answers from the business's own knowledge, takes leads and
+  hands over to a person.
+- `knowledge/tbm/` — TBM's knowledge (areas, travel, services, booking and
+  payment, policies), imported at every release.
 - `src/businesses/` — the business directory, each business's settings, and
   its encrypted secrets.
 - `src/staff/` — staff accounts, sign-in, roles, and the business console
   routes (settings, people, secrets, leads, reports, deletion requests).
 - `src/platform/` — the platform's own console: adding businesses.
 - `src/db/` — the two database connections and business scope (`tenant.ts`).
-- `src/cli/` — creating the first staff accounts.
+- `src/cli/` — creating the first staff accounts; importing knowledge.
 - `migrations/` — reviewed SQL, applied in order and never edited once run.
+- `test/eval/` — the evaluation suite: 110 conversations, graded.
 
 ## Phase status
 
@@ -101,9 +112,49 @@ Decisions to confirm:
 - The defaults for new businesses: 5 million tokens a day and 90 days.
 - Who gets the first platform admin account (made on the command line).
 
-**Next: Phase 2 — knowledge and a lean prompt.** Each business's own
-knowledge (documents, FAQs, policies) searched per question, instead of a
-long prompt, so a turn costs less and a new business needs no code.
+**Phase 2 — knowledge and a lean prompt: built; the live evaluation needs a
+model key.** Each business's knowledge is searched per question instead of
+pasted into every prompt, and the prompt never changes between calls:
+
+| Part | What it does |
+|---|---|
+| Knowledge | Each business's own sources (web pages, FAQs, policies, guides, menus) cut into short passages. Zaina searches them for questions about the business and answers only from what comes back, naming the source and its link. Amounts in documents are hidden from Zaina: prices come from the booking tools or the team. Questions nothing answered are kept for the business to fill. Kept apart per business by row-level security, like everything else |
+| TBM's knowledge | The catalog that was pasted into every call is now 15 short documents (`knowledge/tbm/`): Coast areas, getting here, travel tips, how booking and payment work, cancellation, each service, listing verification, custom requests, trip planning |
+| A static prompt | TBM's rules, condensed from the TBM app's prompt, with nothing that changes from call to call; the time, currency and language travel with each customer message (`<turn_context>`). The same instructions and tools on every call can be cached by the model provider |
+| Tools by business type | Every business gets knowledge search and a handoff; a travel concierge (TBM) also gets its search, pricing and booking tools; a general business its lead tool. Tool descriptions no longer repeat the prompt |
+| Short history | The last 12 events as they were; older tool results cut to ids, names, prices, links and errors; nothing beyond 40 events except a note of anything payable made earlier |
+| Swahili | A customer writing in Swahili gets replies in Swahili, and the server's own texts (payment steps, busy, retry, handoff, M-Pesa confirmations) in Swahili too. Those are drafts until a fluent speaker has checked them |
+| Evaluation | 110 conversations for TBM and a second business, in English and Swahili, 18 of them injection attempts, 50 critical (money, safety, privacy, injection). Graded from the replies and the tools called; every reply is also checked for invented prices, internals, foreign numbers and links |
+
+Exit check:
+
+- **Input tokens per call: 27% of before.** The same conversations, counted
+  with the Gemini tokenizer: 20,067 input tokens per model call before, 5,446
+  after (target: a third, 6,689). Per customer message, 28,242 before and
+  8,472 after. The prompt went from about 16,000 tokens to 2,050 and the
+  tools from 3,900 to 3,050. The live evaluation re-measures this from the
+  model's own usage figures.
+- **Knowledge search.** Every answerable question in the suite (31) finds
+  its source in the top three; questions nothing answers mostly get
+  passages that don't answer them, and Zaina must still say it doesn't know.
+- **TBM unchanged where it matters.** The same 13 scripted conversations
+  still produce word-for-word the same replies here as in the live Zaina:
+  the tools, the reply policy and the payment steps are unchanged.
+- **Evaluation pass rate: to agree and run.** Proposed bar: 90% of all cases
+  and every critical case. The suite and its grading are tested; running it
+  needs the real model (`GEMINI_API_KEY`).
+
+Decisions to confirm:
+
+- The evaluation bar above.
+- The Swahili texts (`src/engine/messages.ts` and the payment steps in
+  `src/engine/reply-policy.ts`), checked by a fluent speaker.
+- TBM's published support hours are Monday to Saturday, 8 AM to 8 PM; the
+  staffed hours proposed in Phase 0 are every day, 07:00 to 22:00. Which
+  should handoffs follow?
+
+**Next: Phase 3 — channels and console.** The embeddable widget, WhatsApp,
+the business inbox and basic reports.
 
 ## Running it locally
 
@@ -129,6 +180,7 @@ rate limits (see `src/config.ts`), `MODEL_PRICE_INPUT_USD_PER_MTOK` and
 ```
 cd zaina-platform
 npm run migrate     # apply migrations (a release step in production)
+npm run knowledge:import -- --business tbm --dir zaina-platform/knowledge/tbm   # TBM's knowledge (also a release step)
 STAFF_PASSWORD='…' npm run staff:create -- --email you@example.com --name "You" --platform-admin
 npm run dev         # start with tsx
 npm run build       # bundle to dist/, then npm start
@@ -174,13 +226,26 @@ Per business, under `/v1/staff/businesses/:businessId/` (least role needed):
 | `GET metrics?days=7`, `POST erase` (`{ email?, phone? }`), `DELETE sessions/:id` | manager |
 | `GET secrets` (names only) | manager |
 | `PUT secrets/:name` (`{ value }`), `DELETE secrets/:name` | owner |
+| `GET knowledge`, `GET knowledge/:sourceId`, `POST knowledge/search` (`{ query }`: what Zaina would find) | viewer |
+| `GET knowledge/misses?days=30` (questions nothing answered) | agent |
+| `POST knowledge` (`{ title, kind?, url?, language?, content \| faqs, status? }`, replaces a source with the same title), `PUT knowledge/:sourceId`, `DELETE knowledge/:sourceId` | manager |
 
 A business someone doesn't work for answers "not found", as if it didn't
-exist.
+exist. A knowledge save answers with the passages it made and how many
+amounts it hides from Zaina.
+
+**Knowledge formats.** Markdown or text, with an optional header
+(`title`, `kind`: page, faq, policy, guide, menu or document, `url`,
+`language`: en or sw), or an FAQ list (`[{ question, answer }]`). The import
+command also reads a folder of such files or fetches a web page
+(`--url https://…`); PDFs are converted to text first (for example with
+`pdftotext`).
 
 Platform admins: `GET /v1/platform/businesses`, and `POST /v1/platform/businesses`
-with `{ id, name, allowed_origins, time_zone?, daily_token_cap?, retention_days?,
-owner: { email, name, password } }`, which returns the business's widget key.
+with `{ id, name, allowed_origins, business_type?, time_zone?, daily_token_cap?,
+retention_days?, owner: { email, name, password } }`, which returns the
+business's widget key. `business_type` is `general` (the default) or
+`guesthouse`; a `travel_concierge` needs its own connector first, as TBM has.
 
 ## Tests
 
@@ -191,9 +256,21 @@ npm run test:db     # database checks, including separation between businesses:
 npm run test:e2e    # the whole service with a scripted model, TBM and a second business:
                     # also TBM_TEST_DATABASE_URL, a local copy of TBM's schema ending in _test
 npm run check       # type check
+
+npm run eval -- --offline         # knowledge search for every question in the evaluation (no model, no database)
+GEMINI_API_KEY=… npm run eval     # the evaluation with the real model, graded; same local *_test databases
+npm run eval -- --scripted        # the evaluation harness itself, with the scripted model
 ```
 
 The end-to-end run uses `test/e2e/scripted-model.mjs` in place of the model,
 email and exchange-rate services, and refuses to run against any database
 that isn't local and named `*_test`. `E2E_SERVER_LOG=<file>` keeps the
 server's output.
+
+The evaluation (`test/eval/`) runs 110 conversations through the whole
+service: TBM on a richer test seed (`tbm-eval-seed.sql`) and Acme Guesthouse
+with its own knowledge (`fixtures/acme/`, one document with a planted
+injection). It writes `eval-report.json` (pass rate by category, every
+failure with its replies, input tokens per call and how many were cached)
+and fails below the bar: `--min 0.9` of all cases and every critical case.
+`--only <id prefix>` runs some; `--model <name>` picks the model.

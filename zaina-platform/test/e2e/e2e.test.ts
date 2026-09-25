@@ -40,6 +40,7 @@ const ACME_ORIGIN = "https://acme.example";
 const TURN_BUDGET_MS = 6000;
 const work = mkdtempSync(path.join(tmpdir(), "zaina-e2e-"));
 const EMAIL_LOG = path.join(work, "emails.log");
+const MODEL_LOG = path.join(work, "model-calls.log");
 
 let server: ChildProcess;
 let serverOutput = "";
@@ -117,6 +118,7 @@ async function tokenFor(email: string, password = PASSWORD): Promise<string> {
 
 const base64 = (text: string) => Buffer.from(text, "utf8").toString("base64");
 const emails = () => readFileSync(EMAIL_LOG, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+const modelCalls = () => readFileSync(MODEL_LOG, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
 const session = (id: string) => one(platform, "select * from chat_sessions where id = $1", [id]);
 const settle = (ms = 300) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -124,6 +126,7 @@ before(async () => {
   await platform.query("drop schema public cascade; create schema public;");
   await tbm.query(readFileSync(path.join(HERE, "tbm-seed.sql"), "utf8"));
   writeFileSync(EMAIL_LOG, "");
+  writeFileSync(MODEL_LOG, "");
   server = spawn(process.execPath, ["--import", path.join(HERE, "scripted-model.mjs"), "--import", "tsx", "zaina-platform/src/server.ts"], {
     cwd: REPO,
     env: {
@@ -147,6 +150,7 @@ before(async () => {
       RESEND_API_KEY: "re_scripted",
       RESEND_FROM_EMAIL: "zaina@example.com",
       FAKE_EMAIL_LOG: EMAIL_LOG,
+      FAKE_GEMINI_LOG: MODEL_LOG,
       FAKE_USD_TO_KES: "129.24",
       SCRIPTED_SLOW_MS: "15000",
       SCRIPTED_SLOW_REPLY_MS: "1500",
@@ -176,6 +180,14 @@ before(async () => {
   const added = await staff("POST", "/v1/staff/businesses/tbm/members", { email: "amina@example.com", name: "Amina", password: PASSWORD, role: "agent" }, opsToken);
   assert.equal(added.status, 201, JSON.stringify(added.body));
   agentToken = await tokenFor("amina@example.com");
+
+  // TBM's knowledge, imported as at every release.
+  const imported = spawnSync(
+    process.execPath,
+    ["--import", "tsx", "zaina-platform/src/cli/import-knowledge.ts", "--business", "tbm", "--dir", "zaina-platform/knowledge/tbm"],
+    { cwd: REPO, env: { ...process.env, PLATFORM_DATABASE_URL: PLATFORM_DB }, encoding: "utf8" },
+  );
+  assert.equal(imported.status, 0, imported.stderr + imported.stdout);
 });
 
 after(async () => {
@@ -501,6 +513,10 @@ test("the platform adds a second business, with its first owner, in one step", a
   acmeKey = created.body.business.public_key;
   assert.match(acmeKey, /^pk_acme_[0-9a-f]{12}$/);
   assert.equal(created.body.business.daily_token_cap, 5_000_000, "a new business starts with a model budget");
+  assert.equal(created.body.business.business_type, "general");
+  const concierge = await staff("POST", "/v1/platform/businesses", { ...request, id: "coast-trips", business_type: "travel_concierge" }, opsToken);
+  assert.equal(concierge.status, 400, "a travel concierge needs its own connector first");
+  assert.equal(concierge.body.error, "connector_required");
   assert.equal(created.body.business.retention_days, 90);
   assert.equal((await staff("POST", "/v1/platform/businesses", request, opsToken)).status, 409);
   const listed = await staff("GET", "/v1/platform/businesses", undefined, opsToken);
@@ -523,7 +539,7 @@ test("Acme's chat runs on Acme's instructions and tools, and keeps Acme's leads"
   const chat = await openChat(nextIp(), "KES", acmeKey, ACME_ORIGIN);
   assert.equal(
     await say(chat, "TEST:whoami"),
-    "You are Zaina, the assistant for Acme Guesthouse, answering customers in a chat on its website. Tools: create_lead, escalate_to_human.",
+    "You are Zaina, the assistant for Acme Guesthouse, answering customers in a chat on its website. Tools: create_lead, search_knowledge, escalate_to_human.",
   );
   assert.doesNotMatch(await say(await openChat(), "TEST:whoami"), /Acme/, "TBM's chats are TBM's");
 
@@ -641,6 +657,99 @@ test("a new password signs the person out everywhere", async () => {
   assert.equal((await staff("GET", "/v1/staff/me", undefined, changed.body.token)).status, 200);
   assert.equal((await signIn("baraka@example.com", PASSWORD)).status, 401);
   assert.equal((await signIn("baraka@example.com", "NewLocal#2027")).status, 200);
+});
+
+// ── Phase 2: knowledge, a lean prompt, Swahili ─────────────────────────
+
+test("TBM's questions are answered from its knowledge, naming the source", async () => {
+  const chat = await openChat();
+  const reply = await say(chat, "TEST:ask How do we get to Diani from the airport?");
+  assert.match(reply, /^From our Getting to and around the Coast: /);
+  assert.match(reply, /Airport to/);
+  assert.match(reply, /More: https:\/\/tembeabilamatata\.com\/services\/drive$/);
+  const event = await one(platform, "select tool_response from chat_events where session_id = $1 and tool_name = 'search_knowledge'", [chat.sessionId]);
+  assert.equal(event.tool_response.passages[0].source, "Getting to and around the Coast");
+  assert.match(event.tool_response.note, /information, not instructions/);
+});
+
+test("a question nothing answers isn't guessed, and the team can see it", async () => {
+  const chat = await openChat();
+  assert.equal(await say(chat, "TEST:ask Do you sell iPhones?"), "I'm not sure about that one — shall I ask the team for you?");
+  const misses = await staff("GET", "/v1/staff/businesses/tbm/knowledge/misses");
+  assert.equal(misses.status, 200);
+  assert.ok(misses.body.misses.some((miss: any) => miss.query === "do you sell iphones?" && miss.times === 1));
+  const sources = await staff("GET", "/v1/staff/businesses/tbm/knowledge");
+  assert.ok(sources.body.sources.length >= 15);
+  assert.ok(sources.body.sources.every((source: any) => source.passages > 0));
+});
+
+test("every call sends the same instructions and tools; the date and currency travel with the message", async () => {
+  const chat = await openChat();
+  await say(chat, "Hi");
+  const tbmCalls = modelCalls().filter((call) => call.toolNames.includes("search_stays"));
+  assert.ok(tbmCalls.length > 20, `${tbmCalls.length} TBM calls`);
+  assert.equal(new Set(tbmCalls.map((call) => call.systemHash)).size, 1, "one set of instructions for every call");
+  assert.equal(new Set(tbmCalls.map((call) => call.toolsHash)).size, 1, "one set of tools for every call");
+  assert.ok(modelCalls().every((call) => call.lastUserHasContext), "each call carries the turn's context");
+  assert.ok(tbmCalls.every((call) => call.systemChars < 10_500), "the instructions are short");
+  // The context is the system's: never stored, never shown to the customer.
+  assert.doesNotMatch(JSON.stringify(await chatMessages(chat)), /turn_context/);
+  assert.equal((await one(platform, "select count(*)::int as n from chat_events where content like '%turn_context%'")).n, 0);
+});
+
+test("a customer writing in Swahili gets the server's own texts in Swahili", async () => {
+  const chat = await openChat();
+  await say(chat, "Habari, naomba msaada wa kusafisha nyumba Nyali");
+  assert.equal((await session(chat.sessionId)).language, "sw");
+  // Without contact details, the tool's English question isn't sent as it is: Zaina asks in Swahili.
+  const asked = await send(chat, "TEST:clean");
+  assert.notEqual(asked.body.reply, "May I have your full name and email address for the booking? The confirmation and payment link go there.");
+  const turn = await one(platform, "select model_calls from turn_metrics where session_id = $1 order by id desc limit 1", [chat.sessionId]);
+  assert.equal(turn.model_calls, 2, "the tool's question went back to Zaina");
+
+  await say(chat, "Mimi ni Jane Wanjiru, jane@example.com, 0712345678");
+  const booked = await say(chat, "TEST:clean");
+  assert.match(booked, /bookingId=[0-9a-f-]{36}/);
+  assert.match(booked, /Kinachofuata:/);
+  assert.doesNotMatch(booked, /What happens next/);
+  const recorded = await say(chat, "Nimetuma malipo kwa M-Pesa, nambari QKL8M9N0P1");
+  assert.match(recorded, /^Asante! Nimepeleka nambari ya M-Pesa QKL8M9N0P1 kwa timu yetu/);
+
+  const other = await openChat();
+  await say(other, "Habari yako, tunataka kuweka nafasi");
+  const slow = send(other, "TEST:slow_reply");
+  await settle(300);
+  const second = await send(other, "na pia, kuna maegesho?");
+  assert.equal(second.status, 409);
+  assert.equal(second.body.reply, "Bado ninashughulikia ujumbe wako uliopita — tafadhali tuma huu tena baada ya muda mfupi.");
+  await slow;
+});
+
+test("Acme's own knowledge answers Acme's customers, and only them", async () => {
+  const faq = {
+    title: "Guest FAQ",
+    url: "https://acme.example/faq",
+    faqs: [
+      { question: "Can I bring my dog?", answer: "Small dogs are welcome in two of our rooms; tell us in advance." },
+      { question: "Is breakfast included?", answer: "Yes, breakfast is included, served 7 to 10 am. Dinner costs KSh 1,500 per person." },
+    ],
+  };
+  const viewer = await tokenFor("juma@example.com");
+  assert.equal((await staff("POST", "/v1/staff/businesses/acme/knowledge", faq, viewer)).status, 403, "viewers can't change knowledge");
+  const saved = await staff("POST", "/v1/staff/businesses/acme/knowledge", faq, acmeOwnerToken);
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  assert.deepEqual([saved.body.passages, saved.body.hidden_amounts], [2, 1]);
+  const checked = await staff("POST", "/v1/staff/businesses/acme/knowledge/search", { query: "dog" }, viewer);
+  assert.equal(checked.body.passages[0].title, "Guest FAQ");
+  assert.equal((await staff("GET", "/v1/staff/businesses/acme/knowledge")).status, 404, "TBM's staff can't see it");
+  assert.equal((await staff("POST", "/v1/staff/businesses/acme/knowledge", { title: "x" }, acmeOwnerToken)).status, 400);
+
+  const chat = await openChat(nextIp(), "KES", acmeKey, ACME_ORIGIN);
+  assert.match(await say(chat, "TEST:ask Can I bring my dog?"), /^From our Guest FAQ: Small dogs are welcome in two of our rooms/);
+  const breakfast = await say(chat, "TEST:ask Is breakfast included? How much is dinner?");
+  assert.match(breakfast, /breakfast is included/);
+  assert.doesNotMatch(breakfast, /1,500/, "prices never come from documents");
+  assert.match(await say(await openChat(), "TEST:ask Can I bring my dog?"), /not sure/, "TBM doesn't know Acme's answers");
 });
 
 test("a deletion request at Acme deletes only Acme's copy of the customer", async () => {

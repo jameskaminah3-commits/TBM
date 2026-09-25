@@ -7,16 +7,23 @@
 //
 // The customer message selects a scenario: "TEST:<name> [extra text]";
 // "TEST:whoami" answers with the first line of the business's instructions
-// and its tool names, "TEST:say64 <base64>" with exactly that text.
+// and its tool names, "TEST:say64 <base64>" with exactly that text, and
+// "TEST:ask <question>" searches the business's knowledge and answers from
+// the first passage, naming its source. The system's <turn_context> block
+// isn't part of what the customer wrote.
 // Round 1 returns a scripted function call; round 2 returns a deliberately
 // messy "model reply" (bold, bare paths, phishing link, foreign phone
 // number, its own payment steps) so the server-side reply policy is tested.
 // Token counts are estimated at four characters each, so telemetry has
 // numbers to add up.
-import { appendFileSync } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { appendFileSync, writeFileSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import path from "node:path";
 
 const LOG = process.env.FAKE_GEMINI_LOG;
+// FAKE_GEMINI_DUMP_DIR=<dir> saves every request as sent, to measure what a call costs.
+const DUMP_DIR = process.env.FAKE_GEMINI_DUMP_DIR;
+let dumped = 0;
 const realFetch = globalThis.fetch;
 
 const customer = {
@@ -35,6 +42,7 @@ const scenarios = {
   shop_no_currency: () => ({ name: "create_service_booking", args: { ...customer, service_id: "errand-shop", mode: "errand-shopping", date: "2026-10-10", service_location: "Nyali", service_budget_amount: 5000, service_request_details: "Milk, bread, eggs and fruit", idempotency_key: randomUUID() } }),
   identify: () => ({ name: "identify_customer", args: { email: "someone@example.com" } }),
   lead: () => ({ name: "create_lead", args: { name: "Jane Wanjiru", email: "jane@example.com", interest: "December family trip to Diani" } }),
+  ask: (customerText) => ({ name: "search_knowledge", args: { query: customerText.replace(/TEST:ask/, "").trim() } }),
   escalate: () => ({ name: "escalate_to_human", args: { reason: "Customer asked for a discount (internal note)" } }),
   verify: () => ({ name: "create_listing_verification_request", args: { ...customer, listing_url: "https://www.airbnb.com/rooms/123", verification_scope: "Check the property exists and matches the photos", idempotency_key: randomUUID() } }),
   // Realistic two-message flow: the model first calls without contact details
@@ -95,12 +103,17 @@ function previousVerificationArgs(contents) {
   return earlier ? JSON.parse(earlier.match(/args: (\{.*\})\nresult:/s)[1]) : {};
 }
 
+/** The customer's own words: the system's turn context removed. */
+function withoutContext(text) {
+  return text.replace(/\s*<turn_context>[\s\S]*?<\/turn_context>\s*/g, " ").trim();
+}
+
 function latestCustomerText(contents) {
   for (let i = contents.length - 1; i >= 0; i -= 1) {
     const c = contents[i];
     if (c.role !== "user") continue;
     const text = (c.parts || []).map((p) => p.text).filter(Boolean).join(" ");
-    if (text && !text.startsWith("[earlier tool]") && !text.startsWith("<tool_result")) return text;
+    if (text && !text.startsWith("[earlier tool]") && !text.startsWith("<tool_result")) return withoutContext(text);
   }
   return "";
 }
@@ -121,6 +134,11 @@ function messyReplyFor(name, result) {
     return r.has_account ? "Good news — that email already has a TBM account!" : `Status: ${r.client_status ?? r.error}`;
   }
   if (name === "escalate_to_human") return "Let me connect you with someone from our team.";
+  if (name === "search_knowledge") {
+    const passage = (r.passages || [])[0];
+    if (!passage) return "I'm not sure about that one — shall I ask the team for you?";
+    return `From our ${passage.source}: ${passage.text.split("\n")[0].slice(0, 220)}${passage.link ? ` More: ${passage.link}` : ""}`;
+  }
   if (name === "compose_trip_package") {
     return r.ok ? `Here's a package for you: total ${r.total}, budget ${r.budget}, within budget: ${r.within_budget}.` : `Package failed: ${r.error}`;
   }
@@ -180,6 +198,10 @@ globalThis.fetch = async (input, init) => {
 
   const body = JSON.parse(init?.body ?? "{}");
   requestChars = String(init?.body ?? "").length;
+  if (DUMP_DIR) {
+    dumped += 1;
+    writeFileSync(path.join(DUMP_DIR, `${String(dumped).padStart(4, "0")}.json`), String(init?.body ?? "{}"));
+  }
   const contents = body.contents || [];
   const systemText = (body.systemInstruction?.parts || []).map((p) => p.text).join("");
   const toolNames = (body.tools || []).flatMap((t) => (t.functionDeclarations || []).map((d) => d.name));
@@ -233,6 +255,12 @@ globalThis.fetch = async (input, init) => {
       contentsChars: JSON.stringify(contents).length,
       contentsCount: contents.length,
       toolNames,
+      // Phase 2: the instructions and tools must be the same for every call,
+      // and the turn's context must travel with the latest message.
+      systemHash: createHash("sha256").update(systemText).digest("hex").slice(0, 16),
+      toolsHash: createHash("sha256").update(JSON.stringify(body.tools ?? [])).digest("hex").slice(0, 16),
+      lastUserHasContext: [...contents].reverse().find((c) => c.role === "user" && (c.parts || []).some((p) => typeof p.text === "string" && !p.text.startsWith("<tool_result")))
+        ?.parts?.some((p) => typeof p.text === "string" && p.text.includes("<turn_context>")) ?? false,
       mentions12: /12%/.test(systemText),
       mentions30: /\b30%|"percent": 30|deposit_percent": 30/.test(systemText),
       earlierToolFormat: contents.some((c) => (c.parts || []).some((p) => typeof p.text === "string" && p.text.startsWith("[earlier tool]"))) ? "legacy" : contents.some((c) => (c.parts || []).some((p) => typeof p.text === "string" && p.text.startsWith("<tool_result"))) ? "delimited" : "none",

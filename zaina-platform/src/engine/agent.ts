@@ -24,7 +24,7 @@ import { getSecret } from "../businesses/secrets.ts";
 import { getBusinessSettings, replyRulesFor } from "../businesses/settings.ts";
 import { connectorFor } from "../connectors/registry.ts";
 import type { BusinessConnector } from "../connectors/types.ts";
-import type { Business } from "../db/schema.ts";
+import type { Business, ChatLanguage, ChatSession } from "../db/schema.ts";
 import { inBusiness, runForBusiness } from "../db/tenant.ts";
 import { requestHandoff } from "../conversations/handoff.ts";
 import {
@@ -34,21 +34,23 @@ import {
   recentHistory,
   recentZainaReplies,
   setConsecutiveFailures,
+  setSessionLanguage,
 } from "../conversations/store.ts";
 import { businessDay, claimCapAlert, isOverCap, recordUsage, usageOn } from "../gateway/spend-cap.ts";
-import { afterFailedTurn, RETRY_LATER_REPLY, TIMEOUT_REPLY } from "./failure-policy.ts";
+import { runSearchKnowledge, SEARCH_KNOWLEDGE } from "../knowledge/tool.ts";
+import { afterFailedTurn } from "./failure-policy.ts";
+import { buildHistory, MAX_EVENTS } from "./history.ts";
 import { withServerIdempotencyKey } from "./idempotency.ts";
+import { languageAfter } from "./language.ts";
+import { texts } from "./messages.ts";
 import { findMpesaCodes, mentionsPayment } from "./mpesa-codes.ts";
 import { redactCardNumbers } from "./redaction.ts";
 import {
   appendMissingCustomerLink,
   collectCustomerLinks,
   composeCustomerReply,
-  formatToolHistoryEntry,
-  neutralizeToolMarkers,
   paymentDetailsFromToolResult,
   paymentRecoveryMessage,
-  redactMediaUrls,
   redactMediaUrlsDeep,
   replaceMediaUrls,
   sanitizeModelText,
@@ -57,10 +59,11 @@ import {
 } from "./reply-policy.ts";
 import { recordTurn, TurnRecorder, usageFromResponse, type ModelPrices, type TurnOutcome } from "./telemetry.ts";
 import { textArg } from "./tool-args.ts";
-import { acquireTurnLock, BUSY_REPLY, releaseTurnLock } from "./turn-lock.ts";
+import { ESCALATE_TO_HUMAN, isReadOnlyTool, toolDeclarationsFor } from "./tool-sets.ts";
+import { acquireTurnLock, releaseTurnLock } from "./turn-lock.ts";
 import { createTurnBudget, isBudgetError, TurnTimeoutError, type TurnBudget } from "./turn-budget.ts";
+import { turnContext } from "./turn-context.ts";
 
-const HISTORY_TURNS = 20;
 const MAX_TOOL_ROUNDS = 6;
 const MAX_ATTEMPTS = 3;
 /** A model call isn't started with less time than this left in the turn. */
@@ -201,9 +204,9 @@ async function runTurn(
   }
 
   const lockId = await acquireTurnLock(sessionId, input.options.turnBudgetMs + LOCK_GRACE_MS);
-  if (!lockId) return { reply: { status: "busy", reply: BUSY_REPLY }, outcome: "busy" };
+  if (!lockId) return { reply: { status: "busy", reply: texts(session.language).busy }, outcome: "busy" };
   try {
-    return await runLockedTurn(input, connector, recorder, session.consecutiveFailures);
+    return await runLockedTurn(input, connector, recorder, session);
   } finally {
     await releaseTurnLock(sessionId, lockId).catch((error) => {
       console.error("[engine] releasing the turn lock failed:", error);
@@ -215,9 +218,10 @@ async function runLockedTurn(
   input: { business: Business; sessionId: string; message: string; options: EngineOptions },
   connector: BusinessConnector,
   recorder: TurnRecorder,
-  consecutiveFailures: number,
+  session: ChatSession,
 ): Promise<TurnResult> {
   const { business, sessionId, message, options } = input;
+  const { consecutiveFailures } = session;
   const say = async (text: string) => {
     await appendEvent({ businessId: business.id, sessionId, actor: "ZAINA_REASONING", content: text });
   };
@@ -232,8 +236,18 @@ async function runLockedTurn(
     }));
   }
 
+  // The customer's language decides the fixed texts the server adds.
+  const language = languageAfter(message, session.language);
+  if (language !== session.language) await setSessionLanguage(sessionId, language);
+  // Whether a tool's fixed reply (tell_customer) ends the turn as it is. In a
+  // Swahili chat a connector's English reply goes back to the model to pass
+  // on in Swahili; the engine's handoff replies are already in the language.
+  const endsTurn = (toolName: string, result: any) =>
+    typeof result?.tell_customer === "string" && result.tell_customer.trim().length > 0
+    && (language === "en" || toolName === ESCALATE_TO_HUMAN);
+
   // C5: an M-Pesa code for this chat's booking is recorded, not just read.
-  const paymentReply = await recordPaymentCode(business, connector, sessionId, message);
+  const paymentReply = await recordPaymentCode(business, connector, sessionId, message, language);
   if (paymentReply) {
     await say(paymentReply);
     return { reply: { status: "ok", reply: paymentReply }, outcome: "mpesa_recorded" };
@@ -251,28 +265,23 @@ async function runLockedTurn(
         capTokens: business.dailyTokenCap ?? 0,
       }));
     }
-    const reply = `I can't reply to messages here right now, but our team can help: ${await connector.contactLine(business)}.`;
+    const reply = texts(language).spendCapped(await connector.contactLine(business, language));
     await say(reply);
     return { reply: { status: "ok", reply }, outcome: "spend_capped" };
   }
 
-  // History for the model. The current message is already logged above.
-  const historyRows = await recentHistory(sessionId, HISTORY_TURNS * 3);
-  const contents: Content[] = historyRows.flatMap((row): Content[] => {
-    if (row.actor === "USER" && row.content) {
-      return [{ role: "user", parts: [{ text: neutralizeToolMarkers(redactMediaUrls(row.content)) }] }];
-    }
-    if (row.actor === "ZAINA_REASONING" && row.content) {
-      return [{ role: "model", parts: [{ text: redactMediaUrls(row.content) }] }];
-    }
-    if (row.actor === "SYSTEM_TOOL" && row.toolName) {
-      const argsText = row.toolArguments ? redactMediaUrls(JSON.stringify(row.toolArguments)) : "{}";
-      const resultText = row.toolResponse ? redactMediaUrls(JSON.stringify(row.toolResponse)) : "null";
-      const trimmed = resultText.length > 1500 ? `${resultText.slice(0, 1500)}…[truncated]` : resultText;
-      return [{ role: "user", parts: [{ text: formatToolHistoryEntry(row.toolName, argsText, trimmed) }] }];
-    }
-    return [];
-  });
+  // History for the model (history.ts keeps it short). The current message is
+  // already logged above; the turn's context (time, currency, language) goes
+  // with it, so the instructions themselves never change.
+  const historyRows = await recentHistory(sessionId, MAX_EVENTS * 2);
+  const contents: Content[] = buildHistory(historyRows);
+  const context = { text: turnContext({ timeZone: business.timeZone, now: new Date(), currency: session.displayCurrency, language }) };
+  const latest = contents.at(-1);
+  if (latest?.role === "user" && !latest.parts?.some((part) => typeof part.text === "string" && part.text.startsWith("<tool_result"))) {
+    latest.parts = [...(latest.parts ?? []), context];
+  } else {
+    contents.push({ role: "user", parts: [context] });
+  }
   // Links and phone numbers the customer supplied may be echoed back to them.
   const customerTexts = historyRows
     .filter((row) => row.actor === "USER" && typeof row.content === "string")
@@ -286,7 +295,7 @@ async function runLockedTurn(
   const turnPayments: PaymentDetails[] = [];
   const budget = createTurnBudget(options.turnBudgetMs);
   const systemInstruction = await connector.systemPrompt(business);
-  const tools = [{ functionDeclarations: connector.toolDeclarations() }];
+  const tools = [{ functionDeclarations: toolDeclarationsFor(business, connector) }];
 
   let finalText: string | null = null;
   // True when the reply is a fixed message written by a tool (tell_customer):
@@ -306,7 +315,7 @@ async function runLockedTurn(
 
   const escalate = async (args: any) => {
     const reason = textArg(args?.reason) || "The customer asked for a person.";
-    const handoff = await requestHandoff(business, sessionId, reason);
+    const handoff = await requestHandoff(business, sessionId, reason, new Date(), language);
     if (handoff.status === "callback") {
       callbackRequested = true;
       return { ok: true, status: "callback_requested", tell_customer: handoff.tellCustomer };
@@ -321,9 +330,11 @@ async function runLockedTurn(
       // create_* tools get a server-derived idempotency key; any key the model
       // sends (for example one copied from masked history) is ignored.
       const toolArgs = withServerIdempotencyKey(call.name, call.args, sessionId);
-      const toolResponseData = call.name === "escalate_to_human"
+      const toolResponseData = call.name === ESCALATE_TO_HUMAN
         ? await escalate(toolArgs)
-        : await connector.executeTool(call.name, toolArgs, { business, sessionId });
+        : call.name === SEARCH_KNOWLEDGE
+          ? await runSearchKnowledge(toolArgs, { businessId: business.id, sessionId })
+          : await connector.executeTool(call.name, toolArgs, { business, sessionId });
       recorder.addTool(call.name, Date.now() - startedAt);
       return { call, toolResponseData };
     } catch (error) {
@@ -353,7 +364,7 @@ async function runLockedTurn(
       contents.push(modelContent);
 
       const canRunInParallel = functionCallParts.length > 1
-        && functionCallParts.every((part: any) => connector.readOnlyTools.has(part.functionCall?.name));
+        && functionCallParts.every((part: any) => isReadOnlyTool(part.functionCall?.name, connector));
       const toolResults = canRunInParallel
         ? await Promise.all(functionCallParts.map(runToolCall))
         : await (async () => {
@@ -361,7 +372,7 @@ async function runLockedTurn(
             for (const part of functionCallParts) {
               const result = await runToolCall(part);
               results.push(result);
-              if (typeof result.toolResponseData?.tell_customer === "string" && result.toolResponseData.tell_customer.trim()) break;
+              if (endsTurn(result.call.name, result.toolResponseData)) break;
             }
             return results;
           })();
@@ -391,10 +402,12 @@ async function runLockedTurn(
         ) {
           sawFailedWrite = true;
         }
-        if (call.name === "escalate_to_human" && toolResponseData?.status === "escalated") escalated = true;
+        if (call.name === ESCALATE_TO_HUMAN && toolResponseData?.status === "escalated") escalated = true;
 
         // A tool's fixed reply ("what's your email?") ends the turn as is.
-        if (typeof toolResponseData?.tell_customer === "string" && toolResponseData.tell_customer.trim()) {
+        // In Swahili, a connector's English fixed reply goes back to the model
+        // to pass on in Swahili; the engine's own (handoffs) are already in it.
+        if (endsTurn(call.name, toolResponseData)) {
           finalText = toolResponseData.tell_customer;
           finalTextIsServerWritten = true;
           break;
@@ -405,22 +418,19 @@ async function runLockedTurn(
       contents.push({ role: "user", parts: toolParts });
     }
 
-    if (finalText === null) {
-      finalText = "Karibu! I'm having a little trouble pulling up the right options right now. "
-        + "Let me connect you with someone from our team who can help directly — they'll reach out shortly.";
-    }
+    if (finalText === null) finalText = texts(language).noAnswer;
     finalText = replaceMediaUrls(finalText, customerLinks.at(-1)?.url);
     if (!finalTextIsServerWritten) {
       finalText = sanitizeModelText(finalText, { customerTexts, ...replyRulesFor(await getBusinessSettings(business.id)) });
     }
-    finalText = composeCustomerReply(finalText, turnPayments);
+    finalText = composeCustomerReply(finalText, turnPayments, language);
     const linkContext = /listing|property|photos?|view|see|pay|booking/i.test(message) ? customerLinks : turnCustomerLinks;
     finalText = appendMissingCustomerLink(finalText, linkContext);
 
     // A booking attempt that failed and ended with "let me connect you" gets a
     // real handoff, so the promise lands.
     if (sawFailedWrite && !escalated && !callbackRequested) {
-      const handoff = await requestHandoff(business, sessionId, "Booking flow failed after tool errors — auto-escalated.");
+      const handoff = await requestHandoff(business, sessionId, "Booking flow failed after tool errors — auto-escalated.", new Date(), language);
       if (handoff.status === "callback") {
         callbackRequested = true;
         finalText = `${finalText}\n\n${handoff.tellCustomer}`;
@@ -436,7 +446,7 @@ async function runLockedTurn(
     const outcome: TurnOutcome = escalated ? "handoff" : callbackRequested ? "callback" : finalTextIsServerWritten ? "tool_reply" : "answered";
     return { reply: { status: "ok", reply: finalText, escalated: escalated || undefined }, outcome };
   } catch (error) {
-    return await failedTurn({ business, sessionId, connector, error, consecutiveFailures, turnPayments, say });
+    return await failedTurn({ business, sessionId, connector, error, consecutiveFailures, turnPayments, say, language });
   }
 }
 
@@ -490,14 +500,15 @@ async function failedTurn(args: {
   consecutiveFailures: number;
   turnPayments: PaymentDetails[];
   say: (text: string) => Promise<void>;
+  language: ChatLanguage;
 }): Promise<TurnResult> {
-  const { business, sessionId, connector, error } = args;
+  const { business, sessionId, connector, error, language } = args;
   const timedOut = error instanceof TurnTimeoutError || isBudgetError(error);
   const outcome: TurnOutcome = timedOut ? "timeout" : "model_error";
   if (!timedOut) console.error("[engine] model failed:", error);
 
   const decision = afterFailedTurn(args.consecutiveFailures);
-  let text = timedOut ? TIMEOUT_REPLY : RETRY_LATER_REPLY;
+  let text = timedOut ? texts(language).timeout : texts(language).retryLater;
   let escalated = false;
   try {
     await setConsecutiveFailures(sessionId, decision.failures);
@@ -509,11 +520,9 @@ async function failedTurn(args: {
         summary: `Zaina system error: ${(error as Error)?.message ?? error}`,
         details: { "Failed turns in a row": decision.failures },
       }));
-      const handoff = await requestHandoff(business, sessionId, reason);
+      const handoff = await requestHandoff(business, sessionId, reason, new Date(), language);
       escalated = handoff.status !== "callback";
-      text = handoff.status === "callback"
-        ? handoff.tellCustomer
-        : "I'm having trouble on my side, so I've asked someone from our team to take over — they'll reply here shortly.";
+      text = handoff.status === "callback" ? handoff.tellCustomer : texts(language).handedOverAfterFailures;
     }
   } catch (handoffError) {
     console.error("[engine] handling a failed turn failed:", handoffError);
@@ -522,7 +531,8 @@ async function failedTurn(args: {
   // A booking, request or verification created before the failure must still
   // reach the customer, or they never see its payment link.
   if (args.turnPayments.length > 0) {
-    text = decision.handOff ? `${paymentRecoveryMessage(args.turnPayments)}\n\n${text}` : paymentRecoveryMessage(args.turnPayments);
+    const recovery = paymentRecoveryMessage(args.turnPayments, language);
+    text = decision.handOff ? `${recovery}\n\n${text}` : recovery;
   }
   try {
     await args.say(text);
@@ -542,8 +552,10 @@ async function recordPaymentCode(
   connector: BusinessConnector,
   sessionId: string,
   message: string,
+  language: ChatLanguage,
 ): Promise<string | null> {
   if (!connector.recordChatPayment) return null;
+  const say = texts(language);
   const codes = findMpesaCodes(message);
   if (codes.length !== 1) return null;
   const aboutPayment = mentionsPayment(message)
@@ -564,7 +576,7 @@ async function recordPaymentCode(
       summary: `M-Pesa code ${code} was sent again for a different booking`,
       details: { Code: code, "First used for booking": claim.booking_ref },
     }));
-    return `That M-Pesa code has already been used for another booking, so I've asked the team to check it. If you sent a new payment, please share its code.`;
+    return say.mpesaUsedElsewhere;
   }
 
   const result = await connector.recordChatPayment(business, { sessionId, code });
@@ -576,20 +588,15 @@ async function recordPaymentCode(
       summary: `Couldn't record M-Pesa code ${code} sent in the chat`,
       details: { Code: code, Error: result.detail ?? "" },
     }));
-    return `Thanks — I couldn't match code ${code} to your booking automatically, so I've passed it to the team to check. They'll confirm by email.`;
+    return say.mpesaUnmatched(code);
   }
   if (result.alreadyRecorded) {
-    return `I already have M-Pesa code ${code} for booking ${result.bookingRef} — the team is checking it and will confirm by email.`;
+    return say.mpesaAlreadyHave(code, result.bookingRef);
   }
   await inBusiness((_db, client) => client.query(
     `insert into payment_claims (business_id, session_id, booking_ref, code, expected_amount, note)
      values ($1, $2, $3, $4, $5, $6) on conflict (business_id, code) do nothing`,
     [business.id, sessionId, result.bookingRef, code, result.expectedAmount, result.conflict],
   ));
-  const dates = result.conflict
-    ? " One thing: another guest paid for those dates in the meantime, so the team will contact you to move your booking or refund you."
-    : result.datesHeld
-      ? " Your dates are held while they check."
-      : "";
-  return `Thanks! I've passed M-Pesa code ${code} to our team to match with booking ${result.bookingRef} (${result.expectedAmount}). You'll get a confirmation by email once it's verified.${dates}`;
+  return say.mpesaRecorded(code, result.bookingRef, result.expectedAmount, result.conflict ? "conflict" : result.datesHeld ? "held" : "none");
 }

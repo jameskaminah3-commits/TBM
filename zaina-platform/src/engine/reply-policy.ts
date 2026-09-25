@@ -8,6 +8,8 @@
 
 import { bookingDepositPercent, bookingPaymentHoldMinutes } from "../../../shared/booking-payments.ts";
 import { SUPPORT_PHONE, SUPPORT_PHONE_DISPLAY } from "../../../shared/support-contact.ts";
+import type { ChatLanguage } from "../db/schema.ts";
+import { texts } from "./messages.ts";
 
 /** The public site customers can open. */
 export function getPublicSiteUrl(): string {
@@ -234,13 +236,18 @@ export function sanitizeModelText(text: string, context: SanitizeContext): strin
  */
 export function neutralizeToolMarkers(text: string): string {
   return text
-    .replace(/<(\/?)tool_result/gi, "‹$1tool_result")
-    .replace(/\[earlier tool\]/gi, "(earlier tool)");
+    .replace(/<(\/?)(tool_result|turn_context)/gi, "‹$1$2")
+    .replace(/\[earlier tool\]/gi, "(earlier tool)")
+    .replace(/\[earlier in this chat/gi, "(earlier in this chat");
 }
 
-/** How an earlier tool call is replayed to the model: clearly delimited data. */
+/**
+ * How an earlier tool call is replayed to the model: clearly delimited data.
+ * Text inside it (a listing owner's description, a knowledge passage) can't
+ * close the block early or pose as the system's turn context.
+ */
 export function formatToolHistoryEntry(toolName: string, argsText: string, resultText: string): string {
-  return `<tool_result name="${toolName.replace(/[^\w-]/g, "")}">\nargs: ${argsText}\nresult: ${resultText}\n</tool_result>`;
+  return `<tool_result name="${toolName.replace(/[^\w-]/g, "")}">\nargs: ${neutralizeToolMarkers(argsText)}\nresult: ${neutralizeToolMarkers(resultText)}\n</tool_result>`;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -282,43 +289,93 @@ export function paymentDetailsFromToolResult(toolName: string, result: any): Pay
 
 // The same wording for every customer: it never depends on whether the email
 // already has an account (see the account-enumeration rule in the prompt).
-function signInStep(item: "booking" | "request"): string {
+function signInStep(item: "booking" | "request", language: ChatLanguage): string {
+  if (language === "sw") {
+    return (
+      `Ingia kwenye akaunti yako, au fungua akaunti ukitumia barua pepe ile ile uliyotoa kwa ${item === "booking" ? "uhifadhi huu" : "ombi hili"}. ` +
+      "Tutakutumia nambari ya tarakimu 6 kwa barua pepe — iweke ili kuthibitisha. Umesahau nenosiri? Tumia \"Forgot password\" kwenye ukurasa wa kuingia."
+    );
+  }
   return (
     `Sign in, or create an account using the same email you gave for this ${item}. ` +
     "We'll email you a 6-digit code — enter it to verify. Forgot your password? Use \"Forgot password\" on the sign-in page."
   );
 }
 
-export function buildPaymentSection(details: PaymentDetails): string {
+/**
+ * The payment link and "what happens next" steps for something payable. The
+ * Swahili is a draft until a fluent speaker has checked it (see messages.ts).
+ */
+export function buildPaymentSection(details: PaymentDetails, language: ChatLanguage = "en"): string {
   const host = getPublicSiteHost();
-  const safetyStep =
-    `We use secure HTTPS and never store your card details. Always check the address bar starts with ${host} before signing in.`;
-  const supportStep = `Trouble paying? Our support team can help — WhatsApp or call ${SUPPORT_PHONE_DISPLAY}.`;
+  const sw = language === "sw";
+  const safetyStep = sw
+    ? `Tunatumia HTTPS salama na hatuhifadhi maelezo ya kadi yako. Kila mara hakikisha anwani ya ukurasa inaanza na ${host} kabla ya kuingia.`
+    : `We use secure HTTPS and never store your card details. Always check the address bar starts with ${host} before signing in.`;
+  const supportStep = sw
+    ? `Una shida kulipa? Timu yetu ya usaidizi inaweza kukusaidia — WhatsApp au piga simu ${SUPPORT_PHONE_DISPLAY}.`
+    : `Trouble paying? Our support team can help — WhatsApp or call ${SUPPORT_PHONE_DISPLAY}.`;
+  const next = sw ? "Kinachofuata:" : "What happens next:";
 
   if (details.kind === "custom_request") {
-    return [
-      `Your request is saved. You can pay the request fee${details.feeDisplay ? ` of ${details.feeDisplay}` : ""} here:`,
-      details.url,
-      "",
-      "What happens next:",
-      `• The link opens your request in My Bookings. ${signInStep("request")}`,
-      "• Tap \"Pay now\" to pay the request fee. It's credited in full against your final quotation if you go ahead.",
-      "• Our team reviews your request and sends the final quotation. Nothing is confirmed until you accept and pay that quotation.",
-      `• ${supportStep}`,
-    ].join("\n");
+    return (sw
+      ? [
+          `Ombi lako limehifadhiwa. Unaweza kulipa ada ya ombi${details.feeDisplay ? ` ya ${details.feeDisplay}` : ""} hapa:`,
+          details.url,
+          "",
+          next,
+          `• Kiungo kinafungua ombi lako kwenye My Bookings. ${signInStep("request", language)}`,
+          "• Bonyeza \"Pay now\" kulipa ada ya ombi. Itahesabiwa kikamilifu katika bei yako ya mwisho ukiendelea.",
+          "• Timu yetu itapitia ombi lako na kukutumia bei ya mwisho. Hakuna kinachothibitishwa hadi ukubali na kulipa bei hiyo.",
+          `• ${supportStep}`,
+        ]
+      : [
+          `Your request is saved. You can pay the request fee${details.feeDisplay ? ` of ${details.feeDisplay}` : ""} here:`,
+          details.url,
+          "",
+          next,
+          `• The link opens your request in My Bookings. ${signInStep("request", language)}`,
+          "• Tap \"Pay now\" to pay the request fee. It's credited in full against your final quotation if you go ahead.",
+          "• Our team reviews your request and sends the final quotation. Nothing is confirmed until you accept and pay that quotation.",
+          `• ${supportStep}`,
+        ]).join("\n");
   }
 
   if (details.kind === "listing_verification") {
-    return [
-      `Your verification request is saved. You can pay the verification fee${details.feeDisplay ? ` of ${details.feeDisplay}` : ""} here:`,
-      details.url,
-      "",
-      "What happens next:",
-      `• The link opens the request in My Bookings. ${signInStep("request")}`,
-      "• Tap \"Pay now\" to pay the fee. Our on-ground team is dispatched only after the payment clears.",
-      "• You'll get a report with either a verified outcome or a warning flag — not an instant guarantee. If you then book with TBM, the fee is credited to your final quotation.",
-      `• ${supportStep}`,
-    ].join("\n");
+    return (sw
+      ? [
+          `Ombi lako la uthibitisho limehifadhiwa. Unaweza kulipa ada ya uthibitisho${details.feeDisplay ? ` ya ${details.feeDisplay}` : ""} hapa:`,
+          details.url,
+          "",
+          next,
+          `• Kiungo kinafungua ombi kwenye My Bookings. ${signInStep("request", language)}`,
+          "• Bonyeza \"Pay now\" kulipa ada. Timu yetu ya uwanjani inatumwa tu baada ya malipo kukamilika.",
+          "• Utapokea ripoti yenye matokeo ya kuthibitishwa au tahadhari — si hakikisho la papo hapo. Ukiweka nafasi na TBM baadaye, ada hii itahesabiwa katika bei yako ya mwisho.",
+          `• ${supportStep}`,
+        ]
+      : [
+          `Your verification request is saved. You can pay the verification fee${details.feeDisplay ? ` of ${details.feeDisplay}` : ""} here:`,
+          details.url,
+          "",
+          next,
+          `• The link opens the request in My Bookings. ${signInStep("request", language)}`,
+          "• Tap \"Pay now\" to pay the fee. Our on-ground team is dispatched only after the payment clears.",
+          "• You'll get a report with either a verified outcome or a warning flag — not an instant guarantee. If you then book with TBM, the fee is credited to your final quotation.",
+          `• ${supportStep}`,
+        ]).join("\n");
+  }
+
+  if (sw) {
+    const payLine = details.depositDisplay
+      ? `Unaweza kulipa amana yako ya ${bookingDepositPercent}%, yaani ${details.depositDisplay}, kwa usalama hapa:`
+      : "Unaweza kukamilisha malipo yako kwa usalama hapa:";
+    const summaryStep = details.depositDisplay
+      ? `• Kisha utaona muhtasari wa uhifadhi wako na kitufe cha "Pay now". Amana ya ${bookingDepositPercent}% inathibitisha uhifadhi wako.`
+      : "• Kisha utaona muhtasari wa uhifadhi wako na kitufe cha \"Pay now\".";
+    const holdStep =
+      `• Tarehe zako zinahifadhiwa tu baada ya kulipa${details.depositDisplay ? " amana" : ""}. ` +
+      `Ukibonyeza "Pay now", tunazishikilia kwa ajili yako kwa dakika ${bookingPaymentHoldMinutes} ukikamilisha malipo.`;
+    return [payLine, details.url, "", next, `• ${signInStep("booking", language)}`, summaryStep, holdStep, `• ${safetyStep}`, `• ${supportStep}`].join("\n");
   }
 
   const payLine = details.depositDisplay
@@ -334,8 +391,8 @@ export function buildPaymentSection(details: PaymentDetails): string {
     payLine,
     details.url,
     "",
-    "What happens next:",
-    `• ${signInStep("booking")}`,
+    next,
+    `• ${signInStep("booking", language)}`,
     summaryStep,
     holdStep,
     `• ${safetyStep}`,
@@ -355,7 +412,7 @@ function escapeRegExp(value: string): string {
 export function removeModelPaymentCopies(text: string, payments: PaymentDetails[]): string {
   let result = text;
 
-  const stepsHeading = result.search(/^[ \t>#*_]*what happens next\b/im);
+  const stepsHeading = result.search(/^[ \t>#*_]*(?:what happens next|kinachofuata)\b/im);
   if (stepsHeading >= 0) result = result.slice(0, stepsHeading);
 
   const targets = new Set<string>();
@@ -397,20 +454,17 @@ export function stripMarkdownEmphasis(text: string): string {
  * payment copies, and exactly one server-built payment section per payable
  * item created in this turn.
  */
-export function composeCustomerReply(modelText: string, payments: PaymentDetails[]): string {
+export function composeCustomerReply(modelText: string, payments: PaymentDetails[], language: ChatLanguage = "en"): string {
   let text = stripMarkdownEmphasis(modelText);
   if (payments.length === 0) return text;
 
   text = removeModelPaymentCopies(text, payments);
   const unique = payments.filter((payment, index) => payments.findIndex((other) => other.url === payment.url) === index);
-  const sections = unique.map(buildPaymentSection);
+  const sections = unique.map((payment) => buildPaymentSection(payment, language));
   return [text, ...sections].filter((part) => part.trim().length > 0).join("\n\n");
 }
 
 /** What the customer sees if the turn fails after something payable was created. */
-export function paymentRecoveryMessage(payments: PaymentDetails[]): string {
-  return composeCustomerReply(
-    "Your request was saved, but I hit a snag finishing my reply — here are the details you need.",
-    payments,
-  );
+export function paymentRecoveryMessage(payments: PaymentDetails[], language: ChatLanguage = "en"): string {
+  return composeCustomerReply(texts(language).paymentRecovery, payments, language);
 }

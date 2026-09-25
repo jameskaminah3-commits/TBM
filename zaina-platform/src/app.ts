@@ -17,6 +17,7 @@ import { assertAppRole, closePlatformDb, initPlatformDb, ownerPool } from "./db/
 import { migrate, pendingMigrations } from "./db/migrate.ts";
 import type { EngineOptions } from "./engine/agent.ts";
 import { normalizeOrigin } from "./gateway/origin.ts";
+import { KNOWLEDGE_PATH, registerKnowledgeRoutes } from "./knowledge/routes.ts";
 import { pruneRateLimitCounters } from "./gateway/rate-limit.ts";
 import { registerGatewayRoutes } from "./gateway/routes.ts";
 import { registerPlatformRoutes } from "./platform/routes.ts";
@@ -52,12 +53,15 @@ export function createApp(config: PlatformConfig, engine: EngineOptions): Expres
   const app = express();
   app.disable("x-powered-by");
   app.set("trust proxy", config.trustProxy);
-  app.use(express.json({ limit: "32kb" }));
+  // Knowledge routes parse their own, bigger bodies (documents).
+  const json = express.json({ limit: "32kb" });
+  app.use((req: Request, res: Response, next: NextFunction) => (KNOWLEDGE_PATH.test(req.path) ? next() : json(req, res, next)));
   app.use(cors());
 
   registerGatewayRoutes(app, config, engine);
   registerStaffAccountRoutes(app, config);
   registerStaffConversationRoutes(app, config.sessionTokenSecret);
+  registerKnowledgeRoutes(app, config.sessionTokenSecret);
   registerPlatformRoutes(app, config);
 
   app.use((_req: Request, res: Response) => {
@@ -66,7 +70,9 @@ export function createApp(config: PlatformConfig, engine: EngineOptions): Expres
   app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
     console.error("[platform] request failed:", error);
     if (res.headersSent) return;
-    const status = (error as { type?: string })?.type === "entity.parse.failed" ? 400 : 500;
+    const type = (error as { type?: string })?.type;
+    if (type === "entity.too.large") return res.status(413).json({ error: "too_large" });
+    const status = type === "entity.parse.failed" ? 400 : 500;
     res.status(status).json({ error: status === 400 ? "invalid_json" : "server_error" });
   });
   return app;

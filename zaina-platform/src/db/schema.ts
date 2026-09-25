@@ -24,10 +24,19 @@ const createdAt = () => timestamp("created_at", { withTimezone: true, mode: "dat
 
 export type StaffedHours = { days: number[]; open: string; close: string };
 
+/** Which tools Zaina gets: see engine/tool-sets.ts. */
+export const businessTypes = ["general", "travel_concierge", "guesthouse"] as const;
+export type BusinessType = (typeof businessTypes)[number];
+
+/** The languages Zaina answers in; fixed texts exist in each. */
+export const chatLanguages = ["en", "sw"] as const;
+export type ChatLanguage = (typeof chatLanguages)[number];
+
 export const businesses = pgTable("businesses", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   status: text("status").notNull().default("active"),
+  businessType: text("business_type").$type<BusinessType>().notNull().default("general"),
   publicKey: text("public_key").notNull(),
   allowedOrigins: text("allowed_origins").array().notNull().default([]),
   timeZone: text("time_zone").notNull().default("Africa/Nairobi"),
@@ -50,6 +59,7 @@ export const chatSessions = pgTable("chat_sessions", {
   claimedAt: timestamp("claimed_at", { withTimezone: true, mode: "date" }),
   callbackRequestedAt: timestamp("callback_requested_at", { withTimezone: true, mode: "date" }),
   displayCurrency: text("display_currency").notNull().default("USD"),
+  language: text("language").$type<ChatLanguage>().notNull().default("en"),
   visitorKey: text("visitor_key"),
   consecutiveFailures: integer("consecutive_failures").notNull().default(0),
   turnLockId: uuid("turn_lock_id"),
@@ -173,5 +183,41 @@ export const leads = pgTable("leads", {
   phone: text("phone"),
   interest: text("interest"),
   notes: text("notes"),
+  createdAt: createdAt(),
+});
+
+export const knowledgeKinds = ["page", "faq", "policy", "guide", "menu", "document"] as const;
+export type KnowledgeKind = (typeof knowledgeKinds)[number];
+
+export const knowledgeSources = pgTable("knowledge_sources", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  businessId: text("business_id").notNull(),
+  title: text("title").notNull(),
+  kind: text("kind").$type<KnowledgeKind>().notNull().default("page"),
+  url: text("url"),
+  language: text("language").$type<ChatLanguage>().notNull().default("en"),
+  content: text("content").notNull(),
+  contentHash: text("content_hash").notNull(),
+  status: text("status").$type<"published" | "draft">().notNull().default("published"),
+  createdAt: createdAt(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  updatedBy: uuid("updated_by"),
+});
+export type KnowledgeSource = typeof knowledgeSources.$inferSelect;
+
+export const knowledgeChunks = pgTable("knowledge_chunks", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  businessId: text("business_id").notNull(),
+  sourceId: uuid("source_id").notNull(),
+  position: integer("position").notNull(),
+  heading: text("heading"),
+  content: text("content").notNull(),
+});
+
+export const knowledgeMisses = pgTable("knowledge_misses", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  businessId: text("business_id").notNull(),
+  sessionId: uuid("session_id"),
+  query: text("query").notNull(),
   createdAt: createdAt(),
 });

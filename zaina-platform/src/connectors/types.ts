@@ -7,7 +7,7 @@
 // through these calls.
 
 import type { FunctionDeclaration } from "@google/genai";
-import type { Business } from "../db/schema.ts";
+import type { Business, ChatLanguage } from "../db/schema.ts";
 
 export type ToolContext = { business: Business; sessionId: string };
 
@@ -45,6 +45,6 @@ export interface BusinessConnector {
   notifyTeam(business: Business, event: TeamEvent): Promise<void>;
   /** C5: record a payment code the customer sent in chat against the booking made in that chat. */
   recordChatPayment?(business: Business, input: { sessionId: string; code: string }): Promise<ChatPaymentResult>;
-  /** How customers reach the business when Zaina can't help ("WhatsApp or call +254 …"). */
-  contactLine(business: Business): string | Promise<string>;
+  /** How customers reach the business when Zaina can't help ("WhatsApp or call +254 …"), in the chat's language. */
+  contactLine(business: Business, language?: ChatLanguage): string | Promise<string>;
 }

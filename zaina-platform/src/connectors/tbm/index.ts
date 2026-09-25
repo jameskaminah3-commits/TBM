@@ -67,5 +67,5 @@ export const tbmConnector: BusinessConnector = {
   },
   notifyTeam: notifyTbmTeam,
   recordChatPayment: (_business, input) => recordTbmChatPayment(input),
-  contactLine: () => `WhatsApp or call ${TBM_OFFICIAL_PHONE_DISPLAY}`,
+  contactLine: (_business, language) => (language === "sw" ? `WhatsApp au piga simu ${TBM_OFFICIAL_PHONE_DISPLAY}` : `WhatsApp or call ${TBM_OFFICIAL_PHONE_DISPLAY}`),
 };

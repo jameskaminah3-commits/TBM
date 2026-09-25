@@ -3,8 +3,8 @@
 // The platform's own console (platform admins only):
 //
 //   GET  /v1/platform/businesses   every business on the platform
-//   POST /v1/platform/businesses   { id, name, allowed_origins, time_zone?, daily_token_cap?, retention_days?,
-//                                    owner: { email, name, password } }
+//   POST /v1/platform/businesses   { id, name, allowed_origins, business_type?, time_zone?, daily_token_cap?,
+//                                    retention_days?, owner: { email, name, password } }
 //                                  → the business, its settings and its first owner
 //
 // A new business starts with a daily model budget and a retention period, so
@@ -15,6 +15,8 @@ import type { Express, NextFunction, Request, Response } from "express";
 import type { PlatformConfig } from "../config.ts";
 import { allBusinesses, clearBusinessCache } from "../businesses/registry.ts";
 import { createBusinessWithOwner, findStaffByEmail } from "../db/platform-scope.ts";
+import { businessTypes, type BusinessType } from "../db/schema.ts";
+import { TYPES_WITH_OWN_CONNECTOR } from "../engine/tool-sets.ts";
 import { normalizeOrigin } from "../gateway/origin.ts";
 import { requirePlatformAdmin, requireStaff } from "../staff/auth.ts";
 import { hashPassword, passwordProblem } from "../staff/passwords.ts";
@@ -39,6 +41,7 @@ export function registerPlatformRoutes(app: Express, config: PlatformConfig): vo
           id: business.id,
           name: business.name,
           status: business.status,
+          business_type: business.businessType,
           public_key: business.publicKey,
           allowed_origins: business.allowedOrigins,
           time_zone: business.timeZone,
@@ -59,6 +62,14 @@ export function registerPlatformRoutes(app: Express, config: PlatformConfig): vo
       const owner = req.body?.owner ?? {};
       const dailyTokenCap = positiveWhole(req.body?.daily_token_cap, DEFAULT_DAILY_TOKEN_CAP);
       const retentionDays = positiveWhole(req.body?.retention_days, DEFAULT_RETENTION_DAYS);
+      const businessType = (req.body?.business_type ?? "general") as BusinessType;
+      if (!businessTypes.includes(businessType)) {
+        return res.status(400).json({ error: "invalid_business_type", message: `business_type is one of ${businessTypes.join(", ")}.` });
+      }
+      // A type whose tools need the business's own system can't be added without its connector.
+      if (TYPES_WITH_OWN_CONNECTOR.has(businessType)) {
+        return res.status(400).json({ error: "connector_required", message: `A ${businessType} business needs its own connector, set up by the platform team.` });
+      }
       if (!/^[a-z][a-z0-9-]{1,39}$/.test(id)) return res.status(400).json({ error: "invalid_id", message: "Ids are lowercase letters, digits and dashes." });
       if (!name) return res.status(400).json({ error: "name_required" });
       if (origins.some((origin: string | null) => !origin)) return res.status(400).json({ error: "invalid_origin" });
@@ -85,7 +96,7 @@ export function registerPlatformRoutes(app: Express, config: PlatformConfig): vo
       let ownerUser;
       try {
         ownerUser = await createBusinessWithOwner({
-          business: { id, name, publicKey, allowedOrigins: origins as string[], timeZone, dailyTokenCap, retentionDays },
+          business: { id, name, publicKey, allowedOrigins: origins as string[], timeZone, dailyTokenCap, retentionDays, businessType },
           owner: { email: ownerEmail, name: String(owner.name ?? ""), passwordHash: existing ? null : await hashPassword(owner.password) },
         });
       } catch (error) {
@@ -95,7 +106,10 @@ export function registerPlatformRoutes(app: Express, config: PlatformConfig): vo
       }
       clearBusinessCache();
       res.status(201).json({
-        business: { id, name, public_key: publicKey, allowed_origins: origins, time_zone: timeZone, daily_token_cap: dailyTokenCap, retention_days: retentionDays },
+        business: {
+          id, name, business_type: businessType, public_key: publicKey, allowed_origins: origins, time_zone: timeZone,
+          daily_token_cap: dailyTokenCap, retention_days: retentionDays,
+        },
         owner: { id: ownerUser.id, email: ownerUser.email },
       });
     } catch (error) {
