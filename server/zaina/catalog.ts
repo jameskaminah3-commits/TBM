@@ -613,6 +613,16 @@ export const INVENTORY_CATALOG = {
         reason: "Log and route — most such requests are a few messages from the ops team.",
       },
       {
+        scenario: "A whole trip doesn't fit the customer's budget: the trip package is still over it after adjusting",
+        tier: "proposal",
+        reason: "The team puts together a trip within the budget from partner options. Pass budget_amount and budget_currency as the customer said them.",
+      },
+      {
+        scenario: "No listed stay, car or service fits the customer's budget or exactly what they want (e.g. no stay at their nightly price in their area)",
+        tier: "intake",
+        reason: "The team sources a partner option that fits. Pass budget_amount and budget_currency as the customer said them.",
+      },
+      {
         scenario: "Customer asks for anything Coast-related and legitimate that isn't covered above",
         tier: "intake",
         reason: "Default tier. Ops team triages and, if it needs deeper work, they'll quote the proposal tier separately.",
@@ -628,7 +638,8 @@ export const INVENTORY_CATALOG = {
       "Anything outside stays, cooks, cars, errands, experiences",
     ],
     when_to_use:
-      "Whenever the customer asks for something TBM does not list directly. " +
+      "Whenever the customer asks for something TBM does not list directly, " +
+      "or nothing listed fits their budget or exactly what they want. " +
       "Never say 'we can't help' — always offer the custom offer pathway. " +
       "If it's Coast-related and legitimate, try to find a way to coordinate it.",
     tier_selection_note:

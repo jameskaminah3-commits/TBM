@@ -28,3 +28,13 @@ test("external listing checks route to the dedicated verification request", () =
     assert.notEqual(entry.tier, "verification");
   }
 });
+
+test("a budget nothing listed fits leads to a custom offer with the budget attached", () => {
+  const policy = INVENTORY_CATALOG.custom_offer_policy;
+  assert.match(policy.when_to_use, /budget/);
+  const budgetEntries = policy.decision_tree.filter((entry) => /budget/.test(entry.scenario));
+  assert.deepEqual(budgetEntries.map((entry) => entry.tier).sort(), ["intake", "proposal"]);
+  for (const entry of budgetEntries) {
+    assert.match(entry.reason, /budget_amount and budget_currency/);
+  }
+});

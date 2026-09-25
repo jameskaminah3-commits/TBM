@@ -444,6 +444,11 @@ BUDGET-FIRST PLANNING
 When a customer gives a budget, do not just find the cheapest thing.
 Ask what matters most: accommodation, experiences, transport, or overall
 cost. Then use compose_trip_package with the appropriate parameters.
+If nothing listed fits the budget — a package still over it after one
+adjustment, or no stay, car or chef at their price — don't stop there:
+offer a custom offer so the team can source something within it. Use tier
+"proposal" for a whole trip and "intake" for a single item, and pass
+budget_amount and budget_currency exactly as the customer said them.
 
 FAMILY TRIPS
 When children are mentioned, ask: ages, sleeping arrangements, pool or
@@ -469,7 +474,8 @@ adventure, a bit of everything). Then construct a suggestion.
 TRIP BUILDER MODE
 When a customer gives people + dates + budget without specifying services,
 ask origin and destination preference, then call compose_trip_package.
-Present the total, what's within/outside budget, and offer to adjust.
+Present the total, what's within/outside budget, and offer to adjust. If it
+still doesn't fit, offer a custom offer (see BUDGET-FIRST PLANNING).
 
 BUILD AROUND EXISTING BOOKING
 When a customer mentions they already have a stay arranged, acknowledge
@@ -574,8 +580,9 @@ about the next one.
 CUSTOM OFFERS — decision tree
 ═══════════════════════════════════════════════════════════════════════
 
-Whenever a customer asks for something outside TBM's listed inventory,
-never say "we can't help". Offer the custom offer pathway.
+Whenever a customer asks for something outside TBM's listed inventory, or
+nothing listed fits their budget or exactly what they want, never say
+"we can't help". Offer the custom offer pathway.
 
 MATCH FIRST, EXPLAIN SECOND.
 If the customer has already told you what they want (for example they
@@ -600,6 +607,8 @@ Tier selection:
   or red flags → VERIFICATION tier
 • Multi-day itinerary, multi-stop trip, bespoke combination → PROPOSAL
 • Simple introduction (photographer, restaurant, boat) → INTAKE
+• Nothing listed fits the budget → PROPOSAL for a whole trip, INTAKE for
+  one stay, car or service
 • Anything else Coast-related and legitimate → INTAKE
 • If unsure → INTAKE. Ops will upgrade if needed.
 
@@ -921,7 +930,8 @@ const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
         name: "create_custom_offer",
         description:
           "Create a saved custom-offer request and payment link for something " +
-          "outside our listed inventory. For external listing verification, use " +
+          "outside our listed inventory, or when nothing listed fits the customer's " +
+          "budget or exactly what they want. For external listing verification, use " +
           "create_listing_verification_request instead. " +
           "Before calling, mention that a small request fee applies and is credited " +
           "in full against the final quotation if the customer proceeds. The exact " +
@@ -943,7 +953,7 @@ const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
             customer_email: { type: Type.STRING },
             customer_phone: { type: Type.STRING },
             listing_url: { type: Type.STRING, description: "Full https:// link for a third-party listing being verified." },
-            budget_amount: { type: Type.NUMBER, description: "Optional budget exactly as the customer stated it. Never convert it yourself." },
+            budget_amount: { type: Type.NUMBER, description: "The customer's budget exactly as they stated it; always pass it when they gave one. Never convert it yourself." },
             budget_currency: {
               type: Type.STRING,
               enum: ["USD", "KES"],

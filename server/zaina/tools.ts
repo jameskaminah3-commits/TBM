@@ -1176,7 +1176,8 @@ export async function composeTripPackage(
       error: "no_stay_available",
       message:
         "No available stays fit that many guests for those dates in that area. " +
-        "Consider a different destination, different dates, or fewer guests.",
+        "Consider a different destination, different dates, or fewer guests — or offer a " +
+        "custom offer (tier proposal, with the customer's budget) so the team can source a trip.",
     };
   }
 
@@ -1294,6 +1295,11 @@ export async function composeTripPackage(
     warnings,
     note:
       "This is a starting proposal. If the customer wants upgrades, different dates, or a chef added, call again with adjusted parameters or add services individually.",
+    ...(withinBudget ? {} : {
+      next_step:
+        "Show what's over budget and offer to adjust: drop the experience or transport, or change dates or area. " +
+        "If it still doesn't fit, offer a custom offer (tier proposal, with the customer's budget) so the team can source a trip within it.",
+    }),
   };
 }
 
@@ -2767,65 +2773,91 @@ export async function createCustomOffer(
     args.listing_url?.trim() ? `Listing URL: ${args.listing_url.trim()}` : null,
   ].filter(Boolean).join("\n\n");
 
-  const existing = await db
-    .select()
-    .from(customOffers)
-    .where(eq(customOffers.id, args.idempotency_key))
+  // A retry of a request that already went through gets the same booking and
+  // payment link back. Found by its booking: before the writes below were
+  // grouped, a failure part-way could leave an offer with no booking.
+  const [existingBooking] = await db
+    .select({ id: bookings.id })
+    .from(bookings)
+    .where(eq(bookings.idempotencyKey, args.idempotency_key))
     .limit(1);
 
-  if (existing[0]) {
-    const bookingId = existing[0].notes?.match(/booking_id:([^\s]+)/)?.[1] ?? null;
+  if (existingBooking) {
+    const [existingOffer] = await db
+      .select({ feeTier: customOffers.feeTier, feeUsd: customOffers.feeUsd })
+      .from(customOffers)
+      .where(eq(customOffers.id, args.idempotency_key))
+      .limit(1);
     return {
       ok: true,
-      offer_id: existing[0].id,
+      offer_id: args.idempotency_key,
       idempotent_replay: true,
-      tier: existing[0].feeTier,
-      fee_display: await formatPrice(existing[0].feeUsd ?? feeUsd, sessionId),
-      ...(bookingId ? {
-        booking_id: bookingId,
-        payment_link: `${appBaseUrl()}/bookings?bookingId=${bookingId}`,
-      } : {}),
+      tier: existingOffer?.feeTier ?? tier,
+      fee_display: await formatPrice(existingOffer?.feeUsd ?? feeUsd, sessionId),
+      booking_id: existingBooking.id,
+      payment_link: `${appBaseUrl()}/bookings?bookingId=${existingBooking.id}`,
     };
   }
 
   const now = new Date().toISOString();
-  const [row] = await db
-    .insert(customOffers)
-    .values({
-      id: args.idempotency_key,
-      sessionId,
-      customerName: args.customer_name ?? null,
-      customerEmail: args.customer_email ?? null,
-      customerPhone: args.customer_phone ?? null,
-      offerType: args.offer_type,
-      requestDetails,
-      budgetUsd,
-      travelDates: args.travel_dates ?? null,
-      status: "new",
-      feeTier: tier,
-      feeUsd,
-      displayCurrency: currency,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .returning();
-
-  const { booking, paymentLink } = await createCustomOfferBooking({
-    offerId: row.id,
+  const offerValues = {
+    id: args.idempotency_key,
+    sessionId,
+    customerName: args.customer_name ?? null,
+    customerEmail: args.customer_email ?? null,
+    customerPhone: args.customer_phone ?? null,
+    offerType: args.offer_type,
+    requestDetails,
+    budgetUsd,
+    travelDates: args.travel_dates ?? null,
+    status: "new",
+    feeTier: tier,
     feeUsd,
-    customerName: args.customer_name.trim(),
-    customerEmail: args.customer_email.trim().toLowerCase(),
+    displayCurrency: currency,
+    createdAt: now,
+    updatedAt: now,
+  };
+  const customerName = args.customer_name.trim();
+  const customerEmail = args.customer_email.trim().toLowerCase();
+
+  // The offer and its booking are written together, so a failure part-way
+  // leaves nothing behind for a retry to trip over.
+  await storage.ensureBookingWriteTables();
+  const { row, booking, paymentLink } = await db.transaction(async (tx) => {
+    const [row] = await tx.insert(customOffers).values(offerValues)
+      // An offer left without its booking by a failure before these writes
+      // were grouped is reused.
+      .onConflictDoUpdate({ target: customOffers.id, set: offerValues })
+      .returning();
+    const created = await createCustomOfferBooking({
+      offerId: row.id,
+      feeUsd,
+      customerName,
+      customerEmail,
+      customerPhone: args.customer_phone,
+      requestDetails,
+      travelDates: args.travel_dates,
+      budgetUsd: budgetUsd ?? undefined,
+      idempotencyKey: args.idempotency_key,
+      sessionId,
+      executor: tx,
+    });
+    await tx.update(customOffers)
+      .set({ notes: `booking_id:${created.booking.id}`, updatedAt: new Date().toISOString() })
+      .where(eq(customOffers.id, row.id));
+    return { row, ...created };
+  });
+
+  queueCustomOfferBookingNotification({
+    bookingId: booking.id,
+    paymentLink,
+    feeUsd,
+    customerName,
+    customerEmail,
     customerPhone: args.customer_phone,
     requestDetails,
-    travelDates: args.travel_dates,
-    budgetUsd: budgetUsd ?? undefined,
-    idempotencyKey: args.idempotency_key,
     sessionId,
   });
-  await db.update(customOffers)
-    .set({ notes: `booking_id:${booking.id}`, updatedAt: new Date().toISOString() })
-    .where(eq(customOffers.id, row.id));
-
   queueNotificationTask(`zaina custom-offer alert for ${row.id}`, sendOpsAlert({
     kind: "custom-offer",
     sessionId,
