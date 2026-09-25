@@ -13,7 +13,7 @@
 import type { Express, NextFunction, Request, Response } from "express";
 import type { PlatformConfig } from "../config.ts";
 import type { Business } from "../db/schema.ts";
-import { platformPool } from "../db/platform-db.ts";
+import { runForBusiness } from "../db/tenant.ts";
 import { allowedOriginsFor, businessById, businessByPublicKey } from "../businesses/registry.ts";
 import { createSession, customerVisibleEvents, getSession, setDisplayCurrency } from "../conversations/store.ts";
 import { handleChatTurn, type EngineOptions } from "../engine/agent.ts";
@@ -59,14 +59,14 @@ export function registerGatewayRoutes(app: Express, config: PlatformConfig, engi
   }
 
   async function limited(req: Request, res: Response, business: Business, rules: LimitRule[], sessionId: string | null) {
-    const verdict = await consumeLimits(platformPool(), rules);
+    const verdict = await consumeLimits(rules);
     if (verdict.allowed) return false;
     res.setHeader("Retry-After", String(verdict.retryAfterSeconds));
     refuse(res, 429, "rate_limited", "You're sending messages too quickly. Please wait a moment and try again.", {
       retry_after_seconds: verdict.retryAfterSeconds,
     });
     // Refusals are measured too: a flood shows up in the telemetry.
-    await recordTurn(platformPool(), business.id, sessionId, new TurnRecorder().finish("rate_limited")).catch(() => {});
+    await recordTurn(business.id, sessionId, new TurnRecorder().finish("rate_limited")).catch(() => {});
     return true;
   }
 
@@ -119,7 +119,7 @@ export function registerGatewayRoutes(app: Express, config: PlatformConfig, engi
 
       // The site's currency switch applies to the prices Zaina quotes next.
       const currency = currencyOf(req.header("x-zaina-currency"));
-      if (currency) await setDisplayCurrency(auth.sessionId, currency);
+      if (currency) await runForBusiness(auth.business.id, () => setDisplayCurrency(auth.sessionId, currency));
 
       const result = await handleChatTurn({ business: auth.business, sessionId: auth.sessionId, message, options: engine });
       switch (result.status) {
@@ -141,7 +141,7 @@ export function registerGatewayRoutes(app: Express, config: PlatformConfig, engi
     try {
       const auth = await authorize(req, res);
       if (!auth) return;
-      const session = await getSession(auth.sessionId);
+      const session = await runForBusiness(auth.business.id, () => getSession(auth.sessionId));
       if (!session) return refuse(res, 404, "session_not_found", "This chat no longer exists.");
       // The handoff reason is an internal note for the team: never sent to the browser.
       res.json({
@@ -160,7 +160,7 @@ export function registerGatewayRoutes(app: Express, config: PlatformConfig, engi
       const auth = await authorize(req, res);
       if (!auth) return;
       const after = Number(req.query.after ?? 0);
-      const events = await customerVisibleEvents(auth.sessionId, Number.isSafeInteger(after) && after > 0 ? after : 0);
+      const events = await runForBusiness(auth.business.id, () => customerVisibleEvents(auth.sessionId, Number.isSafeInteger(after) && after > 0 ? after : 0));
       res.json({
         messages: events.map((event) => ({
           id: event.id,

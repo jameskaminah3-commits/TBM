@@ -37,7 +37,7 @@ export type ChatPaymentResult =
 
 export interface BusinessConnector {
   /** The business's instructions and knowledge for the model. */
-  systemPrompt(business: Business): string;
+  systemPrompt(business: Business): string | Promise<string>;
   toolDeclarations(): FunctionDeclaration[];
   /** Tools that only read, so several can run at once. */
   readOnlyTools: ReadonlySet<string>;
@@ -46,5 +46,5 @@ export interface BusinessConnector {
   /** C5: record a payment code the customer sent in chat against the booking made in that chat. */
   recordChatPayment?(business: Business, input: { sessionId: string; code: string }): Promise<ChatPaymentResult>;
   /** How customers reach the business when Zaina can't help ("WhatsApp or call +254 …"). */
-  contactLine(business: Business): string;
+  contactLine(business: Business): string | Promise<string>;
 }

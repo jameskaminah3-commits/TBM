@@ -8,17 +8,19 @@ import express, { type Express, type NextFunction, type Request, type Response }
 import type { Server } from "node:http";
 import { GoogleGenAI } from "@google/genai";
 import type { PlatformConfig } from "./config.ts";
-import { registerAdminRoutes } from "./admin/routes.ts";
 import { anyAllowedOrigins, setExtraAllowedOrigins } from "./businesses/registry.ts";
+import { loadSecretKeys, setSecretKeys } from "./businesses/secrets.ts";
 import { sweepUnclaimedHandoffs } from "./conversations/handoff.ts";
 import { deleteExpiredConversations } from "./conversations/retention.ts";
-import { registerStaffRoutes } from "./conversations/staff-routes.ts";
-import { closePlatformDb, initPlatformDb, platformPool } from "./db/platform-db.ts";
+import { registerStaffConversationRoutes } from "./conversations/staff-routes.ts";
+import { assertAppRole, closePlatformDb, initPlatformDb, ownerPool } from "./db/platform-db.ts";
 import { migrate, pendingMigrations } from "./db/migrate.ts";
 import type { EngineOptions } from "./engine/agent.ts";
 import { normalizeOrigin } from "./gateway/origin.ts";
 import { pruneRateLimitCounters } from "./gateway/rate-limit.ts";
 import { registerGatewayRoutes } from "./gateway/routes.ts";
+import { registerPlatformRoutes } from "./platform/routes.ts";
+import { registerStaffAccountRoutes } from "./staff/routes.ts";
 
 /** Browsers may call the API from any website a business allows. */
 function cors() {
@@ -30,8 +32,8 @@ function cors() {
         if (allowed.includes(normalizeOrigin(origin))) {
           res.setHeader("Access-Control-Allow-Origin", origin);
           res.setHeader("Vary", "Origin");
-          res.setHeader("Access-Control-Allow-Headers", "authorization, content-type, x-zaina-currency, x-agent-id");
-          res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+          res.setHeader("Access-Control-Allow-Headers", "authorization, content-type, x-zaina-currency");
+          res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
           res.setHeader("Access-Control-Max-Age", "600");
         }
       } catch (error) {
@@ -54,8 +56,9 @@ export function createApp(config: PlatformConfig, engine: EngineOptions): Expres
   app.use(cors());
 
   registerGatewayRoutes(app, config, engine);
-  registerStaffRoutes(app, config.adminToken);
-  registerAdminRoutes(app, config);
+  registerStaffAccountRoutes(app, config);
+  registerStaffConversationRoutes(app, config.sessionTokenSecret);
+  registerPlatformRoutes(app, config);
 
   app.use((_req: Request, res: Response) => {
     res.status(404).json({ error: "not_found" });
@@ -85,16 +88,19 @@ function every(label: string, ms: number, job: () => Promise<unknown>): NodeJS.T
 }
 
 export async function startServer(config: PlatformConfig): Promise<{ server: Server; stop: () => Promise<void> }> {
-  initPlatformDb(config.platformDatabaseUrl);
+  initPlatformDb(config.platformDatabaseUrl, { appConnectionString: config.platformAppDatabaseUrl });
   if (config.migrateOnStart) {
-    const applied = await migrate(platformPool(), { log: (message) => console.log(`[migrate] ${message}`) });
+    const applied = await migrate(ownerPool(), { log: (message) => console.log(`[migrate] ${message}`) });
     if (applied.length) console.log(`[migrate] applied ${applied.join(", ")}`);
   } else {
-    const pending = await pendingMigrations(platformPool());
+    const pending = await pendingMigrations(ownerPool());
     if (pending.length) {
       throw new Error(`Pending migrations: ${pending.map((migration) => migration.version).join(", ")}. Run npm run migrate first.`);
     }
   }
+  // Business data must only ever be read as the restricted role.
+  await assertAppRole();
+  setSecretKeys(loadSecretKeys());
   setExtraAllowedOrigins((process.env.EXTRA_ALLOWED_ORIGINS ?? "").split(","));
 
   const engine: EngineOptions = {
@@ -119,7 +125,7 @@ export async function startServer(config: PlatformConfig): Promise<{ server: Ser
       const deleted = await deleteExpiredConversations();
       if (deleted) console.log(`[platform] deleted ${deleted} expired conversation(s)`);
     }),
-    every("rate-limit counters", 60 * 60_000, () => pruneRateLimitCounters(platformPool())),
+    every("rate-limit counters", 60 * 60_000, () => pruneRateLimitCounters()),
   ];
 
   const stop = async () => {

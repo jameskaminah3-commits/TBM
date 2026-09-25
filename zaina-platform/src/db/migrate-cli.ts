@@ -4,7 +4,7 @@
 // Run it as a release step before starting a new version.
 
 import "dotenv/config";
-import { closePlatformDb, initPlatformDb, platformPool } from "./platform-db.ts";
+import { closePlatformDb, initPlatformDb, ownerPool } from "./platform-db.ts";
 import { migrate } from "./migrate.ts";
 
 const url = process.env.PLATFORM_DATABASE_URL?.trim();
@@ -15,7 +15,7 @@ if (!url) {
 
 initPlatformDb(url, { max: 1 });
 try {
-  const applied = await migrate(platformPool(), { log: (message) => console.log(`[migrate] ${message}`) });
+  const applied = await migrate(ownerPool(), { log: (message) => console.log(`[migrate] ${message}`) });
   console.log(applied.length ? `[migrate] applied ${applied.length} migration(s)` : "[migrate] already up to date");
 } catch (error) {
   console.error(`[migrate] ${(error as Error).message}`);

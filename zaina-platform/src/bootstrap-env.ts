@@ -12,6 +12,9 @@ export const platformConfig = loadConfig();
 if (platformConfig.tbmDatabaseUrl) {
   process.env.DATABASE_URL = platformConfig.tbmDatabaseUrl;
 } else {
-  console.warn("[platform] TBM_DATABASE_URL is not set: the TBM connector is unavailable.");
-  delete process.env.DATABASE_URL;
+  console.warn("[platform] TBM_DATABASE_URL is not set: the TBM connector is off, and TBM's chats are refused.");
+  // TBM's modules load either way (they are bundled in) and refuse to load
+  // without an address. Nothing connects to this one: the TBM connector
+  // isn't registered, so no TBM code runs.
+  process.env.DATABASE_URL = "postgres://tbm-connector-off@127.0.0.1:1/none";
 }

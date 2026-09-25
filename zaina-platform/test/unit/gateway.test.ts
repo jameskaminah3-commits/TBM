@@ -79,7 +79,6 @@ test("the service refuses to start with missing or weak secrets", () => {
   const env = {
     PLATFORM_DATABASE_URL: "postgres://localhost/zaina",
     SESSION_TOKEN_SECRET: SECRET,
-    PLATFORM_ADMIN_TOKEN: "admin-token-that-is-long-enough",
     GEMINI_API_KEY: "key",
   };
   const config = loadConfig(env);
@@ -87,7 +86,6 @@ test("the service refuses to start with missing or weak secrets", () => {
   assert.equal(config.rateLimits.sessionMessagesPerMinute, 20);
   assert.equal(config.modelPriceUsdPerMillion, null);
   assert.throws(() => loadConfig({ ...env, SESSION_TOKEN_SECRET: "short" }), /at least 32/);
-  assert.throws(() => loadConfig({ ...env, PLATFORM_ADMIN_TOKEN: "short" }), /at least 24/);
   assert.throws(() => loadConfig({ ...env, GEMINI_API_KEY: "" }), /GEMINI_API_KEY is required/);
   assert.throws(() => loadConfig({ ...env, TURN_BUDGET_MS: "-5" }), /positive whole number/);
   assert.deepEqual(

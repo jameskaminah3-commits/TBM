@@ -19,12 +19,13 @@
 // part and rejects a follow-up that omits it, so the model's raw content is
 // pushed back verbatim rather than rebuilt from the functionCalls accessor.
 
-import type { Content, GoogleGenAI } from "@google/genai";
-import { eq } from "drizzle-orm";
+import { GoogleGenAI, type Content } from "@google/genai";
+import { getSecret } from "../businesses/secrets.ts";
+import { getBusinessSettings, replyRulesFor } from "../businesses/settings.ts";
 import { connectorFor } from "../connectors/registry.ts";
 import type { BusinessConnector } from "../connectors/types.ts";
-import { platformDb, platformPool } from "../db/platform-db.ts";
-import { chatSessions, type Business } from "../db/schema.ts";
+import type { Business } from "../db/schema.ts";
+import { inBusiness, runForBusiness } from "../db/tenant.ts";
 import { requestHandoff } from "../conversations/handoff.ts";
 import {
   appendEvent,
@@ -32,6 +33,7 @@ import {
   hasCustomerMessages,
   recentHistory,
   recentZainaReplies,
+  setConsecutiveFailures,
 } from "../conversations/store.ts";
 import { businessDay, claimCapAlert, isOverCap, recordUsage, usageOn } from "../gateway/spend-cap.ts";
 import { afterFailedTurn, RETRY_LATER_REPLY, TIMEOUT_REPLY } from "./failure-policy.ts";
@@ -89,6 +91,23 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// A business can bring its own model key (secret "gemini_api_key"); others
+// use the platform's. Clients are kept per key.
+const clients = new Map<string, GoogleGenAI>();
+async function modelClientFor(business: Business, fallback: GoogleGenAI): Promise<GoogleGenAI> {
+  const key = await getSecret(business.id, "gemini_api_key").catch((error) => {
+    console.error(`[engine] reading ${business.id}'s model key failed; using the platform's:`, error.message);
+    return null;
+  });
+  if (!key) return fallback;
+  let client = clients.get(key);
+  if (!client) {
+    client = new GoogleGenAI({ apiKey: key });
+    clients.set(key, client);
+  }
+  return client;
+}
+
 /** The HTTP status in a model SDK error; its shape varies by error type. */
 function statusOf(error: any): number | undefined {
   const status = error?.status ?? error?.code ?? error?.error?.code ?? error?.response?.status;
@@ -121,12 +140,21 @@ export async function handleChatTurn(input: {
   message: string;
   options: EngineOptions;
 }): Promise<ChatReply> {
+  return runForBusiness(input.business.id, () => handleScopedTurn(input));
+}
+
+async function handleScopedTurn(input: {
+  business: Business;
+  sessionId: string;
+  message: string;
+  options: EngineOptions;
+}): Promise<ChatReply> {
   const recorder = new TurnRecorder();
   let result: TurnResult;
   let contactLine = "";
   try {
     const connector = await connectorFor(input.business.id);
-    contactLine = connector.contactLine(input.business);
+    contactLine = await connector.contactLine(input.business);
     result = await runTurn(input, connector, recorder);
   } catch (error) {
     console.error("[engine] turn failed:", error);
@@ -142,10 +170,12 @@ export async function handleChatTurn(input: {
   }
 
   const metrics = recorder.finish(result.outcome, result.error);
+  // A chat this business doesn't have is measured without a link to it.
+  const found = !(result.reply.status === "error" && result.reply.error === "session_not_found");
   try {
-    await recordTurn(platformPool(), input.business.id, input.sessionId, metrics);
+    await recordTurn(input.business.id, found ? input.sessionId : null, metrics);
     if (metrics.inputTokens > 0 || metrics.outputTokens > 0) {
-      await recordUsage(platformPool(), input.business.id, businessDay(input.business.timeZone), metrics);
+      await recordUsage(input.business.id, businessDay(input.business.timeZone), metrics);
     }
   } catch (error) {
     console.error("[engine] recording telemetry failed:", error);
@@ -170,12 +200,12 @@ async function runTurn(
     return { reply: { status: "human_managed" }, outcome: "human_managed" };
   }
 
-  const lockId = await acquireTurnLock(platformPool(), sessionId, input.options.turnBudgetMs + LOCK_GRACE_MS);
+  const lockId = await acquireTurnLock(sessionId, input.options.turnBudgetMs + LOCK_GRACE_MS);
   if (!lockId) return { reply: { status: "busy", reply: BUSY_REPLY }, outcome: "busy" };
   try {
     return await runLockedTurn(input, connector, recorder, session.consecutiveFailures);
   } finally {
-    await releaseTurnLock(platformPool(), sessionId, lockId).catch((error) => {
+    await releaseTurnLock(sessionId, lockId).catch((error) => {
       console.error("[engine] releasing the turn lock failed:", error);
     });
   }
@@ -211,9 +241,9 @@ async function runLockedTurn(
 
   // C6: once the business's model budget for the day is used, no model calls.
   const day = businessDay(business.timeZone);
-  const usage = await usageOn(platformPool(), business.id, day);
+  const usage = await usageOn(business.id, day);
   if (isOverCap(usage, business.dailyTokenCap)) {
-    if (await claimCapAlert(platformPool(), business.id, day)) {
+    if (await claimCapAlert(business.id, day)) {
       queue("spend-cap alert", connector.notifyTeam(business, {
         kind: "spend-cap",
         day,
@@ -221,7 +251,7 @@ async function runLockedTurn(
         capTokens: business.dailyTokenCap ?? 0,
       }));
     }
-    const reply = `I can't reply to messages here right now, but our team can help: ${connector.contactLine(business)}.`;
+    const reply = `I can't reply to messages here right now, but our team can help: ${await connector.contactLine(business)}.`;
     await say(reply);
     return { reply: { status: "ok", reply }, outcome: "spend_capped" };
   }
@@ -255,7 +285,7 @@ async function runLockedTurn(
   // model, writes its payment link and "what happens next" steps.
   const turnPayments: PaymentDetails[] = [];
   const budget = createTurnBudget(options.turnBudgetMs);
-  const systemInstruction = connector.systemPrompt(business);
+  const systemInstruction = await connector.systemPrompt(business);
   const tools = [{ functionDeclarations: connector.toolDeclarations() }];
 
   let finalText: string | null = null;
@@ -268,7 +298,8 @@ async function runLockedTurn(
   // (a stay just got booked) are answered by searching again.
   let sawFailedWrite = false;
 
-  const callModel = (withTools: boolean) => generate(options, budget, recorder, {
+  const ai = await modelClientFor(business, options.ai);
+  const callModel = (withTools: boolean) => generate({ ...options, ai }, budget, recorder, {
     contents,
     config: withTools ? { systemInstruction, tools } : { systemInstruction },
   });
@@ -379,7 +410,9 @@ async function runLockedTurn(
         + "Let me connect you with someone from our team who can help directly — they'll reach out shortly.";
     }
     finalText = replaceMediaUrls(finalText, customerLinks.at(-1)?.url);
-    if (!finalTextIsServerWritten) finalText = sanitizeModelText(finalText, { customerTexts });
+    if (!finalTextIsServerWritten) {
+      finalText = sanitizeModelText(finalText, { customerTexts, ...replyRulesFor(await getBusinessSettings(business.id)) });
+    }
     finalText = composeCustomerReply(finalText, turnPayments);
     const linkContext = /listing|property|photos?|view|see|pay|booking/i.test(message) ? customerLinks : turnCustomerLinks;
     finalText = appendMissingCustomerLink(finalText, linkContext);
@@ -398,7 +431,7 @@ async function runLockedTurn(
 
     await say(finalText);
     if (consecutiveFailures > 0) {
-      await platformDb().update(chatSessions).set({ consecutiveFailures: 0 }).where(eq(chatSessions.id, sessionId));
+      await setConsecutiveFailures(sessionId, 0);
     }
     const outcome: TurnOutcome = escalated ? "handoff" : callbackRequested ? "callback" : finalTextIsServerWritten ? "tool_reply" : "answered";
     return { reply: { status: "ok", reply: finalText, escalated: escalated || undefined }, outcome };
@@ -467,7 +500,7 @@ async function failedTurn(args: {
   let text = timedOut ? TIMEOUT_REPLY : RETRY_LATER_REPLY;
   let escalated = false;
   try {
-    await platformDb().update(chatSessions).set({ consecutiveFailures: decision.failures }).where(eq(chatSessions.id, sessionId));
+    await setConsecutiveFailures(sessionId, decision.failures);
     if (decision.handOff) {
       const reason = `Zaina failed ${decision.failures} turns in a row (${(error as Error)?.message ?? error}).`;
       queue("system-error alert", connector.notifyTeam(business, {
@@ -520,10 +553,10 @@ async function recordPaymentCode(
   const code = codes[0];
   // A code already used for another conversation's booking isn't recorded
   // twice: the team checks it.
-  const { rows: [claim] } = await platformPool().query<{ session_id: string | null; booking_ref: string }>(
+  const { rows: [claim] } = await inBusiness((_db, client) => client.query<{ session_id: string | null; booking_ref: string }>(
     "select session_id, booking_ref from payment_claims where business_id = $1 and code = $2",
     [business.id, code],
-  );
+  ));
   if (claim && claim.session_id !== sessionId) {
     queue("reused-code alert", connector.notifyTeam(business, {
       kind: "system-error",
@@ -548,11 +581,11 @@ async function recordPaymentCode(
   if (result.alreadyRecorded) {
     return `I already have M-Pesa code ${code} for booking ${result.bookingRef} — the team is checking it and will confirm by email.`;
   }
-  await platformPool().query(
+  await inBusiness((_db, client) => client.query(
     `insert into payment_claims (business_id, session_id, booking_ref, code, expected_amount, note)
      values ($1, $2, $3, $4, $5, $6) on conflict (business_id, code) do nothing`,
     [business.id, sessionId, result.bookingRef, code, result.expectedAmount, result.conflict],
-  );
+  ));
   const dates = result.conflict
     ? " One thing: another guest paid for those dates in the meantime, so the team will contact you to move your booking or refund you."
     : result.datesHeld

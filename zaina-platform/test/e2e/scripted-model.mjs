@@ -5,7 +5,9 @@
 // the real pipeline (gateway → engine → connector → Postgres → reply policy
 // → HTTP) runs locally without keys. Never load it in production.
 //
-// The customer message selects a scenario: "TEST:<name> [extra text]".
+// The customer message selects a scenario: "TEST:<name> [extra text]";
+// "TEST:whoami" answers with the first line of the business's instructions
+// and its tool names, "TEST:say64 <base64>" with exactly that text.
 // Round 1 returns a scripted function call; round 2 returns a deliberately
 // messy "model reply" (bold, bare paths, phishing link, foreign phone
 // number, its own payment steps) so the server-side reply policy is tested.
@@ -207,6 +209,12 @@ globalThis.fetch = async (input, init) => {
   } else if (fnResponses.length > 0) {
     const fr = fnResponses[0].functionResponse;
     out = reply([{ text: messyReplyFor(fr.name, fr.response) }]);
+  } else if (/TEST:whoami/.test(customerText)) {
+    // Which business's instructions and tools this chat runs on.
+    out = reply([{ text: `${systemText.split("\n")[0]} Tools: ${toolNames.join(", ")}.` }]);
+  } else if (/TEST:say64\s+\S+/.test(customerText)) {
+    // Says exactly this (base64, so the text isn't in the customer's own message).
+    out = reply([{ text: Buffer.from(customerText.match(/TEST:say64\s+(\S+)/)[1], "base64").toString("utf8") }]);
   } else {
     const match = customerText.match(/TEST:(\w+)/);
     const scenario = match && scenarios[match[1]];

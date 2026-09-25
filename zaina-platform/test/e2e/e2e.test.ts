@@ -4,15 +4,20 @@
 //   TBM_TEST_DATABASE_URL       a copy of TBM's schema; tbm-seed.sql replaces
 //                               its listings and bookings (name must end in _test)
 // Both must be on this machine. Run: npm run test:e2e (from zaina-platform/).
+//
+// TBM runs as in Phase 0; a second business (Acme Guesthouse) is added
+// through the platform's API and must stay apart from TBM throughout.
 
 import assert from "node:assert/strict";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
+import { issueSessionToken } from "../../src/gateway/session-token.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "../../..");
@@ -27,8 +32,11 @@ for (const url of [PLATFORM_DB, TBM_DB]) {
 
 const PORT = 5072;
 const BASE = `http://127.0.0.1:${PORT}`;
-const ADMIN = "e2e-admin-token-long-enough-123";
+const SESSION_SECRET = "e2e-session-secret-long-enough-1234567890";
+// Local test accounts only.
+const PASSWORD = "LocalTest#2026";
 const ORIGIN = "https://tembeabilamatata.com";
+const ACME_ORIGIN = "https://acme.example";
 const TURN_BUDGET_MS = 6000;
 const work = mkdtempSync(path.join(tmpdir(), "zaina-e2e-"));
 const EMAIL_LOG = path.join(work, "emails.log");
@@ -39,25 +47,29 @@ const platform = new pg.Pool({ connectionString: PLATFORM_DB, max: 2 });
 const tbm = new pg.Pool({ connectionString: TBM_DB, max: 2 });
 const one = async (pool: pg.Pool, sql: string, params: unknown[] = []) => (await pool.query(sql, params)).rows[0];
 
-type Chat = { token: string; sessionId: string; ip: string };
+type Chat = { token: string; sessionId: string; ip: string; origin: string };
 let ipCounter = 10;
 const nextIp = () => `10.0.0.${ipCounter++}`;
 
-async function openChat(ip = nextIp(), currency = "KES"): Promise<Chat> {
-  const response = await fetch(`${BASE}/v1/sessions`, {
+function openSession(key: string, origin: string | undefined, ip: string, currency = "KES") {
+  return fetch(`${BASE}/v1/sessions`, {
     method: "POST",
-    headers: { "content-type": "application/json", origin: ORIGIN, "x-forwarded-for": ip },
-    body: JSON.stringify({ business_key: "pk_tbm_live", display_currency: currency }),
+    headers: { "content-type": "application/json", "x-forwarded-for": ip, ...(origin ? { origin } : {}) },
+    body: JSON.stringify({ business_key: key, display_currency: currency }),
   });
+}
+
+async function openChat(ip = nextIp(), currency = "KES", key = "pk_tbm_live", origin = ORIGIN): Promise<Chat> {
+  const response = await openSession(key, origin, ip, currency);
   assert.equal(response.status, 201, await response.clone().text());
   const body = (await response.json()) as any;
-  return { token: body.token, sessionId: body.session_id, ip };
+  return { token: body.token, sessionId: body.session_id, ip, origin };
 }
 
 async function send(chat: Chat, message: string): Promise<{ status: number; body: any; headers: Headers }> {
   const response = await fetch(`${BASE}/v1/chat`, {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${chat.token}`, origin: ORIGIN, "x-forwarded-for": chat.ip },
+    headers: { "content-type": "application/json", authorization: `Bearer ${chat.token}`, origin: chat.origin, "x-forwarded-for": chat.ip },
     body: JSON.stringify({ message }),
   });
   return { status: response.status, body: await response.json(), headers: response.headers };
@@ -69,15 +81,41 @@ async function say(chat: Chat, message: string): Promise<string> {
   return body.reply;
 }
 
-async function staff(method: string, route: string, body?: unknown, token = ADMIN): Promise<{ status: number; body: any }> {
+async function chatMessages(chat: Chat): Promise<any[]> {
+  const response = await fetch(`${BASE}/v1/chat/messages`, { headers: { authorization: `Bearer ${chat.token}` } });
+  return ((await response.json()) as any).messages;
+}
+
+// Staff: Ops runs the platform; Amina answers TBM's chats; Otieno owns Acme.
+let opsToken = "";
+let agentToken = "";
+let acmeOwnerToken = "";
+let acmeKey = "";
+
+async function staff(method: string, route: string, body?: unknown, token = agentToken): Promise<{ status: number; body: any }> {
   const response = await fetch(`${BASE}${route}`, {
     method,
-    headers: { authorization: `Bearer ${token}`, "x-agent-id": "agent-amina", ...(body ? { "content-type": "application/json" } : {}) },
+    headers: { authorization: `Bearer ${token}`, ...(body ? { "content-type": "application/json" } : {}) },
     body: body ? JSON.stringify(body) : undefined,
   });
   return { status: response.status, body: await response.json() };
 }
 
+function signIn(email: string, password = PASSWORD, ip = "10.8.0.1") {
+  return fetch(`${BASE}/v1/staff/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": ip },
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+async function tokenFor(email: string, password = PASSWORD): Promise<string> {
+  const response = await signIn(email, password);
+  assert.equal(response.status, 200, await response.clone().text());
+  return ((await response.json()) as any).token;
+}
+
+const base64 = (text: string) => Buffer.from(text, "utf8").toString("base64");
 const emails = () => readFileSync(EMAIL_LOG, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
 const session = (id: string) => one(platform, "select * from chat_sessions where id = $1", [id]);
 const settle = (ms = 300) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -93,8 +131,8 @@ before(async () => {
       PORT: String(PORT),
       PLATFORM_DATABASE_URL: PLATFORM_DB,
       TBM_DATABASE_URL: TBM_DB,
-      SESSION_TOKEN_SECRET: "e2e-session-secret-long-enough-1234567890",
-      PLATFORM_ADMIN_TOKEN: ADMIN,
+      SESSION_TOKEN_SECRET: SESSION_SECRET,
+      PLATFORM_SECRETS_KEY: randomBytes(32).toString("base64"),
       GEMINI_API_KEY: "scripted",
       MIGRATE_ON_START: "true",
       TURN_BUDGET_MS: String(TURN_BUDGET_MS),
@@ -117,16 +155,32 @@ before(async () => {
   });
   server.stdout?.on("data", (chunk) => { serverOutput += chunk; });
   server.stderr?.on("data", (chunk) => { serverOutput += chunk; });
-  for (let attempt = 0; attempt < 80; attempt += 1) {
+  let started = false;
+  for (let attempt = 0; attempt < 80 && !started; attempt += 1) {
     try {
-      if ((await fetch(`${BASE}/v1/health`)).ok) return;
+      started = (await fetch(`${BASE}/v1/health`)).ok;
     } catch {}
-    await settle(250);
+    if (!started) await settle(250);
   }
-  throw new Error(`The platform didn't start:\n${serverOutput}`);
+  if (!started) throw new Error(`The platform didn't start:\n${serverOutput}`);
+
+  // The first platform admin is made on the command line, as in production…
+  const created = spawnSync(
+    process.execPath,
+    ["--import", "tsx", "zaina-platform/src/cli/create-staff.ts", "--email", "ops@example.com", "--name", "Ops", "--platform-admin"],
+    { cwd: REPO, env: { ...process.env, PLATFORM_DATABASE_URL: PLATFORM_DB, STAFF_PASSWORD: PASSWORD }, encoding: "utf8" },
+  );
+  assert.equal(created.status, 0, created.stderr + created.stdout);
+  opsToken = await tokenFor("ops@example.com");
+  // …who adds TBM's first agent.
+  const added = await staff("POST", "/v1/staff/businesses/tbm/members", { email: "amina@example.com", name: "Amina", password: PASSWORD, role: "agent" }, opsToken);
+  assert.equal(added.status, 201, JSON.stringify(added.body));
+  agentToken = await tokenFor("amina@example.com");
 });
 
 after(async () => {
+  // E2E_SERVER_LOG=<file> keeps the server's output for a look afterwards.
+  if (process.env.E2E_SERVER_LOG) writeFileSync(process.env.E2E_SERVER_LOG, serverOutput);
   server?.kill("SIGTERM");
   await platform.end();
   await tbm.end();
@@ -320,13 +374,15 @@ test("handoff while staffed: staff claim, reply, and hand back to Zaina (C4c)", 
   assert.ok(waiting.body.sessions.some((row: any) => row.id === chat.sessionId));
   assert.equal((await send(chat, "Hello? Anyone there?")).body.status, "human_managed");
 
-  assert.equal((await staff("POST", `/v1/staff/sessions/${chat.sessionId}/claim`)).status, 200);
-  assert.equal((await staff("POST", `/v1/staff/sessions/${chat.sessionId}/messages`, { message: "Hi, Amina here from TBM. How can I help?" })).status, 201);
-  const messages = (await (await fetch(`${BASE}/v1/chat/messages`, { headers: { authorization: `Bearer ${chat.token}` } })).json()) as any;
-  assert.deepEqual(messages.messages.at(-1), { ...messages.messages.at(-1), from: "team", text: "Hi, Amina here from TBM. How can I help?" });
-  assert.equal(messages.messages.some((message: any) => /Customer asked|internal/.test(message.text)), false, "no internal notes");
+  const claimed = await staff("POST", `/v1/staff/businesses/tbm/sessions/${chat.sessionId}/claim`);
+  assert.equal(claimed.status, 200);
+  assert.equal(claimed.body.session.assignedAgentId, "Amina <amina@example.com>", "the chat records who took it");
+  assert.equal((await staff("POST", `/v1/staff/businesses/tbm/sessions/${chat.sessionId}/messages`, { message: "Hi, Amina here from TBM. How can I help?" })).status, 201);
+  const messages = await chatMessages(chat);
+  assert.deepEqual(messages.at(-1), { ...messages.at(-1), from: "team", text: "Hi, Amina here from TBM. How can I help?" });
+  assert.equal(messages.some((message: any) => /Customer asked|internal/.test(message.text)), false, "no internal notes");
 
-  assert.equal((await staff("POST", `/v1/staff/sessions/${chat.sessionId}/release`)).status, 200);
+  assert.equal((await staff("POST", `/v1/staff/businesses/tbm/sessions/${chat.sessionId}/release`)).status, 200);
   assert.equal(await say(chat, "Thanks! Back to planning"), "Karibu! How can I help you plan your Coast trip?");
 });
 
@@ -361,9 +417,9 @@ test("a handoff nobody claims goes back to Zaina with a callback (C4c)", async (
   await platform.query("update chat_sessions set handoff_at = now() - interval '11 minutes' where id = $1", [chat.sessionId]);
   await settle(1500);
   assert.equal((await session(chat.sessionId)).managed_by, "AI");
-  const messages = (await (await fetch(`${BASE}/v1/chat/messages`, { headers: { authorization: `Bearer ${chat.token}` } })).json()) as any;
-  assert.match(messages.messages.at(-1).text, /Sorry for the wait/);
-  assert.match(messages.messages.at(-1).text, /phone number or email/);
+  const messages = await chatMessages(chat);
+  assert.match(messages.at(-1).text, /Sorry for the wait/);
+  assert.match(messages.at(-1).text, /phone number or email/);
   const callbacks = await staff("GET", "/v1/staff/businesses/tbm/sessions?filter=callbacks");
   assert.ok(callbacks.body.sessions.some((row: any) => row.id === chat.sessionId));
 });
@@ -397,13 +453,206 @@ test("too many messages in a minute are refused before any model call (C6)", asy
   assert.equal(turns.answered, 6);
 });
 
-test("staff and admin routes need the admin token", async () => {
+// ── Phase 1: staff accounts, a second business, and separation ─────────
+
+test("staff sign in with their own password; wrong ones are refused, then slowed", async () => {
+  const wrong = await signIn("amina@example.com", "not-her-password-1");
+  const unknown = await signIn("nobody@example.com", "any-password-123");
+  assert.equal(wrong.status, 401);
+  assert.equal(unknown.status, 401);
+  assert.deepEqual(await wrong.json(), await unknown.json(), "the same answer whether or not the account exists");
+
+  const me = await staff("GET", "/v1/staff/me");
+  assert.equal(me.status, 200);
+  assert.deepEqual(me.body.user, { ...me.body.user, email: "amina@example.com", name: "Amina", is_platform_admin: false });
+  assert.doesNotMatch(JSON.stringify(me.body), /scrypt|password/i);
+  assert.deepEqual(me.body.businesses, [{ businessId: "tbm", businessName: "Tembea Bila Matata", role: "agent" }]);
+
+  // Ten tries per account every 15 minutes, whichever addresses they come from.
+  const statuses = [];
+  for (let attempt = 0; attempt < 11; attempt += 1) statuses.push((await signIn("guess@example.com", `Guess-${attempt}-password`, `10.7.0.${attempt}`)).status);
+  assert.deepEqual(statuses, [...Array(10).fill(401), 429]);
+});
+
+test("staff routes need a staff sign-in and a role in that business", async () => {
   assert.equal((await staff("GET", "/v1/staff/businesses/tbm/sessions", undefined, "wrong-token")).status, 401);
-  assert.equal((await staff("GET", "/v1/admin/businesses/tbm/metrics", undefined, "")).status, 401);
+  assert.equal((await staff("GET", "/v1/staff/businesses/tbm/sessions", undefined, "")).status, 401);
+  const chat = await openChat();
+  assert.equal((await staff("GET", "/v1/staff/businesses/tbm/sessions", undefined, chat.token)).status, 401, "a chat token isn't a staff token");
+  // Amina answers chats; reports, deletion requests and the platform need more.
+  assert.equal((await staff("GET", "/v1/staff/businesses/tbm/sessions?filter=all")).status, 200);
+  assert.equal((await staff("GET", "/v1/staff/businesses/tbm/metrics")).status, 403);
+  assert.equal((await staff("POST", "/v1/staff/businesses/tbm/erase", { email: "x@example.com" })).status, 403);
+  assert.equal((await staff("GET", "/v1/platform/businesses")).status, 403);
+  // The Phase 0 shared admin token and its routes are gone.
+  assert.equal((await staff("GET", "/v1/admin/businesses/tbm/metrics", undefined, "e2e-admin-token-long-enough-123")).status, 404);
+});
+
+test("the platform adds a second business, with its first owner, in one step", async () => {
+  const request = {
+    id: "acme",
+    name: "Acme Guesthouse",
+    allowed_origins: [ACME_ORIGIN],
+    owner: { email: "otieno@example.com", name: "Otieno", password: PASSWORD },
+  };
+  assert.equal((await staff("POST", "/v1/platform/businesses", request)).status, 403, "only platform admins");
+  const created = await staff("POST", "/v1/platform/businesses", request, opsToken);
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  acmeKey = created.body.business.public_key;
+  assert.match(acmeKey, /^pk_acme_[0-9a-f]{12}$/);
+  assert.equal(created.body.business.daily_token_cap, 5_000_000, "a new business starts with a model budget");
+  assert.equal(created.body.business.retention_days, 90);
+  assert.equal((await staff("POST", "/v1/platform/businesses", request, opsToken)).status, 409);
+  const listed = await staff("GET", "/v1/platform/businesses", undefined, opsToken);
+  assert.deepEqual(listed.body.businesses.map((business: any) => business.id).sort(), ["acme", "tbm"]);
+
+  acmeOwnerToken = await tokenFor("otieno@example.com");
+  const me = await staff("GET", "/v1/staff/me", undefined, acmeOwnerToken);
+  assert.deepEqual(me.body.businesses, [{ businessId: "acme", businessName: "Acme Guesthouse", role: "owner" }]);
+  const settings = await staff("PATCH", "/v1/staff/businesses/acme/settings", {
+    about: "Acme Guesthouse: six rooms in Watamu, breakfast included.",
+    contactPhone: "+254700111222",
+    contactPhoneDisplay: "+254 700 111 222",
+    websiteUrl: "https://acme.example",
+  }, acmeOwnerToken);
+  assert.equal(settings.status, 200, JSON.stringify(settings.body));
+  assert.equal(settings.body.settings.contactPhone, "+254700111222");
+});
+
+test("Acme's chat runs on Acme's instructions and tools, and keeps Acme's leads", async () => {
+  const chat = await openChat(nextIp(), "KES", acmeKey, ACME_ORIGIN);
+  assert.equal(
+    await say(chat, "TEST:whoami"),
+    "You are Zaina, the assistant for Acme Guesthouse, answering customers in a chat on its website. Tools: create_lead, escalate_to_human.",
+  );
+  assert.doesNotMatch(await say(await openChat(), "TEST:whoami"), /Acme/, "TBM's chats are TBM's");
+
+  await say(chat, "I'm Jane Wanjiru, jane@example.com");
+  assert.equal(await say(chat, "TEST:lead"), "Tool said: ok");
+  const leads = await staff("GET", "/v1/staff/businesses/acme/leads", undefined, acmeOwnerToken);
+  assert.deepEqual(
+    leads.body.leads.map((lead: any) => [lead.name, lead.email, lead.interest, lead.sessionId]),
+    [["Jane Wanjiru", "jane@example.com", "December family trip to Diani", chat.sessionId]],
+  );
+  // Settings changes reach the next reply.
+  await staff("PATCH", "/v1/staff/businesses/acme/settings", { assistantName: "Amani" }, acmeOwnerToken);
+  assert.match(await say(chat, "TEST:whoami"), /^You are Amani, the assistant for Acme Guesthouse/);
+});
+
+test("each business's own links and numbers are the ones Zaina may pass on", async () => {
+  const text = "Call +254 700 111 222 or +254 718 475 264. See https://acme.example/rooms or https://tembeabilamatata.com/stays.";
+  const acmeChat = await openChat(nextIp(), "KES", acmeKey, ACME_ORIGIN);
+  assert.equal(
+    await say(acmeChat, `TEST:say64 ${base64(text)}`),
+    "Call +254 700 111 222 or (number removed). See https://acme.example/rooms or (link removed).",
+  );
+  const tbmChat = await openChat();
+  assert.equal(
+    await say(tbmChat, `TEST:say64 ${base64(text)}`),
+    "Call (number removed) or +254 718 475 264. See (link removed) or https://tembeabilamatata.com/stays.",
+  );
+});
+
+test("one business's staff can't reach another's chats, and chat keys stay with their websites", async () => {
+  const tbmChat = await openChat();
+  await say(tbmChat, "Hi");
+  const acmeChat = await openChat(nextIp(), "KES", acmeKey, ACME_ORIGIN);
+  await say(acmeChat, "Hi");
+
+  // To Acme's owner, TBM doesn't exist…
+  for (const route of ["sessions?filter=all", "pending-count", "settings", "leads", "members", `sessions/${tbmChat.sessionId}`]) {
+    assert.equal((await staff("GET", `/v1/staff/businesses/tbm/${route}`, undefined, acmeOwnerToken)).status, 404, route);
+  }
+  // …and TBM's chats aren't found through Acme's routes either.
+  const acmeRoute = `/v1/staff/businesses/acme/sessions/${tbmChat.sessionId}`;
+  assert.equal((await staff("GET", acmeRoute, undefined, acmeOwnerToken)).status, 404);
+  assert.equal((await staff("POST", `${acmeRoute}/claim`, undefined, acmeOwnerToken)).status, 404);
+  assert.equal((await staff("POST", `${acmeRoute}/messages`, { message: "Hello from another business" }, acmeOwnerToken)).status, 404);
+  assert.equal((await staff("POST", `${acmeRoute}/close`, undefined, acmeOwnerToken)).status, 404);
+  assert.equal((await staff("DELETE", acmeRoute, undefined, acmeOwnerToken)).status, 404);
+  const acmeList = await staff("GET", "/v1/staff/businesses/acme/sessions?filter=all", undefined, acmeOwnerToken);
+  assert.equal(acmeList.status, 200);
+  assert.ok(acmeList.body.sessions.every((row: any) => row.businessId === "acme"));
+  // TBM's agent can't see Acme's.
+  assert.equal((await staff("GET", "/v1/staff/businesses/acme/sessions?filter=all")).status, 404);
+  assert.equal((await session(tbmChat.sessionId)).managed_by, "AI", "TBM's chat untouched");
+  assert.equal((await chatMessages(tbmChat)).length, 2);
+
+  // Each widget key works only from its own business's website.
+  assert.equal((await openSession(acmeKey, ORIGIN, nextIp())).status, 403);
+  assert.equal((await openSession("pk_tbm_live", ACME_ORIGIN, nextIp())).status, 403);
+  // Even a validly signed chat token naming Acme can't reach a TBM chat: the database hides it.
+  const crossed = { ...acmeChat, token: issueSessionToken(SESSION_SECRET, { sessionId: tbmChat.sessionId, businessId: "acme" }) };
+  assert.equal((await send(crossed, "Hi")).status, 404);
+  assert.deepEqual(await chatMessages(crossed), []);
+  assert.equal((await chatMessages(tbmChat)).length, 2);
+});
+
+test("roles decide who changes settings, people and secrets", async () => {
+  const acme = (method: string, route: string, body?: unknown, token = acmeOwnerToken) => staff(method, `/v1/staff/businesses/acme/${route}`, body, token);
+  assert.equal((await acme("POST", "members", { email: "wanjiku@example.com", name: "Wanjiku", password: PASSWORD, role: "agent" })).status, 201);
+  assert.equal((await acme("POST", "members", { email: "baraka@example.com", name: "Baraka", password: PASSWORD, role: "manager" })).status, 201);
+  const agent = await tokenFor("wanjiku@example.com");
+  const manager = await tokenFor("baraka@example.com");
+
+  // An agent answers chats, but can't change settings or see which secrets exist.
+  assert.equal((await acme("GET", "sessions", undefined, agent)).status, 200);
+  assert.equal((await acme("GET", "settings", undefined, agent)).status, 200);
+  assert.equal((await acme("PATCH", "settings", { about: "changed" }, agent)).status, 403);
+  assert.equal((await acme("GET", "secrets", undefined, agent)).status, 403);
+  // A manager changes settings and adds agents, but not managers or owners.
+  assert.equal((await acme("PATCH", "settings", { contactPhone: "0712345678" }, manager)).status, 400, "numbers are checked");
+  assert.equal((await acme("PATCH", "settings", { about: "Six rooms in Watamu." }, manager)).status, 200);
+  assert.equal((await acme("POST", "members", { email: "juma@example.com", name: "Juma", password: PASSWORD, role: "owner" }, manager)).status, 403);
+  assert.equal((await acme("POST", "members", { email: "juma@example.com", name: "Juma", password: PASSWORD, role: "viewer" }, manager)).status, 201);
+  assert.equal((await acme("POST", "members", { email: "short@example.com", name: "Short", password: "short", role: "viewer" }, manager)).status, 400);
+
+  // Secrets: only an owner sets them, and nobody reads them back.
+  assert.equal((await acme("PUT", "secrets/whatsapp_token", { value: "wa-secret-value-123" }, manager)).status, 403);
+  assert.equal((await acme("PUT", "secrets/whatsapp_token", { value: "wa-secret-value-123" })).status, 200);
+  const secrets = await acme("GET", "secrets", undefined, manager);
+  assert.deepEqual(secrets.body.secrets.map((secret: any) => secret.name), ["whatsapp_token"]);
+  assert.doesNotMatch(JSON.stringify(secrets.body), /wa-secret-value/);
+  const stored = await one(platform, "select ciphertext from business_secrets where business_id = 'acme' and name = 'whatsapp_token'");
+  assert.equal(stored.ciphertext.toString("utf8").includes("wa-secret-value"), false, "encrypted at rest");
+  assert.equal((await staff("GET", "/v1/staff/businesses/tbm/secrets", undefined, opsToken)).body.secrets.length, 0, "TBM has none of Acme's");
+
+  // A business always keeps an owner; removing someone takes effect at once.
+  const members = (await acme("GET", "members", undefined, manager)).body.members;
+  const id = (email: string) => members.find((member: any) => member.email === email).userId;
+  assert.equal((await acme("DELETE", `members/${id("otieno@example.com")}`)).status, 409);
+  assert.equal((await acme("DELETE", `members/${id("otieno@example.com")}`, undefined, manager)).status, 403);
+  assert.equal((await acme("DELETE", `members/${id("wanjiku@example.com")}`, undefined, manager)).status, 200);
+  assert.equal((await acme("GET", "sessions", undefined, agent)).status, 404);
+  // Staff lists show only the business's own people.
+  assert.deepEqual(
+    (await acme("GET", "members", undefined, manager)).body.members.map((member: any) => member.email).sort(),
+    ["baraka@example.com", "juma@example.com", "otieno@example.com"],
+  );
+});
+
+test("a new password signs the person out everywhere", async () => {
+  const oldToken = await tokenFor("baraka@example.com");
+  assert.equal((await staff("POST", "/v1/staff/me/password", { current: "wrong-password-1", next: "NewLocal#2027" }, oldToken)).status, 401);
+  assert.equal((await staff("POST", "/v1/staff/me/password", { current: PASSWORD, next: "weak" }, oldToken)).status, 400);
+  const changed = await staff("POST", "/v1/staff/me/password", { current: PASSWORD, next: "NewLocal#2027" }, oldToken);
+  assert.equal(changed.status, 200);
+  assert.equal((await staff("GET", "/v1/staff/me", undefined, oldToken)).status, 401, "the old token stops working");
+  assert.equal((await staff("GET", "/v1/staff/me", undefined, changed.body.token)).status, 200);
+  assert.equal((await signIn("baraka@example.com", PASSWORD)).status, 401);
+  assert.equal((await signIn("baraka@example.com", "NewLocal#2027")).status, 200);
+});
+
+test("a deletion request at Acme deletes only Acme's copy of the customer", async () => {
+  const tbmBefore = await one(platform, "select count(*)::int as n from chat_sessions where business_id = 'tbm'");
+  const erased = await staff("POST", "/v1/staff/businesses/acme/erase", { email: "jane@example.com" }, acmeOwnerToken);
+  assert.deepEqual(erased.body, { deleted_conversations: 1, deleted_leads: 1 });
+  const tbmAfter = await one(platform, "select count(*)::int as n from chat_sessions where business_id = 'tbm'");
+  assert.equal(tbmAfter.n, tbmBefore.n, "Jane's TBM chats are TBM's to delete");
 });
 
 test("the report gives cost per conversation and how turns ended (I15)", async () => {
-  const report = (await staff("GET", "/v1/admin/businesses/tbm/metrics?days=1")).body;
+  const report = (await staff("GET", "/v1/staff/businesses/tbm/metrics?days=1", undefined, opsToken)).body;
   for (const outcome of ["answered", "tool_reply", "busy", "timeout", "model_error", "handoff", "callback", "mpesa_recorded", "spend_capped", "rate_limited", "human_managed"]) {
     assert.ok(report.outcomes[outcome] > 0, `no "${outcome}" turns in ${JSON.stringify(report.outcomes)}`);
   }
@@ -414,7 +663,7 @@ test("the report gives cost per conversation and how turns ended (I15)", async (
 
 test("a customer's conversations are deleted on request (I17)", async () => {
   const before = await one(platform, "select count(*)::int as n from chat_sessions where business_id = 'tbm'");
-  const erased = (await staff("POST", "/v1/admin/businesses/tbm/erase", { email: "jane@example.com" })).body;
+  const erased = (await staff("POST", "/v1/staff/businesses/tbm/erase", { email: "jane@example.com" }, opsToken)).body;
   assert.ok(erased.deleted_conversations >= 5);
   const after = await one(platform, "select count(*)::int as n from chat_sessions where business_id = 'tbm'");
   assert.equal(after.n, before.n - erased.deleted_conversations);

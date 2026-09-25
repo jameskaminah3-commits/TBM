@@ -7,25 +7,25 @@
 // mid-turn, so a conversation can never stay locked.
 
 import { randomUUID } from "node:crypto";
-import type pg from "pg";
+import { inBusiness } from "../db/tenant.ts";
 
 export const BUSY_REPLY = "I'm still working on your last message — send this one again in a moment.";
 
 /** Takes the session's lease for `leaseMs`; null when another turn holds it. */
-export async function acquireTurnLock(pool: pg.Pool, sessionId: string, leaseMs: number): Promise<string | null> {
+export async function acquireTurnLock(sessionId: string, leaseMs: number): Promise<string | null> {
   const lockId = randomUUID();
-  const { rowCount } = await pool.query(
+  const { rowCount } = await inBusiness((_db, client) => client.query(
     `update chat_sessions
      set turn_lock_id = $2, turn_lock_until = now() + make_interval(secs => $3::double precision / 1000)
      where id = $1 and (turn_lock_until is null or turn_lock_until < now())`,
     [sessionId, lockId, leaseMs],
-  );
+  ));
   return rowCount ? lockId : null;
 }
 
-export async function releaseTurnLock(pool: pg.Pool, sessionId: string, lockId: string): Promise<void> {
-  await pool.query(
+export async function releaseTurnLock(sessionId: string, lockId: string): Promise<void> {
+  await inBusiness((_db, client) => client.query(
     "update chat_sessions set turn_lock_id = null, turn_lock_until = null where id = $1 and turn_lock_id = $2",
     [sessionId, lockId],
-  );
+  ));
 }

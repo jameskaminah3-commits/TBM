@@ -5,7 +5,7 @@
 // here. The summary gives cost per conversation, the number that decides
 // pricing for other businesses.
 
-import type pg from "pg";
+import { inBusiness } from "../db/tenant.ts";
 
 export type TurnOutcome =
   | "answered"          // the model replied
@@ -103,8 +103,8 @@ export function estimateCostUsd(usage: { inputTokens: number; outputTokens: numb
   return (usage.inputTokens * prices.input + usage.outputTokens * prices.output) / 1_000_000;
 }
 
-export async function recordTurn(pool: pg.Pool, businessId: string, sessionId: string | null, metrics: TurnMetrics): Promise<void> {
-  await pool.query(
+export async function recordTurn(businessId: string, sessionId: string | null, metrics: TurnMetrics): Promise<void> {
+  await inBusiness((_db, client) => client.query(
     `insert into turn_metrics (business_id, session_id, started_at, duration_ms, model_ms, tool_ms, model_calls,
        model_retries, input_tokens, output_tokens, cached_tokens, tools, outcome, error)
      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
@@ -113,7 +113,7 @@ export async function recordTurn(pool: pg.Pool, businessId: string, sessionId: s
       metrics.modelRetries, metrics.inputTokens, metrics.outputTokens, metrics.cachedTokens, metrics.tools, metrics.outcome,
       metrics.error,
     ],
-  );
+  ), businessId);
 }
 
 export type TurnSummary = {
@@ -130,7 +130,15 @@ export type TurnSummary = {
 };
 
 export async function summarizeTurns(
-  pool: pg.Pool,
+  businessId: string,
+  range: { from: Date; to: Date },
+  prices: ModelPrices | null,
+): Promise<TurnSummary> {
+  return inBusiness((_db, client) => summarize(client, businessId, range, prices), businessId);
+}
+
+async function summarize(
+  pool: { query: import("pg").PoolClient["query"] },
   businessId: string,
   range: { from: Date; to: Date },
   prices: ModelPrices | null,

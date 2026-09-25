@@ -5,9 +5,11 @@
 
 import { platformConfig } from "./bootstrap-env.ts";
 import { startServer } from "./app.ts";
-import { registerConnector } from "./connectors/registry.ts";
+import { expectConnector, registerConnector } from "./connectors/registry.ts";
 import { tbmConnector } from "./connectors/tbm/index.ts";
 
+// TBM runs on its own connector or not at all.
+expectConnector("tbm");
 if (platformConfig.tbmDatabaseUrl) registerConnector("tbm", tbmConnector);
 
 const { stop } = await startServer(platformConfig);

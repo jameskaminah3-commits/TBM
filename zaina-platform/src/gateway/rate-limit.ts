@@ -4,7 +4,7 @@
 // the service sees the same numbers and a restart doesn't reset them. Each
 // rule is a fixed window: at most `limit` hits per `windowSeconds`.
 
-import type pg from "pg";
+import { appPool } from "../db/platform-db.ts";
 
 export type LimitRule = { key: string; limit: number; windowSeconds: number };
 
@@ -16,9 +16,9 @@ export type LimitResult =
  * Counts one hit against every rule and says whether all of them still allow
  * it. Refused hits count too, so a flood stays refused until its window ends.
  */
-export async function consumeLimits(pool: pg.Pool, rules: LimitRule[], now: Date = new Date()): Promise<LimitResult> {
+export async function consumeLimits(rules: LimitRule[], now: Date = new Date()): Promise<LimitResult> {
   if (rules.length === 0) return { allowed: true };
-  const { rows } = await pool.query<{ key: string; window_start: Date; count: number }>(
+  const { rows } = await appPool().query<{ key: string; window_start: Date; count: number }>(
     `insert into rate_limit_counters (key, window_start, count)
      select rule.key, to_timestamp(floor(extract(epoch from $3::timestamptz) / rule.seconds) * rule.seconds), 1
      from unnest($1::text[], $2::int[]) as rule(key, seconds)
@@ -38,7 +38,7 @@ export async function consumeLimits(pool: pg.Pool, rules: LimitRule[], now: Date
 }
 
 /** Drops counters from windows that ended more than a day ago. */
-export async function pruneRateLimitCounters(pool: pg.Pool, now: Date = new Date()): Promise<number> {
-  const result = await pool.query("delete from rate_limit_counters where window_start < $1::timestamptz - interval '1 day'", [now.toISOString()]);
+export async function pruneRateLimitCounters(now: Date = new Date()): Promise<number> {
+  const result = await appPool().query("delete from rate_limit_counters where window_start < $1::timestamptz - interval '1 day'", [now.toISOString()]);
   return result.rowCount ?? 0;
 }

@@ -6,7 +6,7 @@
 // answers with the business's contact details instead; the team is alerted
 // once that day.
 
-import type pg from "pg";
+import { inBusiness } from "../db/tenant.ts";
 
 /** The calendar day in a time zone, "YYYY-MM-DD". */
 export function businessDay(timeZone: string, now: Date = new Date()): string {
@@ -17,11 +17,11 @@ export function businessDay(timeZone: string, now: Date = new Date()): string {
 
 export type DailyUsage = { inputTokens: number; outputTokens: number; turns: number };
 
-export async function usageOn(pool: pg.Pool, businessId: string, day: string): Promise<DailyUsage> {
-  const { rows } = await pool.query<{ input_tokens: string; output_tokens: string; turns: number }>(
+export async function usageOn(businessId: string, day: string): Promise<DailyUsage> {
+  const { rows } = await inBusiness((_db, client) => client.query<{ input_tokens: string; output_tokens: string; turns: number }>(
     "select input_tokens, output_tokens, turns from usage_daily where business_id = $1 and day = $2",
     [businessId, day],
-  );
+  ), businessId);
   const row = rows[0];
   return row
     ? { inputTokens: Number(row.input_tokens), outputTokens: Number(row.output_tokens), turns: row.turns }
@@ -34,27 +34,26 @@ export function isOverCap(usage: DailyUsage, dailyTokenCap: number | null): bool
 }
 
 export async function recordUsage(
-  pool: pg.Pool,
   businessId: string,
   day: string,
   usage: { inputTokens: number; outputTokens: number },
 ): Promise<void> {
-  await pool.query(
+  await inBusiness((_db, client) => client.query(
     `insert into usage_daily (business_id, day, input_tokens, output_tokens, turns) values ($1, $2, $3, $4, 1)
      on conflict (business_id, day) do update set
        input_tokens = usage_daily.input_tokens + excluded.input_tokens,
        output_tokens = usage_daily.output_tokens + excluded.output_tokens,
        turns = usage_daily.turns + 1`,
     [businessId, day, Math.max(0, Math.round(usage.inputTokens)), Math.max(0, Math.round(usage.outputTokens))],
-  );
+  ), businessId);
 }
 
 /** True for the first caller each day, so the team is alerted once. */
-export async function claimCapAlert(pool: pg.Pool, businessId: string, day: string): Promise<boolean> {
-  const { rowCount } = await pool.query(
+export async function claimCapAlert(businessId: string, day: string): Promise<boolean> {
+  const { rowCount } = await inBusiness((_db, client) => client.query(
     `update usage_daily set cap_alert_sent_at = now()
      where business_id = $1 and day = $2 and cap_alert_sent_at is null`,
     [businessId, day],
-  );
+  ), businessId);
   return (rowCount ?? 0) > 0;
 }

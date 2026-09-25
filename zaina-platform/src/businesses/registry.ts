@@ -1,11 +1,13 @@
 // zaina-platform/src/businesses/registry.ts
 //
-// Businesses on the platform, looked up by id or by the public key their
-// website widget sends. Cached briefly: settings change rarely, and every
-// chat message needs them.
+// The business directory: businesses on the platform, looked up by id or by
+// the public key their website widget sends. Readable by the app role (a
+// widget's key must be looked up before any business is in scope); only the
+// platform creates businesses. Cached briefly: settings change rarely, and
+// every chat message needs them.
 
 import { eq } from "drizzle-orm";
-import { platformDb } from "../db/platform-db.ts";
+import { appDb } from "../db/platform-db.ts";
 import { businesses, type Business } from "../db/schema.ts";
 
 const CACHE_MS = Number(process.env.BUSINESS_CACHE_MS ?? "") || 30_000;
@@ -19,13 +21,18 @@ export function setExtraAllowedOrigins(origins: string[]) {
 
 async function all(): Promise<Business[]> {
   if (cache && Date.now() - cache.at < CACHE_MS) return cache.list;
-  const list = await platformDb().select().from(businesses);
+  const list = await appDb().select().from(businesses);
   cache = { at: Date.now(), list };
   return list;
 }
 
 export function clearBusinessCache() {
   cache = null;
+}
+
+/** Every active business (for jobs that go business by business). */
+export async function allBusinesses(): Promise<Business[]> {
+  return (await all()).filter((business) => business.status === "active");
 }
 
 export async function businessById(id: string): Promise<Business | undefined> {
@@ -47,6 +54,6 @@ export async function anyAllowedOrigins(): Promise<string[]> {
 
 export async function reloadBusiness(id: string): Promise<Business | undefined> {
   clearBusinessCache();
-  const [row] = await platformDb().select().from(businesses).where(eq(businesses.id, id)).limit(1);
+  const [row] = await appDb().select().from(businesses).where(eq(businesses.id, id)).limit(1);
   return row;
 }

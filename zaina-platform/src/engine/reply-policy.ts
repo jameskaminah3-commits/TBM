@@ -1,4 +1,4 @@
-// server/zaina/reply-policy.ts
+// zaina-platform/src/engine/reply-policy.ts (from the TBM app's server/zaina/reply-policy.ts)
 //
 // Deterministic rules for what Zaina sends to customers. The model writes
 // the conversational part; the server owns anything that must be exactly
@@ -98,6 +98,13 @@ const NUMBER_REMOVED = "(number removed)";
 export type SanitizeContext = {
   /** Everything the customer has written in this conversation. */
   customerTexts: string[];
+  /**
+   * The business's rules (from its settings). Left out, they are TBM's:
+   * its site, WhatsApp and Kenyan government sites, and TBM's number.
+   */
+  allowedHosts?: string[];
+  allowedHostSuffixes?: string[];
+  officialPhones?: string[];
 };
 
 function normalizeHost(host: string): string {
@@ -137,6 +144,11 @@ export function isAllowedCustomerUrl(rawUrl: string, context: SanitizeContext): 
   }
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return false;
   const host = normalizeHost(parsed.hostname);
+  if (context.allowedHosts) {
+    const hosts = context.allowedHosts.map(normalizeHost);
+    if (hosts.includes(host) || (context.allowedHostSuffixes ?? []).some((suffix) => host.endsWith(suffix.toLowerCase()))) return true;
+    return customerSentUrl(url, context);
+  }
   const siteHost = normalizeHost(getPublicSiteHost().split(":")[0]);
   if (host === siteHost || TRUSTED_HOSTS.includes(host) || host.endsWith(".go.ke")) return true;
   return customerSentUrl(url, context);
@@ -173,7 +185,7 @@ const PAYMENT_NUMBER_PATTERN = /\b(pay\s?bill(?:\s+(?:no\.?|number))?|till\s+(?:
 
 function sanitizePlainText(text: string, context: SanitizeContext): string {
   const allowedNumbers = customerNumbers(context);
-  allowedNumbers.add(canonicalPhone(TBM_OFFICIAL_PHONE));
+  for (const phone of context.officialPhones ?? [TBM_OFFICIAL_PHONE]) allowedNumbers.add(canonicalPhone(phone));
 
   return text
     .replace(PHONE_PATTERN, (match) => (allowedNumbers.has(canonicalPhone(match)) ? match : NUMBER_REMOVED))

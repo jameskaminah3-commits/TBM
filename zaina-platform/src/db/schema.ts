@@ -6,6 +6,8 @@
 import {
   bigint,
   bigserial,
+  boolean,
+  customType,
   date,
   integer,
   jsonb,
@@ -15,6 +17,8 @@ import {
   timestamp,
   uuid,
 } from "drizzle-orm/pg-core";
+
+const bytea = customType<{ data: Buffer }>({ dataType: () => "bytea" });
 
 const createdAt = () => timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow();
 
@@ -106,5 +110,68 @@ export const paymentClaims = pgTable("payment_claims", {
   expectedAmount: text("expected_amount"),
   status: text("status").notNull().default("recorded"),
   note: text("note"),
+  createdAt: createdAt(),
+});
+
+export const staffRoles = ["owner", "manager", "agent", "viewer"] as const;
+export type StaffRole = (typeof staffRoles)[number];
+
+export const staffUsers = pgTable("staff_users", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  email: text("email").notNull(),
+  name: text("name").notNull(),
+  passwordHash: text("password_hash").notNull(),
+  isPlatformAdmin: boolean("is_platform_admin").notNull().default(false),
+  tokenVersion: integer("token_version").notNull().default(1),
+  disabledAt: timestamp("disabled_at", { withTimezone: true, mode: "date" }),
+  createdAt: createdAt(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+});
+export type StaffUser = typeof staffUsers.$inferSelect;
+
+export const staffMemberships = pgTable("staff_memberships", {
+  businessId: text("business_id").notNull(),
+  userId: uuid("user_id").notNull(),
+  role: text("role").$type<StaffRole>().notNull(),
+  createdAt: createdAt(),
+}, (table) => [primaryKey({ columns: [table.businessId, table.userId] })]);
+
+export const businessSettings = pgTable("business_settings", {
+  businessId: text("business_id").primaryKey(),
+  displayName: text("display_name").notNull(),
+  assistantName: text("assistant_name").notNull().default("Zaina"),
+  about: text("about").notNull().default(""),
+  contactPhone: text("contact_phone"),
+  contactPhoneDisplay: text("contact_phone_display"),
+  websiteUrl: text("website_url"),
+  supportEmail: text("support_email"),
+  allowedLinkHosts: text("allowed_link_hosts").array().notNull().default([]),
+  allowedLinkHostSuffixes: text("allowed_link_host_suffixes").array().notNull().default([]),
+  defaultCurrency: text("default_currency").notNull().default("USD"),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  updatedBy: uuid("updated_by"),
+});
+export type BusinessSettings = typeof businessSettings.$inferSelect;
+
+export const businessSecrets = pgTable("business_secrets", {
+  businessId: text("business_id").notNull(),
+  name: text("name").notNull(),
+  ciphertext: bytea("ciphertext").notNull(),
+  iv: bytea("iv").notNull(),
+  authTag: bytea("auth_tag").notNull(),
+  keyId: text("key_id").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  updatedBy: uuid("updated_by"),
+}, (table) => [primaryKey({ columns: [table.businessId, table.name] })]);
+
+export const leads = pgTable("leads", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  businessId: text("business_id").notNull(),
+  sessionId: uuid("session_id"),
+  name: text("name").notNull(),
+  email: text("email"),
+  phone: text("phone"),
+  interest: text("interest"),
+  notes: text("notes"),
   createdAt: createdAt(),
 });

@@ -16,11 +16,17 @@ export type RateLimits = {
 
 export type PlatformConfig = {
   port: number;
+  /** The database owner: migrations and the platform's own work. */
   platformDatabaseUrl: string;
+  /**
+   * Optional: business queries sign in as the restricted zaina_app role
+   * itself, rather than the owner switching to it.
+   */
+  platformAppDatabaseUrl: string | null;
   /** TBM's own database, read and written by the TBM connector through TBM's code. */
   tbmDatabaseUrl: string | null;
+  /** Signs chat and staff tokens (each with its own derived key). */
   sessionTokenSecret: string;
-  adminToken: string;
   geminiApiKey: string;
   model: string;
   /** The longest one chat turn may take, model calls and tools included (I4). */
@@ -58,8 +64,6 @@ function price(env: NodeJS.ProcessEnv, name: string): number | null {
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): PlatformConfig {
   const sessionTokenSecret = required(env, "SESSION_TOKEN_SECRET");
   if (sessionTokenSecret.length < 32) throw new Error("SESSION_TOKEN_SECRET must be at least 32 characters");
-  const adminToken = required(env, "PLATFORM_ADMIN_TOKEN");
-  if (adminToken.length < 24) throw new Error("PLATFORM_ADMIN_TOKEN must be at least 24 characters");
 
   const inputPrice = price(env, "MODEL_PRICE_INPUT_USD_PER_MTOK");
   const outputPrice = price(env, "MODEL_PRICE_OUTPUT_USD_PER_MTOK");
@@ -67,9 +71,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): PlatformConfig
   return {
     port: positiveInt(env, "PORT", 5070),
     platformDatabaseUrl: required(env, "PLATFORM_DATABASE_URL"),
+    platformAppDatabaseUrl: env.PLATFORM_APP_DATABASE_URL?.trim() || null,
     tbmDatabaseUrl: env.TBM_DATABASE_URL?.trim() || null,
     sessionTokenSecret,
-    adminToken,
     geminiApiKey: required(env, "GEMINI_API_KEY"),
     model: env.ZAINA_MODEL?.trim() || "gemini-3.5-flash-lite",
     turnBudgetMs: positiveInt(env, "TURN_BUDGET_MS", 25_000),

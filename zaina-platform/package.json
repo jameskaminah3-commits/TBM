@@ -12,7 +12,8 @@
     "test": "cd .. && tsx --test --test-concurrency=1 zaina-platform/test/unit/*.test.ts",
     "test:db": "cd .. && tsx --test --test-concurrency=1 zaina-platform/test/db/*.test.ts",
     "check": "cd .. && tsc -p zaina-platform/tsconfig.json",
-    "test:e2e": "cd .. && tsx --test --test-concurrency=1 zaina-platform/test/e2e/e2e.test.ts"
+    "test:e2e": "cd .. && tsx --test --test-concurrency=1 zaina-platform/test/e2e/e2e.test.ts",
+    "staff:create": "cd .. && tsx zaina-platform/src/cli/create-staff.ts"
   },
   "dependencies": {
     "@google/genai": "^2.21.0",
