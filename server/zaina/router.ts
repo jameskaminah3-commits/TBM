@@ -59,6 +59,8 @@ import {
   type PaymentDetails,
 } from "./reply-policy";
 import { withServerIdempotencyKey } from "./idempotency";
+import { recordChatPaymentCode } from "./chat-payments";
+import { claimDailyBudgetAlert, isOverDailyBudget, kenyaDay, recordDailyUsage, responseTokens, ZAINA_LIMITS } from "./limits";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 const MODEL = "gemini-3.5-flash-lite";
@@ -1379,7 +1381,36 @@ export async function handleZainaMessage(
     );
   }
 
-  // 6. Load recent history. The current message is already present because
+  // 6. An M-Pesa code for this chat's booking is recorded, not just read (C5).
+  const paymentReply = await recordChatPaymentCode(sessionId, message);
+  if (paymentReply) {
+    await db.insert(zainaAuditLogs).values({ sessionId, actor: "ZAINA_REASONING", messageContent: paymentReply });
+    return { status: "ok", reply: paymentReply };
+  }
+
+  // 7. Once today's model budget is used, Zaina answers with the contact line
+  // instead of calling the model, and the team is alerted once (C6).
+  const today = kenyaDay();
+  if (await isOverDailyBudget(today)) {
+    if (await claimDailyBudgetAlert(today)) {
+      queueNotificationTask(
+        "zaina daily budget alert",
+        sendOpsAlertEmail({
+          kind: "system-error",
+          sessionId,
+          summary: `Zaina reached today's model budget (${ZAINA_LIMITS.dailyTokenBudget.toLocaleString("en-US")} tokens). Customers get the contact line until midnight Kenya time.`,
+          details: { Day: today, Setting: "ZAINA_DAILY_TOKEN_BUDGET" },
+        }),
+      );
+    }
+    const reply = `I can't reply to messages here right now, but our team can help: WhatsApp or call ${TBM_OFFICIAL_PHONE_DISPLAY}.`;
+    await db.insert(zainaAuditLogs).values({ sessionId, actor: "ZAINA_REASONING", messageContent: reply });
+    return { status: "ok", reply };
+  }
+  let turnInputTokens = 0;
+  let turnOutputTokens = 0;
+
+  // 8. Load recent history. The current message is already present because
   // it was logged above, so do not append it a second time to the model
   // context.
   const historyRows = await db
@@ -1427,7 +1458,7 @@ export async function handleZainaMessage(
   const customerTexts = historyRows
     .filter((row) => row.actor === "USER" && typeof row.messageContent === "string")
     .map((row) => row.messageContent as string);
-  // 7. Agentic loop
+  // 9. Agentic loop
   const contents: any[] = history;
   let finalText: string | null = null;
   // True when the reply is a fixed message written by a tool (tell_customer),
@@ -1484,6 +1515,9 @@ export async function handleZainaMessage(
             durationMs: Date.now() - modelStartedAt,
             ok: true,
           });
+          const tokens = responseTokens(response);
+          turnInputTokens += tokens.input;
+          turnOutputTokens += tokens.output;
           lastError = null;
           break;
         } catch (err: any) {
@@ -1742,5 +1776,10 @@ export async function handleZainaMessage(
       message:
         "I'm having trouble reaching our systems right now — give me a moment and try again, or reach us on WhatsApp if it's urgent.",
     };
+  } finally {
+    // The day's model use, for the daily budget. Off the reply path.
+    if (turnInputTokens > 0 || turnOutputTokens > 0) {
+      void recordDailyUsage(today, turnInputTokens, turnOutputTokens);
+    }
   }
 }

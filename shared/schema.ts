@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, boolean, jsonb, index, bigserial } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, boolean, jsonb, index, bigserial, bigint, primaryKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -1825,6 +1825,30 @@ export const zainaAuditLogs = pgTable(
 );
 export type ZainaAuditLog = typeof zainaAuditLogs.$inferSelect;
 export type InsertZainaAuditLog = typeof zainaAuditLogs.$inferInsert;
+
+// Counters for Zaina's rate limits (C6), shared by every server instance and
+// kept across restarts. One row per limit and time window.
+export const zainaRateLimits = pgTable(
+  "zaina_rate_limits",
+  {
+    key: varchar("key").notNull(),
+    windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+    count: integer("count").notNull().default(0),
+  },
+  (table) => [
+    primaryKey({ columns: [table.key, table.windowStart] }),
+    index("idx_zaina_rate_limits_window").on(table.windowStart),
+  ],
+);
+
+// Zaina's model use per Kenya day (C6), checked against the daily budget.
+export const zainaUsageDaily = pgTable("zaina_usage_daily", {
+  day: varchar("day").primaryKey(),
+  inputTokens: bigint("input_tokens", { mode: "number" }).notNull().default(0),
+  outputTokens: bigint("output_tokens", { mode: "number" }).notNull().default(0),
+  turns: integer("turns").notNull().default(0),
+  budgetAlertSentAt: timestamp("budget_alert_sent_at", { withTimezone: true }),
+});
 
 export const customOffers = pgTable(
   "custom_offers",
