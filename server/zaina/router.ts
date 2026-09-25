@@ -250,10 +250,31 @@ DINE
   Explain that the team confirms the reservation; do not claim it is booked.
 
 CUSTOM REQUESTS AND VERIFICATION
-• If a service is not listed, create a custom offer after collecting the
-  customer's name, email, phone if available, dates, location, and a concise
-  request brief. Mention the small request fee once: it is credited in full
-  against the final quotation if they proceed.
+• Help first; the request fee is never the goal. When nothing listed fits
+  exactly or within budget, first show the one or two closest listed options
+  with their real prices, then offer to have the team find something that fits.
+• Before opening a custom request, collect what the team needs in one
+  friendly message, and never re-ask what the customer already told you:
+  – stay: check-in and check-out dates, guests, area, budget (per night or in
+    total), must-haves such as bedrooms, pool or beach access;
+  – transport: date and time, passengers, pickup and drop-off, one-way or
+    return, budget;
+  – experience or trip: dates, people, places or interests, budget;
+  – dining: date and time, people, where, cuisine or dietary needs, budget;
+  – event: date, guests, place, the occasion, budget;
+  – anything else: what exactly, when and where, budget.
+  A budget is optional: ask once, and if they'd rather not say, go ahead. If
+  they have no dates yet, help them choose, or note their interest with
+  create_lead — don't open a paid request without dates.
+• Then read back a one-line summary and mention the small request fee once,
+  credited in full if they go ahead. For example: "So that's a 2-bedroom in
+  Nyali, 12–15 Nov, 4 guests, around KSh 3,000 a night with a pool — shall I
+  send it to the team? There's a small request fee, credited in full if you
+  book." Create the request only after they agree.
+• Pass each detail as its own field (category, start_date, end_date, guests,
+  location, budget_amount, budget_currency, budget_basis, preferences). The
+  tool asks for anything still missing and quotes the fee in the customer's
+  own currency; give the fee exactly as fee_display says.
 • If the customer wants a third-party stay, hotel, car, tour, or service
   checked — something they found on Facebook, Jiji, Airbnb, or through
   another agent — ask for the listing link. If they don't have one (for
@@ -445,10 +466,10 @@ When a customer gives a budget, do not just find the cheapest thing.
 Ask what matters most: accommodation, experiences, transport, or overall
 cost. Then use compose_trip_package with the appropriate parameters.
 If nothing listed fits the budget — a package still over it after one
-adjustment, or no stay, car or chef at their price — don't stop there:
-offer a custom offer so the team can source something within it. Use tier
-"proposal" for a whole trip and "intake" for a single item, and pass
-budget_amount and budget_currency exactly as the customer said them.
+adjustment, or no stay, car or chef at their price — show the closest listed
+options with their prices, then offer a custom request so the team can source
+something within it (see CUSTOM REQUESTS AND VERIFICATION). Use tier
+"proposal" for a whole trip and "intake" for a single item.
 
 FAMILY TRIPS
 When children are mentioned, ask: ages, sleeping arrangements, pool or
@@ -619,8 +640,8 @@ Disclosing the fee:
    final booking if you go ahead."
 • Say it once, briefly, then move on.
 
-Then collect: what they want, travel dates, budget if they'll share,
-and a name plus phone or email.
+Then collect the details listed under CUSTOM REQUESTS AND VERIFICATION, and
+the customer's name and email.
 
   The request fee is paid through the saved My Bookings link. The team sends
   the final quotation after reviewing the request; do not invent or collect
@@ -929,39 +950,78 @@ const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
       {
         name: "create_custom_offer",
         description:
-          "Create a saved custom-offer request and payment link for something " +
-          "outside our listed inventory, or when nothing listed fits the customer's " +
-          "budget or exactly what they want. For external listing verification, use " +
-          "create_listing_verification_request instead. " +
-          "Before calling, mention that a small request fee applies and is credited " +
-          "in full against the final quotation if the customer proceeds. The exact " +
-          "fee is returned as fee_display — never quote it from memory.",
+          "Create a saved custom request and payment link for something outside our " +
+          "listed inventory, or when nothing listed fits the customer's budget or exactly " +
+          "what they want. Pass every detail the customer gave as its own field; the tool " +
+          "asks for anything the team still needs (for a stay: check-in and check-out " +
+          "dates, guests, area and budget). For external listing verification, use " +
+          "create_listing_verification_request instead. Call it only after the customer " +
+          "agreed to the summary and the small request fee, which is credited in full " +
+          "against the final quotation. The exact fee, in the customer's currency, is " +
+          "returned as fee_display — never quote it from memory.",
         parameters: {
           type: Type.OBJECT,
           properties: {
+            category: {
+              type: Type.STRING,
+              enum: ["stay", "transport", "experience", "dining", "event", "service", "other"],
+              description:
+                "stay = villa, apartment, hotel; transport = car hire, transfers; experience = tours, safaris, " +
+                "trips, itineraries; dining = private chef, restaurant; event = wedding, birthday, retreat; " +
+                "service = photographer or other services; other = anything else.",
+            },
             offer_type: {
               type: Type.STRING,
               description: "Short label: 'safari', 'photographer', 'bespoke_itinerary', 'restaurant_reservation', etc.",
             },
-            request_details: { type: Type.STRING },
+            request_details: {
+              type: Type.STRING,
+              description: "What the customer wants, in their words: the kind of place or service and anything else they said.",
+            },
+            start_date: { type: Type.STRING, description: "YYYY-MM-DD: check-in, pickup, activity or event date." },
+            end_date: { type: Type.STRING, description: "YYYY-MM-DD: check-out or return date, or the last day." },
+            time: { type: Type.STRING, description: "HH:MM (24-hour), if the customer gave a time." },
+            guests: { type: Type.NUMBER, description: "Number of people: guests, passengers or party size." },
+            location: { type: Type.STRING, description: "Area or place, e.g. Nyali or Diani; for transport, pickup and drop-off." },
+            preferences: {
+              type: Type.STRING,
+              description: "Must-haves and nice-to-haves: bedrooms, pool, beach access, dietary needs, style.",
+            },
             tier: {
               type: Type.STRING,
               enum: ["intake", "proposal"],
-              description: "Which tier applies. Default to intake if unsure.",
+              description: "proposal for a whole trip or itinerary; intake for everything else. Default to intake if unsure.",
             },
-            customer_name: { type: Type.STRING },
-            customer_email: { type: Type.STRING },
-            customer_phone: { type: Type.STRING },
+            customer_name: {
+              type: Type.STRING,
+              description: "The customer's name exactly as they typed it. Leave it out if they haven't given it — the tool asks for it.",
+            },
+            customer_email: {
+              type: Type.STRING,
+              description: "The customer's email exactly as they typed it. Leave it out if they haven't given it — never make one up.",
+            },
+            customer_phone: { type: Type.STRING, description: "The customer's phone number, only if they gave it." },
             listing_url: { type: Type.STRING, description: "Full https:// link for a third-party listing being verified." },
             budget_amount: { type: Type.NUMBER, description: "The customer's budget exactly as they stated it; always pass it when they gave one. Never convert it yourself." },
             budget_currency: {
               type: Type.STRING,
               enum: ["USD", "KES"],
-              description: "Required whenever budget_amount is given: the currency the customer used.",
+              description: "Required whenever budget_amount is given: the currency the customer used. The fee is quoted in it.",
             },
-            travel_dates: { type: Type.STRING },
+            budget_basis: {
+              type: Type.STRING,
+              enum: ["total", "per_night", "per_day", "per_person"],
+              description: "What the budget covers, as the customer said it.",
+            },
+            travel_dates: {
+              type: Type.STRING,
+              description: "Only when the customer's dates are flexible: how they described them, e.g. 'flexible, mid-December'.",
+            },
           },
-          required: ["offer_type", "request_details", "tier", "customer_name", "customer_email"],
+          // Contact details and the other details are checked by the server
+          // against what the customer wrote and what the team needs; requiring
+          // them here pushed the model to invent them.
+          required: ["category", "offer_type", "request_details", "tier"],
         },
       },
       {

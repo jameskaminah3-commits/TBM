@@ -41,6 +41,16 @@ import { describeInputAmount, toUsdAmount } from "./money-input";
 import { getPublicSiteUrl } from "./reply-policy";
 import { describeListingSource, MIN_LISTING_DETAILS_LENGTH, normalizeListingLink } from "./listing-verification";
 import { phoneNumbersWritten, resolveAgentContact, resolveCustomerContact, sharesPhoneNumber, textArg } from "./tool-args";
+import {
+  budgetBasisArg,
+  checkCustomRequestDetails,
+  customRequestCategory,
+  describeCustomRequest,
+  guestsArg,
+  isoDateArg,
+  timeArg,
+  type RequestDetail,
+} from "./custom-offer-intake";
 import { getPublicListingPath } from "@shared/seo";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -2311,6 +2321,14 @@ export async function createServiceBooking(
 // CUSTOM OFFERS
 // ═══════════════════════════════════════════════════════════════════
 
+/** The request fee for each kind of custom request, in USD. */
+const CUSTOM_OFFER_FEES_USD = { intake: 5, proposal: 15 } as const;
+
+/** My Bookings, opened on the request, in the currency the customer was quoted. */
+function customOfferPaymentLink(bookingId: string, currency?: "USD" | "KES"): string {
+  return `${appBaseUrl()}/bookings?bookingId=${bookingId}${currency ? `&currency=${currency}` : ""}`;
+}
+
 async function createCustomOfferBooking(args: {
   offerId: string;
   feeUsd: number;
@@ -2318,8 +2336,17 @@ async function createCustomOfferBooking(args: {
   customerEmail: string;
   customerPhone?: string;
   requestDetails: string;
+  /** Dates as the customer described them; used as the booking's dates only when written YYYY-MM-DD. */
   travelDates?: string;
+  /** The request's own dates, guests, place and time, when the customer gave them. */
+  checkIn?: string | null;
+  checkOut?: string | null;
+  guests?: number | null;
+  serviceLocation?: string | null;
+  serviceStartTime?: string | null;
   budgetUsd?: number;
+  /** The currency the customer was quoted in; the payment page opens in it. */
+  currency?: "USD" | "KES";
   idempotencyKey: string;
   sessionId: string;
   serviceMode?: string;
@@ -2331,23 +2358,25 @@ async function createCustomOfferBooking(args: {
   executor?: any;
 }) {
   const now = new Date().toISOString();
+  const checkIn = args.checkIn
+    ?? (args.travelDates && isValidIsoDate(args.travelDates) ? args.travelDates : todayInKenya());
   const booking = await storage.createBooking({
     userId: null,
     accommodationId: null,
     guestName: args.customerName,
     guestEmail: args.customerEmail,
     guestPhone: args.customerPhone ?? null,
-    checkIn: args.travelDates || now.slice(0, 10),
-    checkOut: args.travelDates || now.slice(0, 10),
-    guests: 1,
+    checkIn,
+    checkOut: args.checkOut ?? checkIn,
+    guests: args.guests ?? 1,
     selectedServices: [],
     serviceMode: args.serviceMode ?? "experience-custom-offer",
     serviceHours: null,
-    serviceLocation: null,
+    serviceLocation: args.serviceLocation || null,
     servicePickupLocation: null,
     serviceReturnLocation: null,
     serviceZone: null,
-    serviceStartTime: null,
+    serviceStartTime: args.serviceStartTime ?? null,
     serviceEndTime: null,
     serviceBudgetAmount: args.budgetUsd ? Math.round(args.budgetUsd) : null,
     serviceLaundryWeightKg: null,
@@ -2402,7 +2431,7 @@ async function createCustomOfferBooking(args: {
     idempotencyKey: args.idempotencyKey,
   } as any, args.executor ?? db);
 
-  const paymentLink = `${appBaseUrl()}/bookings?bookingId=${booking.id}`;
+  const paymentLink = customOfferPaymentLink(booking.id, args.currency);
   if (args.notifyAdmin !== false && !args.executor) {
     queueCustomOfferBookingNotification({ ...args, bookingId: booking.id, paymentLink });
   }
@@ -2414,6 +2443,8 @@ function queueCustomOfferBookingNotification(args: {
   bookingId: string;
   paymentLink: string;
   feeUsd: number;
+  /** The currency the customer was quoted in. */
+  currency?: "USD" | "KES";
   customerName: string;
   customerEmail: string;
   customerPhone?: string;
@@ -2430,7 +2461,7 @@ function queueCustomOfferBookingNotification(args: {
       customerPhone: args.customerPhone ?? "",
       kind: "service",
       summary: args.notificationSummary ?? `Custom ${args.requestDetails.slice(0, 100)}`,
-      totalDisplay: await formatPrice(args.feeUsd, args.sessionId),
+      totalDisplay: await formatPrice(args.feeUsd, args.sessionId, args.currency),
       paymentLink: args.paymentLink,
       sessionId: args.sessionId,
     }))(),
@@ -2578,6 +2609,7 @@ export async function createListingVerificationRequest(
     `Verification scope: ${verificationScope}`,
     agentContactNote ? `Agent/host contact: ${agentContactNote}` : null,
     listingDetails ? `Customer-provided listing details: ${listingDetails}` : null,
+    travelDates ? `Travel dates: ${travelDates}` : null,
   ].filter(Boolean).join("\n");
   const now = new Date().toISOString();
   const offerValues = {
@@ -2694,20 +2726,57 @@ export async function createListingVerificationRequest(
   };
 }
 
+/** Details Zaina already asked this customer for while opening a custom request. */
+async function customRequestDetailsAskedBefore(sessionId: string): Promise<RequestDetail[]> {
+  const rows = await db
+    .select({ response: zainaAuditLogs.toolResponse })
+    .from(zainaAuditLogs)
+    .where(and(
+      eq(zainaAuditLogs.sessionId, sessionId),
+      eq(zainaAuditLogs.toolName, "create_custom_offer"),
+      sql`${zainaAuditLogs.toolResponse}->>'error' = 'request_details_missing'`,
+    ));
+  return rows.flatMap((row) => {
+    const missing = (row.response as { missing_details?: unknown } | null)?.missing_details;
+    return Array.isArray(missing) ? missing.filter((detail): detail is RequestDetail => typeof detail === "string") : [];
+  });
+}
+
+function askForCustomRequestContact(missing: Array<"name" | "email">): string {
+  if (missing.length === 2) return "Last thing before I send this to the team: may I have your full name and email address? We'll send your quote there.";
+  return missing[0] === "email"
+    ? "May I have your email address? The team will send your quote there."
+    : "May I have your full name for the request?";
+}
+
+/** A number the customer gave, sent as a number or as digits ("3,000"). */
+function amountArg(value: unknown): unknown {
+  return typeof value === "string" && /^\s*\d[\d,]*(\.\d+)?\s*$/.test(value) ? Number(value.replace(/,/g, "")) : value;
+}
+
 export async function createCustomOffer(
+  // Read through textArg and the intake helpers: the model can send any JSON type.
   args: {
-    offer_type: string;
-    request_details: string;
-    tier?: "intake" | "proposal" | "verification";
-    customer_name?: string;
-    customer_email?: string;
-    customer_phone?: string;
-    listing_url?: string;
-    budget_amount?: number;
-    budget_currency?: string;
+    category?: unknown;
+    offer_type?: unknown;
+    request_details?: unknown;
+    tier?: unknown;
+    start_date?: unknown;
+    end_date?: unknown;
+    time?: unknown;
+    guests?: unknown;
+    location?: unknown;
+    preferences?: unknown;
+    customer_name?: unknown;
+    customer_email?: unknown;
+    customer_phone?: unknown;
+    listing_url?: unknown;
+    budget_amount?: unknown;
+    budget_currency?: unknown;
+    budget_basis?: unknown;
     /** Legacy: a budget the model already converted to USD. */
-    budget_usd?: number;
-    travel_dates?: string;
+    budget_usd?: unknown;
+    travel_dates?: unknown;
     idempotency_key: string;
   },
   sessionId: string,
@@ -2715,101 +2784,135 @@ export async function createCustomOffer(
   if (!hasUsableIdempotencyKey(args?.idempotency_key)) {
     return { ok: false, error: "idempotency_key_required", hint: "Generate a fresh UUID v4 before retrying." };
   }
-  if (typeof args.offer_type !== "string" || !args.offer_type.trim()
-    || typeof args.request_details !== "string" || args.request_details.trim().length < 10) {
+
+  // A retry of a request that already went through gets the same booking and
+  // payment link back. Found by its booking: before the offer and its booking
+  // were written together, a failure part-way could leave an offer with no booking.
+  const [existingBooking] = await db
+    .select({ id: bookings.id })
+    .from(bookings)
+    .where(eq(bookings.idempotencyKey, args.idempotency_key))
+    .limit(1);
+  if (existingBooking) {
+    const [existingOffer] = await db
+      .select({ feeTier: customOffers.feeTier, feeUsd: customOffers.feeUsd, displayCurrency: customOffers.displayCurrency })
+      .from(customOffers)
+      .where(eq(customOffers.id, args.idempotency_key))
+      .limit(1);
+    const currency = existingOffer?.displayCurrency === "KES" || existingOffer?.displayCurrency === "USD"
+      ? existingOffer.displayCurrency
+      : await getSessionCurrency(sessionId);
+    return {
+      ok: true,
+      offer_id: args.idempotency_key,
+      idempotent_replay: true,
+      tier: existingOffer?.feeTier ?? "intake",
+      fee_display: await formatPrice(existingOffer?.feeUsd ?? CUSTOM_OFFER_FEES_USD.intake, sessionId, currency),
+      booking_id: existingBooking.id,
+      payment_link: customOfferPaymentLink(existingBooking.id, currency),
+    };
+  }
+
+  const offerType = textArg(args.offer_type);
+  const requestText = textArg(args.request_details);
+  if (!offerType || requestText.length < 10) {
     return {
       ok: false,
       error: "custom_offer_details_required",
       hint: "Collect a clear description of what the customer wants before creating the offer.",
     };
   }
-  if (typeof args.customer_name !== "string" || args.customer_name.trim().length < 2
-    || typeof args.customer_email !== "string"
-    || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(args.customer_email)) {
-    return {
-      ok: false,
-      error: "customer_contact_required",
-      tell_customer: "Before I place this custom request, may I have your full name and email address?",
-    };
-  }
-  if (args.listing_url && !/^https?:\/\/\S+$/i.test(args.listing_url.trim())) {
+  const listingUrl = textArg(args.listing_url);
+  if (listingUrl && !/^https?:\/\/\S+$/i.test(listingUrl)) {
     return { ok: false, error: "invalid_listing_url", tell_customer: "Please send the full listing link beginning with https:// so I can attach it to the request." };
   }
-
-  const tier = args.tier || "intake";
-  if (tier === "verification") {
+  const requestedTier = textArg(args.tier).toLowerCase();
+  if (requestedTier === "verification") {
     return {
       ok: false,
       error: "use_listing_verification_tool",
       hint: "Use create_listing_verification_request for an external listing so payment, dispatch, reporting, and fee credit are tracked correctly.",
     };
   }
-  let budgetUsd: number | null = null;
-  let budgetNote: string | null = null;
-  if (args.budget_amount !== undefined) {
-    const budget = toUsdAmount(args.budget_amount, args.budget_currency, (await getUsdToKesRate()).usdToKes);
-    if (!budget.ok) {
+  const tier: keyof typeof CUSTOM_OFFER_FEES_USD = requestedTier === "proposal" ? "proposal" : "intake";
+
+  let budget: { usd: number; amount: number; currency: "USD" | "KES" } | null = null;
+  if (args.budget_amount !== undefined && args.budget_amount !== null && args.budget_amount !== "") {
+    const parsed = toUsdAmount(amountArg(args.budget_amount), args.budget_currency, (await getUsdToKesRate()).usdToKes);
+    if (!parsed.ok) {
       return {
         ok: false,
-        error: budget.error === "amount_invalid" ? "budget_invalid" : "budget_currency_required",
+        error: parsed.error === "amount_invalid" ? "budget_invalid" : "budget_currency_required",
         hint: "Pass budget_amount exactly as the customer stated it, with budget_currency set to USD or KES, or leave both out. Never convert the budget yourself.",
       };
     }
-    budgetUsd = budget.usd;
-    budgetNote = budget.currency === "USD"
-      ? describeInputAmount(budget.amount, "USD")
-      : `${describeInputAmount(budget.amount, "KES")} (≈ $${budget.usd})`;
+    budget = { usd: parsed.usd, amount: parsed.amount, currency: parsed.currency };
   } else if (typeof args.budget_usd === "number" && Number.isFinite(args.budget_usd) && args.budget_usd > 0) {
-    budgetUsd = Math.round(args.budget_usd);
-    budgetNote = `$${budgetUsd}`;
+    budget = { usd: Math.round(args.budget_usd), amount: Math.round(args.budget_usd), currency: "USD" };
   }
 
-  // Listing verification has its own configured fee (see createListingVerificationRequest).
-  const tierFees: Record<string, number> = { intake: 5, proposal: 15 };
-  const feeUsd = tierFees[tier] ?? 5;
-  const currency = await getSessionCurrency(sessionId);
-  const requestDetails = [
-    args.request_details.trim(),
-    args.listing_url?.trim() ? `Listing URL: ${args.listing_url.trim()}` : null,
-  ].filter(Boolean).join("\n\n");
-
-  // A retry of a request that already went through gets the same booking and
-  // payment link back. Found by its booking: before the writes below were
-  // grouped, a failure part-way could leave an offer with no booking.
-  const [existingBooking] = await db
-    .select({ id: bookings.id })
-    .from(bookings)
-    .where(eq(bookings.idempotencyKey, args.idempotency_key))
-    .limit(1);
-
-  if (existingBooking) {
-    const [existingOffer] = await db
-      .select({ feeTier: customOffers.feeTier, feeUsd: customOffers.feeUsd })
-      .from(customOffers)
-      .where(eq(customOffers.id, args.idempotency_key))
-      .limit(1);
-    return {
-      ok: true,
-      offer_id: args.idempotency_key,
-      idempotent_replay: true,
-      tier: existingOffer?.feeTier ?? tier,
-      fee_display: await formatPrice(existingOffer?.feeUsd ?? feeUsd, sessionId),
-      booking_id: existingBooking.id,
-      payment_link: `${appBaseUrl()}/bookings?bookingId=${existingBooking.id}`,
-    };
+  // What the team needs for this kind of request. Anything missing goes back
+  // to the customer as one question; a budget is asked for once.
+  const category = customRequestCategory(args.category, `${offerType} ${requestText}`);
+  const startDate = isoDateArg(args.start_date);
+  const endDate = isoDateArg(args.end_date);
+  const guests = guestsArg(args.guests);
+  const location = textArg(args.location);
+  const budgetBasis = budgetBasisArg(args.budget_basis);
+  const budgetStated = budget ? describeInputAmount(budget.amount, budget.currency) : null;
+  const check = checkCustomRequestDetails(
+    { category, startDate, endDate, guests, location, budgetLabel: budgetStated, budgetBasis },
+    { today: todayInKenya(), alreadyAsked: await customRequestDetailsAskedBefore(sessionId) },
+  );
+  if (!check.ok) {
+    return { ok: false, error: "request_details_missing", missing_details: check.missing, tell_customer: check.question };
   }
+
+  // Only contact details the customer actually gave: the quote and payment
+  // link go to this email.
+  const contact = resolveCustomerContact(
+    { name: args.customer_name, email: args.customer_email, phone: args.customer_phone },
+    await getCustomerMessages(sessionId),
+  );
+  if (!contact.ok) {
+    return { ok: false, error: "customer_contact_required", tell_customer: askForCustomRequestContact(contact.missing) };
+  }
+
+  const feeUsd = CUSTOM_OFFER_FEES_USD[tier];
+  // The fee is quoted in the currency the customer spoke in: their budget's,
+  // or the chat's when they gave no budget.
+  const currency = budget?.currency ?? await getSessionCurrency(sessionId);
+  const feeDisplay = await formatPrice(feeUsd, sessionId, currency);
+  const flexibleDates = textArg(args.travel_dates);
+  const time = timeArg(args.time);
+  const requestDetails = describeCustomRequest({
+    category,
+    startDate,
+    endDate,
+    time,
+    guests,
+    location,
+    budget: budget && budgetStated
+      ? { stated: budgetStated, converted: budget.currency === "KES" ? `≈ $${budget.usd}` : null }
+      : null,
+    budgetBasis,
+    flexibleDates,
+    preferences: textArg(args.preferences),
+    requestDetails: requestText,
+    listingUrl,
+  });
 
   const now = new Date().toISOString();
   const offerValues = {
     id: args.idempotency_key,
     sessionId,
-    customerName: args.customer_name ?? null,
-    customerEmail: args.customer_email ?? null,
-    customerPhone: args.customer_phone ?? null,
-    offerType: args.offer_type,
+    customerName: contact.name,
+    customerEmail: contact.email,
+    customerPhone: contact.phone,
+    offerType,
     requestDetails,
-    budgetUsd,
-    travelDates: args.travel_dates ?? null,
+    budgetUsd: budget?.usd ?? null,
+    travelDates: startDate ? [startDate, endDate].filter(Boolean).join(" to ") : flexibleDates || null,
     status: "new",
     feeTier: tier,
     feeUsd,
@@ -2817,8 +2920,6 @@ export async function createCustomOffer(
     createdAt: now,
     updatedAt: now,
   };
-  const customerName = args.customer_name.trim();
-  const customerEmail = args.customer_email.trim().toLowerCase();
 
   // The offer and its booking are written together, so a failure part-way
   // leaves nothing behind for a retry to trip over.
@@ -2832,12 +2933,17 @@ export async function createCustomOffer(
     const created = await createCustomOfferBooking({
       offerId: row.id,
       feeUsd,
-      customerName,
-      customerEmail,
-      customerPhone: args.customer_phone,
+      customerName: contact.name,
+      customerEmail: contact.email,
+      customerPhone: contact.phone ?? undefined,
       requestDetails,
-      travelDates: args.travel_dates,
-      budgetUsd: budgetUsd ?? undefined,
+      checkIn: startDate,
+      checkOut: endDate ?? startDate,
+      guests,
+      serviceLocation: location,
+      serviceStartTime: time,
+      budgetUsd: budget?.usd,
+      currency,
       idempotencyKey: args.idempotency_key,
       sessionId,
       executor: tx,
@@ -2852,27 +2958,26 @@ export async function createCustomOffer(
     bookingId: booking.id,
     paymentLink,
     feeUsd,
-    customerName,
-    customerEmail,
-    customerPhone: args.customer_phone,
+    currency,
+    customerName: contact.name,
+    customerEmail: contact.email,
+    customerPhone: contact.phone ?? undefined,
     requestDetails,
     sessionId,
   });
   queueNotificationTask(`zaina custom-offer alert for ${row.id}`, sendOpsAlert({
     kind: "custom-offer",
     sessionId,
-    summary: `New ${tier} request — ${args.offer_type}`,
-    customerName: args.customer_name ?? null,
-    customerContact: args.customer_email ?? args.customer_phone ?? null,
+    summary: `New ${tier} request — ${offerType}`,
+    customerName: contact.name,
+    customerContact: contact.email,
     details: {
       "Offer ID": row.id,
       "Booking ID": booking.id,
-      "Payment link": paymentLink,
       Tier: tier,
-      Type: args.offer_type,
-      "Travel dates": args.travel_dates ?? "not provided",
-      Budget: budgetNote ?? "not provided",
-      Details: requestDetails,
+      Request: requestDetails,
+      Fee: feeDisplay,
+      "Payment link": paymentLink,
     },
   }));
 
@@ -2880,12 +2985,14 @@ export async function createCustomOffer(
     ok: true,
     offer_id: row.id,
     tier,
+    request_summary: requestDetails,
     fee_usd: feeUsd,
-    fee_display: await formatPrice(feeUsd, sessionId),
+    fee_display: feeDisplay,
+    fee_currency: currency,
     fee_creditable: true,
     booking_id: booking.id,
     payment_link: paymentLink,
-    listing_url: args.listing_url?.trim() || undefined,
+    listing_url: listingUrl || undefined,
     disclosure:
       "A small creditable fee applies. It will be fully deducted from your final booking if you accept the proposal.",
     turnaround_hours: 24,
