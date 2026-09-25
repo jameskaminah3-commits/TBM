@@ -23,6 +23,7 @@ import { CheckoutPaymentPreview, CheckoutPaymentSheet, getPaymentChoiceForProvid
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import {
+  bookingPaymentHoldMinutes,
   getBookingAmountPaid,
   getBookingCheckoutAmount,
   getBookingOutstandingAmount,
@@ -33,10 +34,29 @@ import {
 } from "@shared/booking-payments";
 import { customServiceRequestFeeUsd } from "@shared/custom-service";
 import type { Booking, BookingWithMarketing, Stay, Car as CarType, Cook, Errand, Experience, Review, CustomerPaymentMethod, ListingVerificationTask } from "@shared/schema";
+import { CONTACT_PHONE, CONTACT_PHONE_DISPLAY, WHATSAPP_URL } from "@/lib/contact-info";
 
 type ReviewTarget = { targetType: "stay" | "car" | "cook" | "errand" | "experience"; targetId: string; label: string };
 
 const TEMP_MPESA_SEND_MONEY_NUMBER = "0718475264";
+const PAYMENT_SUPPORT_LINE = `Trouble paying? Our support team can help — WhatsApp or call ${CONTACT_PHONE_DISPLAY}.`;
+// Long enough to read a payment message that explains what happens next.
+const PAYMENT_TOAST_DURATION_MS = 15000;
+
+/** A payment error, with the support line added unless the server already gave it. */
+const withPaymentSupportLine = (message: string) =>
+  message.includes(CONTACT_PHONE_DISPLAY) ? message : `${message} ${PAYMENT_SUPPORT_LINE}`;
+
+/** When the guest's dates are held for them (checkout open or M-Pesa being checked), if they are. */
+const getPaymentHoldUntil = (booking: Pick<Booking, "paymentStatus" | "paymentHoldExpiresAt">) => {
+  if (!booking.paymentHoldExpiresAt || !["pending", "processing"].includes(booking.paymentStatus ?? "")) {
+    return null;
+  }
+  const holdUntil = new Date(booking.paymentHoldExpiresAt);
+  return holdUntil.getTime() > Date.now() ? holdUntil : null;
+};
+
+const formatHoldTime = (date: Date) => date.toLocaleTimeString("en-KE", { hour: "numeric", minute: "2-digit", hour12: true });
 
 const getBookingPromoLabel = (booking: BookingWithMarketing) =>
   booking.marketingAttribution?.promoName
@@ -508,6 +528,7 @@ export default function Bookings() {
   const [retryCheckoutBooking, setRetryCheckoutBooking] = useState<Booking | null>(null);
   const [retryPaymentMethod, setRetryPaymentMethod] = useState<CustomerPaymentMethod>("card");
   const [manualMpesaBookingId, setManualMpesaBookingId] = useState<string | null>(null);
+  const [manualMpesaHoldUntil, setManualMpesaHoldUntil] = useState<Date | null>(null);
   const [manualMpesaCode, setManualMpesaCode] = useState("");
   const [manualMpesaSenderPhone, setManualMpesaSenderPhone] = useState("");
   const [manualMpesaNote, setManualMpesaNote] = useState("");
@@ -558,11 +579,42 @@ export default function Bookings() {
       });
       queryClient.invalidateQueries({ queryKey: ["/api/bookings"] });
     },
-    onError: (error: Error) => toast({
-      title: "Could not start payment",
-      description: error.message.replace(/^\d+:\s*/, ""),
-      variant: "destructive",
-    }),
+    onError: (error: Error) => {
+      setRetryCheckoutBooking(null);
+      toast({
+        title: "Could not start payment",
+        description: withPaymentSupportLine(error.message.replace(/^\d+:\s*/, "")),
+        variant: "destructive",
+        duration: PAYMENT_TOAST_DURATION_MS,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/bookings"] });
+    },
+  });
+
+  // Opening the M-Pesa send-money instructions holds the dates first, so
+  // nobody sends money for dates another guest is already paying for.
+  const holdForManualMpesaMutation = useMutation({
+    mutationFn: async (booking: Booking) => {
+      const response = await apiRequest("POST", `/api/bookings/${booking.id}/payments/hold`);
+      return { booking, ...(await response.json() as { holdExpiresAt: string | null }) };
+    },
+    onSuccess: ({ booking, holdExpiresAt }) => {
+      setManualMpesaBookingId(booking.id);
+      setManualMpesaHoldUntil(holdExpiresAt ? new Date(holdExpiresAt) : null);
+      setManualMpesaCode("");
+      setManualMpesaSenderPhone(user?.phone ?? "");
+      setManualMpesaNote("");
+      queryClient.invalidateQueries({ queryKey: ["/api/bookings"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Could not start the M-Pesa payment",
+        description: withPaymentSupportLine(error.message.replace(/^\d+:\s*/, "")),
+        variant: "destructive",
+        duration: PAYMENT_TOAST_DURATION_MS,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/bookings"] });
+    },
   });
 
   const manualMpesaMutation = useMutation({
@@ -584,18 +636,29 @@ export default function Bookings() {
       });
       return {
         bookingId,
-        booking: await response.json() as Booking,
+        booking: await response.json() as Booking & { datesTaken?: boolean },
       };
     },
-    onSuccess: ({ bookingId }) => {
+    onSuccess: ({ bookingId, booking }) => {
       setManualMpesaBookingId(null);
+      setManualMpesaHoldUntil(null);
       setManualMpesaCode("");
       setManualMpesaSenderPhone("");
       setManualMpesaNote("");
-      toast({
-        title: "M-Pesa payment submitted",
-        description: "We have received the transaction code and will confirm this payment shortly.",
-      });
+      toast(booking.datesTaken
+        ? {
+          title: "We've recorded your M-Pesa code",
+          description: "But another guest secured these dates moments before your payment. Our support team will contact you "
+            + `to move your booking or refund you in full — or reach us on WhatsApp or call ${CONTACT_PHONE_DISPLAY}.`,
+          variant: "destructive",
+          duration: PAYMENT_TOAST_DURATION_MS,
+        }
+        : {
+          title: "M-Pesa payment submitted",
+          description: getPaymentHoldUntil(booking)
+            ? "We have received the transaction code and will confirm this payment shortly. Your dates are held for you while we check it."
+            : "We have received the transaction code and will confirm this payment shortly.",
+        });
       queryClient.invalidateQueries({ queryKey: ["/api/bookings"] });
       queryClient.invalidateQueries({ queryKey: ["/api/bookings", bookingId, "messages"] });
       queryClient.invalidateQueries({ queryKey: ["/api/inbox"] });
@@ -620,10 +683,7 @@ export default function Bookings() {
   };
 
   const openManualMpesaForm = (booking: Booking) => {
-    setManualMpesaBookingId(booking.id);
-    setManualMpesaCode("");
-    setManualMpesaSenderPhone(user?.phone ?? "");
-    setManualMpesaNote("");
+    holdForManualMpesaMutation.mutate(booking);
   };
 
   const downloadReceipt = (booking: BookingWithMarketing) => {
@@ -685,12 +745,28 @@ export default function Bookings() {
 
     if (paymentResult === "success") {
       toast({ title: "Payment confirmed", description: "Your booking payment was received and the booking has been updated." });
+    } else if (paymentResult === "dates-taken") {
+      toast({
+        title: "Payment received — but these dates were just taken",
+        description: "Another guest secured these dates moments before your payment went through. Our support team will contact "
+          + `you to move your booking or refund you in full. You can also reach us on WhatsApp or call ${CONTACT_PHONE_DISPLAY}.`,
+        variant: "destructive",
+        duration: PAYMENT_TOAST_DURATION_MS,
+      });
     } else if (paymentResult === "pending") {
       toast({ title: "Payment still processing", description: "We are still waiting for the gateway to confirm this payment." });
     } else if (paymentResult === "cancelled") {
-      toast({ title: "Checkout cancelled", description: "You can restart payment from this booking any time." });
+      toast({
+        title: "Checkout cancelled",
+        description: "You can restart payment from this booking any time. Your dates are reserved only once you've paid.",
+      });
     } else {
-      toast({ title: "Payment not completed", description: "Retry with Paystack or Pesapal when you are ready.", variant: "destructive" });
+      toast({
+        title: "Payment not completed",
+        description: `Your payment didn't go through. You can try again from this booking. ${PAYMENT_SUPPORT_LINE}`,
+        variant: "destructive",
+        duration: PAYMENT_TOAST_DURATION_MS,
+      });
     }
 
     params.delete("payment");
@@ -868,6 +944,20 @@ export default function Bookings() {
         ? "Accommodation only"
         : "Direct service booking";
     const manualMpesaPending = booking.paymentProvider === "mpesa-manual" && booking.paymentStatus === "processing";
+    // Stays, cars, and chefs are reserved for their dates once paid for; a
+    // chef's custom-menu request fee reserves nothing.
+    const reservesDatesOnPayment = amountPaid === 0
+      && (Boolean(booking.accommodationId)
+        || booking.selectedServices.some((serviceId) => cars?.some((car) => car.id === serviceId) || cooks?.some((cook) => cook.id === serviceId)))
+      && !(booking.serviceMode === "cook-custom-menu" && booking.customMenuClientDecision !== "accepted");
+    const paymentHoldUntil = reservesDatesOnPayment ? getPaymentHoldUntil(booking) : null;
+    const paymentHoldNote = !reservesDatesOnPayment
+      ? null
+      : manualMpesaPending && paymentHoldUntil
+        ? "Your dates are held for you while we confirm your M-Pesa payment."
+        : paymentHoldUntil
+          ? `Your dates are held for you until ${formatHoldTime(paymentHoldUntil)} while you complete the payment.`
+          : `Your dates are reserved once you pay${hasDepositRule ? " the deposit" : ""}. When you open checkout, we hold them for you for ${bookingPaymentHoldMinutes} minutes.`;
     const renderHero = (className?: string) =>
       stay ? (
         <ListingMedia
@@ -1252,6 +1342,12 @@ export default function Bookings() {
                               : "This booking moves forward on full payment. Open checkout whenever you're ready."
                             : "This booking is saved. Open payment whenever you're ready."}
                 </div>
+                {paymentHoldNote ? (
+                  <div className="mt-2 flex items-start gap-2 text-sm leading-6 text-amber-900 dark:text-amber-200">
+                    <Clock3 className="mt-1 h-4 w-4 shrink-0" />
+                    <span>{paymentHoldNote}</span>
+                  </div>
+                ) : null}
                 <CheckoutPaymentPreview
                   className="mt-4 bg-white/90 shadow-none"
                   title={manualMpesaPending
@@ -1297,11 +1393,15 @@ export default function Bookings() {
                 <Button
                   variant="outline"
                   className="mt-3 w-full"
-                  disabled={manualMpesaMutation.isPending}
+                  disabled={manualMpesaMutation.isPending || holdForManualMpesaMutation.isPending}
                   onClick={() => manualMpesaBookingId === booking.id ? setManualMpesaBookingId(null) : openManualMpesaForm(booking)}
                 >
                   <Smartphone className="mr-2 h-4 w-4" />
-                  {manualMpesaBookingId === booking.id ? "Hide temporary M-Pesa" : "Temporary M-Pesa send money"}
+                  {manualMpesaBookingId === booking.id
+                    ? "Hide temporary M-Pesa"
+                    : holdForManualMpesaMutation.isPending && holdForManualMpesaMutation.variables?.id === booking.id
+                      ? "Checking your dates..."
+                      : "Temporary M-Pesa send money"}
                 </Button>
                 {manualMpesaBookingId === booking.id ? (
                   <div className="mt-4 rounded-[22px] border border-emerald-200 bg-emerald-50/80 p-4">
@@ -1309,6 +1409,11 @@ export default function Bookings() {
                     <div className="mt-2 text-sm leading-6 text-emerald-900">
                       Send <span className="font-semibold">{formatAmount(checkoutAmountDue)}</span> to <span className="font-semibold">{TEMP_MPESA_SEND_MONEY_NUMBER}</span>, then submit the M-Pesa code below for confirmation.
                     </div>
+                    {manualMpesaHoldUntil ? (
+                      <div className="mt-2 text-sm leading-6 text-emerald-900">
+                        We're holding your dates until <span className="font-semibold">{formatHoldTime(manualMpesaHoldUntil)}</span>. Send the money and submit the code before then.
+                      </div>
+                    ) : null}
                     <div className="mt-4 space-y-3">
                       <div className="space-y-2">
                         <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-800">M-Pesa code</div>
@@ -1363,6 +1468,12 @@ export default function Bookings() {
                     </div>
                   </div>
                 ) : null}
+                <div className="mt-4 text-sm leading-6 text-muted-foreground">
+                  Trouble paying? Our support team can help —{" "}
+                  <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="font-medium text-foreground underline underline-offset-2">WhatsApp</a>
+                  {" "}or call{" "}
+                  <a href={`tel:${CONTACT_PHONE}`} className="font-medium text-foreground underline underline-offset-2">{CONTACT_PHONE_DISPLAY}</a>.
+                </div>
               </div>
             ) : null}
             <div className="rounded-[24px] border border-border/60 bg-background/85 p-4 shadow-[0_16px_36px_-30px_rgba(15,23,42,0.3)]">

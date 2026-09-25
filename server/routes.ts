@@ -57,7 +57,7 @@ import {
 } from "@shared/schema";
 import { listUploads, saveBase64Upload } from "./media";
 import { db } from "./db";
-import { bookings, users, stays, cars, cooks, errands, experiences, listings, blogPosts, customOffers } from "@shared/schema";
+import { bookings, users, stays, cars, cooks, errands, experiences, listings, blogPosts, customOffers, stayReservations, carReservations, cookReservations } from "@shared/schema";
 import { calculateCookInclusiveTotal, calculateCookServiceTotal, getCookMinimumGuests } from "@shared/cook-pricing";
 import { customServiceRequestFeeUsd } from "@shared/custom-service";
 import { calculateHelpMamaPackagePrice, calculateHouseCleaningPackagePrice, getHouseCleaningBedroomCount, HELP_MAMA_HOURLY_MINIMUM_HOURS, getHelpMamaAgeBandId, getHelpMamaRateId, hasHelpMamaPricing, isHelpMamaHourlyRate } from "@shared/errand-pricing";
@@ -65,6 +65,7 @@ import {
   createHostedCheckoutSession,
   getApplicationBaseUrl,
   getBookingIdFromPaymentReference,
+  getPaymentHoldExpiresAt,
   getVerifiedPaymentCheckoutAmount,
   verifyPaystackPayment,
   verifyPaystackWebhookSignature,
@@ -74,6 +75,7 @@ import {
 import {
   queueNotificationTask,
   sendBookingCreatedNotificationEmails,
+  sendBookingDatesTakenEmails,
   sendBookingPaymentNotificationEmails,
   sendOpsAlertEmail,
   sendListingVerificationCompletedEmail,
@@ -82,16 +84,19 @@ import {
   buildBookingReceiptPdf,
   getReceiptDownloadFilename,
 } from "./booking-receipt";
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, gte, lte, ne, sql } from "drizzle-orm";
 import {
+  bookingPaymentHoldMinutes,
   calculateBookingDepositAmount,
   getBookingAmountPaid,
   getBookingCheckoutAmount,
   getBookingOutstandingAmount,
   hasLockedInBookingDeposit,
   isBookingFullyPaid,
+  manualMpesaReviewHoldHours,
   supportsBookingDeposit,
 } from "@shared/booking-payments";
+import { SUPPORT_PHONE_DISPLAY } from "@shared/support-contact";
 import { z } from "zod";
 import { sanitizeUserRecord } from "./user-sanitizer";
 import { registerZainaRoutes } from "./zaina/routes";
@@ -599,7 +604,238 @@ async function startHostedBookingPayment(
   };
 }
 
-async function applyVerifiedBookingPayment(bookingId: string, verifiedPayment: VerifiedHostedPayment) {
+// ─── Dates are reserved by payment ─────────────────────────────────────
+// Booking without paying reserves nothing. When a guest starts paying for a
+// stay, car, or chef, the dates are checked again and held for them while
+// they pay, so two guests can't pay for the same dates. A payment that still
+// lands on dates another guest has paid for is flagged to be moved or refunded.
+
+type BookingInventoryItem = {
+  kind: "stay" | "car" | "cook";
+  id: string;
+  label: string;
+  /** Advisory-lock key, the same one Zaina's booking tools use. */
+  lockKey: string;
+};
+
+/** Who else holds the dates: another booking (still paying, or paid), or a calendar block. */
+type DatesClaim = { bookingId: string | null; stillPaying: boolean };
+
+/** The stay, cars, and chefs a booking reserves (a stay's add-ons included). */
+async function getBookingInventoryItems(
+  booking: Pick<import("@shared/schema").Booking, "accommodationId" | "selectedServices">,
+): Promise<BookingInventoryItem[]> {
+  const items: BookingInventoryItem[] = [];
+  if (booking.accommodationId) {
+    const stay = await storage.getStay(booking.accommodationId);
+    items.push({ kind: "stay", id: booking.accommodationId, label: stay?.title ?? "This stay", lockKey: `stay:${booking.accommodationId}` });
+  }
+  for (const serviceId of Array.from(new Set(booking.selectedServices ?? []))) {
+    const car = await storage.getCar(serviceId);
+    if (car) {
+      items.push({ kind: "car", id: serviceId, label: car.model, lockKey: `service:${serviceId}` });
+      continue;
+    }
+    const cook = await storage.getCook(serviceId);
+    if (cook) {
+      items.push({ kind: "cook", id: serviceId, label: cook.title, lockKey: `service:${serviceId}` });
+    }
+  }
+  return items;
+}
+
+function getOccupiedDates(
+  booking: Pick<import("@shared/schema").Booking, "checkIn" | "checkOut" | "serviceMode">,
+  kind: BookingInventoryItem["kind"],
+) {
+  return {
+    start: booking.checkIn,
+    end: kind === "car" && booking.serviceMode === "car-chauffeur-hourly"
+      ? booking.checkIn
+      : toIsoDate(getOccupiedEndDate(booking.checkIn, booking.checkOut)),
+  };
+}
+
+/**
+ * Another booking that `counts` accepts — or a manual calendar block —
+ * holding the same stay, car, or chef on overlapping dates.
+ */
+async function findOtherClaimOnDates(
+  executor: any,
+  booking: import("@shared/schema").Booking,
+  item: BookingInventoryItem,
+  counts: (other: import("@shared/schema").Booking) => boolean,
+): Promise<DatesClaim | null> {
+  const mine = getOccupiedDates(booking, item.kind);
+  const candidates: import("@shared/schema").Booking[] = await executor
+    .select()
+    .from(bookings)
+    .where(and(
+      item.kind === "stay"
+        ? eq(bookings.accommodationId, item.id)
+        : sql`${bookings.selectedServices} @> ARRAY[${item.id}]::text[]`,
+      ne(bookings.id, booking.id),
+      ne(bookings.status, "cancelled"),
+      lte(bookings.checkIn, booking.checkOut),
+      gte(bookings.checkOut, booking.checkIn),
+    ));
+  const other = candidates.find((candidate) => {
+    const theirs = getOccupiedDates(candidate, item.kind);
+    return counts(candidate) && datesOverlapDateRange(mine.start, mine.end, theirs.start, theirs.end);
+  });
+  if (other) {
+    return { bookingId: other.id, stillPaying: !holdsDatesWithPayment(other) };
+  }
+
+  const blocks: Array<{ startDate: string; endDate: string }> = item.kind === "stay"
+    ? await executor.select().from(stayReservations)
+      .where(and(eq(stayReservations.stayId, item.id), eq(stayReservations.status, "blocked")))
+    : item.kind === "car"
+      ? await executor.select().from(carReservations)
+        .where(and(eq(carReservations.carId, item.id), eq(carReservations.status, "blocked")))
+      : await executor.select().from(cookReservations)
+        .where(and(eq(cookReservations.cookId, item.id), eq(cookReservations.status, "blocked")));
+  const blocked = blocks.some((block) =>
+    datesOverlapDateRange(mine.start, mine.end, block.startDate, toIsoDate(getOccupiedEndDate(block.startDate, block.endDate))));
+  return blocked ? { bookingId: null, stillPaying: false } : null;
+}
+
+// A booking that already holds its dates (a deposit or payment is in) is
+// paying its balance, and a chef's custom-menu request fee reserves nothing.
+function paymentReservesDates(booking: import("@shared/schema").Booking) {
+  if (getBookingAmountPaid(booking) > 0) {
+    return false;
+  }
+  return !(booking.serviceMode === "cook-custom-menu" && booking.customMenuClientDecision !== "accepted");
+}
+
+function buildDatesTakenMessage(item: BookingInventoryItem, claim: DatesClaim) {
+  const support = `contact our support team on WhatsApp or call ${SUPPORT_PHONE_DISPLAY}`;
+  if (claim.stillPaying) {
+    return `Sorry — another guest is paying for ${item.label} on these dates right now, so you haven't been charged. `
+      + `If their payment doesn't go through, the dates are free again within ${bookingPaymentHoldMinutes} minutes. `
+      + `You can also choose other dates, or ${support}.`;
+  }
+  const what = claim.bookingId
+    ? `${item.label} has just been booked by another guest for these dates`
+    : `${item.label} is no longer available for these dates`;
+  return `Sorry — ${what}, so you haven't been charged. Please choose other dates, or ${support} `
+    + "and we'll help you find an alternative.";
+}
+
+/** The stay, cars, and chefs whose dates this payment would reserve. */
+async function getItemsReservedByPayment(booking: import("@shared/schema").Booking) {
+  return paymentReservesDates(booking) ? await getBookingInventoryItems(booking) : [];
+}
+
+type TakenDates = { item: BookingInventoryItem; claim: DatesClaim };
+
+/**
+ * Checks the dates of `items` against other bookings that `counts` accepts
+ * and, if they're free, applies `updates` (which set the hold). Guests who
+ * start paying at the same moment are handled one at a time.
+ */
+async function holdDatesForPayment(
+  booking: import("@shared/schema").Booking,
+  items: BookingInventoryItem[],
+  counts: (other: import("@shared/schema").Booking) => boolean,
+  updates: Partial<Pick<import("@shared/schema").Booking,
+    "paymentStatus" | "paymentProvider" | "paymentReference" | "paymentSessionId" | "paymentCheckoutAmount" | "paymentHoldExpiresAt" | "paymentFailedAt">>,
+): Promise<TakenDates | null> {
+  // Payment-table setup runs once, on its own connection: do it before
+  // taking the locks (see Zaina's createBookingWithInventoryLock).
+  await storage.ensureBookingWriteTables();
+  return await db.transaction(async (tx) => {
+    for (const lockKey of Array.from(new Set(items.map((item) => item.lockKey))).sort()) {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`);
+    }
+    for (const item of items) {
+      const claim = await findOtherClaimOnDates(tx, booking, item, counts);
+      if (claim) {
+        return { item, claim };
+      }
+    }
+    await tx.update(bookings).set(updates).where(eq(bookings.id, booking.id));
+    return null;
+  });
+}
+
+/**
+ * Before a guest pays for a stay, car, or chef: returns why they can't if
+ * another guest has paid for, put a deposit on, or is paying for the same
+ * dates. Otherwise holds the dates for this guest for the checkout window
+ * (`holdExpiresAt` is null when the booking reserves no dates).
+ */
+async function holdDatesForCheckout(
+  booking: import("@shared/schema").Booking,
+): Promise<{ error: string } | { holdExpiresAt: string | null }> {
+  const items = await getItemsReservedByPayment(booking);
+  if (items.length === 0) {
+    return { holdExpiresAt: null };
+  }
+  const holdExpiresAt = getPaymentHoldExpiresAt();
+  const taken = await holdDatesForPayment(booking, items, shouldBookingBlockAvailability, {
+    paymentStatus: "pending",
+    paymentHoldExpiresAt: holdExpiresAt,
+  });
+  return taken ? { error: buildDatesTakenMessage(taken.item, taken.claim) } : { holdExpiresAt };
+}
+
+/** Gives back dates held for a checkout that never opened. */
+async function releaseDatesHeldForPayment(booking: import("@shared/schema").Booking) {
+  await storage.updateBookingPaymentState(booking.id, {
+    paymentStatus: booking.paymentStatus,
+    paymentHoldExpiresAt: booking.paymentHoldExpiresAt,
+  });
+}
+
+// A guest who is still in checkout hasn't paid: their hold stops other guests
+// from starting to pay, but a payment that completes first keeps the dates.
+// A manual M-Pesa payment awaiting the team's check has been sent, so it counts.
+function holdsDatesWithPayment(booking: import("@shared/schema").Booking) {
+  if (!shouldBookingBlockAvailability(booking)) {
+    return false;
+  }
+  const manualPaymentUnderReview = booking.paymentProvider === "mpesa-manual" && booking.paymentStatus === "processing";
+  return getBookingAmountPaid(booking) > 0 || hasAcceptedQuotedBooking(booking) || manualPaymentUnderReview;
+}
+
+/**
+ * The other booking or calendar block already holding this booking's dates
+ * with a payment, if any — checked when a payment lands.
+ */
+async function findPaidClaimOnDates(booking: import("@shared/schema").Booking): Promise<TakenDates | null> {
+  for (const item of await getBookingInventoryItems(booking)) {
+    const claim = await findOtherClaimOnDates(db, booking, item, holdsDatesWithPayment);
+    if (claim) {
+      return { item, claim };
+    }
+  }
+  return null;
+}
+
+/**
+ * Tells the guest and the team (by email) that a payment landed on dates
+ * that were already taken. Not posted in the booking thread: the stay's or
+ * service's provider can read that.
+ */
+function flagPaymentOnTakenDates(
+  booking: import("@shared/schema").Booking,
+  taken: TakenDates,
+  requestLike?: { protocol?: string; get?(name: string): string | undefined },
+) {
+  queueNotificationTask(
+    `dates-taken emails for booking ${booking.id}`,
+    sendBookingDatesTakenEmails(booking, { itemLabel: taken.item.label, otherBookingId: taken.claim.bookingId }, requestLike),
+  );
+}
+
+// `datesTaken` is reported when this call recorded the payment; a repeat
+// notification for the same payment reports false (the emails already went).
+async function applyVerifiedBookingPayment(
+  bookingId: string,
+  verifiedPayment: VerifiedHostedPayment,
+): Promise<{ booking: import("@shared/schema").Booking | undefined; datesTaken: boolean }> {
   const verifiedBookingId = getBookingIdFromPaymentReference(verifiedPayment.reference);
   if (!verifiedBookingId || verifiedBookingId !== bookingId) {
     throw new Error("Verified payment reference does not match the target booking.");
@@ -607,7 +843,7 @@ async function applyVerifiedBookingPayment(bookingId: string, verifiedPayment: V
 
   const booking = await storage.getBooking(bookingId);
   if (!booking) {
-    return undefined;
+    return { booking: undefined, datesTaken: false };
   }
 
   if (!booking.paymentReference || booking.paymentReference !== verifiedPayment.reference) {
@@ -623,7 +859,7 @@ async function applyVerifiedBookingPayment(bookingId: string, verifiedPayment: V
   if (verifiedPayment.status === "paid") {
     if (isBookingFullyPaid(booking)) {
       await activateListingVerificationAfterPayment(booking);
-      return booking;
+      return { booking, datesTaken: false };
     }
 
     const chargedAmountUsd = getVerifiedPaymentCheckoutAmount(booking, verifiedPayment);
@@ -639,7 +875,7 @@ async function applyVerifiedBookingPayment(bookingId: string, verifiedPayment: V
 
     if (isDuplicatePaidReference) {
       await activateListingVerificationAfterPayment(booking);
-      return booking;
+      return { booking, datesTaken: false };
     }
 
     const nextAmountPaid = Math.min(
@@ -662,6 +898,16 @@ async function applyVerifiedBookingPayment(bookingId: string, verifiedPayment: V
       paymentFailedAt: null,
     });
 
+    // The first payment on a stay, car, or chef secures its dates — unless
+    // another guest's payment got there first (for example, this guest's
+    // hold ran out while their payment was still going through).
+    const taken = updatedBooking && currentAmountPaid === 0 && nextAmountPaid > 0 && paymentReservesDates(booking)
+      ? await findPaidClaimOnDates(updatedBooking)
+      : null;
+    if (updatedBooking && taken) {
+      flagPaymentOnTakenDates(updatedBooking, taken);
+    }
+
     if (updatedBooking && nextAmountPaid > currentAmountPaid) {
       queueNotificationTask(
         `payment emails for booking ${updatedBooking.id}`,
@@ -673,12 +919,15 @@ async function applyVerifiedBookingPayment(bookingId: string, verifiedPayment: V
     }
 
     if (updatedBooking && isFullySettled) {
-      await storage.syncBookingServiceAssignments({ bookingIds: [updatedBooking.id], notifyProviders: true });
-      await storage.syncBookingPayouts({ bookingIds: [updatedBooking.id] });
+      // Providers aren't told about a booking whose dates someone else holds.
+      if (!taken) {
+        await storage.syncBookingServiceAssignments({ bookingIds: [updatedBooking.id], notifyProviders: true });
+        await storage.syncBookingPayouts({ bookingIds: [updatedBooking.id] });
+      }
       await activateListingVerificationAfterPayment(updatedBooking);
     }
 
-    return updatedBooking;
+    return { booking: updatedBooking, datesTaken: Boolean(taken) };
   }
 
   const updatedBooking = await storage.updateBookingPaymentState(booking.id, {
@@ -711,7 +960,7 @@ async function applyVerifiedBookingPayment(bookingId: string, verifiedPayment: V
     );
   }
 
-  return updatedBooking;
+  return { booking: updatedBooking, datesTaken: false };
 }
 
 async function activateListingVerificationAfterPayment(booking: import("@shared/schema").Booking) {
@@ -778,7 +1027,7 @@ async function activateListingVerificationAfterPayment(booking: import("@shared/
   }
 }
 
-function getPaymentResultRedirect(bookingId: string, status: "success" | "pending" | "failed" | "cancelled") {
+function getPaymentResultRedirect(bookingId: string, status: "success" | "pending" | "failed" | "cancelled" | "dates-taken") {
   const params = new URLSearchParams({
     bookingId,
     payment: status,
@@ -3899,7 +4148,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const { paymentMethod } = bookingPaymentSessionRequestSchema.parse(req.body ?? {});
-      const checkout = await startHostedBookingPayment(req, booking, paymentMethod);
+      const hold = await holdDatesForCheckout(booking);
+      if ("error" in hold) {
+        return res.status(409).json({ error: hold.error });
+      }
+      let checkout: Awaited<ReturnType<typeof startHostedBookingPayment>>;
+      try {
+        checkout = await startHostedBookingPayment(req, booking, paymentMethod);
+      } catch (error) {
+        // Don't keep other guests off these dates for a checkout that never opened.
+        await releaseDatesHeldForPayment(booking).catch((releaseError) => {
+          console.error("[PAYMENTS] Could not release the payment hold:", releaseError);
+        });
+        throw error;
+      }
       return res.json({
         booking: await attachBookingMarketingAttribution(checkout.booking),
         payment: checkout.payment,
@@ -3910,6 +4172,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: error.message });
       }
       return res.status(500).json({ error: "Failed to create payment session" });
+    }
+  });
+
+  // Opening the M-Pesa send-money instructions: the same check and hold as
+  // "Pay now", so nobody sends money for dates that are already taken.
+  app.post("/api/bookings/:id/payments/hold", isAuthenticated, async (req: any, res) => {
+    try {
+      const access = await assertCanAccessBookingThread(req, req.params.id);
+      if ("error" in access) {
+        return res.status(access.error!.status).json(access.error!.body);
+      }
+
+      const booking = access.booking;
+      if (req.user.claims.role !== "admin" && booking.userId !== req.user.claims.sub) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      if (booking.status === "cancelled" || booking.status === "completed") {
+        return res.status(400).json({ error: "This booking is closed and cannot be paid." });
+      }
+
+      if (getBookingCheckoutAmount(booking) <= 0) {
+        return res.status(400).json({ error: "This booking no longer has an outstanding balance." });
+      }
+
+      // Already held (a checkout in progress, or an M-Pesa payment being checked).
+      if (hasActivePaymentHold(booking)) {
+        return res.json({ holdExpiresAt: booking.paymentHoldExpiresAt });
+      }
+
+      const hold = await holdDatesForCheckout(booking);
+      if ("error" in hold) {
+        return res.status(409).json({ error: hold.error });
+      }
+      return res.json({ holdExpiresAt: hold.holdExpiresAt });
+    } catch (error) {
+      console.error("[PAYMENTS] Failed to hold dates for payment:", error);
+      return res.status(500).json({ error: "Could not prepare the payment. Please try again." });
     }
   });
 
@@ -3940,14 +4240,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const previousPaymentStatus = booking.paymentStatus;
       const currentAmountPaid = getBookingAmountPaid(booking);
 
-      const updatedBooking = await storage.updateBookingPaymentState(booking.id, {
-        paymentStatus: "processing",
-        paymentProvider: "mpesa-manual",
+      const submission = {
+        paymentStatus: "processing" as const,
+        paymentProvider: "mpesa-manual" as const,
         paymentReference: payload.transactionCode,
         paymentSessionId: null,
         paymentCheckoutAmount: checkoutAmountDue,
-        paymentHoldExpiresAt: null,
         paymentFailedAt: null,
+      };
+      // The money has already been sent. Keep the dates while the team checks
+      // the code — unless another guest's payment got to them first, in which
+      // case the code is still recorded and the booking flagged to be moved or
+      // refunded.
+      const items = await getItemsReservedByPayment(booking);
+      const reviewHoldExpiresAt = new Date(Date.now() + manualMpesaReviewHoldHours * 60 * 60 * 1000).toISOString();
+      const taken = items.length > 0
+        ? await holdDatesForPayment(booking, items, holdsDatesWithPayment, { ...submission, paymentHoldExpiresAt: reviewHoldExpiresAt })
+        : null;
+      const updatedBooking = await storage.updateBookingPaymentState(booking.id, {
+        ...submission,
+        paymentHoldExpiresAt: items.length > 0 && !taken ? reviewHoldExpiresAt : null,
       });
 
       if (!updatedBooking) {
@@ -3968,6 +4280,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ].filter(Boolean).join("\n"),
       });
 
+      if (taken) {
+        flagPaymentOnTakenDates(updatedBooking, taken, req);
+      }
+
       queueNotificationTask(
         `payment emails for booking ${updatedBooking.id}`,
         sendBookingPaymentNotificationEmails(updatedBooking, {
@@ -3976,7 +4292,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }, req),
       );
 
-      return res.json(decorateBookingWithOperationalStatus(updatedBooking));
+      return res.json({ ...decorateBookingWithOperationalStatus(updatedBooking), datesTaken: Boolean(taken) });
     } catch (error) {
       console.error("[PAYMENTS] Failed to submit manual M-Pesa payment:", error);
       if (error instanceof Error) {
@@ -3996,9 +4312,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const verifiedPayment = await verifyPaystackPayment(reference);
-      await applyVerifiedBookingPayment(bookingId, verifiedPayment);
+      const applied = await applyVerifiedBookingPayment(bookingId, verifiedPayment);
       const redirectStatus = verifiedPayment.status === "paid"
-        ? "success"
+        ? applied.datesTaken ? "dates-taken" : "success"
         : verifiedPayment.status === "processing"
           ? "pending"
           : verifiedPayment.status === "cancelled"
@@ -4057,9 +4373,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         throw new Error("Pesapal verified payment reference did not map to a booking.");
       }
 
-      await applyVerifiedBookingPayment(verifiedBookingId, verifiedPayment);
+      const applied = await applyVerifiedBookingPayment(verifiedBookingId, verifiedPayment);
       const redirectStatus = verifiedPayment.status === "paid"
-        ? "success"
+        ? applied.datesTaken ? "dates-taken" : "success"
         : verifiedPayment.status === "cancelled"
           ? "cancelled"
           : verifiedPayment.status === "processing"

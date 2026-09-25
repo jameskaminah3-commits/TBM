@@ -1,9 +1,11 @@
 import {
+  bookingPaymentHoldMinutes,
   getBookingAmountPaid,
   getBookingOutstandingAmount,
   hasLockedInBookingDeposit,
 } from "../shared/booking-payments.ts";
 import type { Booking, BookingPaymentStatus, User } from "../shared/schema.ts";
+import { SUPPORT_PHONE_DISPLAY } from "../shared/support-contact.ts";
 import { buildVerificationEmail, type VerificationPurpose } from "./verification-email.ts";
 
 type RequestOriginLike = {
@@ -337,6 +339,28 @@ function buildBookingSummaryLines(booking: Booking) {
   ].filter(Boolean) as string[];
 }
 
+// Stays, cars, and chefs are reserved for particular dates.
+function reservesDates(booking: Booking) {
+  return Boolean(booking.accommodationId)
+    || (booking.serviceMode ?? "").startsWith("car-")
+    || booking.serviceMode === "cook-service-fee"
+    || booking.serviceMode === "cook-inclusive";
+}
+
+/** What an unpaid booking's guest needs to know about paying for it. */
+function buildPaymentGuidance(booking: Booking): string[] {
+  if (booking.totalPrice <= 0 || getBookingAmountPaid(booking) > 0) {
+    return [];
+  }
+  const payment = (booking.paymentDepositAmount ?? 0) > 0 ? "the deposit" : "for it";
+  return [
+    reservesDates(booking)
+      ? `Your dates are reserved once you pay ${payment} in My Bookings. When you press "Pay now", we hold them for you for ${bookingPaymentHoldMinutes} minutes while you complete the payment.`
+      : `Your booking goes ahead once you pay ${payment} in My Bookings.`,
+    `Trouble paying? Our support team can help — WhatsApp or call ${SUPPORT_PHONE_DISPLAY}.`,
+  ];
+}
+
 export async function sendBookingCreatedNotificationEmails(booking: Booking, requestLike?: RequestOriginLike) {
   const tasks: Promise<boolean>[] = [];
   const adminRecipients = getNotificationRecipientEmails();
@@ -344,6 +368,7 @@ export async function sendBookingCreatedNotificationEmails(booking: Booking, req
   const adminUrl = buildApplicationUrl(`/admin/bookings?bookingId=${booking.id}`, requestLike);
   const summaryLines = buildBookingSummaryLines(booking);
   const customerName = getPrimaryGuestLabel(booking);
+  const paymentGuidance = buildPaymentGuidance(booking);
 
   tasks.push(sendEmailMessage({
     to: [booking.guestEmail],
@@ -353,6 +378,7 @@ export async function sendBookingCreatedNotificationEmails(booking: Booking, req
       "",
       "We have received your booking request.",
       ...summaryLines,
+      ...(paymentGuidance.length > 0 ? ["", ...paymentGuidance] : []),
       customerUrl ? `View booking: ${customerUrl}` : "",
     ].filter(Boolean).join("\n"),
     html: [
@@ -362,6 +388,7 @@ export async function sendBookingCreatedNotificationEmails(booking: Booking, req
       "<ul>",
       ...summaryLines.map((line) => `<li>${escapeHtml(line)}</li>`),
       "</ul>",
+      ...paymentGuidance.map((line) => `<p>${escapeHtml(line)}</p>`),
       customerUrl ? `<p><a href="${escapeHtml(customerUrl)}">View booking</a></p>` : "",
       "</div>",
     ].join(""),
@@ -542,6 +569,79 @@ export async function sendBookingPaymentNotificationEmails(
         `<p>${escapeHtml(paymentContent.body)}</p>`,
         "<ul>",
         ...paymentContent.sharedLines.map((line) => `<li>${escapeHtml(line)}</li>`),
+        "</ul>",
+        adminUrl ? `<p><a href="${escapeHtml(adminUrl)}">Open admin booking view</a></p>` : "",
+        "</div>",
+      ].join(""),
+    }));
+  }
+
+  await Promise.allSettled(tasks);
+  return true;
+}
+
+/**
+ * What a guest is told when their payment landed on dates that another
+ * guest had already paid for (or that were blocked) moments earlier.
+ */
+function buildDatesTakenNotice(itemLabel: string, takenByAnotherGuest: boolean) {
+  const what = takenByAnotherGuest
+    ? `${itemLabel} had already been booked by another guest for these dates`
+    : `${itemLabel} was no longer available for these dates`;
+  return `We received your payment, but ${what} moments before your payment went through. `
+    + "Our support team will contact you shortly to move your booking to other dates or refund you in full. "
+    + `You can also reach us on WhatsApp or call ${SUPPORT_PHONE_DISPLAY}.`;
+}
+
+export async function sendBookingDatesTakenEmails(
+  booking: Booking,
+  details: { itemLabel: string; otherBookingId: string | null },
+  requestLike?: RequestOriginLike,
+) {
+  const reference = getShortBookingReference(booking.id);
+  const customerUrl = buildApplicationUrl(`/bookings?bookingId=${booking.id}`, requestLike);
+  const adminUrl = buildApplicationUrl(`/admin/bookings?bookingId=${booking.id}`, requestLike);
+  const notice = buildDatesTakenNotice(details.itemLabel, details.otherBookingId !== null);
+  const tasks: Promise<boolean>[] = [
+    sendEmailMessage({
+      to: [booking.guestEmail],
+      subject: `About your payment for booking ${reference}`,
+      text: [
+        `Hi ${getPrimaryGuestLabel(booking)},`,
+        notice,
+        customerUrl ? `View booking: ${customerUrl}` : "",
+      ].filter(Boolean).join("\n\n"),
+      html: [
+        "<div style=\"font-family:Arial,sans-serif;line-height:1.6;color:#0f172a;\">",
+        `<p>Hi ${escapeHtml(getPrimaryGuestLabel(booking))},</p>`,
+        `<p>${escapeHtml(notice)}</p>`,
+        customerUrl ? `<p><a href="${escapeHtml(customerUrl)}">View booking</a></p>` : "",
+        "</div>",
+      ].join(""),
+    }),
+  ];
+
+  const adminRecipients = getNotificationRecipientEmails();
+  if (adminRecipients.length > 0) {
+    const lines = [
+      "A payment landed on dates that were already taken. Contact the guest to move the booking to other dates or refund them.",
+      `Booking reference: ${reference}`,
+      `Guest: ${getPrimaryGuestLabel(booking)} · ${booking.guestEmail}${booking.guestPhone ? ` · ${booking.guestPhone}` : ""}`,
+      `Booked: ${details.itemLabel}, ${getBookingDateLabel(booking)}`,
+      `Paid: ${formatUsd(getBookingAmountPaid(booking))}`,
+      details.otherBookingId
+        ? `Already paid by booking ${getShortBookingReference(details.otherBookingId)}`
+        : "The dates are blocked in the calendar",
+    ];
+    tasks.push(sendEmailMessage({
+      to: adminRecipients,
+      subject: `Dates already taken — move or refund: ${reference}`,
+      text: [...lines, adminUrl ? `Open admin booking view: ${adminUrl}` : ""].filter(Boolean).join("\n"),
+      html: [
+        "<div style=\"font-family:Arial,sans-serif;line-height:1.6;color:#0f172a;\">",
+        `<p>${escapeHtml(lines[0])}</p>`,
+        "<ul>",
+        ...lines.slice(1).map((line) => `<li>${escapeHtml(line)}</li>`),
         "</ul>",
         adminUrl ? `<p><a href="${escapeHtml(adminUrl)}">Open admin booking view</a></p>` : "",
         "</div>",

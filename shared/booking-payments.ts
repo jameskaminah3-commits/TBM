@@ -3,6 +3,14 @@ export type BookingPaymentPlan = typeof bookingPaymentPlanOptions[number];
 
 export const bookingDepositPercent = 50;
 
+// Dates are reserved only once a payment is made. While a guest is paying
+// (checkout open, or sending money by M-Pesa), their dates are held for them
+// for this long, so another guest can't start paying for the same dates.
+export const bookingPaymentHoldMinutes = 15;
+// A manual M-Pesa payment the guest has already sent keeps the dates while
+// the team checks the transaction code.
+export const manualMpesaReviewHoldHours = 24;
+
 type BookingPaymentSnapshot = {
   totalPrice?: number | null;
   paymentStatus?: string | null;

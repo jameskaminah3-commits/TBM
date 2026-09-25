@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import type { Booking, BookingPaymentStatus, CustomerPaymentMethod, CustomerPaymentProvider } from "@shared/schema";
+import { bookingPaymentHoldMinutes } from "../shared/booking-payments.ts";
 
-const BOOKING_PAYMENT_HOLD_MINUTES = 30;
 const PAYSTACK_API_BASE_URL = "https://api.paystack.co";
 
 const PESAPAL_ENV = process.env.PESAPAL_ENV === "live" ? "live" : "sandbox";
@@ -103,8 +103,8 @@ function normalizePositiveMoney(value: number | null | undefined) {
 let pesapalTokenCache: { token: string; expiresAt: number } | null = null;
 let pesapalIpnCache: { baseUrl: string; ipnId: string } | null = null;
 
-function getPaymentHoldExpiresAt() {
-  return new Date(Date.now() + (BOOKING_PAYMENT_HOLD_MINUTES * 60 * 1000)).toISOString();
+export function getPaymentHoldExpiresAt() {
+  return new Date(Date.now() + (bookingPaymentHoldMinutes * 60 * 1000)).toISOString();
 }
 
 function ensurePaystackSecretKey() {

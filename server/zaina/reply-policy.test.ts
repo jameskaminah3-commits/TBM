@@ -56,6 +56,18 @@ test("a booking without a separate deposit asks for the payment, not a deposit",
   assert.doesNotMatch(section, /deposit/);
 });
 
+test("bookings explain that dates are held only while paying, and where to get help", () => {
+  const section = buildPaymentSection(bookingPayment);
+  assert.match(section, /Your dates are reserved only once you've paid the deposit\. When you tap "Pay now", we hold them for you for 15 minutes/);
+  assert.match(section, /Trouble paying\? Our support team can help — WhatsApp or call \+254 718 475 264\./);
+
+  for (const kind of ["custom_request", "listing_verification"] as const) {
+    const other = buildPaymentSection({ kind, url: BOOKING_URL, feeDisplay: "KSh 650" });
+    assert.match(other, /Trouble paying\? Our support team can help/);
+    assert.doesNotMatch(other, /hold them/);
+  }
+});
+
 test("custom requests and verifications explain their own fee terms", () => {
   const request = buildPaymentSection({ kind: "custom_request", url: BOOKING_URL, feeDisplay: "KSh 650" });
   assert.match(request, /pay the request fee of KSh 650 here/);

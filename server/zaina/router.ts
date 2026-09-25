@@ -21,6 +21,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import type { Content, FunctionDeclaration } from "@google/genai";
 import { db } from "../db";
 import { chatSessions, zainaAuditLogs } from "@shared/schema";
+import { bookingPaymentHoldMinutes } from "@shared/booking-payments";
 import { and, eq, inArray, desc } from "drizzle-orm";
 import { INVENTORY_CATALOG } from "./catalog";
 import {
@@ -337,6 +338,13 @@ and the total or fee exactly as the tool returned it.
 
 If the customer asks for the payment link again in a later message, share
 the payment_link from the earlier tool result exactly as it was returned.
+
+If asked how reservations work: dates are reserved only once the deposit
+(or full payment) is paid. When the customer taps "Pay now", the dates are
+held for them for ${bookingPaymentHoldMinutes} minutes while they pay; if
+another guest pays first, the site tells them before they are charged. If
+the customer has trouble completing a payment, give them the support line:
+WhatsApp or call ${TBM_OFFICIAL_PHONE_DISPLAY}.
 
 CUSTOMER ACCOUNTS — never reveal account status
 The same sign-in guidance works for everyone: sign in with an existing TBM

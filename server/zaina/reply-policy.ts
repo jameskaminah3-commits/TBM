@@ -6,7 +6,8 @@
 //
 // Pure module: no database or network access, so every rule is unit-tested.
 
-import { bookingDepositPercent } from "../../shared/booking-payments.ts";
+import { bookingDepositPercent, bookingPaymentHoldMinutes } from "../../shared/booking-payments.ts";
+import { SUPPORT_PHONE, SUPPORT_PHONE_DISPLAY } from "../../shared/support-contact.ts";
 
 /** The public site customers can open. */
 export function getPublicSiteUrl(): string {
@@ -87,8 +88,8 @@ export function replaceMediaUrls(value: string, latestCustomerLink: string | und
 //   • images are never sent, and non-web links (javascript:, data:) are dropped.
 
 /** TBM's official phone / WhatsApp / M-Pesa send-money number. */
-export const TBM_OFFICIAL_PHONE = "+254718475264";
-export const TBM_OFFICIAL_PHONE_DISPLAY = "+254 718 475 264";
+export const TBM_OFFICIAL_PHONE = SUPPORT_PHONE;
+export const TBM_OFFICIAL_PHONE_DISPLAY = SUPPORT_PHONE_DISPLAY;
 
 const TRUSTED_HOSTS = ["tembeabilamatata.com", "wa.me", "whatsapp.com", "api.whatsapp.com"];
 const LINK_REMOVED = "(link removed)";
@@ -280,6 +281,7 @@ export function buildPaymentSection(details: PaymentDetails): string {
   const host = getPublicSiteHost();
   const safetyStep =
     `We use secure HTTPS and never store your card details. Always check the address bar starts with ${host} before signing in.`;
+  const supportStep = `Trouble paying? Our support team can help — WhatsApp or call ${SUPPORT_PHONE_DISPLAY}.`;
 
   if (details.kind === "custom_request") {
     return [
@@ -290,6 +292,7 @@ export function buildPaymentSection(details: PaymentDetails): string {
       `• The link opens your request in My Bookings. ${signInStep("request")}`,
       "• Tap \"Pay now\" to pay the request fee. It's credited in full against your final quotation if you go ahead.",
       "• Our team reviews your request and sends the final quotation. Nothing is confirmed until you accept and pay that quotation.",
+      `• ${supportStep}`,
     ].join("\n");
   }
 
@@ -302,6 +305,7 @@ export function buildPaymentSection(details: PaymentDetails): string {
       `• The link opens the request in My Bookings. ${signInStep("request")}`,
       "• Tap \"Pay now\" to pay the fee. Our on-ground team is dispatched only after the payment clears.",
       "• You'll get a report with either a verified outcome or a warning flag — not an instant guarantee. If you then book with TBM, the fee is credited to your final quotation.",
+      `• ${supportStep}`,
     ].join("\n");
   }
 
@@ -311,6 +315,9 @@ export function buildPaymentSection(details: PaymentDetails): string {
   const summaryStep = details.depositDisplay
     ? `• You'll then see your booking summary and a "Pay now" button. The ${bookingDepositPercent}% deposit secures your booking.`
     : "• You'll then see your booking summary and a \"Pay now\" button.";
+  const holdStep =
+    `• Your dates are reserved only once you've paid${details.depositDisplay ? " the deposit" : ""}. ` +
+    `When you tap "Pay now", we hold them for you for ${bookingPaymentHoldMinutes} minutes while you complete the payment.`;
   return [
     payLine,
     details.url,
@@ -318,7 +325,9 @@ export function buildPaymentSection(details: PaymentDetails): string {
     "What happens next:",
     `• ${signInStep("booking")}`,
     summaryStep,
+    holdStep,
     `• ${safetyStep}`,
+    `• ${supportStep}`,
   ].join("\n");
 }
 
