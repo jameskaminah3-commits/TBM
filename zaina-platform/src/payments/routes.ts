@@ -117,12 +117,17 @@ export function registerPaymentRoutes(app: Express, config: PlatformConfig): voi
 
   const back = (res: Response, token: string, query: string) => res.redirect(303, `/pay/${encodeURIComponent(token)}${query ? `?${query}` : ""}`);
 
-  /** Limits payment attempts per booking and per visitor; false (and redirected) when over. */
-  async function allowed(req: Request, res: Response, booking: Booking, extra: Array<{ key: string; limit: number; windowSeconds: number }> = []): Promise<boolean> {
+  /**
+   * Limits payment attempts: per booking and M-Pesa prompts per booking as the
+   * business sets them, and per visitor across every business (the
+   * platform's own guard against abuse). False (and redirected) when over.
+   */
+  async function allowed(req: Request, res: Response, business: Business, booking: Booking, options: { prompt?: boolean } = {}): Promise<boolean> {
+    const policy = await getBookingSettings(business.id);
     const verdict = await consumeLimits([
-      { key: `pay:booking:${booking.id}`, limit: 12, windowSeconds: 600 },
+      { key: `pay:booking:${booking.id}`, limit: policy.payAttemptsLimit, windowSeconds: 600 },
       { key: `pay:visitor:${visitorKey(secret, req.ip)}`, limit: 40, windowSeconds: 3600 },
-      ...extra,
+      ...(options.prompt ? [{ key: `pay:prompt:${booking.id}`, limit: policy.mpesaPromptsLimit, windowSeconds: 600 }] : []),
     ]);
     if (!verdict.allowed) back(res, booking.payToken, "m=too_many");
     return verdict.allowed;
@@ -176,7 +181,7 @@ export function registerPaymentRoutes(app: Express, config: PlatformConfig): voi
   }));
 
   app.post("/pay/:token/paystack", form, withBooking(async (req, res, { business, booking }) => {
-    if (!(await allowed(req, res, booking))) return;
+    if (!(await allowed(req, res, business, booking))) return;
     const started = await startPaystack(business, booking, { email: typeof req.body?.email === "string" ? req.body.email : null });
     if (!started.ok) return back(res, booking.payToken, `m=${started.code}`);
     res.redirect(303, started.redirect!);
@@ -189,17 +194,17 @@ export function registerPaymentRoutes(app: Express, config: PlatformConfig): voi
   }));
 
   app.post("/pay/:token/mpesa", form, withBooking(async (req, res, { business, booking }) => {
-    if (!(await allowed(req, res, booking, [{ key: `pay:prompt:${booking.id}`, limit: 3, windowSeconds: 600 }]))) return;
+    if (!(await allowed(req, res, business, booking, { prompt: true }))) return;
     const started = await startMpesaExpress(business, booking, { phone: typeof req.body?.phone === "string" ? req.body.phone : "" });
     back(res, booking.payToken, started.ok ? "m=sent" : `m=${started.code}`);
   }));
 
   app.post("/pay/:token/mpesa-code", form, withBooking(async (req, res, { business, booking }) => {
-    if (!(await allowed(req, res, booking))) return;
+    if (!(await allowed(req, res, business, booking))) return;
     const code = mpesaCode(typeof req.body?.code === "string" ? req.body.code : "");
     if (!code) return back(res, booking.payToken, "m=code_invalid");
     const result = await submitMpesaCode(business, booking, code);
-    if (!result.ok) return back(res, booking.payToken, `m=${result.reason === "used" ? "code_used" : result.reason === "nothing_due" ? "nothing_due" : "not_available"}`);
+    if (!result.ok) return back(res, booking.payToken, `m=${result.reason === "used" ? "code_used" : result.reason === "nothing_due" ? "nothing_due" : result.reason === "over_limit" ? "over_limit" : "not_available"}`);
     back(res, booking.payToken, "m=code");
   }));
 

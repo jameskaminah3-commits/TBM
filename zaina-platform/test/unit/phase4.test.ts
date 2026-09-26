@@ -13,6 +13,8 @@ import { chargeFromWebhook, validWebhookSignature } from "../../src/payments/pay
 import { amountDue } from "../../src/payments/checkout.ts";
 import { PAGE_MESSAGES, renderPayPage } from "../../src/payments/page.ts";
 import { holdUntil, stayDates } from "../../src/booking/notices.ts";
+import { checkDepositRule, defaultBookingSettings, depositText, onlineWays, paymentMethodsText, paymentOptionsOf, paymentOrderOf, validatePolicyPatch } from "../../src/booking/settings.ts";
+import type { PaymentWay } from "../../src/db/schema.ts";
 
 test("Paystack webhooks are believed only with the account's own signature", () => {
   const body = Buffer.from(JSON.stringify({ event: "charge.success", data: { reference: "zb_1", amount: 585000, currency: "KES", status: "success", id: 42 } }));
@@ -122,7 +124,7 @@ test("the payment page escapes what customers typed, and shows only fixed messag
       conflict: null, staffNote: null, decidedBy: null, confirmedAt: null, cancelledAt: null, createdAt: new Date(), updatedAt: new Date(),
     },
     settings: { checkInTime: "14:00", checkOutTime: "10:00", cancellationPolicy: "No refunds <b>ever</b>" },
-    options: { paystack: true, mpesaExpress: true, mpesaManual: { type: "paybill", number: "123456", account: null }, payAtVenue: false },
+    options: { paystack: true, mpesaExpress: true, mpesaManual: { type: "paybill", number: "123456", account: null }, payAtVenue: false, order: ["paystack", "mpesa_express", "mpesa_manual", "pay_at_venue"], maxMinor: {} },
     due: 540000,
     pending: null,
     lastFailure: null,
@@ -140,4 +142,49 @@ test("the payment page escapes what customers typed, and shows only fixed messag
   assert.ok(html.includes("Email for your receipt"), "Paystack needs an email the booking doesn't have");
   assert.ok(html.includes("account <strong>K7Q2MPXA</strong>"), "the paybill's account is the booking reference");
   assert.ok(html.includes('value="0712345678"'));
+});
+
+test("the payment page offers the business's ways to pay in its order, within its limits", () => {
+  const view = (order: PaymentWay[], maxMinor: Partial<Record<PaymentWay, number>>) => renderPayPage({
+    businessName: "Coral Cove", offeringName: "Ocean double",
+    booking: {
+      id: "b", businessId: "coral", reference: "K7Q2MPXA", offeringId: "o", checkIn: "2026-10-26", checkOut: "2026-10-28", units: 1, guests: 2,
+      status: "held", holdExpiresAt: new Date(Date.now() + 600_000), customerName: "Jane", customerEmail: "jane@example.com", customerPhone: "0712345678",
+      customerNotes: null, quote: { lines: [], deposit_rule: "fixed", deposit_percent: null } as never,
+      currency: "KES", totalMinor: 1800000, depositMinor: 500000, paidMinor: 0, payToken: "t".repeat(24), source: "chat", sessionId: null, idempotencyKey: null,
+      conflict: null, staffNote: null, decidedBy: null, confirmedAt: null, cancelledAt: null, createdAt: new Date(), updatedAt: new Date(),
+    },
+    settings: { checkInTime: "14:00", checkOutTime: "10:00", cancellationPolicy: null },
+    options: { paystack: true, mpesaExpress: true, mpesaManual: { type: "till", number: "123456", account: null }, payAtVenue: false, order: paymentOrderOf(order), maxMinor },
+    due: 500000, pending: null, lastFailure: null, message: null, contactLine: "call us", timeZone: "Africa/Nairobi", now: new Date(), host: "zaina.example", token: "t".repeat(24),
+  });
+  const mpesaFirst = view(["mpesa_express"], {});
+  assert.ok(mpesaFirst.indexOf("Send the M-Pesa prompt") < mpesaFirst.indexOf("by card"), "the business's order");
+  assert.match(mpesaFirst, /<th scope="row">Deposit<\/th>/, "a fixed deposit has no percentage");
+  const cardFirst = view([], {});
+  assert.ok(cardFirst.indexOf("by card") < cardFirst.indexOf("Send the M-Pesa prompt"));
+  const limited = view([], { paystack: 100000 });
+  assert.ok(!limited.includes("by card"), "over the business's card limit");
+  assert.ok(limited.includes("Send the M-Pesa prompt"));
+});
+
+test("business rules in words, and the ways to pay within limits", () => {
+  const settings = { ...defaultBookingSettings("x"), paystackMode: "own_keys" as const, mpesaExpress: true, mpesaType: "paybill" as const, mpesaShortcode: "123456" };
+  assert.match(depositText(settings), /not set by the business/);
+  assert.equal(depositText({ ...settings, depositType: "percent", depositPercent: 25 }), "25% to confirm, the rest at the venue");
+  assert.equal(depositText({ ...settings, depositType: "fixed", depositFixedMinor: 200000 }), "KSh 2,000 to confirm, the rest at the venue");
+  assert.equal(depositText({ ...settings, depositType: "full" }), "paid in full to confirm");
+  const options = paymentOptionsOf({ ...settings, paymentOrder: ["mpesa_express"], methodMaxMinor: { mpesa_express: 5_000_00 } });
+  assert.deepEqual(onlineWays(options, 1_000_00), ["mpesa_express", "paystack"]);
+  assert.deepEqual(onlineWays(options, 10_000_00), ["paystack"]);
+  assert.equal(paymentMethodsText(options, 1_000_00), "M-Pesa or card");
+  assert.equal(paymentMethodsText({ ...options, paystack: false }, 10_000_00), "");
+  assert.equal(checkDepositRule({ depositType: "percent", depositPercent: 0, depositFixedMinor: null }), "a percentage deposit is 1 to 99 (use none or full otherwise)");
+  assert.equal(checkDepositRule({ depositType: "fixed", depositPercent: 30, depositFixedMinor: null }), "a fixed deposit needs deposit_fixed_minor");
+  const patch = validatePolicyPatch({ deposit_percent: 0, code_check_hours: 6, payment_order: ["mpesa_manual", "paystack"] });
+  assert.ok(patch.ok && patch.patch.depositType === "none" && patch.patch.codeCheckHours === 6);
+  const bad = validatePolicyPatch({ code_check_hours: 200 });
+  assert.ok(!bad.ok && /code_check_hours is 1 to 72/.test(bad.error));
+  assert.ok(!validatePolicyPatch({ deposit_type: "not_set" }).ok, "a business can't un-choose");
+  assert.ok(!validatePolicyPatch({ payment_order: ["paystack", "paystack"] }).ok);
 });

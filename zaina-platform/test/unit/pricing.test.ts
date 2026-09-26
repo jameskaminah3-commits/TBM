@@ -4,19 +4,21 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { formatMoney, toMinor } from "../../src/booking/money.ts";
-import { fromNightly, nightsOf, quoteStay, validatePricingRules, withAgreedTotal, type PricingRules, type TaxRule } from "../../src/booking/pricing.ts";
+import { fromNightly, nightsOf, quoteStay, validatePricingRules, withAgreedTotal, type DepositRule, type PricingRules, type TaxRule } from "../../src/booking/pricing.ts";
 
 const KSH = (major: number) => major * 100;
 const room = { maxGuests: 3 };
 
-function quote(rules: PricingRules, stay: { checkIn: string; checkOut: string; guests: number; units?: number }, extra: { tax?: TaxRule | null; depositPercent?: number; maxGuests?: number } = {}) {
+function quote(rules: PricingRules, stay: { checkIn: string; checkOut: string; guests: number; units?: number }, extra: { tax?: TaxRule | null; depositPercent?: number; deposit?: DepositRule; maxGuests?: number; maxNights?: number } = {}) {
+  const percent = extra.depositPercent ?? 30;
   const result = quoteStay({
     rules,
     room: { maxGuests: extra.maxGuests ?? room.maxGuests },
     stay: { units: 1, ...stay },
     currency: "KES",
     tax: extra.tax ?? null,
-    depositPercent: extra.depositPercent ?? 30,
+    deposit: extra.deposit ?? (percent === 0 ? { type: "none" } : percent === 100 ? { type: "full" } : { type: "percent", percent }),
+    maxNights: extra.maxNights,
   });
   return result;
 }
@@ -148,6 +150,23 @@ test("the deposit is whole shillings, the room type's own percentage wins, and 0
   assert.ok(full.ok && full.quote.deposit === 1_000_155 && full.quote.balance === 0);
   const none = quote({ nightly: KSH(10000) }, { checkIn: "2026-11-02", checkOut: "2026-11-03", guests: 1 }, { depositPercent: 0 });
   assert.ok(none.ok && none.quote.deposit === 0 && none.quote.balance === KSH(10000));
+});
+
+test("the deposit is the business's rule: a fixed amount, in full, none, or not chosen yet", () => {
+  const stay = { checkIn: "2026-11-02", checkOut: "2026-11-04", guests: 1 };
+  const fixed = quote({ nightly: KSH(10000) }, stay, { deposit: { type: "fixed", fixedMinor: KSH(5000) } });
+  assert.ok(fixed.ok && fixed.quote.deposit === KSH(5000) && fixed.quote.deposit_rule === "fixed" && fixed.quote.deposit_percent === null);
+  const capped = quote({ nightly: KSH(2000) }, { ...stay, checkOut: "2026-11-03" }, { deposit: { type: "fixed", fixedMinor: KSH(5000) } });
+  assert.ok(capped.ok && capped.quote.deposit === KSH(2000), "a fixed deposit is never more than the total");
+  const unset = quote({ nightly: KSH(10000) }, stay, { deposit: { type: "not_set" } });
+  assert.ok(unset.ok && unset.quote.deposit === 0 && unset.quote.deposit_rule === "not_set");
+  const roomFixed = quote({ nightly: KSH(10000), deposit_fixed: KSH(3000) }, stay, { deposit: { type: "full" } });
+  assert.ok(roomFixed.ok && roomFixed.quote.deposit === KSH(3000), "the room type's own rule wins");
+  const agreed = withAgreedTotal(fixed.ok ? fixed.quote : (null as never), KSH(15000), null);
+  assert.equal(agreed.deposit, KSH(5000), "a fixed deposit stays fixed when the team agrees a price");
+  const longStay = quote({ nightly: KSH(1000) }, { ...stay, checkOut: "2026-11-20" }, { maxNights: 14 });
+  assert.ok(!longStay.ok && longStay.error === "max_nights" && longStay.max_nights === 14, "the business's longest stay");
+  assert.match((validatePricingRules({ nightly: 100, deposit_percent: 20, deposit_fixed: 100 }, room) as { error: string }).error, /not both/);
 });
 
 test("the team's agreed price replaces the total; the deposit and included tax follow it", () => {

@@ -196,9 +196,12 @@ A business added as a place to stay (type `guesthouse`) gets **Bookings** and
 **Rooms** in the console. Its owner sets them up there:
 
 1. **Rooms.** Add each room type, or import a spreadsheet, with its prices.
-2. **Settings → Bookings & payments → Booking policy.** Set the deposit, how
-   long unpaid rooms are held, check-in and check-out times, tax and the
-   cancellation policy.
+2. **Settings → Bookings & payments.** Choose the deposit (none, a
+   percentage, a fixed amount or the whole price). Until it's chosen, nothing
+   is charged online and chat bookings come in as requests. Set check-in and
+   check-out times, tax and the cancellation policy, then, under **Ways to
+   pay** and **Holds and limits**, the order payments are offered in, any
+   limit per way to pay, and how long bookings are held.
 3. **Where deposits are paid.** Connect one or more of:
    - **Paystack, with the business's own account.**
      1. In the Paystack dashboard, go to Settings → API Keys & Webhooks.

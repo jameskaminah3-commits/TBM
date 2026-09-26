@@ -9,12 +9,13 @@ import type { Booking, BookingSettings, Payment } from "../db/schema.ts";
 import { formatDay, holdUntil, stayDates } from "../booking/notices.ts";
 import { formatMoney } from "../booking/money.ts";
 import type { StayQuote } from "../booking/pricing.ts";
-import type { PaymentOptions } from "../booking/settings.ts";
+import { onlineWays, type PaymentOptions } from "../booking/settings.ts";
 
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!);
 
 export const PAGE_MESSAGES: Record<string, { kind: "error" | "info" | "ok"; text: string }> = {
   not_available: { kind: "error", text: "That way of paying isn't available for this booking." },
+  over_limit: { kind: "error", text: "That amount is more than the business takes that way. Please pay another way." },
   email_needed: { kind: "error", text: "Please give an email address for your receipt." },
   rooms_gone: { kind: "error", text: "Sorry, the rooms for this booking were taken after its hold ended. Please contact us about other dates." },
   wrong_status: { kind: "error", text: "This booking can't be paid now." },
@@ -95,7 +96,8 @@ function priceTable(view: PageView): string {
   const rows = quote.lines.map((line) => `<tr${line.included ? ' class="sub"' : ""}><th scope="row">${escapeHtml(line.label)}</th><td>${money(line.amount)}</td></tr>`);
   rows.push(`<tr class="total"><th scope="row">Total</th><td>${money(booking.totalMinor)}</td></tr>`);
   if (booking.depositMinor > 0 && booking.depositMinor < booking.totalMinor) {
-    rows.push(`<tr class="sub"><th scope="row">Deposit (${quote.deposit_percent}%)</th><td>${money(booking.depositMinor)}</td></tr>`);
+    const share = typeof quote.deposit_percent === "number" && quote.deposit_rule !== "fixed" ? ` (${quote.deposit_percent}%)` : "";
+    rows.push(`<tr class="sub"><th scope="row">Deposit${share}</th><td>${money(booking.depositMinor)}</td></tr>`);
   }
   if (booking.paidMinor > 0) rows.push(`<tr class="sub"><th scope="row">Paid</th><td>${money(booking.paidMinor)}</td></tr>`);
   const balance = booking.totalMinor - booking.paidMinor;
@@ -113,19 +115,19 @@ function payOptions(view: PageView): string {
   const action = (path: string) => `/pay/${encodeURIComponent(view.token)}/${path}`;
   const confirmed = booking.status === "confirmed";
   const methods: string[] = [];
-  if (options.paystack) {
-    methods.push(`<div class="method"><form method="post" action="${action("paystack")}">
+  const blocks: Record<string, () => void> = {};
+  // Each way to pay the business offers, in its order, within its limits for this amount.
+  const first = onlineWays(options, due)[0];
+  blocks.paystack = () => methods.push(`<div class="method"><form method="post" action="${action("paystack")}">
 ${booking.customerEmail ? "" : '<label>Email for your receipt<input name="email" type="email" autocomplete="email" required maxlength="200"></label>'}
 <button type="submit">Pay ${amount} by card${booking.currency === "KES" ? " or M-Pesa" : ""}</button>
 <p class="hint">On Paystack's secure page.</p></form></div>`);
-  }
-  if (options.mpesaExpress && booking.currency === "KES") {
-    methods.push(`<div class="method"><form method="post" action="${action("mpesa")}">
+  blocks.mpesa_express = () => booking.currency === "KES" && methods.push(`<div class="method"><form method="post" action="${action("mpesa")}">
 <label>M-Pesa number<span>We'll send a payment prompt to this phone.</span><input name="phone" type="tel" inputmode="tel" autocomplete="tel" required maxlength="20" value="${escapeHtml(booking.customerPhone ?? "")}"></label>
-<button type="submit"${options.paystack ? ' class="secondary"' : ""}>Send the M-Pesa prompt for ${amount}</button></form></div>`);
-  }
-  if (options.mpesaManual && booking.currency === "KES") {
+<button type="submit"${first !== "mpesa_express" ? ' class="secondary"' : ""}>Send the M-Pesa prompt for ${amount}</button></form></div>`);
+  blocks.mpesa_manual = () => {
     const manual = options.mpesaManual;
+    if (!manual || booking.currency !== "KES") return;
     const steps = manual.type === "paybill"
       ? [`M-Pesa → Lipa na M-Pesa → Pay Bill.`, `Business number <strong>${escapeHtml(manual.number)}</strong>, account <strong>${escapeHtml(manual.account ?? booking.reference)}</strong>.`, `Amount <strong>${amount}</strong>.`]
       : [`M-Pesa → Lipa na M-Pesa → Buy Goods and Services.`, `Till number <strong>${escapeHtml(manual.number)}</strong>.`, `Amount <strong>${amount}</strong>.`];
@@ -133,11 +135,13 @@ ${booking.customerEmail ? "" : '<label>Email for your receipt<input name="email"
 <ol class="steps">${steps.map((step) => `<li>${step}</li>`).join("")}</ol>
 <form method="post" action="${action("mpesa-code")}"><label>M-Pesa confirmation code<span>From the M-Pesa message, like QK12ABC34D.</span><input name="code" required maxlength="20" autocomplete="off" autocapitalize="characters" spellcheck="false"></label>
 <button type="submit" class="secondary">Send the code</button></form></div>`);
-  }
+  };
+  for (const way of onlineWays(options, due)) blocks[way]?.();
   if (!methods.length) {
     return `<section class="card"><h2>Paying</h2><p>The team will tell you how to pay. Questions? ${escapeHtml(view.contactLine)}.</p></section>`;
   }
-  return `<section class="card"><h2>${confirmed ? `Pay the balance now: ${amount}` : `Pay the deposit: ${amount}`}</h2>${confirmed ? '<p class="small">Optional: you can also pay at the property.</p>' : ""}${methods.join("")}</section>`;
+  const heading = confirmed ? `Pay the balance now: ${amount}` : booking.depositMinor >= booking.totalMinor ? `Pay in full: ${amount}` : `Pay the deposit: ${amount}`;
+  return `<section class="card"><h2>${heading}</h2>${confirmed ? '<p class="small">Optional: you can also pay at the property.</p>' : ""}${methods.join("")}</section>`;
 }
 
 export function renderPayPage(view: PageView): string {

@@ -35,7 +35,7 @@ import {
 } from "../booking/bookings.ts";
 import { tellCustomer, tellTeam } from "../booking/notices.ts";
 import { getBookingSettings, MPESA_SECRETS, PAYSTACK_SECRET, paymentOptionsOf } from "../booking/settings.ts";
-import type { BookingSettings } from "../db/schema.ts";
+import type { BookingSettings, PaymentWay } from "../db/schema.ts";
 import { formatMoney } from "../booking/money.ts";
 import { chargeFromWebhook, initializeCheckout, validWebhookSignature, verifyTransaction, type PaystackAccount, type VerifiedTransaction } from "./paystack.ts";
 import { mpesaPhone, readStkCallback, stkPush, stkQuery, type MpesaAccount } from "./mpesa.ts";
@@ -48,8 +48,6 @@ export function configurePayments(next: { publicBaseUrl: string | null; platform
 
 export const platformPaystackKey = () => config.platformPaystackKey;
 
-/** How long the team has to check an M-Pesa code before the rooms are let go. */
-export const CODE_CHECK_HOURS = 12;
 /** A payment prompt nobody answered in this long has failed. */
 const STK_GIVE_UP_MS = 5 * 60_000;
 /** A Paystack checkout left this long is abandoned. */
@@ -99,11 +97,17 @@ export function amountDue(booking: Pick<Booking, "status" | "totalMinor" | "depo
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 /** Why a payment couldn't start; the payment page shows a fixed message for each. */
-export type PayErrorCode = "not_available" | "email_needed" | "rooms_gone" | "wrong_status" | "nothing_due" | "provider_failed" | "phone_invalid";
+export type PayErrorCode = "not_available" | "over_limit" | "email_needed" | "rooms_gone" | "wrong_status" | "nothing_due" | "provider_failed" | "phone_invalid";
 
 export type StartResult = { ok: true; redirect?: string; payment: Payment } | { ok: false; code: PayErrorCode; message: string };
 
 const failed = (code: PayErrorCode, message: string): { ok: false; code: PayErrorCode; message: string } => ({ ok: false, code, message });
+
+/** The business's own limit on one payment by this way (null: none). */
+function overLimit(settings: BookingSettings, way: PaymentWay, amountMinor: number): boolean {
+  const max = settings.methodMaxMinor?.[way];
+  return max !== undefined && amountMinor > max;
+}
 
 /** Readies a booking for a payment: its rooms re-checked and held, unless it's already confirmed. */
 async function readyToPay(business: Business, booking: Booking): Promise<{ ok: true; booking: Booking } | { ok: false; code: PayErrorCode; message: string }> {
@@ -122,6 +126,7 @@ export async function startPaystack(business: Business, booking: Booking, input:
   if (!ready.ok) return ready;
   const amount = amountDue(ready.booking);
   if (amount <= 0) return failed("nothing_due", "There's nothing to pay on this booking now.");
+  if (overLimit(settings, "paystack", amount)) return failed("over_limit", "This amount is more than the business takes by card. Please pay another way.");
   const reference = `zb_${randomBytes(12).toString("hex")}`;
   const payment = await recordPendingPayment({
     businessId: business.id, bookingId: booking.id, method: "paystack", amountMinor: amount, currency: booking.currency, providerReference: reference, payerEmail: email,
@@ -153,6 +158,7 @@ export async function startMpesaExpress(business: Business, booking: Booking, in
   // M-Pesa takes whole shillings.
   const shillings = Math.ceil(amountDue(ready.booking) / 100);
   if (shillings <= 0) return failed("nothing_due", "There's nothing to pay on this booking now.");
+  if (overLimit(settings, "mpesa_express", shillings * 100)) return failed("over_limit", "This amount is more than the business takes by M-Pesa prompt. Please pay another way.");
   const callbackToken = randomBytes(24).toString("base64url");
   const payment = await recordPendingPayment({
     businessId: business.id, bookingId: booking.id, method: "mpesa_express", amountMinor: shillings * 100, currency: "KES", callbackToken, payerPhone: phone,
@@ -175,7 +181,7 @@ export async function startMpesaExpress(business: Business, booking: Booking, in
 
 export type CodeResult =
   | { ok: true; payment: Payment; booking: Booking; already: boolean }
-  | { ok: false; reason: "used" | "nothing_due" | "not_taken" };
+  | { ok: false; reason: "used" | "nothing_due" | "not_taken" | "over_limit" };
 
 /**
  * An M-Pesa code the customer sent for their booking (chat or payment page):
@@ -191,6 +197,7 @@ export async function submitMpesaCode(business: Business, booking: Booking, code
   }
   const amount = amountDue(booking);
   if (amount <= 0) return { ok: false, reason: "nothing_due" };
+  if (paymentOptionsOf(settings).mpesaManual && overLimit(settings, "mpesa_manual", amount)) return { ok: false, reason: "over_limit" };
   let payment: Payment;
   try {
     payment = await recordPendingPayment({ businessId: business.id, bookingId: booking.id, method: "mpesa_code", amountMinor: amount, currency: booking.currency, providerReference: code });
@@ -199,7 +206,7 @@ export async function submitMpesaCode(business: Business, booking: Booking, code
     if (database.code === "23505") return { ok: false, reason: "used" };
     throw error;
   }
-  await holdWhileChecking(business.id, booking.id, CODE_CHECK_HOURS);
+  await holdWhileChecking(business.id, booking.id, settings.codeCheckHours);
   const offering = await offeringName(business.id, booking.offeringId);
   void tellTeam(business, booking, offering, "code", `M-Pesa code ${code} for ${formatMoney(amount, booking.currency)}: check it in your M-Pesa statement, then confirm or reject it in the console.`);
   return { ok: true, payment, booking, already: false };

@@ -4,9 +4,15 @@
 // (/v1/staff/businesses/:businessId/…), by role:
 //
 //   GET    booking-settings                    viewer   policy, payment accounts, webhook addresses
-//   PATCH  booking-settings                    manager  { currency?, deposit_percent?, hold_minutes?, request_hold_hours?,
-//                                                         check_in_time?, check_out_time?, cancellation_policy?,
-//                                                         tax_name?, tax_percent?, tax_included?, pay_at_venue? }
+//   PATCH  booking-settings                    manager  { currency?, deposit_type?, deposit_percent?, deposit_fixed_minor?,
+//                                                         payment_order?, method_max_minor?, pay_at_venue?,
+//                                                         hold_minutes?, request_hold_hours?, accepted_hold_hours?,
+//                                                         payment_hold_minutes?, code_check_hours?, booking_horizon_days?,
+//                                                         max_nights?, min_notice_hours?, pay_attempts_limit?,
+//                                                         mpesa_prompts_limit?, check_in_time?, check_out_time?,
+//                                                         cancellation_policy?, tax_name?, tax_percent?, tax_included? }
+//                                                       The deposit, ways to pay and limits are the business's own;
+//                                                       the platform only keeps each within safe bounds.
 //   PUT    payments/paystack                   owner    { mode: "own_keys", secret_key } | { mode: "subaccount", subaccount }
 //   PUT    payments/mpesa-express              owner    { environment, type, shortcode, till?, consumer_key, consumer_secret, passkey }
 //   PUT    payments/mpesa-manual               owner    { type: "paybill" | "till", number, account? }
@@ -64,7 +70,7 @@ import { formatMoney, toMinor } from "./money.ts";
 import { payLink, tellCustomer } from "./notices.ts";
 import { createOffering, getOffering, listOfferings, publicOffering, removeOffering, roomsFromCsv, updateOffering, validateOffering, valuesOf } from "./offerings.ts";
 import { addDays, isoDate, nightsOf, parseDate } from "./pricing.ts";
-import { getBookingSettings, MPESA_SECRETS, PAYSTACK_SECRET, publicBookingSettings, saveBookingSettings, validatePolicyPatch } from "./settings.ts";
+import { checkDepositRule, getBookingSettings, MPESA_SECRETS, PAYSTACK_SECRET, publicBookingSettings, saveBookingSettings, validatePolicyPatch } from "./settings.ts";
 import { businessDay } from "../gateway/spend-cap.ts";
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -164,7 +170,12 @@ export function registerBookingRoutes(app: Express, config: PlatformConfig): voi
   app.patch(`${base}/booking-settings`, ...role("manager"), handle(async (req, res, { business, userId }) => {
     const checked = validatePolicyPatch(req.body ?? {});
     if (!checked.ok) return res.status(400).json({ error: "invalid_settings", message: checked.error });
-    await saveBookingSettings(business.id, checked.patch, userId);
+    const current = await getBookingSettings(business.id);
+    const problem = checkDepositRule({ ...current, ...checked.patch });
+    if (problem) return res.status(400).json({ error: "invalid_settings", message: problem });
+    const patch = { ...checked.patch };
+    if (patch.depositType !== undefined) patch.rulesConfirmedAt = new Date();
+    await saveBookingSettings(business.id, patch, userId);
     res.json(await settingsView(business));
   }));
 

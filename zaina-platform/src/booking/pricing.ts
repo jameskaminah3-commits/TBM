@@ -20,7 +20,12 @@
 //   fees                  fixed amounts: per booking, per room, per room per
 //                         night, per guest, or per guest per night (a
 //                         conservancy fee, a levy)
-//   deposit_percent       instead of the business's usual deposit
+//   deposit_percent       instead of the business's usual deposit: a share
+//   deposit_fixed         or a fixed amount per booking
+//
+// The deposit rule is the business's own (booking settings): nothing, a
+// percentage, a fixed amount or the whole price. A business that hasn't
+// chosen yet has no deposit charged online (not_set).
 //
 // Tax comes from the business's booking settings: a percentage already
 // included in its prices (shown, not added), or added on top.
@@ -44,7 +49,10 @@ export type PricingRules = {
   max_nights?: number;
   fees?: Fee[];
   deposit_percent?: number;
+  deposit_fixed?: number;
 };
+
+export type DepositRule = { type: "not_set" | "none" | "percent" | "fixed" | "full"; percent?: number | null; fixedMinor?: number | null };
 
 export type TaxRule = { name: string; percent: number; included: boolean };
 
@@ -66,7 +74,7 @@ function validMonthDay(value: unknown): value is string {
 export function validatePricingRules(input: unknown, room: { maxGuests: number }): { ok: true; rules: PricingRules } | { ok: false; error: string } {
   if (!input || typeof input !== "object" || Array.isArray(input)) return { ok: false, error: "pricing is an object of rules" };
   const raw = input as Record<string, unknown>;
-  const known = new Set(["nightly", "included_guests", "extra_guest_nightly", "weekend_nightly", "seasons", "min_nights", "max_nights", "fees", "deposit_percent"]);
+  const known = new Set(["nightly", "included_guests", "extra_guest_nightly", "weekend_nightly", "seasons", "min_nights", "max_nights", "fees", "deposit_percent", "deposit_fixed"]);
   const unknown = Object.keys(raw).find((key) => !known.has(key));
   if (unknown) return { ok: false, error: `pricing has an unknown rule: ${unknown}` };
 
@@ -95,6 +103,11 @@ export function validatePricingRules(input: unknown, room: { maxGuests: number }
   if (raw.deposit_percent !== undefined) {
     if (!isWhole(raw.deposit_percent, 0, 100)) return { ok: false, error: "deposit_percent is 0 to 100" };
     rules.deposit_percent = raw.deposit_percent;
+  }
+  if (raw.deposit_fixed !== undefined) {
+    if (raw.deposit_percent !== undefined) return { ok: false, error: "a room type's deposit is a percentage or a fixed amount, not both" };
+    if (!isWhole(raw.deposit_fixed, 1, MAX_AMOUNT)) return { ok: false, error: "deposit_fixed is an amount" };
+    rules.deposit_fixed = raw.deposit_fixed;
   }
   if (raw.seasons !== undefined) {
     if (!Array.isArray(raw.seasons) || raw.seasons.length > 20) return { ok: false, error: "seasons is a list of up to 20" };
@@ -181,7 +194,10 @@ export type StayQuote = {
   fees_total: number;
   tax: { name: string; percent: number; included: boolean; amount: number } | null;
   total: number;
-  deposit_percent: number;
+  /** How the deposit was worked out; older quotes have only deposit_percent. */
+  deposit_rule?: DepositRule["type"];
+  /** The deposit's share of the total, when it is a percentage (0 none, 100 in full). */
+  deposit_percent: number | null;
   deposit: number;
   balance: number;
   total_display: string;
@@ -204,7 +220,9 @@ export function quoteStay(input: {
   stay: StayRequest;
   currency: BookingCurrency;
   tax: TaxRule | null;
-  depositPercent: number;
+  deposit: DepositRule;
+  /** The longest stay, unless the room type says otherwise. */
+  maxNights?: number;
 }): { ok: true; quote: StayQuote } | ({ ok: false } & QuoteProblem) {
   const { rules, room, stay, currency } = input;
   const start = parseDate(stay.checkIn);
@@ -229,7 +247,7 @@ export function quoteStay(input: {
     const season = seasonal.find((entry) => (entry?.min_nights ?? 0) === minNights);
     return { ok: false, error: "min_nights", min_nights: minNights, message: `The minimum stay is ${minNights} nights${season ? ` in ${season.name}` : ""}.` };
   }
-  const maxNights = rules.max_nights ?? DEFAULT_MAX_NIGHTS;
+  const maxNights = rules.max_nights ?? input.maxNights ?? DEFAULT_MAX_NIGHTS;
   if (nights.length > maxNights) {
     return { ok: false, error: "max_nights", max_nights: maxNights, message: `The longest stay that can be booked is ${maxNights} nights.` };
   }
@@ -264,9 +282,8 @@ export function quoteStay(input: {
     if (!input.tax.included) total = gross + amount;
   }
 
-  const depositPercent = rules.deposit_percent ?? input.depositPercent;
-  // Deposits are rounded to whole shillings (or dollars).
-  const deposit = depositPercent >= 100 ? total : Math.min(total, Math.round((total * depositPercent) / 10_000) * 100);
+  const rule = depositRuleFor(rules, input.deposit);
+  const deposit = depositOf(total, rule);
   const money = (amount: number) => formatMoney(amount, currency);
 
   const rates = [...new Set(perNight.map((night) => night.room))].sort((a, b) => a - b);
@@ -310,7 +327,8 @@ export function quoteStay(input: {
       fees_total: feesTotal,
       tax,
       total,
-      deposit_percent: depositPercent,
+      deposit_rule: rule.type,
+      deposit_percent: depositPercentOf(rule),
       deposit,
       balance: total - deposit,
       total_display: money(total),
@@ -318,6 +336,46 @@ export function quoteStay(input: {
       balance_display: money(total - deposit),
     },
   };
+}
+
+/** The deposit rule for a room type: its own, or the business's. */
+export function depositRuleFor(rules: Pick<PricingRules, "deposit_percent" | "deposit_fixed">, business: DepositRule): DepositRule {
+  if (rules.deposit_fixed !== undefined) return { type: "fixed", fixedMinor: rules.deposit_fixed };
+  if (rules.deposit_percent !== undefined) {
+    return rules.deposit_percent === 0 ? { type: "none" } : rules.deposit_percent >= 100 ? { type: "full" } : { type: "percent", percent: rules.deposit_percent };
+  }
+  return business;
+}
+
+/** The deposit on a total, rounded to whole shillings (or dollars). */
+export function depositOf(total: number, rule: DepositRule): number {
+  switch (rule.type) {
+    case "full":
+      return total;
+    case "percent": {
+      const percent = rule.percent ?? 0;
+      return percent >= 100 ? total : Math.min(total, Math.round((total * percent) / 10_000) * 100);
+    }
+    case "fixed":
+      return Math.min(total, rule.fixedMinor ?? 0);
+    default:
+      return 0;
+  }
+}
+
+export function depositPercentOf(rule: DepositRule): number | null {
+  if (rule.type === "percent") return rule.percent ?? 0;
+  if (rule.type === "full") return 100;
+  if (rule.type === "none" || rule.type === "not_set") return 0;
+  return null;
+}
+
+/** A quote's deposit rule, including quotes saved before rules had types. */
+export function ruleOfQuote(quote: Pick<StayQuote, "deposit_rule" | "deposit_percent" | "deposit">): DepositRule {
+  if (quote.deposit_rule === "fixed") return { type: "fixed", fixedMinor: quote.deposit };
+  if (quote.deposit_rule) return { type: quote.deposit_rule, percent: quote.deposit_percent };
+  const percent = quote.deposit_percent ?? 0;
+  return percent === 0 ? { type: "none" } : percent >= 100 ? { type: "full" } : { type: "percent", percent };
 }
 
 /** The lowest price a room type is ever offered at, for a night: "from KSh 6,500". */
@@ -330,7 +388,7 @@ export function fromNightly(rules: PricingRules): number {
  * the new total replaces the calculated one, and the deposit follows it.
  */
 export function withAgreedTotal(quote: StayQuote, total: number, note: string | null): StayQuote {
-  const deposit = quote.deposit_percent >= 100 ? total : Math.min(total, Math.round((total * quote.deposit_percent) / 10_000) * 100);
+  const deposit = depositOf(total, ruleOfQuote(quote));
   const money = (amount: number) => formatMoney(amount, quote.currency);
   const difference = total - quote.total;
   if (difference === 0) return quote;

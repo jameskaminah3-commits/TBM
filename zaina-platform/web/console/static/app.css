@@ -135,6 +135,12 @@ code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
 .form { display: grid; gap: 14px; }
 .form-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
 .form-row > .field { flex: 1 1 200px; }
+.form-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.ways { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; counter-reset: way; }
+.way { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 180px) auto; gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; counter-increment: way; }
+.way-name::before { content: counter(way) ". "; color: var(--muted); }
+.way-move { display: inline-flex; gap: 2px; }
+@media (max-width: 560px) { .way { grid-template-columns: minmax(0, 1fr) auto; } .way input { grid-column: 1 / -1; grid-row: 2; } }
 .field { display: grid; gap: 5px; }
 .field.wide { grid-column: 1 / -1; }
 .field-label { font-weight: 600; font-size: 14px; }

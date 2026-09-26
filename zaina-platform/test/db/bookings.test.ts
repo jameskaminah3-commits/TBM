@@ -92,7 +92,7 @@ before(async () => {
   }
   clearBusinessCache();
   // Acme takes deposits by M-Pesa (a paybill the team checks).
-  await saveBookingSettings("acme", { mpesaManualType: "paybill", mpesaManualNumber: "123456", depositPercent: 30, holdMinutes: 30 }, null);
+  await saveBookingSettings("acme", { mpesaManualType: "paybill", mpesaManualNumber: "123456", depositType: "percent", depositPercent: 30, holdMinutes: 30 }, null);
   deluxe = await offering("acme", { name: "Deluxe room", units: 2, max_guests: 3, pricing: { nightly: KSH(8000) } });
   cottage = await offering("acme", { name: "Garden cottage", units: 1, max_guests: 4, booking_mode: "request", pricing: { nightly: KSH(15000) } });
   suite = await offering("beta", { name: "Lake suite", units: 1, max_guests: 2, pricing: { nightly: KSH(20000) } });
@@ -218,13 +218,50 @@ test("a request waits for the team: accepted at an agreed price it waits for the
 });
 
 test("no deposit confirms at once; a deposit with no way to pay makes it a request", async () => {
-  await saveBookingSettings("acme", { depositPercent: 0 }, null);
+  await saveBookingSettings("acme", { depositType: "none" }, null);
   const free = await createBooking(booking({ checkIn: day(100), checkOut: day(101) }));
   assert.ok(free.ok && free.booking.status === "confirmed" && free.booking.depositMinor === 0 && free.booking.holdExpiresAt === null);
-  await saveBookingSettings("acme", { depositPercent: 30, mpesaManualType: null, mpesaManualNumber: null }, null);
+  await saveBookingSettings("acme", { depositType: "percent", depositPercent: 30, mpesaManualType: null, mpesaManualNumber: null }, null);
   const noWayToPay = await createBooking(booking({ checkIn: day(102), checkOut: day(103) }));
   assert.ok(noWayToPay.ok && noWayToPay.booking.status === "requested");
   await saveBookingSettings("acme", { mpesaManualType: "paybill", mpesaManualNumber: "123456" }, null);
+});
+
+test("the deposit, holds and limits are the business's: nothing is charged until it chooses", async () => {
+  await saveBookingSettings("acme", { depositType: "not_set" }, null);
+  const unset = await createBooking(booking({ checkIn: day(200), checkOut: day(201) }));
+  assert.ok(unset.ok && unset.booking.status === "requested" && unset.booking.depositMinor === 0, "a request for the team, nothing to pay");
+  const byTeam = await createBooking(booking({ checkIn: day(202), checkOut: day(203), source: "staff" }));
+  assert.ok(byTeam.ok && byTeam.booking.status === "confirmed", "the team's own booking: they arrange payment");
+
+  await saveBookingSettings("acme", { depositType: "fixed", depositFixedMinor: KSH(1000), acceptedHoldHours: 2, paymentHoldMinutes: 60 }, null);
+  const fixed = await createBooking(booking({ checkIn: day(204), checkOut: day(206) }));
+  assert.ok(fixed.ok && fixed.booking.status === "held" && fixed.booking.depositMinor === KSH(1000));
+  const held = await holdForPayment("acme", fixed.booking.id);
+  assert.ok(held.ok);
+  const heldMinutes = (held.booking.holdExpiresAt!.getTime() - Date.now()) / 60_000;
+  assert.ok(heldMinutes > 59 && heldMinutes <= 60, `paying holds the business's ${heldMinutes} minutes`);
+  const asked = await createBooking(booking({ offeringId: cottage.id, checkIn: day(207), checkOut: day(208), guests: 2 }));
+  assert.ok(asked.ok && asked.booking.status === "requested");
+  const accepted = await acceptBooking("acme", asked.booking.id, "00000000-0000-4000-8000-000000000001");
+  assert.ok(accepted.ok);
+  const acceptedHours = (accepted.booking.holdExpiresAt!.getTime() - Date.now()) / 3_600_000;
+  assert.ok(acceptedHours > 1.9 && acceptedHours <= 2, `accepted requests are held ${acceptedHours} hours`);
+
+  // Only a card: a deposit over the card limit can't be paid online, so it's a request.
+  await saveBookingSettings("acme", { methodMaxMinor: { mpesa_manual: KSH(500) } }, null);
+  const overLimit = await createBooking(booking({ checkIn: day(209), checkOut: day(210) }));
+  assert.ok(overLimit.ok && overLimit.booking.status === "requested", "over every way's limit");
+
+  await saveBookingSettings("acme", { methodMaxMinor: {}, bookingHorizonDays: 30, minNoticeHours: 72 }, null);
+  const far = await createBooking(booking({ checkIn: day(40), checkOut: day(41) }));
+  assert.ok(!far.ok && far.error === "too_far");
+  const soon = await createBooking(booking({ checkIn: day(1), checkOut: day(2) }));
+  assert.ok(!soon.ok && soon.error === "too_soon" && /72 hours' notice/.test(soon.message));
+  const walkIn = await createBooking(booking({ checkIn: day(1), checkOut: day(2), source: "staff", confirmNow: true }));
+  assert.ok(walkIn.ok, "the team isn't held to the online notice");
+
+  await saveBookingSettings("acme", { depositType: "percent", depositPercent: 30, depositFixedMinor: null, acceptedHoldHours: 24, paymentHoldMinutes: 15, bookingHorizonDays: 548, minNoticeHours: 0 }, null);
 });
 
 test("stays must fit the calendar and the room", async () => {

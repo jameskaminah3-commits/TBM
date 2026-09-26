@@ -1,7 +1,8 @@
 // zaina-platform/web/console/pages/booking-settings.tsx
 //
-// Settings → Bookings & payments, for a place to stay: the booking policy
-// (currency, deposit, how long rooms are held, check-in and check-out, tax,
+// Settings → Bookings & payments: the business's own deposit, ways to pay,
+// holds and limits (Zaina follows them; the platform only keeps each within
+// safe bounds), its booking policy (currency, check-in and check-out, tax,
 // cancellation) and the payment accounts deposits go into: the business's
 // own Paystack account (or its subaccount of the platform's), M-Pesa Express
 // on its own paybill or till, or a paybill or till the guest pays by hand.
@@ -10,7 +11,7 @@
 
 import { useEffect, useState } from "react";
 import { api, businessPath } from "../api.ts";
-import { atLeast, type BookingSettingsView, type Role } from "../types.ts";
+import { atLeast, type BookingSettingsView, type DepositType, type PaymentWay, type Role } from "../types.ts";
 import { Button, ErrorLine, Field, Message, Toggle, useAction, useLoad } from "../ui.tsx";
 
 export function BookingSettings(props: { businessId: string; role: Role }) {
@@ -21,6 +22,7 @@ export function BookingSettings(props: { businessId: string; role: Role }) {
   const owner = atLeast(props.role, "owner");
   return (
     <div className="stack">
+      <Deposit key={`deposit-${settings.deposit_type}`} businessId={props.businessId} settings={settings} onSaved={setSettings} />
       <Policy businessId={props.businessId} settings={settings} onSaved={setSettings} />
       <h2>Where deposits are paid</h2>
       {!settings.payments.takes_deposits ? (
@@ -30,17 +32,42 @@ export function BookingSettings(props: { businessId: string; role: Role }) {
       <Paystack businessId={props.businessId} settings={settings} owner={owner} onSaved={setSettings} />
       <MpesaExpress businessId={props.businessId} settings={settings} owner={owner} onSaved={setSettings} />
       <MpesaManual businessId={props.businessId} settings={settings} owner={owner} onSaved={setSettings} />
+      <WaysToPay businessId={props.businessId} settings={settings} onSaved={setSettings} />
+      <Limits businessId={props.businessId} settings={settings} onSaved={setSettings} />
     </div>
   );
 }
+
+// Forms hold major units (KSh 2,000); the API holds minor units (200000).
+const major = (minor: number | null | undefined) => (minor === null || minor === undefined ? "" : String(minor / 100));
+const minor = (value: string) => Math.round(Number(value.replace(/,/g, "")) * 100);
+
+const WAY_LABELS: Record<PaymentWay, string> = {
+  paystack: "Card and M-Pesa through Paystack",
+  mpesa_express: "M-Pesa prompt on the phone",
+  mpesa_manual: "M-Pesa paid by hand (code checked)",
+  pay_at_venue: "Pay at the venue",
+};
+
+type LimitField = keyof BookingSettingsView["bounds"];
+
+const LIMITS: Array<{ field: LimitField; label: string; hint: string }> = [
+  { field: "hold_minutes", label: "Held for the deposit (minutes)", hint: "An unpaid booking keeps its place this long." },
+  { field: "payment_hold_minutes", label: "Held while paying (minutes)", hint: "Starting to pay keeps the place at least this long." },
+  { field: "request_hold_hours", label: "Requests held (hours)", hint: "While the team decides. 0: they aren't." },
+  { field: "accepted_hold_hours", label: "Accepted requests held (hours)", hint: "For the customer to pay the deposit." },
+  { field: "code_check_hours", label: "Time to check an M-Pesa code (hours)", hint: "The place stays held while the team checks." },
+  { field: "min_notice_hours", label: "Notice for online bookings (hours)", hint: "0: customers can book for today." },
+  { field: "booking_horizon_days", label: "Book up to (days ahead)", hint: "How far ahead customers can book." },
+  { field: "max_nights", label: "Longest stay (nights)", hint: "Unless a room type says otherwise." },
+  { field: "pay_attempts_limit", label: "Payment tries per booking (per 10 minutes)", hint: "Stops a link being misused." },
+  { field: "mpesa_prompts_limit", label: "M-Pesa prompts per booking (per 10 minutes)", hint: "So a phone isn't flooded with prompts." },
+];
 
 function Policy(props: { businessId: string; settings: BookingSettingsView; onSaved: (settings: BookingSettingsView) => void }) {
   const initial = props.settings;
   const [form, setForm] = useState({
     currency: initial.currency,
-    deposit_percent: String(initial.deposit_percent),
-    hold_minutes: String(initial.hold_minutes),
-    request_hold_hours: String(initial.request_hold_hours),
     check_in_time: initial.check_in_time,
     check_out_time: initial.check_out_time,
     cancellation_policy: initial.cancellation_policy ?? "",
@@ -59,9 +86,6 @@ function Policy(props: { businessId: string; settings: BookingSettingsView; onSa
         await action.run(async () => {
           props.onSaved(await api<BookingSettingsView>("PATCH", businessPath(props.businessId, "/booking-settings"), {
             currency: form.currency,
-            deposit_percent: Number(form.deposit_percent),
-            hold_minutes: Number(form.hold_minutes),
-            request_hold_hours: Number(form.request_hold_hours),
             check_in_time: form.check_in_time,
             check_out_time: form.check_out_time,
             cancellation_policy: form.cancellation_policy.trim() || null,
@@ -76,21 +100,153 @@ function Policy(props: { businessId: string; settings: BookingSettingsView; onSa
       <h2>Booking policy</h2>
       <div className="form-row">
         <Field label="Prices in"><select value={form.currency} onChange={(event) => set("currency", event.target.value)}><option value="KES">Kenyan shillings</option><option value="USD">US dollars</option></select></Field>
-        <Field label="Deposit (%)" hint="0: nothing to pay until the guest arrives."><input type="number" min={0} max={100} required value={form.deposit_percent} onChange={(event) => set("deposit_percent", event.target.value)} /></Field>
-        <Field label="Rooms held for the deposit (minutes)" hint="After this, unpaid rooms are free again."><input type="number" min={10} max={1440} required value={form.hold_minutes} onChange={(event) => set("hold_minutes", event.target.value)} /></Field>
-        <Field label="Requests hold rooms for (hours)" hint="While the team decides. 0: they don't."><input type="number" min={0} max={168} required value={form.request_hold_hours} onChange={(event) => set("request_hold_hours", event.target.value)} /></Field>
-      </div>
-      <div className="form-row">
         <Field label="Check-in from"><input type="time" required value={form.check_in_time} onChange={(event) => set("check_in_time", event.target.value)} /></Field>
         <Field label="Check-out by"><input type="time" required value={form.check_out_time} onChange={(event) => set("check_out_time", event.target.value)} /></Field>
+      </div>
+      <div className="form-row">
         <Field label="Tax name" hint="Like VAT. Empty: no tax shown."><input maxLength={40} value={form.tax_name} onChange={(event) => set("tax_name", event.target.value)} /></Field>
         <Field label="Tax (%)"><input type="number" min={0} max={50} step="0.01" value={form.tax_percent} onChange={(event) => set("tax_percent", event.target.value)} /></Field>
       </div>
       <Toggle checked={form.tax_included} onChange={(value) => set("tax_included", value)} label="Prices already include the tax" />
-      <Toggle checked={form.pay_at_venue} onChange={(value) => set("pay_at_venue", value)} label="Guests may pay the balance at the property" />
-      <Field label="Cancellation policy" hint="Zaina and the payment page tell guests this, word for word." wide>
+      <Toggle checked={form.pay_at_venue} onChange={(value) => set("pay_at_venue", value)} label="Customers may pay the balance at the venue" />
+      <Field label="Cancellation policy" hint="Zaina and the payment page tell customers this, word for word." wide>
         <textarea rows={3} maxLength={2000} value={form.cancellation_policy} onChange={(event) => set("cancellation_policy", event.target.value)} />
       </Field>
+      <Message message={action.message} />
+      <div className="actions"><Button kind="primary" type="submit" busy={action.busy}>Save</Button></div>
+    </form>
+  );
+}
+
+/** The business's deposit: its own choice, which Zaina only follows. */
+function Deposit(props: { businessId: string; settings: BookingSettingsView; onSaved: (settings: BookingSettingsView) => void }) {
+  const initial = props.settings;
+  const [type, setType] = useState<Exclude<DepositType, "not_set"> | "">(initial.deposit_type === "not_set" ? "" : initial.deposit_type);
+  const [percent, setPercent] = useState(initial.deposit_type === "percent" ? String(initial.deposit_percent) : "");
+  const [fixed, setFixed] = useState(major(initial.deposit_fixed_minor));
+  const action = useAction();
+  const currency = initial.currency === "KES" ? "KSh" : "US$";
+  return (
+    <form
+      className="form card"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        if (!type) return;
+        await action.run(async () => {
+          props.onSaved(await api<BookingSettingsView>("PATCH", businessPath(props.businessId, "/booking-settings"), {
+            deposit_type: type,
+            ...(type === "percent" ? { deposit_percent: Number(percent) } : {}),
+            ...(type === "fixed" ? { deposit_fixed_minor: minor(fixed) } : {}),
+          }));
+        }, "Saved. New bookings use it straight away.");
+      }}
+    >
+      <h2>Deposit</h2>
+      {initial.deposit_type === "not_set" ? (
+        <p className="message error">You haven't chosen a deposit yet, so nothing is charged online: bookings from the chat come in as requests for your team. Choose how you take deposits below.</p>
+      ) : (
+        <p className="muted">Now: {initial.deposit_text}. Zaina and the payment page follow this; a room type or service can have its own.</p>
+      )}
+      <div className="form-row">
+        <Field label="How you take deposits">
+          <select required value={type} onChange={(event) => setType(event.target.value as typeof type)}>
+            <option value="" disabled>Choose…</option>
+            <option value="none">No deposit: paid at the venue</option>
+            <option value="percent">A percentage of the total</option>
+            <option value="fixed">A fixed amount per booking</option>
+            <option value="full">The whole amount up front</option>
+          </select>
+        </Field>
+        {type === "percent" ? <Field label="Deposit (%)" hint="1 to 99."><input type="number" min={1} max={99} required value={percent} onChange={(event) => setPercent(event.target.value)} /></Field> : null}
+        {type === "fixed" ? <Field label={`Deposit (${currency})`} hint="Never more than the booking's total."><input inputMode="decimal" required value={fixed} onChange={(event) => setFixed(event.target.value)} /></Field> : null}
+      </div>
+      <Message message={action.message} />
+      <div className="actions"><Button kind="primary" type="submit" busy={action.busy} disabled={!type}>Save deposit</Button></div>
+    </form>
+  );
+}
+
+/** The ways to pay the business offers, in its order, and its limit on each. */
+function WaysToPay(props: { businessId: string; settings: BookingSettingsView; onSaved: (settings: BookingSettingsView) => void }) {
+  const initial = props.settings;
+  const [order, setOrder] = useState<PaymentWay[]>(initial.payment_order);
+  const [limits, setLimits] = useState<Record<string, string>>(Object.fromEntries(Object.entries(initial.method_max_minor).map(([way, value]) => [way, major(value)])));
+  const action = useAction();
+  const connected: Record<PaymentWay, boolean> = {
+    paystack: initial.payments.paystack.mode !== "off",
+    mpesa_express: initial.payments.mpesa_express.on,
+    mpesa_manual: initial.payments.mpesa_manual !== null,
+    pay_at_venue: initial.pay_at_venue,
+  };
+  const move = (index: number, by: number) => {
+    const next = [...order];
+    const [way] = next.splice(index, 1);
+    next.splice(index + by, 0, way);
+    setOrder(next);
+  };
+  const currency = initial.currency === "KES" ? "KSh" : "US$";
+  return (
+    <form
+      className="form card"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        await action.run(async () => {
+          props.onSaved(await api<BookingSettingsView>("PATCH", businessPath(props.businessId, "/booking-settings"), {
+            payment_order: order,
+            method_max_minor: Object.fromEntries(Object.entries(limits).filter(([, value]) => value.trim()).map(([way, value]) => [way, minor(value)])),
+          }));
+        }, "Saved.");
+      }}
+    >
+      <h2>Ways to pay</h2>
+      <p className="muted">The payment page offers them in this order. A limit hides that way for bigger amounts (M-Pesa's own limits still apply).</p>
+      <ol className="ways">
+        {order.map((way, index) => (
+          <li key={way} className="way">
+            <span className="way-name">{WAY_LABELS[way]}{connected[way] ? "" : <span className="muted"> (not set up)</span>}</span>
+            {way !== "pay_at_venue" ? (
+              <input aria-label={`Most for one payment by ${WAY_LABELS[way]} (${currency})`} placeholder={`No limit (${currency})`} inputMode="decimal" value={limits[way] ?? ""} onChange={(event) => setLimits({ ...limits, [way]: event.target.value })} />
+            ) : <span />}
+            <span className="way-move">
+              <Button kind="ghost" disabled={index === 0} onClick={() => move(index, -1)}>Up</Button>
+              <Button kind="ghost" disabled={index === order.length - 1} onClick={() => move(index, 1)}>Down</Button>
+            </span>
+          </li>
+        ))}
+      </ol>
+      <Message message={action.message} />
+      <div className="actions"><Button kind="primary" type="submit" busy={action.busy}>Save</Button></div>
+    </form>
+  );
+}
+
+/** Holds and limits: the business's own, within the platform's safe bounds. */
+function Limits(props: { businessId: string; settings: BookingSettingsView; onSaved: (settings: BookingSettingsView) => void }) {
+  const initial = props.settings;
+  const [form, setForm] = useState<Record<LimitField, string>>(Object.fromEntries(LIMITS.map(({ field }) => [field, String(initial[field])])) as Record<LimitField, string>);
+  const action = useAction();
+  return (
+    <form
+      className="form card"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        await action.run(async () => {
+          props.onSaved(await api<BookingSettingsView>("PATCH", businessPath(props.businessId, "/booking-settings"), Object.fromEntries(LIMITS.map(({ field }) => [field, Number(form[field])]))));
+        }, "Saved.");
+      }}
+    >
+      <h2>Holds and limits</h2>
+      <p className="muted">Your choice; the values here to start with are only suggestions.</p>
+      <div className="form-grid">
+        {LIMITS.map(({ field, label, hint }) => {
+          const [min, max] = initial.bounds[field];
+          return (
+            <Field key={field} label={label} hint={`${hint} ${min} to ${max}.`}>
+              <input type="number" min={min} max={max} required value={form[field]} onChange={(event) => setForm({ ...form, [field]: event.target.value })} />
+            </Field>
+          );
+        })}
+      </div>
       <Message message={action.message} />
       <div className="actions"><Button kind="primary" type="submit" busy={action.busy}>Save</Button></div>
     </form>

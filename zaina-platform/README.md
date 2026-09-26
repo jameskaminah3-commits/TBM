@@ -260,6 +260,7 @@ on its website and on WhatsApp, and takes deposits into its own account:
 | Console | Bookings (upcoming, requests, awaiting deposit, needs you, past, cancelled) with each booking's price, payments and actions; a calendar of rooms free per night; Rooms with the pricing editor and "try a quote"; closed dates; Settings → Bookings & payments |
 | Reports | Stays: bookings made and where they stand, nights sold, value booked, deposits collected by how they were paid, and chats that led to a booking. The platform view tracks the pilot's exit check for each place to stay |
 | Deletion requests | A guest's bookings stay, as the business's records of money and nights, without their name, email, phone and notes |
+| The business decides (migration 0008) | Deposits, the ways to pay and the limits are each business's own settings, not Zaina's. The deposit is none, a percentage, a fixed amount per booking or the whole price (a room type can have its own). Until a business chooses, nothing is charged online: bookings from the chat come in as requests for its team. It also sets the order the payment page offers the ways to pay, the most one payment can be by each, how long bookings are held (for the deposit, while paying, while a request is decided, after it's accepted, while an M-Pesa code is checked), the notice it needs, how far ahead and how long guests can book, and how many payment tries and M-Pesa prompts a booking gets. The platform only keeps each within safe bounds (the database checks them too); the per-visitor limit across all businesses stays the platform's guard against abuse |
 
 Exit check (the plan's: "three pilot businesses live for 30 days, with
 bookings and deposits flowing"). A real pilot needs three businesses; the
@@ -296,8 +297,9 @@ Also checked:
 Decisions to confirm:
 
 - The three pilot businesses, and which way each takes deposits.
-- Defaults for a new place to stay: a 30% deposit, rooms held 30 minutes
-  for it, requests held 24 hours, check-in 14:00 and check-out 10:00.
+- Deposits, ways to pay and limits: decided by each business (see "The
+  business decides" above). The starting values for holds and limits are
+  only suggestions it changes; the deposit has none.
 - Whether the platform needs a Paystack account of its own (for businesses
   paid through its subaccounts) or every business brings its own.
 - Refunds are made in Paystack's dashboard or M-Pesa, not from the console.
@@ -444,7 +446,7 @@ Phase 4, a place to stay (least role needed):
 
 | Route | Who |
 |---|---|
-| `GET booking-settings` / `PATCH booking-settings` (`{ currency?, deposit_percent?, hold_minutes?, request_hold_hours?, check_in_time?, check_out_time?, cancellation_policy?, tax_name?, tax_percent?, tax_included?, pay_at_venue? }`) | viewer / manager |
+| `GET booking-settings` / `PATCH booking-settings` (`{ currency?, deposit_type? (none, percent, fixed, full), deposit_percent?, deposit_fixed_minor?, payment_order?, method_max_minor?, pay_at_venue?, hold_minutes?, request_hold_hours?, accepted_hold_hours?, payment_hold_minutes?, code_check_hours?, booking_horizon_days?, max_nights?, min_notice_hours?, pay_attempts_limit?, mpesa_prompts_limit?, check_in_time?, check_out_time?, cancellation_policy?, tax_name?, tax_percent?, tax_included? }`; the reply includes each limit's `bounds`) | viewer / manager |
 | `PUT payments/paystack` (`{ mode: "own_keys", secret_key }` or `{ mode: "subaccount", subaccount }`), `PUT payments/mpesa-express` (`{ environment, type, shortcode, till?, consumer_key, consumer_secret, passkey }`), `PUT payments/mpesa-manual` (`{ type, number, account? }`), `DELETE payments/:method` | owner |
 | `GET offerings` / `POST offerings`, `PUT offerings/:id`, `DELETE offerings/:id`, `POST offerings/import` (`{ csv }`) | viewer / manager |
 | `POST quote` (`{ offering_id, check_in, check_out, guests, rooms? }`), `GET calendar?from=&days=`, `GET blocks` | viewer |

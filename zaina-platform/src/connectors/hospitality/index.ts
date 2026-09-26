@@ -28,8 +28,8 @@ import { bookingsOfSession, checkStayDates, createBooking, getBookingByReference
 import { formatMoney } from "../../booking/money.ts";
 import { holdUntil, payLink, stayDates, tellTeam } from "../../booking/notices.ts";
 import { listOfferings } from "../../booking/offerings.ts";
-import { fromNightly, type PricingRules } from "../../booking/pricing.ts";
-import { canTakeDeposits, getBookingSettings, paymentMethodsText, paymentOptionsOf } from "../../booking/settings.ts";
+import { fromNightly, type PricingRules, type StayQuote } from "../../booking/pricing.ts";
+import { canTakeDeposits, depositChosen, depositText, getBookingSettings, paymentMethodsText, paymentOptionsOf } from "../../booking/settings.ts";
 import { amountDue, submitMpesaCode } from "../../payments/checkout.ts";
 import { sharesPhoneNumber, textArg } from "../../engine/tool-args.ts";
 import { contactLineFor, createLead, leadDeclarations } from "../basic/index.ts";
@@ -126,7 +126,7 @@ async function listRooms(context: ToolContext) {
     house_rules: {
       check_in_from: settings.checkInTime,
       check_out_by: settings.checkOutTime,
-      deposit: settings.depositPercent === 0 ? "none: paid at the property" : `${settings.depositPercent}% to confirm, the rest at the property`,
+      deposit: depositText(settings, "at the property"),
       ways_to_pay: [paymentMethodsText(options), options.payAtVenue ? "at the property" : ""].filter(Boolean).join("; ") || "the team arranges it",
       cancellation: settings.cancellationPolicy ?? "ask the team",
     },
@@ -140,9 +140,9 @@ async function checkAvailability(args: any, context: ToolContext) {
   const guests = whole(args?.guests);
   const units = whole(args?.rooms, 1)!;
   if (!guests) return { ok: false, error: "guests_required", hint: "Ask how many guests." };
-  const dates = checkStayDates(checkIn, checkOut, business.timeZone);
-  if (dates) return { ok: false, error: dates.error, message: dates.message };
   const [all, settings] = await Promise.all([listOfferings(business.id, { activeOnly: true }), getBookingSettings(business.id)]);
+  const dates = checkStayDates(checkIn, checkOut, business.timeZone, settings);
+  if (dates) return { ok: false, error: dates.error, message: dates.message };
   let rooms = all;
   if (textArg(args?.room_type)) {
     const chosen = findRoomType(all, textArg(args.room_type));
@@ -193,6 +193,13 @@ function customerDetails(args: any, typed: string[]): { ok: true; name: string; 
   return { ok: true, name, email: emailTyped, phone: phoneTyped };
 }
 
+/** The deposit's share for the payment block: a percentage, the whole amount, or (fixed) just its amount. */
+function depositShare(booking: Booking): { deposit_percent?: number; pays_in_full?: boolean } {
+  const quote = booking.quote as unknown as StayQuote;
+  if (booking.depositMinor >= booking.totalMinor) return { pays_in_full: true };
+  return typeof quote.deposit_percent === "number" && quote.deposit_rule !== "fixed" ? { deposit_percent: quote.deposit_percent } : {};
+}
+
 async function bookingResult(business: Business, booking: Booking, room: Offering, language: ChatLanguage) {
   const settings = await getBookingSettings(business.id);
   const options = paymentOptionsOf(settings);
@@ -211,10 +218,10 @@ async function bookingResult(business: Business, booking: Booking, room: Offerin
       status: "held_for_deposit",
       payment_link: payLink(booking),
       deposit_display: formatMoney(booking.depositMinor, booking.currency),
-      deposit_percent: Math.round((booking.depositMinor / Math.max(1, booking.totalMinor)) * 100),
+      ...depositShare(booking),
       hold_until: booking.holdExpiresAt ? holdUntil(booking.holdExpiresAt, business.timeZone, language) : null,
       hold_minutes: booking.holdExpiresAt ? Math.round((booking.holdExpiresAt.getTime() - Date.now()) / 60_000) : null,
-      pay_by: paymentMethodsText(options),
+      pay_by: paymentMethodsText(options, booking.depositMinor - booking.paidMinor),
       next_step: "The system adds the payment link and steps to your reply. Tell the customer in one sentence what is held for them.",
     };
   }
@@ -222,7 +229,7 @@ async function bookingResult(business: Business, booking: Booking, room: Offerin
     return {
       ...base,
       status: "requested",
-      next_step: `The team confirms the request${booking.holdExpiresAt ? ` by ${holdUntil(booking.holdExpiresAt, business.timeZone, language)}` : ""}; the customer hears in this chat${booking.customerEmail ? " and by email" : ""}. Nothing is paid now.${canTakeDeposits(options) ? "" : " The team arranges payment."}`,
+      next_step: `The team confirms the request${booking.holdExpiresAt ? ` by ${holdUntil(booking.holdExpiresAt, business.timeZone, language)}` : ""}; the customer hears in this chat${booking.customerEmail ? " and by email" : ""}. Nothing is paid now.${depositChosen(settings) && canTakeDeposits(options, booking.depositMinor) ? "" : " The team arranges payment."}`,
     };
   }
   return {

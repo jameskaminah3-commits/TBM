@@ -185,9 +185,17 @@ test("Coral Cove sets up its rooms, its policy and its own Paystack account (Pay
   assert.equal(ocean.body.offering.from_nightly_display, "KSh 9,000");
   assert.equal((await staff("coral", "POST", "/offerings", { name: "ocean DOUBLE", units: 1, max_guests: 2, pricing: { nightly: KSH(1) } })).status, 409, "names are unique");
   assert.equal((await staff("coral", "POST", "/offerings", { name: "Bad", units: 1, max_guests: 2, pricing: { nightly: KSH(1), surprise: 1 } })).status, 400);
+  const before = await staff("coral", "GET", "/booking-settings");
+  assert.equal(before.body.deposit_type, "not_set", "Zaina doesn't choose a deposit for the business");
+  assert.equal(before.body.rules_confirmed_at, null);
+  assert.deepEqual(before.body.bounds.code_check_hours, [1, 72]);
+  assert.equal((await staff("coral", "PATCH", "/booking-settings", { deposit_type: "fixed" })).status, 400, "a fixed deposit needs its amount");
+  assert.equal((await staff("coral", "PATCH", "/booking-settings", { pay_attempts_limit: 500 })).status, 400, "within the platform's bounds");
   const policy = await staff("coral", "PATCH", "/booking-settings", { deposit_percent: 30, hold_minutes: 30, cancellation_policy: "Free cancellation up to 14 days before arrival." });
   assert.equal(policy.status, 200, JSON.stringify(policy.body));
   assert.equal(policy.body.payments.takes_deposits, false);
+  assert.equal(policy.body.deposit_type, "percent");
+  assert.ok(policy.body.rules_confirmed_at, "the business chose");
 
   const refused = await staff("coral", "PUT", "/payments/paystack", { mode: "own_keys", secret_key: "sk_test_refused000000000001" });
   assert.equal(refused.status, 400);

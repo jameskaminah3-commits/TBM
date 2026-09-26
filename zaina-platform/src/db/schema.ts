@@ -321,6 +321,14 @@ export const whatsappOutbound = pgTable("whatsapp_outbound", {
 export const bookingCurrencies = ["KES", "USD"] as const;
 export type BookingCurrency = (typeof bookingCurrencies)[number];
 
+/** How a business takes deposits; not_set until it has chosen (then nothing is charged online). */
+export const depositTypes = ["not_set", "none", "percent", "fixed", "full"] as const;
+export type DepositType = (typeof depositTypes)[number];
+
+/** The ways to pay a payment page can offer, in the business's order. */
+export const paymentWays = ["mpesa_express", "paystack", "mpesa_manual", "pay_at_venue"] as const;
+export type PaymentWay = (typeof paymentWays)[number];
+
 export const bookingModes = ["instant", "request", "enquiry"] as const;
 export type BookingMode = (typeof bookingModes)[number];
 
@@ -347,6 +355,19 @@ export const bookingSettings = pgTable("booking_settings", {
   mpesaManualNumber: text("mpesa_manual_number"),
   mpesaManualAccount: text("mpesa_manual_account"),
   payAtVenue: boolean("pay_at_venue").notNull().default(false),
+  depositType: text("deposit_type").$type<DepositType>().notNull().default("not_set"),
+  depositFixedMinor: bigint("deposit_fixed_minor", { mode: "number" }),
+  paymentOrder: text("payment_order").array().$type<PaymentWay[]>().notNull().default([]),
+  methodMaxMinor: jsonb("method_max_minor").$type<Partial<Record<PaymentWay, number>>>().notNull().default({}),
+  acceptedHoldHours: integer("accepted_hold_hours").notNull().default(24),
+  paymentHoldMinutes: integer("payment_hold_minutes").notNull().default(15),
+  codeCheckHours: integer("code_check_hours").notNull().default(12),
+  bookingHorizonDays: integer("booking_horizon_days").notNull().default(548),
+  maxNights: integer("max_nights").notNull().default(30),
+  minNoticeHours: integer("min_notice_hours").notNull().default(0),
+  payAttemptsLimit: integer("pay_attempts_limit").notNull().default(12),
+  mpesaPromptsLimit: integer("mpesa_prompts_limit").notNull().default(3),
+  rulesConfirmedAt: at("rules_confirmed_at"),
   updatedAt: at("updated_at").notNull().defaultNow(),
   updatedBy: uuid("updated_by"),
 });

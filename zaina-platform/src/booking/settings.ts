@@ -1,14 +1,21 @@
 // zaina-platform/src/booking/settings.ts
 //
 // A business's booking policy (currency, deposit, holds, check-in and
-// check-out, tax, cancellation) and the payment accounts it has connected.
-// A business that hasn't saved any yet gets the defaults. Keys and passwords
-// are business secrets (businesses/secrets.ts), never kept here.
+// check-out, tax, cancellation, limits) and the payment accounts it has
+// connected. Keys and passwords are business secrets (businesses/secrets.ts),
+// never kept here.
+//
+// The deposit, the ways to pay and the limits are the business's decisions.
+// Until it chooses a deposit (deposit_type not_set), nothing is charged
+// online: bookings from the chat come in as requests for the team. The other
+// values below are only starting points the business changes; the platform
+// only keeps each within safe bounds (POLICY_BOUNDS, also in the database).
 
 import { eq } from "drizzle-orm";
-import { bookingSettings, type BookingCurrency, type BookingSettings } from "../db/schema.ts";
+import { bookingSettings, depositTypes, paymentWays, type BookingCurrency, type BookingSettings, type DepositType, type PaymentWay } from "../db/schema.ts";
 import { inBusiness } from "../db/tenant.ts";
-import type { TaxRule } from "./pricing.ts";
+import { formatMoney } from "./money.ts";
+import type { DepositRule, TaxRule } from "./pricing.ts";
 
 export const PAYSTACK_SECRET = "paystack_secret_key";
 export const MPESA_SECRETS = { consumerKey: "mpesa_consumer_key", consumerSecret: "mpesa_consumer_secret", passkey: "mpesa_passkey" } as const;
@@ -37,6 +44,19 @@ export function defaultBookingSettings(businessId: string): BookingSettings {
     mpesaManualNumber: null,
     mpesaManualAccount: null,
     payAtVenue: false,
+    depositType: "not_set",
+    depositFixedMinor: null,
+    paymentOrder: [],
+    methodMaxMinor: {},
+    acceptedHoldHours: 24,
+    paymentHoldMinutes: 15,
+    codeCheckHours: 12,
+    bookingHorizonDays: 548,
+    maxNights: 30,
+    minNoticeHours: 0,
+    payAttemptsLimit: 12,
+    mpesaPromptsLimit: 3,
+    rulesConfirmedAt: null,
     updatedAt: new Date(0),
     updatedBy: null,
   };
@@ -60,6 +80,30 @@ export async function saveBookingSettings(businessId: string, patch: BookingSett
   return row;
 }
 
+/** The business's deposit rule, as the pricing module takes it. */
+export function depositRuleOf(settings: Pick<BookingSettings, "depositType" | "depositPercent" | "depositFixedMinor">): DepositRule {
+  return { type: settings.depositType, percent: settings.depositPercent, fixedMinor: settings.depositFixedMinor };
+}
+
+/** Whether the business has chosen how it takes deposits. */
+export const depositChosen = (settings: Pick<BookingSettings, "depositType">) => settings.depositType !== "not_set";
+
+/** The deposit rule in words, for Zaina and the console: "30% to confirm". */
+export function depositText(settings: BookingSettings, rest = "at the venue"): string {
+  switch (settings.depositType) {
+    case "none":
+      return `none: paid ${rest}`;
+    case "percent":
+      return `${settings.depositPercent}% to confirm, the rest ${rest}`;
+    case "fixed":
+      return `${formatMoney(settings.depositFixedMinor ?? 0, settings.currency)} to confirm, the rest ${rest}`;
+    case "full":
+      return "paid in full to confirm";
+    default:
+      return "not set by the business yet: bookings are requests the team confirms, and the team arranges any payment";
+  }
+}
+
 /** The tax the business's prices carry, if any. */
 export function taxRuleOf(settings: BookingSettings): TaxRule | null {
   const percent = settings.taxPercent === null ? 0 : Number(settings.taxPercent);
@@ -74,10 +118,22 @@ export type PaymentOptions = {
   /** A paybill or till the customer pays by hand; the team checks the code. */
   mpesaManual: { type: "paybill" | "till"; number: string; account: string | null } | null;
   payAtVenue: boolean;
+  /** The order the business offers them in. */
+  order: PaymentWay[];
+  /** The most one payment can be, per way to pay (the business's limits). */
+  maxMinor: Partial<Record<PaymentWay, number>>;
 };
+
+/** The order the ways to pay are offered in when the business hasn't set one. */
+export const DEFAULT_PAYMENT_ORDER: PaymentWay[] = ["paystack", "mpesa_express", "mpesa_manual", "pay_at_venue"];
+
+/** The business's order, with any way it didn't list after, in the usual order. */
+export const paymentOrderOf = (order: readonly PaymentWay[]): PaymentWay[] => [...new Set([...order, ...DEFAULT_PAYMENT_ORDER])];
 
 export function paymentOptionsOf(settings: BookingSettings): PaymentOptions {
   return {
+    order: paymentOrderOf(settings.paymentOrder ?? []),
+    maxMinor: settings.methodMaxMinor ?? {},
     paystack: settings.paystackMode !== "off",
     // M-Pesa takes shillings only.
     mpesaExpress: settings.mpesaExpress && settings.currency === "KES",
@@ -88,19 +144,65 @@ export function paymentOptionsOf(settings: BookingSettings): PaymentOptions {
   };
 }
 
+/** Whether a way to pay is on, and allowed for this amount by the business's limits. */
+export function wayAllowed(options: PaymentOptions, way: PaymentWay, amountMinor: number | null = null): boolean {
+  const on = way === "paystack" ? options.paystack : way === "mpesa_express" ? options.mpesaExpress : way === "mpesa_manual" ? options.mpesaManual !== null : options.payAtVenue;
+  const max = options.maxMinor[way];
+  return on && (amountMinor === null || max === undefined || amountMinor <= max);
+}
+
+/** The ways to pay online the customer has for an amount, in the business's order. */
+export const onlineWays = (options: PaymentOptions, amountMinor: number | null = null): PaymentWay[] =>
+  options.order.filter((way) => way !== "pay_at_venue" && wayAllowed(options, way, amountMinor));
+
 /** Whether a customer can pay a deposit without the team's help. */
-export const canTakeDeposits = (options: PaymentOptions) => options.paystack || options.mpesaExpress || options.mpesaManual !== null;
+export const canTakeDeposits = (options: PaymentOptions, amountMinor: number | null = null) => onlineWays(options, amountMinor).length > 0;
 
 /** How customers can pay, in words: "card or M-Pesa". */
-export function paymentMethodsText(options: PaymentOptions): string {
-  const methods = [
-    ...(options.paystack ? ["card"] : []),
-    ...(options.paystack || options.mpesaExpress || options.mpesaManual ? ["M-Pesa"] : []),
-  ];
-  return methods.length === 2 ? "card or M-Pesa" : methods[0] ?? "";
+export function paymentMethodsText(options: PaymentOptions, amountMinor: number | null = null): string {
+  const ways = onlineWays(options, amountMinor);
+  const methods: string[] = [];
+  for (const way of ways) {
+    for (const method of way === "paystack" ? ["card", "M-Pesa"] : ["M-Pesa"]) if (!methods.includes(method)) methods.push(method);
+  }
+  return methods.length === 2 ? `${methods[0]} or ${methods[1]}` : methods[0] ?? "";
 }
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** The platform's safe bounds for each limit the business sets (the database checks them too). */
+export const POLICY_BOUNDS = {
+  hold_minutes: [10, 1440],
+  request_hold_hours: [0, 168],
+  accepted_hold_hours: [1, 168],
+  payment_hold_minutes: [5, 120],
+  code_check_hours: [1, 72],
+  booking_horizon_days: [1, 730],
+  max_nights: [1, 90],
+  min_notice_hours: [0, 720],
+  pay_attempts_limit: [3, 30],
+  mpesa_prompts_limit: [1, 10],
+} as const;
+type PolicyLimit = keyof typeof POLICY_BOUNDS;
+const POLICY_KEYS: Record<PolicyLimit, keyof BookingSettings> = {
+  hold_minutes: "holdMinutes",
+  request_hold_hours: "requestHoldHours",
+  accepted_hold_hours: "acceptedHoldHours",
+  payment_hold_minutes: "paymentHoldMinutes",
+  code_check_hours: "codeCheckHours",
+  booking_horizon_days: "bookingHorizonDays",
+  max_nights: "maxNights",
+  min_notice_hours: "minNoticeHours",
+  pay_attempts_limit: "payAttemptsLimit",
+  mpesa_prompts_limit: "mpesaPromptsLimit",
+};
+
+/** Checks settings as they would be after a patch: a deposit rule needs its amount. */
+export function checkDepositRule(settings: Pick<BookingSettings, "depositType" | "depositPercent" | "depositFixedMinor">): string | null {
+  if (settings.depositType === "percent" && !(settings.depositPercent >= 1 && settings.depositPercent <= 99)) return "a percentage deposit is 1 to 99 (use none or full otherwise)";
+  if (settings.depositType === "fixed" && !settings.depositFixedMinor) return "a fixed deposit needs deposit_fixed_minor";
+  return null;
+}
 
 /** Checks the policy part of a patch sent by staff (payment accounts have their own routes). */
 export function validatePolicyPatch(input: Record<string, unknown>): { ok: true; patch: BookingSettingsPatch } | { ok: false; error: string } {
@@ -110,17 +212,46 @@ export function validatePolicyPatch(input: Record<string, unknown>): { ok: true;
     if (input.currency !== "KES" && input.currency !== "USD") return { ok: false, error: "currency is KES or USD" };
     patch.currency = input.currency as BookingCurrency;
   }
+  if ("deposit_type" in input) {
+    if (!depositTypes.includes(input.deposit_type as DepositType) || input.deposit_type === "not_set") {
+      return { ok: false, error: "deposit_type is none, percent, fixed or full" };
+    }
+    patch.depositType = input.deposit_type as DepositType;
+  }
   if ("deposit_percent" in input) {
     if (!whole(input.deposit_percent, 0, 100)) return { ok: false, error: "deposit_percent is 0 to 100" };
     patch.depositPercent = input.deposit_percent as number;
+    // A percentage alone says the rule too: 0 is none, 100 is in full.
+    if (!("deposit_type" in input)) patch.depositType = patch.depositPercent === 0 ? "none" : patch.depositPercent === 100 ? "full" : "percent";
   }
-  if ("hold_minutes" in input) {
-    if (!whole(input.hold_minutes, 10, 1440)) return { ok: false, error: "hold_minutes is 10 to 1440" };
-    patch.holdMinutes = input.hold_minutes as number;
+  if ("deposit_fixed_minor" in input) {
+    if (input.deposit_fixed_minor !== null && !whole(input.deposit_fixed_minor, 100, 10_000_000_000)) return { ok: false, error: "deposit_fixed_minor is an amount in cents, at least 100" };
+    patch.depositFixedMinor = input.deposit_fixed_minor as number | null;
   }
-  if ("request_hold_hours" in input) {
-    if (!whole(input.request_hold_hours, 0, 168)) return { ok: false, error: "request_hold_hours is 0 to 168" };
-    patch.requestHoldHours = input.request_hold_hours as number;
+  for (const [field, key] of Object.keys(POLICY_BOUNDS).map((field) => [field, POLICY_KEYS[field as PolicyLimit]] as const)) {
+    if (!(field in input)) continue;
+    const [min, max] = POLICY_BOUNDS[field as PolicyLimit];
+    if (!whole(input[field], min, max)) return { ok: false, error: `${field} is ${min} to ${max}` };
+    (patch as Record<string, number>)[key] = input[field] as number;
+  }
+  if ("payment_order" in input) {
+    const order = input.payment_order;
+    if (!Array.isArray(order) || order.length > paymentWays.length || new Set(order).size !== order.length || !order.every((way) => paymentWays.includes(way))) {
+      return { ok: false, error: `payment_order lists ways to pay once each: ${paymentWays.join(", ")}` };
+    }
+    patch.paymentOrder = order as PaymentWay[];
+  }
+  if ("method_max_minor" in input) {
+    const limits = input.method_max_minor;
+    if (!limits || typeof limits !== "object" || Array.isArray(limits)) return { ok: false, error: "method_max_minor is an object of limits per way to pay" };
+    const clean: Partial<Record<PaymentWay, number>> = {};
+    for (const [way, value] of Object.entries(limits)) {
+      if (!paymentWays.includes(way as PaymentWay) || way === "pay_at_venue") return { ok: false, error: `method_max_minor: ${way} isn't a way to pay online` };
+      if (value === null) continue;
+      if (!whole(value, 100, 10_000_000_000)) return { ok: false, error: `method_max_minor.${way} is an amount in cents` };
+      clean[way as PaymentWay] = value as number;
+    }
+    patch.methodMaxMinor = clean;
   }
   for (const [field, key] of [["check_in_time", "checkInTime"], ["check_out_time", "checkOutTime"]] as const) {
     if (!(field in input)) continue;
@@ -163,9 +294,24 @@ export function publicBookingSettings(settings: BookingSettings, secrets: Set<st
   const options = paymentOptionsOf(settings);
   return {
     currency: settings.currency,
+    deposit_type: settings.depositType,
     deposit_percent: settings.depositPercent,
+    deposit_fixed_minor: settings.depositFixedMinor,
+    deposit_text: depositText(settings),
+    rules_confirmed_at: settings.rulesConfirmedAt,
     hold_minutes: settings.holdMinutes,
     request_hold_hours: settings.requestHoldHours,
+    accepted_hold_hours: settings.acceptedHoldHours,
+    payment_hold_minutes: settings.paymentHoldMinutes,
+    code_check_hours: settings.codeCheckHours,
+    booking_horizon_days: settings.bookingHorizonDays,
+    max_nights: settings.maxNights,
+    min_notice_hours: settings.minNoticeHours,
+    pay_attempts_limit: settings.payAttemptsLimit,
+    mpesa_prompts_limit: settings.mpesaPromptsLimit,
+    payment_order: options.order,
+    method_max_minor: settings.methodMaxMinor,
+    bounds: POLICY_BOUNDS,
     check_in_time: settings.checkInTime,
     check_out_time: settings.checkOutTime,
     cancellation_policy: settings.cancellationPolicy,

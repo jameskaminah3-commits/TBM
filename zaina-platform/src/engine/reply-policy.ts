@@ -268,6 +268,8 @@ export type PaymentDetails = {
   reference?: string;
   totalDisplay?: string;
   depositPercent?: number;
+  /** The whole amount is paid up front (the business's rule). */
+  paysInFull?: boolean;
   holdUntil?: string;
   payBy?: string;
 };
@@ -294,6 +296,7 @@ export function paymentDetailsFromToolResult(toolName: string, result: any): Pay
       reference: text(result.reference),
       totalDisplay: text(result.total_display),
       depositPercent: typeof result.deposit_percent === "number" ? result.deposit_percent : undefined,
+      paysInFull: result.pays_in_full === true,
       holdUntil: text(result.hold_until),
       payBy: text(result.pay_by),
     };
@@ -322,26 +325,35 @@ function roomBookingSection(details: PaymentDetails, language: ChatLanguage): st
   })();
   const sw = language === "sw";
   const reference = details.reference ?? "";
-  const percent = details.depositPercent !== undefined && details.depositPercent < 100 ? details.depositPercent : null;
+  const full = details.paysInFull === true;
+  const percent = !full && details.depositPercent !== undefined && details.depositPercent < 100 ? details.depositPercent : null;
   if (sw) {
     return [
-      `Uhifadhi ${reference} umeshikiliwa kwa ajili yako. Lipa amana${percent !== null ? ` ya asilimia ${percent}` : ""}${details.depositDisplay ? `, yaani ${details.depositDisplay},` : ""} hapa ili kuuthibitisha:`,
+      full
+        ? `Uhifadhi ${reference} umeshikiliwa kwa ajili yako. Lipa kiasi chote${details.depositDisplay ? `, yaani ${details.depositDisplay},` : ""} hapa ili kuuthibitisha:`
+        : `Uhifadhi ${reference} umeshikiliwa kwa ajili yako. Lipa amana${percent !== null ? ` ya asilimia ${percent}` : ""}${details.depositDisplay ? `, yaani ${details.depositDisplay},` : ""} hapa ili kuuthibitisha:`,
       details.url,
       "",
       "Kinachofuata:",
       `• Ukurasa unaonyesha uhifadhi wako na jumla yake${details.totalDisplay ? ` (${details.totalDisplay})` : ""}.${details.payBy ? ` Lipa kwa ${details.payBy === "card or M-Pesa" ? "kadi au M-Pesa" : details.payBy === "card" ? "kadi" : details.payBy}.` : ""}`,
-      "• Amana ikifika, uhifadhi wako unathibitishwa na utapata ujumbe hapa. Kiasi kilichobaki kinalipwa ukifika.",
+      full
+        ? "• Malipo yakifika, uhifadhi wako unathibitishwa na utapata ujumbe hapa."
+        : "• Amana ikifika, uhifadhi wako unathibitishwa na utapata ujumbe hapa. Kiasi kilichobaki kinalipwa ukifika.",
       details.holdUntil ? `• Vyumba vimeshikiliwa hadi ${details.holdUntil}; baada ya hapo vinaweza kupewa mtu mwingine.` : null,
       host ? `• Kila mara hakikisha anwani inaanza na ${host} kabla ya kulipa.` : null,
     ].filter((line) => line !== null).join("\n");
   }
   return [
-    `Booking ${reference} is held for you. Pay the${percent !== null ? ` ${percent}%` : ""} deposit${details.depositDisplay ? ` of ${details.depositDisplay}` : ""} here to confirm it:`,
+    full
+      ? `Booking ${reference} is held for you. Pay the full amount${details.depositDisplay ? ` of ${details.depositDisplay}` : ""} here to confirm it:`
+      : `Booking ${reference} is held for you. Pay the${percent !== null ? ` ${percent}%` : ""} deposit${details.depositDisplay ? ` of ${details.depositDisplay}` : ""} here to confirm it:`,
     details.url,
     "",
     "What happens next:",
     `• The page shows your booking and its total${details.totalDisplay ? ` (${details.totalDisplay})` : ""}.${details.payBy ? ` Pay by ${details.payBy}.` : ""}`,
-    "• Once the deposit arrives, your booking is confirmed and you'll get a message here. The rest is paid at the property.",
+    full
+      ? "• Once the payment arrives, your booking is confirmed and you'll get a message here."
+      : "• Once the deposit arrives, your booking is confirmed and you'll get a message here. The rest is paid at the property.",
     details.holdUntil ? `• The rooms are held until ${details.holdUntil}; after that they may go to someone else.` : null,
     host ? `• Always check the address starts with ${host} before you pay.` : null,
   ].filter((line) => line !== null).join("\n");

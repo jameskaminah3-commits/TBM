@@ -99,6 +99,7 @@ function RoomEditor(props: { businessId: string; room: Offering | null; unit: st
     min: pricing.min_nights === undefined ? "" : String(pricing.min_nights),
     max: pricing.max_nights === undefined ? "" : String(pricing.max_nights),
     deposit: pricing.deposit_percent === undefined ? "" : String(pricing.deposit_percent),
+    depositFixed: major(pricing.deposit_fixed),
   });
   const [seasons, setSeasons] = useState<SeasonForm[]>((pricing.seasons ?? []).map((season) => ({
     name: season.name, from: season.from, to: season.to, nightly: major(season.nightly), extra: major(season.extra_guest_nightly), min: season.min_nights === undefined ? "" : String(season.min_nights),
@@ -121,6 +122,8 @@ function RoomEditor(props: { businessId: string; room: Offering | null; unit: st
     if (max !== undefined) rules.max_nights = max;
     const deposit = optionalWhole(form.deposit);
     if (deposit !== undefined) rules.deposit_percent = deposit;
+    const depositFixed = optionalMinor(form.depositFixed);
+    if (depositFixed !== undefined) rules.deposit_fixed = depositFixed;
     if (seasons.length) {
       rules.seasons = seasons.map((season): Season => ({
         name: season.name, from: season.from, to: season.to, nightly: minor(season.nightly),
@@ -171,7 +174,8 @@ function RoomEditor(props: { businessId: string; room: Offering | null; unit: st
         <div className="form-row">
           <Field label="Minimum nights"><input type="number" min={1} max={60} value={form.min} onChange={(event) => set("min", event.target.value)} placeholder="1" /></Field>
           <Field label="Maximum nights"><input type="number" min={1} max={90} value={form.max} onChange={(event) => set("max", event.target.value)} placeholder="30" /></Field>
-          <Field label="Deposit (%)" hint="Empty: the business's usual deposit."><input type="number" min={0} max={100} value={form.deposit} onChange={(event) => set("deposit", event.target.value)} /></Field>
+          <Field label="Deposit (%)" hint="Empty: your usual deposit."><input type="number" min={0} max={100} value={form.deposit} disabled={form.depositFixed.trim() !== ""} onChange={(event) => set("deposit", event.target.value)} /></Field>
+          <Field label="Or a fixed deposit" hint="Per booking, instead of a percentage."><input inputMode="decimal" value={form.depositFixed} disabled={form.deposit.trim() !== ""} onChange={(event) => set("depositFixed", event.target.value)} /></Field>
         </div>
 
         <h3>Seasons</h3>
@@ -251,7 +255,7 @@ function TryQuote(props: { businessId: string; room: Offering }) {
           <tbody>
             {result.quote.lines.map((line, index) => <tr key={index} className={line.included ? "sub" : undefined}><th scope="row">{line.label}</th><td>{line.display}</td></tr>)}
             <tr className="total"><th scope="row">Total</th><td>{result.quote.total_display}</td></tr>
-            <tr className="sub"><th scope="row">Deposit ({result.quote.deposit_percent}%)</th><td>{result.quote.deposit_display}</td></tr>
+            <tr className="sub"><th scope="row">Deposit{typeof result.quote.deposit_percent === "number" && result.quote.deposit_rule !== "fixed" ? ` (${result.quote.deposit_percent}%)` : ""}</th><td>{result.quote.deposit_display}</td></tr>
             <tr className="sub"><th scope="row">Rooms free</th><td>{result.rooms_free}</td></tr>
           </tbody>
         </table>

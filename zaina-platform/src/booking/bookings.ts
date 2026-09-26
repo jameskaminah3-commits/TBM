@@ -10,9 +10,11 @@
 //             for the deposit like an instant booking.
 //   enquiry   not booked here: Zaina takes the customer's details (a lead).
 //
-// With no deposit to pay (0%), a booking is confirmed at once and paid at the
-// venue. A deposit the business has no way to take online makes the booking
-// a request: the team arranges payment.
+// The deposit, the holds and the limits are the business's own (booking
+// settings). With no deposit to pay, a booking is confirmed at once and paid
+// at the venue. A business that hasn't chosen its deposit yet, or has no way
+// to take it online (or none for this amount), gets requests: the team
+// arranges payment. Zaina never decides a deposit.
 //
 // Money that arrives is applied here too (settlePayment). A payment that
 // lands after its hold ended still gets the rooms if they're free; if they've
@@ -33,14 +35,9 @@ import { inBusiness } from "../db/tenant.ts";
 import { businessDay } from "../gateway/spend-cap.ts";
 import { lockOffering, roomsTaken } from "./availability.ts";
 import { addDays, isoDate, parseDate, quoteStay, withAgreedTotal, type PricingRules, type StayQuote } from "./pricing.ts";
-import { canTakeDeposits, defaultBookingSettings, paymentOptionsOf, taxRuleOf } from "./settings.ts";
+import { localParts } from "./local-time.ts";
+import { canTakeDeposits, defaultBookingSettings, depositChosen, depositRuleOf, paymentOptionsOf, taxRuleOf } from "./settings.ts";
 
-/** How far ahead a stay can be booked. */
-export const BOOKING_HORIZON_DAYS = 548;
-/** How long an accepted request keeps its rooms while the customer pays the deposit. */
-export const ACCEPTED_HOLD_HOURS = 24;
-/** Starting to pay keeps the rooms at least this long, so a slow payment isn't cut off. */
-export const PAYMENT_HOLD_MINUTES = 15;
 
 // No 0/O or 1/I: references are read out over the phone.
 const REFERENCE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -74,14 +71,26 @@ async function settingsIn(db: Db, businessId: string): Promise<BookingSettings> 
   return row ?? defaultBookingSettings(businessId);
 }
 
-/** Checks the dates are bookable in the business's calendar: not past, not too far ahead. */
-export function checkStayDates(checkIn: string, checkOut: string, timeZone: string, now: Date = new Date()): BookingProblem | null {
+export type DatePolicy = Pick<BookingSettings, "bookingHorizonDays" | "minNoticeHours" | "checkInTime">;
+
+/**
+ * Checks the dates are bookable in the business's calendar: not past, with
+ * the notice the business asks for, and not further ahead than it takes
+ * bookings. Staff bookings skip the notice (the team decides for itself).
+ */
+export function checkStayDates(checkIn: string, checkOut: string, timeZone: string, policy: DatePolicy, now: Date = new Date(), options: { skipNotice?: boolean } = {}): BookingProblem | null {
   const start = parseDate(checkIn);
   const end = parseDate(checkOut);
   if (!start || !end || end <= start) return problem("invalid_dates", "Check-out must be a date after check-in (YYYY-MM-DD).");
   const today = businessDay(timeZone, now);
   if (checkIn < today) return problem("too_soon", `Check-in can't be before today (${today}).`);
-  const last = isoDate(addDays(parseDate(today)!, BOOKING_HORIZON_DAYS));
+  if (policy.minNoticeHours > 0 && !options.skipNotice) {
+    // The first check-in (at the business's check-in time) that far ahead.
+    const earliest = localParts(timeZone, new Date(now.getTime() + policy.minNoticeHours * 3_600_000));
+    const first = policy.checkInTime >= earliest.time ? earliest.date : isoDate(addDays(parseDate(earliest.date)!, 1));
+    if (checkIn < first) return problem("too_soon", `Online bookings need ${policy.minNoticeHours} hours' notice: the earliest check-in is ${first}.`);
+  }
+  const last = isoDate(addDays(parseDate(today)!, policy.bookingHorizonDays));
   if (checkIn > last) return problem("too_far", `Stays can be booked up to ${last}.`);
   return null;
 }
@@ -94,7 +103,8 @@ export function quoteFor(offering: Offering, settings: BookingSettings, stay: { 
     stay,
     currency: settings.currency,
     tax: taxRuleOf(settings),
-    depositPercent: settings.depositPercent,
+    deposit: depositRuleOf(settings),
+    maxNights: settings.maxNights,
   });
 }
 
@@ -122,14 +132,14 @@ export type CreatedBooking = { ok: true; booking: Booking; offering: Offering; s
 /** Books rooms: holds them for payment, files a request, or confirms at once (see the top of this file). */
 export async function createBooking(input: CreateBookingInput): Promise<CreatedBooking | BookingProblem> {
   const now = input.now ?? new Date();
-  const dates = checkStayDates(input.checkIn, input.checkOut, input.timeZone, now);
-  if (dates) return dates;
   return inBusiness(async (db, client) => {
     const [offering] = await db.select().from(offerings)
       .where(and(eq(offerings.businessId, input.businessId), eq(offerings.id, input.offeringId), eq(offerings.status, "active")))
       .limit(1);
     if (!offering) return problem("not_found", "That room type isn't available to book.");
     const settings = await settingsIn(db, input.businessId);
+    const dates = checkStayDates(input.checkIn, input.checkOut, input.timeZone, settings, now, { skipNotice: input.source === "staff" });
+    if (dates) return dates;
     if (offering.bookingMode === "enquiry" && input.source === "chat") {
       return problem("enquiry_only", `${offering.name} isn't booked online: the team takes enquiries and gets back to the customer.`);
     }
@@ -160,12 +170,15 @@ export async function createBooking(input: CreateBookingInput): Promise<CreatedB
     let hold: Date | null;
     if (input.source === "staff" && input.confirmNow) {
       [status, hold] = ["confirmed", null];
-    } else if (quote.deposit === 0 && offering.bookingMode !== "request") {
-      [status, hold] = ["confirmed", null];
     } else if (input.source === "staff") {
       // Booked by the team for a customer who pays the deposit through the link.
-      [status, hold] = quote.deposit === 0 ? ["confirmed", null] : ["awaiting_payment", minutes(ACCEPTED_HOLD_HOURS * 60)];
-    } else if (offering.bookingMode === "instant" && canTakeDeposits(options)) {
+      [status, hold] = quote.deposit === 0 ? ["confirmed", null] : ["awaiting_payment", minutes(settings.acceptedHoldHours * 60)];
+    } else if (!depositChosen(settings) && !offeringSetsDeposit(offering)) {
+      // The business hasn't chosen its deposit: the team decides and arranges payment.
+      [status, hold] = ["requested", requestHold];
+    } else if (quote.deposit === 0 && offering.bookingMode !== "request") {
+      [status, hold] = ["confirmed", null];
+    } else if (offering.bookingMode === "instant" && canTakeDeposits(options, quote.deposit)) {
       [status, hold] = ["held", minutes(settings.holdMinutes)];
     } else {
       [status, hold] = ["requested", requestHold];
@@ -211,6 +224,12 @@ export async function createBooking(input: CreateBookingInput): Promise<CreatedB
     }
   }, input.businessId);
 }
+
+/** A room type with its own deposit rule (the business chose it there). */
+const offeringSetsDeposit = (offering: Offering) => {
+  const rules = offering.pricing as PricingRules;
+  return rules.deposit_percent !== undefined || rules.deposit_fixed !== undefined;
+};
 
 // ── Reading ───────────────────────────────────────────────────────────
 
@@ -304,6 +323,7 @@ export async function acceptBooking(businessId: string, id: string, staffUserId:
     const booking = await lockedBooking(db, businessId, id);
     if (!booking) return problem("not_found", "No such booking.");
     if (booking.status !== "requested") return problem("wrong_status", `Only a request can be accepted; this booking is ${booking.status.replace("_", " ")}.`);
+    const settings = await settingsIn(db, businessId);
     if (!(await roomsFreeFor(client, booking))) return problem("unavailable", "Those rooms have been booked meanwhile: decline the request, or free a room first.");
     const quote = input.agreedTotal !== undefined && input.agreedTotal !== null
       ? withAgreedTotal(booking.quote as unknown as StayQuote, input.agreedTotal, input.note ?? null)
@@ -311,7 +331,7 @@ export async function acceptBooking(businessId: string, id: string, staffUserId:
     const confirmed = quote.deposit === 0;
     const [updated] = await db.update(bookings).set({
       status: confirmed ? "confirmed" : "awaiting_payment",
-      holdExpiresAt: confirmed ? null : new Date(now.getTime() + ACCEPTED_HOLD_HOURS * 3_600_000),
+      holdExpiresAt: confirmed ? null : new Date(now.getTime() + settings.acceptedHoldHours * 3_600_000),
       quote: quote as unknown as Record<string, unknown>,
       totalMinor: quote.total,
       depositMinor: quote.deposit,
@@ -369,7 +389,7 @@ export async function confirmBooking(businessId: string, id: string, staffUserId
  * Before a payment starts: the booking must still be waiting for money, and
  * its rooms still its own. A hold that ran out is renewed if the rooms are
  * free (C1: nobody pays for rooms that have gone). The hold then lasts at
- * least PAYMENT_HOLD_MINUTES.
+ * least the business's payment hold (payment_hold_minutes).
  */
 export async function holdForPayment(businessId: string, id: string, now = new Date()): Promise<{ ok: true; booking: Booking } | BookingProblem> {
   return inBusiness(async (db, client) => {
@@ -386,7 +406,8 @@ export async function holdForPayment(businessId: string, id: string, now = new D
       }
       return problem("rooms_gone", "Sorry, the rooms for this booking were taken after its hold ended.");
     }
-    const until = new Date(Math.max(holding ? booking.holdExpiresAt!.getTime() : 0, now.getTime() + PAYMENT_HOLD_MINUTES * 60_000));
+    const { paymentHoldMinutes } = await settingsIn(db, businessId);
+    const until = new Date(Math.max(holding ? booking.holdExpiresAt!.getTime() : 0, now.getTime() + paymentHoldMinutes * 60_000));
     const [updated] = await db.update(bookings).set({ status: booking.status === "expired" ? "held" : booking.status, holdExpiresAt: until, updatedAt: now })
       .where(and(eq(bookings.businessId, businessId), eq(bookings.id, id))).returning();
     return { ok: true, booking: updated };

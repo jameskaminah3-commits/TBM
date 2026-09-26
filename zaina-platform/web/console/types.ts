@@ -182,6 +182,7 @@ export type Pricing = {
   max_nights?: number;
   fees?: Fee[];
   deposit_percent?: number;
+  deposit_fixed?: number;
 };
 
 export type Offering = {
@@ -205,7 +206,8 @@ export type Quote = {
   total: number;
   deposit: number;
   balance: number;
-  deposit_percent: number;
+  deposit_rule?: DepositType;
+  deposit_percent: number | null;
   total_display: string;
   deposit_display: string;
   balance_display: string;
@@ -263,11 +265,29 @@ export type PaymentRow = {
 
 export type BookingDetail = { booking: BookingRow & { quote: Quote }; payments: PaymentRow[] };
 
+export type DepositType = "not_set" | "none" | "percent" | "fixed" | "full";
+export type PaymentWay = "mpesa_express" | "paystack" | "mpesa_manual" | "pay_at_venue";
+
 export type BookingSettingsView = {
   currency: "KES" | "USD";
+  deposit_type: DepositType;
   deposit_percent: number;
+  deposit_fixed_minor: number | null;
+  deposit_text: string;
+  rules_confirmed_at: string | null;
   hold_minutes: number;
   request_hold_hours: number;
+  accepted_hold_hours: number;
+  payment_hold_minutes: number;
+  code_check_hours: number;
+  booking_horizon_days: number;
+  max_nights: number;
+  min_notice_hours: number;
+  pay_attempts_limit: number;
+  mpesa_prompts_limit: number;
+  payment_order: PaymentWay[];
+  method_max_minor: Partial<Record<PaymentWay, number>>;
+  bounds: Record<"hold_minutes" | "request_hold_hours" | "accepted_hold_hours" | "payment_hold_minutes" | "code_check_hours" | "booking_horizon_days" | "max_nights" | "min_notice_hours" | "pay_attempts_limit" | "mpesa_prompts_limit", [number, number]>;
   check_in_time: string;
   check_out_time: string;
   cancellation_policy: string | null;
