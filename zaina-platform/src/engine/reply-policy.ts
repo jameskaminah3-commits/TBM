@@ -254,7 +254,7 @@ export function formatToolHistoryEntry(toolName: string, argsText: string, resul
 // PAYMENT SECTIONS — appended by the server, never written by the model
 // ═══════════════════════════════════════════════════════════════════
 
-export type PaymentKind = "booking" | "custom_request" | "listing_verification";
+export type PaymentKind = "booking" | "custom_request" | "listing_verification" | "room_booking";
 
 export type PaymentDetails = {
   kind: PaymentKind;
@@ -264,6 +264,12 @@ export type PaymentDetails = {
   depositDisplay?: string;
   /** Request or verification fee, already formatted. */
   feeDisplay?: string;
+  /** A room booking on the platform (Phase 4): its reference, total, deposit share, hold and ways to pay. */
+  reference?: string;
+  totalDisplay?: string;
+  depositPercent?: number;
+  holdUntil?: string;
+  payBy?: string;
 };
 
 const PAYMENT_TOOL_KINDS: Record<string, PaymentKind> = {
@@ -271,6 +277,7 @@ const PAYMENT_TOOL_KINDS: Record<string, PaymentKind> = {
   create_service_booking: "booking",
   create_custom_offer: "custom_request",
   create_listing_verification_request: "listing_verification",
+  create_booking: "room_booking",
 };
 
 /** Returns payment details when a tool call created (or replayed) something payable. */
@@ -278,6 +285,19 @@ export function paymentDetailsFromToolResult(toolName: string, result: any): Pay
   const kind = PAYMENT_TOOL_KINDS[toolName];
   if (!kind || !result || result.ok !== true || typeof result.payment_link !== "string") return null;
   const text = (value: unknown) => (typeof value === "string" && value.trim() ? value : undefined);
+  if (kind === "room_booking") {
+    return {
+      kind,
+      url: result.payment_link,
+      bookingId: text(result.booking_id),
+      depositDisplay: text(result.deposit_display),
+      reference: text(result.reference),
+      totalDisplay: text(result.total_display),
+      depositPercent: typeof result.deposit_percent === "number" ? result.deposit_percent : undefined,
+      holdUntil: text(result.hold_until),
+      payBy: text(result.pay_by),
+    };
+  }
   return {
     kind,
     url: result.payment_link,
@@ -285,6 +305,46 @@ export function paymentDetailsFromToolResult(toolName: string, result: any): Pay
     depositDisplay: kind === "booking" ? text(result.deposit_display) : undefined,
     feeDisplay: kind === "booking" ? undefined : text(result.fee_display),
   };
+}
+
+/**
+ * The payment section for a room booking on the platform: the business's own
+ * payment page (its link carries the booking), its deposit and hold, and the
+ * way the customer hears it's confirmed.
+ */
+function roomBookingSection(details: PaymentDetails, language: ChatLanguage): string {
+  const host = (() => {
+    try {
+      return new URL(details.url).host;
+    } catch {
+      return "";
+    }
+  })();
+  const sw = language === "sw";
+  const reference = details.reference ?? "";
+  const percent = details.depositPercent !== undefined && details.depositPercent < 100 ? details.depositPercent : null;
+  if (sw) {
+    return [
+      `Uhifadhi ${reference} umeshikiliwa kwa ajili yako. Lipa amana${percent !== null ? ` ya asilimia ${percent}` : ""}${details.depositDisplay ? `, yaani ${details.depositDisplay},` : ""} hapa ili kuuthibitisha:`,
+      details.url,
+      "",
+      "Kinachofuata:",
+      `• Ukurasa unaonyesha uhifadhi wako na jumla yake${details.totalDisplay ? ` (${details.totalDisplay})` : ""}.${details.payBy ? ` Lipa kwa ${details.payBy === "card or M-Pesa" ? "kadi au M-Pesa" : details.payBy === "card" ? "kadi" : details.payBy}.` : ""}`,
+      "• Amana ikifika, uhifadhi wako unathibitishwa na utapata ujumbe hapa. Kiasi kilichobaki kinalipwa ukifika.",
+      details.holdUntil ? `• Vyumba vimeshikiliwa hadi ${details.holdUntil}; baada ya hapo vinaweza kupewa mtu mwingine.` : null,
+      host ? `• Kila mara hakikisha anwani inaanza na ${host} kabla ya kulipa.` : null,
+    ].filter((line) => line !== null).join("\n");
+  }
+  return [
+    `Booking ${reference} is held for you. Pay the${percent !== null ? ` ${percent}%` : ""} deposit${details.depositDisplay ? ` of ${details.depositDisplay}` : ""} here to confirm it:`,
+    details.url,
+    "",
+    "What happens next:",
+    `• The page shows your booking and its total${details.totalDisplay ? ` (${details.totalDisplay})` : ""}.${details.payBy ? ` Pay by ${details.payBy}.` : ""}`,
+    "• Once the deposit arrives, your booking is confirmed and you'll get a message here. The rest is paid at the property.",
+    details.holdUntil ? `• The rooms are held until ${details.holdUntil}; after that they may go to someone else.` : null,
+    host ? `• Always check the address starts with ${host} before you pay.` : null,
+  ].filter((line) => line !== null).join("\n");
 }
 
 // The same wording for every customer: it never depends on whether the email
@@ -307,6 +367,7 @@ function signInStep(item: "booking" | "request", language: ChatLanguage): string
  * Swahili is a draft until a fluent speaker has checked it (see messages.ts).
  */
 export function buildPaymentSection(details: PaymentDetails, language: ChatLanguage = "en"): string {
+  if (details.kind === "room_booking") return roomBookingSection(details, language);
   const host = getPublicSiteHost();
   const sw = language === "sw";
   const safetyStep = sw

@@ -16,7 +16,7 @@
 // number, its own payment steps) so the server-side reply policy is tested.
 // Token counts are estimated at four characters each, so telemetry has
 // numbers to add up.
-import { appendFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 
@@ -251,9 +251,121 @@ async function fakeGraph(url, init) {
   return graphAnswer(400, { error: { message: `Unsupported request ${method} ${pathname}`, code: 100 } });
 }
 
+// ── A stand-in for Paystack (api.paystack.co) ─────────────────────────
+// Secret keys sk_test_… are accepted, except sk_test_refused…; the platform's
+// subaccount ACCT_pilot0001 exists. A transaction is paid once the test
+// writes its reference to FAKE_PAYSTACK_PAID (one per line), as if the
+// customer finished on Paystack's page. Every call goes to FAKE_PAYSTACK_LOG.
+const paystackTransactions = new Map();
+function logPaystack(entry) {
+  if (process.env.FAKE_PAYSTACK_LOG) appendFileSync(process.env.FAKE_PAYSTACK_LOG, JSON.stringify({ at: new Date().toISOString(), ...entry }) + "\n");
+}
+function paidReferences() {
+  try {
+    return new Set(readFileSync(process.env.FAKE_PAYSTACK_PAID ?? "", "utf8").split("\n").map((line) => line.trim()).filter(Boolean));
+  } catch {
+    return new Set();
+  }
+}
+async function fakePaystack(url, init) {
+  const { pathname } = new URL(url);
+  const method = (init?.method ?? "GET").toUpperCase();
+  const key = /^Bearer (.+)$/.exec(init?.headers?.authorization ?? init?.headers?.Authorization ?? "")?.[1] ?? "";
+  const answer = (status, body) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+  if (!/^sk_test_[A-Za-z0-9]{10,}$/.test(key) || key.startsWith("sk_test_refused")) {
+    logPaystack({ kind: "refused", path: pathname });
+    return answer(401, { status: false, message: "Invalid key" });
+  }
+  if (method === "GET" && pathname === "/balance") return answer(200, { status: true, message: "Balances retrieved", data: [{ currency: "KES", balance: 0 }] });
+  const subaccount = /^\/subaccount\/(.+)$/.exec(pathname);
+  if (method === "GET" && subaccount) {
+    return subaccount[1] === "ACCT_pilot0001"
+      ? answer(200, { status: true, data: { subaccount_code: "ACCT_pilot0001", business_name: "Lakeview Lodge", active: true } })
+      : answer(404, { status: false, message: "Subaccount not found" });
+  }
+  if (method === "POST" && pathname === "/transaction/initialize") {
+    const body = JSON.parse(init?.body ?? "{}");
+    paystackTransactions.set(body.reference, { ...body, key });
+    logPaystack({ kind: "initialize", reference: body.reference, amount: body.amount, currency: body.currency, email: body.email, channels: body.channels, subaccount: body.subaccount ?? null, key: key.slice(0, 16), callback: body.callback_url });
+    return answer(200, { status: true, message: "Authorization URL created", data: { authorization_url: `https://checkout.paystack.com/fake_${body.reference}`, access_code: `ac_${body.reference}`, reference: body.reference } });
+  }
+  const verify = /^\/transaction\/verify\/(.+)$/.exec(pathname);
+  if (method === "GET" && verify) {
+    const reference = decodeURIComponent(verify[1]);
+    const transaction = paystackTransactions.get(reference);
+    if (!transaction || transaction.key !== key) return answer(404, { status: false, message: "Transaction reference not found" });
+    const paid = paidReferences().has(reference);
+    logPaystack({ kind: "verify", reference, paid });
+    return answer(200, { status: true, data: { id: 5000000 + paystackTransactions.size, status: paid ? "success" : "abandoned", reference, amount: transaction.amount, currency: transaction.currency, channel: "card", gateway_response: paid ? "Successful" : "The transaction was not completed" } });
+  }
+  return answer(400, { status: false, message: `Unsupported request ${method} ${pathname}` });
+}
+
+// ── A stand-in for M-Pesa's Daraja API (sandbox/api.safaricom.co.ke) ──
+// Consumer key and secret pilot-consumer-key / pilot-consumer-secret, passkey
+// pilot-passkey. A payment prompt is answered, and Safaricom's callback sent
+// to its address, shortly after. Phone numbers choose the outcome:
+//   254700000032  the customer cancels (result 1032)
+//   254700000044  paid, but the callback never arrives (only asking finds out)
+// Every call goes to FAKE_MPESA_LOG.
+const stkRequests = new Map();
+let stkCounter = 0;
+function logMpesa(entry) {
+  if (process.env.FAKE_MPESA_LOG) appendFileSync(process.env.FAKE_MPESA_LOG, JSON.stringify({ at: new Date().toISOString(), ...entry }) + "\n");
+}
+async function fakeDaraja(url, init) {
+  const { pathname, searchParams } = new URL(url);
+  const answer = (status, body) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+  const authorization = init?.headers?.authorization ?? init?.headers?.Authorization ?? "";
+  if (pathname === "/oauth/v1/generate" && searchParams.get("grant_type") === "client_credentials") {
+    const [consumerKey, consumerSecret] = Buffer.from(authorization.replace(/^Basic /, ""), "base64").toString("utf8").split(":");
+    if (consumerKey !== "pilot-consumer-key" || consumerSecret !== "pilot-consumer-secret") {
+      logMpesa({ kind: "refused" });
+      return answer(400, { requestId: "req-1", errorCode: "400.008.01", errorMessage: "Invalid Authentication passed" });
+    }
+    return answer(200, { access_token: "fake-mpesa-token", expires_in: "3599" });
+  }
+  if (authorization !== "Bearer fake-mpesa-token") return answer(401, { errorCode: "404.001.03", errorMessage: "Invalid Access Token" });
+  const body = JSON.parse(init?.body ?? "{}");
+  const expectedPassword = Buffer.from(`${body.BusinessShortCode}pilot-passkey${body.Timestamp}`).toString("base64");
+  if (body.Password !== expectedPassword || !/^\d{14}$/.test(String(body.Timestamp))) {
+    return answer(400, { errorCode: "400.002.02", errorMessage: "Bad Request - Invalid Password" });
+  }
+  if (pathname === "/mpesa/stkpush/v1/processrequest") {
+    stkCounter += 1;
+    const id = `ws_CO_${Date.now()}${stkCounter}`;
+    const phone = String(body.PhoneNumber);
+    const outcome = phone === "254700000032" ? "cancelled" : "paid";
+    stkRequests.set(id, { ...body, outcome });
+    logMpesa({ kind: "stk", checkoutRequestId: id, amount: body.Amount, phone, shortcode: body.BusinessShortCode, partyB: body.PartyB, type: body.TransactionType, reference: body.AccountReference });
+    if (phone !== "254700000044") {
+      setTimeout(() => {
+        const callback = outcome === "paid"
+          ? { Body: { stkCallback: { MerchantRequestID: `m-${id}`, CheckoutRequestID: id, ResultCode: 0, ResultDesc: "The service request is processed successfully.", CallbackMetadata: { Item: [{ Name: "Amount", Value: body.Amount }, { Name: "MpesaReceiptNumber", Value: `SJ${String(stkCounter).padStart(8, "0")}` }, { Name: "TransactionDate", Value: 20261001120000 }, { Name: "PhoneNumber", Value: Number(phone) }] } } } }
+          : { Body: { stkCallback: { MerchantRequestID: `m-${id}`, CheckoutRequestID: id, ResultCode: 1032, ResultDesc: "Request cancelled by user" } } };
+        realFetch(body.CallBackURL, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(callback) })
+          .then((response) => logMpesa({ kind: "callback", checkoutRequestId: id, status: response.status }))
+          .catch((error) => logMpesa({ kind: "callback-failed", checkoutRequestId: id, error: error.message }));
+      }, 300);
+    }
+    return answer(200, { MerchantRequestID: `m-${id}`, CheckoutRequestID: id, ResponseCode: "0", ResponseDescription: "Success. Request accepted for processing", CustomerMessage: "Success. Request accepted for processing" });
+  }
+  if (pathname === "/mpesa/stkpushquery/v1/query") {
+    const request = stkRequests.get(body.CheckoutRequestID);
+    logMpesa({ kind: "query", checkoutRequestId: body.CheckoutRequestID, outcome: request?.outcome ?? "unknown" });
+    if (!request) return answer(500, { errorCode: "500.001.1001", errorMessage: "The transaction is being processed" });
+    return request.outcome === "paid"
+      ? answer(200, { ResponseCode: "0", ResponseDescription: "The service request has been accepted successsfully", ResultCode: "0", ResultDesc: "The service request is processed successfully." })
+      : answer(200, { ResponseCode: "0", ResponseDescription: "The service request has been accepted successsfully", ResultCode: "1032", ResultDesc: "Request cancelled by user" });
+  }
+  return answer(404, { errorCode: "404.001.01", errorMessage: `Unsupported ${pathname}` });
+}
+
 globalThis.fetch = async (input, init) => {
   const url = typeof input === "string" ? input : input?.url ?? String(input);
   if (url.startsWith("https://graph.facebook.com/") || url.startsWith("https://lookaside.fbsbx.com/")) return fakeGraph(url, init);
+  if (url.startsWith("https://api.paystack.co/")) return fakePaystack(url, init);
+  if (url.startsWith("https://sandbox.safaricom.co.ke/") || url.startsWith("https://api.safaricom.co.ke/")) return fakeDaraja(url, init);
   if (url.startsWith("https://push.example/")) {
     // A stand-in push service: an endpoint with "gone" in it has been dropped by the browser.
     if (process.env.FAKE_PUSH_LOG) {

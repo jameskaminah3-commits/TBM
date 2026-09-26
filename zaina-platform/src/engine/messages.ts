@@ -51,8 +51,8 @@ type Texts = {
   teamBusy: (askContact: boolean) => string;
   mpesaUsedElsewhere: string;
   mpesaUnmatched: (code: string) => string;
-  mpesaAlreadyHave: (code: string, bookingRef: string) => string;
-  mpesaRecorded: (code: string, bookingRef: string, amount: string, dates: "none" | "held" | "conflict") => string;
+  mpesaAlreadyHave: (code: string, bookingRef: string, where?: "email" | "chat") => string;
+  mpesaRecorded: (code: string, bookingRef: string, amount: string, dates: "none" | "held" | "conflict", where?: "email" | "chat") => string;
   /** WhatsApp: the customer sent something Zaina can't read (a photo, a voice note…) without any text. */
   mediaNotRead: (kind: MediaKind) => string;
 };
@@ -75,9 +75,9 @@ const ENGLISH: Texts = {
     `Sorry for the wait — the team is busy right now, so I've asked them to get back to you as soon as they can.${askContact ? ENGLISH.askContact : ""} I'm here to help in the meantime.`,
   mpesaUsedElsewhere: "That M-Pesa code has already been used for another booking, so I've asked the team to check it. If you sent a new payment, please share its code.",
   mpesaUnmatched: (code) => `Thanks — I couldn't match code ${code} to your booking automatically, so I've passed it to the team to check. They'll confirm by email.`,
-  mpesaAlreadyHave: (code, bookingRef) => `I already have M-Pesa code ${code} for booking ${bookingRef} — the team is checking it and will confirm by email.`,
-  mpesaRecorded: (code, bookingRef, amount, dates) =>
-    `Thanks! I've passed M-Pesa code ${code} to our team to match with booking ${bookingRef} (${amount}). You'll get a confirmation by email once it's verified.`
+  mpesaAlreadyHave: (code, bookingRef, where = "email") => `I already have M-Pesa code ${code} for booking ${bookingRef} — the team is checking it and will confirm ${where === "chat" ? "here" : "by email"}.`,
+  mpesaRecorded: (code, bookingRef, amount, dates, where = "email") =>
+    `Thanks! I've passed M-Pesa code ${code} to our team to match with booking ${bookingRef} (${amount}). You'll get a confirmation ${where === "chat" ? "here" : "by email"} once it's verified.`
     + (dates === "conflict"
       ? " One thing: another guest paid for those dates in the meantime, so the team will contact you to move your booking or refund you."
       : dates === "held" ? " Your dates are held while they check." : ""),
@@ -106,9 +106,9 @@ const SWAHILI: Texts = {
     `Samahani kwa kusubiri — timu ina shughuli nyingi kwa sasa, kwa hivyo nimewaomba wawasiliane nawe haraka iwezekanavyo.${askContact ? SWAHILI.askContact : ""} Niko hapa kukusaidia kwa sasa.`,
   mpesaUsedElsewhere: "Nambari hiyo ya M-Pesa imeshatumika kwa uhifadhi mwingine, kwa hivyo nimeiomba timu iikague. Kama ulituma malipo mapya, tafadhali tuma nambari yake.",
   mpesaUnmatched: (code) => `Asante — sikuweza kuunganisha nambari ${code} na uhifadhi wako moja kwa moja, kwa hivyo nimeipeleka kwa timu ili waikague. Watathibitisha kwa barua pepe.`,
-  mpesaAlreadyHave: (code, bookingRef) => `Tayari nina nambari ya M-Pesa ${code} ya uhifadhi ${bookingRef} — timu inaikagua na itathibitisha kwa barua pepe.`,
-  mpesaRecorded: (code, bookingRef, amount, dates) =>
-    `Asante! Nimepeleka nambari ya M-Pesa ${code} kwa timu yetu ili iunganishwe na uhifadhi ${bookingRef} (${amount}). Utapokea uthibitisho kwa barua pepe ikishathibitishwa.`
+  mpesaAlreadyHave: (code, bookingRef, where = "email") => `Tayari nina nambari ya M-Pesa ${code} ya uhifadhi ${bookingRef} — timu inaikagua na itathibitisha ${where === "chat" ? "hapa" : "kwa barua pepe"}.`,
+  mpesaRecorded: (code, bookingRef, amount, dates, where = "email") =>
+    `Asante! Nimepeleka nambari ya M-Pesa ${code} kwa timu yetu ili iunganishwe na uhifadhi ${bookingRef} (${amount}). Utapokea uthibitisho ${where === "chat" ? "hapa" : "kwa barua pepe"} ikishathibitishwa.`
     + (dates === "conflict"
       ? " Jambo moja: mgeni mwingine amelipia tarehe hizo kwa sasa, kwa hivyo timu itawasiliana nawe kubadilisha uhifadhi wako au kukurudishia pesa."
       : dates === "held" ? " Tarehe zako zimeshikiliwa wakati wanakagua." : ""),

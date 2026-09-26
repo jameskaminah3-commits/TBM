@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,7 +30,9 @@ export type Platform = {
   work: string;
   db: pg.Pool;
   output: () => string;
-  log: (name: "emails" | "model" | "whatsapp" | "push") => any[];
+  log: (name: "emails" | "model" | "whatsapp" | "push" | "paystack" | "mpesa") => any[];
+  /** Marks a Paystack transaction paid, as if the customer finished on Paystack's page. */
+  payOnPaystack: (reference: string) => void;
   stop: () => Promise<void>;
   cli: (script: string, args: string[], env?: Record<string, string>) => void;
 };
@@ -50,7 +52,11 @@ export async function startPlatform(options: { port: number; env?: Record<string
     model: path.join(work, "model.log"),
     whatsapp: path.join(work, "whatsapp.log"),
     push: path.join(work, "push.log"),
+    paystack: path.join(work, "paystack.log"),
+    mpesa: path.join(work, "mpesa.log"),
   };
+  const paystackPaid = path.join(work, "paystack-paid.txt");
+  writeFileSync(paystackPaid, "");
   for (const file of Object.values(logs)) writeFileSync(file, "");
   const db = new pg.Pool({ connectionString: databaseUrl, max: 2 });
   await db.query("drop schema public cascade; create schema public;");
@@ -78,6 +84,9 @@ export async function startPlatform(options: { port: number; env?: Record<string
       FAKE_GEMINI_LOG: logs.model,
       FAKE_WHATSAPP_LOG: logs.whatsapp,
       FAKE_PUSH_LOG: logs.push,
+      FAKE_PAYSTACK_LOG: logs.paystack,
+      FAKE_PAYSTACK_PAID: paystackPaid,
+      FAKE_MPESA_LOG: logs.mpesa,
       ...options.env,
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -101,6 +110,7 @@ export async function startPlatform(options: { port: number; env?: Record<string
     db,
     output: () => output,
     log: (name) => readLog(logs[name]),
+    payOnPaystack: (reference) => appendFileSync(paystackPaid, `${reference}\n`),
     cli: (script, args, env = {}) => {
       const run = spawnSync(process.execPath, ["--import", "tsx", `zaina-platform/src/cli/${script}`, ...args], {
         cwd: REPO,

@@ -52,9 +52,9 @@ export async function setStaffPassword(userId: string, passwordHash: string): Pr
 }
 
 /** The businesses a person works for, and as what. */
-export async function membershipsOf(userId: string): Promise<Array<{ businessId: string; businessName: string; role: StaffRole }>> {
+export async function membershipsOf(userId: string): Promise<Array<{ businessId: string; businessName: string; role: StaffRole; businessType: BusinessType }>> {
   return ownerDb()
-    .select({ businessId: staffMemberships.businessId, businessName: businesses.name, role: staffMemberships.role })
+    .select({ businessId: staffMemberships.businessId, businessName: businesses.name, role: staffMemberships.role, businessType: businesses.businessType })
     .from(staffMemberships)
     .innerJoin(businesses, eq(businesses.id, staffMemberships.businessId))
     .where(eq(staffMemberships.userId, userId));

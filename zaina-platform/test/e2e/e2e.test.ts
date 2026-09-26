@@ -481,7 +481,7 @@ test("staff sign in with their own password; wrong ones are refused, then slowed
   assert.equal(me.status, 200);
   assert.deepEqual(me.body.user, { ...me.body.user, email: "amina@example.com", name: "Amina", is_platform_admin: false });
   assert.doesNotMatch(JSON.stringify(me.body), /scrypt|password/i);
-  assert.deepEqual(me.body.businesses, [{ businessId: "tbm", businessName: "Tembea Bila Matata", role: "agent" }]);
+  assert.deepEqual(me.body.businesses, [{ businessId: "tbm", businessName: "Tembea Bila Matata", role: "agent", businessType: "travel_concierge" }]);
 
   // Ten tries per account every 15 minutes, whichever addresses they come from.
   const statuses = [];
@@ -527,7 +527,7 @@ test("the platform adds a second business, with its first owner, in one step", a
 
   acmeOwnerToken = await tokenFor("otieno@example.com");
   const me = await staff("GET", "/v1/staff/me", undefined, acmeOwnerToken);
-  assert.deepEqual(me.body.businesses, [{ businessId: "acme", businessName: "Acme Guesthouse", role: "owner" }]);
+  assert.deepEqual(me.body.businesses, [{ businessId: "acme", businessName: "Acme Guesthouse", role: "owner", businessType: "general" }]);
   const settings = await staff("PATCH", "/v1/staff/businesses/acme/settings", {
     about: "Acme Guesthouse: six rooms in Watamu, breakfast included.",
     contactPhone: "+254700111222",
@@ -758,7 +758,7 @@ test("Acme's own knowledge answers Acme's customers, and only them", async () =>
 test("a deletion request at Acme deletes only Acme's copy of the customer", async () => {
   const tbmBefore = await one(platform, "select count(*)::int as n from chat_sessions where business_id = 'tbm'");
   const erased = await staff("POST", "/v1/staff/businesses/acme/erase", { email: "jane@example.com" }, acmeOwnerToken);
-  assert.deepEqual(erased.body, { deleted_conversations: 1, deleted_leads: 1 });
+  assert.deepEqual(erased.body, { deleted_conversations: 1, deleted_leads: 1, anonymized_bookings: 0 });
   const tbmAfter = await one(platform, "select count(*)::int as n from chat_sessions where business_id = 'tbm'");
   assert.equal(tbmAfter.n, tbmBefore.n, "Jane's TBM chats are TBM's to delete");
 });

@@ -29,6 +29,11 @@ import { pruneRateLimitCounters } from "./gateway/rate-limit.ts";
 import { registerGatewayRoutes } from "./gateway/routes.ts";
 import { registerPlatformRoutes } from "./platform/routes.ts";
 import { registerStaffAccountRoutes } from "./staff/routes.ts";
+import { expireHolds } from "./booking/bookings.ts";
+import { configureBookingNotices } from "./booking/notices.ts";
+import { registerBookingRoutes } from "./booking/staff-routes.ts";
+import { configurePayments, sweepPendingPayments } from "./payments/checkout.ts";
+import { PAYMENT_WEBHOOK_PATH, registerPaymentRoutes } from "./payments/routes.ts";
 
 /** Browsers may call the API from any website a business allows. */
 function cors() {
@@ -66,15 +71,19 @@ export function whatsappContextFor(config: PlatformConfig, engine: EngineOptions
 export function createApp(config: PlatformConfig, engine: EngineOptions, whatsapp: WhatsappContext | null = whatsappContextFor(config, engine)): Express {
   configureTeamAlerts(config);
   configureHandoffs(config);
+  configureBookingNotices({ publicBaseUrl: config.publicBaseUrl, alertEmail: config.alertEmail });
+  configurePayments({ publicBaseUrl: config.publicBaseUrl, platformPaystackKey: config.platformPaystackKey });
   setWhatsappRuntime(whatsapp);
 
   const app = express();
   app.disable("x-powered-by");
   app.set("trust proxy", config.trustProxy);
   // Knowledge routes parse their own, bigger bodies (documents); the WhatsApp
-  // webhook needs the raw body to check Meta's signature.
+  // and Paystack webhooks need the raw body to check their signatures.
   const json = express.json({ limit: "32kb" });
-  app.use((req: Request, res: Response, next: NextFunction) => (KNOWLEDGE_PATH.test(req.path) || req.path === WEBHOOK_PATH ? next() : json(req, res, next)));
+  app.use((req: Request, res: Response, next: NextFunction) => (
+    KNOWLEDGE_PATH.test(req.path) || req.path === WEBHOOK_PATH || PAYMENT_WEBHOOK_PATH.test(req.path) ? next() : json(req, res, next)
+  ));
   app.use(cors());
 
   registerGatewayRoutes(app, config, engine);
@@ -83,6 +92,8 @@ export function createApp(config: PlatformConfig, engine: EngineOptions, whatsap
   registerKnowledgeRoutes(app, config.sessionTokenSecret);
   registerPlatformRoutes(app, config);
   registerWhatsappRoutes(app, config, whatsapp);
+  registerBookingRoutes(app, config);
+  registerPaymentRoutes(app, config);
   registerConsoleRoutes(app, config);
 
   app.use((_req: Request, res: Response) => {
@@ -170,6 +181,12 @@ export async function startServer(config: PlatformConfig): Promise<{ server: Ser
       if (deleted) console.log(`[platform] deleted ${deleted} expired conversation(s)`);
     }),
     every("rate-limit counters", 60 * 60_000, () => pruneRateLimitCounters()),
+    // Unpaid bookings let go of their rooms; payments a provider settled without telling us are asked about.
+    every("bookings and payments", Number(process.env.BOOKING_SWEEP_INTERVAL_MS ?? "") || 60_000, async () => {
+      const expired = await expireHolds();
+      if (expired.length) console.log(`[platform] ${expired.length} unpaid booking(s) let go of their rooms`);
+      await sweepPendingPayments();
+    }),
     ...(whatsapp ? [every("whatsapp", Number(process.env.WHATSAPP_SWEEP_INTERVAL_MS ?? "") || 5_000, () => sweepWhatsapp(whatsapp))] : []),
   ];
 

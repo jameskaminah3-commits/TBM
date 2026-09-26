@@ -7,7 +7,7 @@
 import { useState } from "react";
 import { api } from "../api.ts";
 import { go } from "../app.tsx";
-import { count, timeAgo } from "../format.ts";
+import { count, money, timeAgo } from "../format.ts";
 import { Button, ErrorLine, Field, Icon, Message, Modal, useAction, useEvery, useLoad } from "../ui.tsx";
 
 type Overview = {
@@ -23,6 +23,14 @@ type Overview = {
     failed_24h: number;
     last_activity_at: string | null;
     whatsapp: boolean;
+    stays: null | {
+      live_since: string | null;
+      live_days: number;
+      bookings_30d: number;
+      deposits_30d: Array<{ currency: "KES" | "USD"; amount: number }>;
+      last_booking_at: string | null;
+      pilot_ready: boolean;
+    };
   }>;
   platform: { whatsapp: boolean; web_push: boolean; alert_email: boolean; public_base_url: string | null };
 };
@@ -87,6 +95,7 @@ export function PlatformPage() {
           </tbody>
         </table>
       ) : null}
+      {data ? <Pilot businesses={data.businesses} /> : null}
       {adding ? <AddBusiness onClose={() => setAdding(false)} onAdded={async (text) => { setAdding(false); setMessage({ kind: "success", text }); await overview.reload(); }} /> : null}
     </div>
   );
@@ -121,7 +130,7 @@ function AddBusiness(props: { onClose: () => void; onAdded: (message: string) =>
           <Field label="Type">
             <select value={form.type} onChange={(event) => setForm({ ...form, type: event.target.value })}>
               <option value="general">General (answers from its knowledge, takes leads)</option>
-              <option value="guesthouse">Guesthouse</option>
+              <option value="guesthouse">A place to stay (rooms, bookings, deposits)</option>
             </select>
           </Field>
           <Field label="Website" hint="Where the chat widget will run."><input type="url" placeholder="https://" value={form.origin} onChange={(event) => setForm({ ...form, origin: event.target.value })} /></Field>
@@ -136,5 +145,48 @@ function AddBusiness(props: { onClose: () => void; onAdded: (message: string) =>
         <div className="actions"><Button onClick={props.onClose}>Cancel</Button><Button kind="primary" type="submit" busy={action.busy}>Add business</Button></div>
       </form>
     </Modal>
+  );
+}
+
+/**
+ * Phase 4's exit check: three places to stay live for 30 days, with bookings
+ * and deposits in the last 30 days.
+ */
+function Pilot(props: { businesses: Overview["businesses"] }) {
+  const stays = props.businesses.filter((business) => business.stays);
+  if (!stays.length) return null;
+  const ready = stays.filter((business) => business.stays!.pilot_ready).length;
+  return (
+    <section className="stack-tight">
+      <h2>Hospitality pilot</h2>
+      <p className="muted">The plan's check: three places to stay live for 30 days, with bookings and deposits flowing. {ready} of 3 so far.</p>
+      <table className="table">
+        <thead>
+          <tr>
+            <th>Place to stay</th>
+            <th className="number">Live for</th>
+            <th className="number">Confirmed bookings (30 days)</th>
+            <th className="number">Deposits collected (30 days)</th>
+            <th>Last booking</th>
+            <th>Check</th>
+          </tr>
+        </thead>
+        <tbody>
+          {stays.map((business) => {
+            const pilot = business.stays!;
+            return (
+              <tr key={business.id}>
+                <td><button type="button" className="link" onClick={() => go({ businessId: business.id, page: "bookings" })}><strong>{business.name}</strong></button></td>
+                <td className="number">{pilot.live_since ? `${pilot.live_days} day${pilot.live_days === 1 ? "" : "s"}` : "Not live"}</td>
+                <td className="number">{pilot.bookings_30d}</td>
+                <td className="number">{pilot.deposits_30d.length ? pilot.deposits_30d.map((entry) => money(entry)).join(" + ") : "—"}</td>
+                <td className="muted">{pilot.last_booking_at ? timeAgo(pilot.last_booking_at) : "—"}</td>
+                <td>{pilot.pilot_ready ? <span className="chip ok">Met</span> : <span className="chip">Not yet</span>}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </section>
   );
 }

@@ -44,11 +44,15 @@ export function phoneKey(phone: string): string | null {
   return digits.length >= 7 ? digits.slice(-9) : null;
 }
 
-/** Deletes the customer's conversations and leads, found by the email or phone they typed. */
-export async function eraseCustomer(contact: { email?: string; phone?: string }): Promise<{ conversations: number; leads: number }> {
+/**
+ * Deletes the customer's conversations and leads, found by the email or phone
+ * they typed. Their bookings are the business's records of money and nights,
+ * so those stay, without the customer's name, email, phone and notes.
+ */
+export async function eraseCustomer(contact: { email?: string; phone?: string }): Promise<{ conversations: number; leads: number; bookings: number }> {
   const email = contact.email?.trim().toLowerCase() || null;
   const phone = contact.phone ? phoneKey(contact.phone) : null;
-  if (!email && !phone) return { conversations: 0, leads: 0 };
+  if (!email && !phone) return { conversations: 0, leads: 0, bookings: 0 };
   const businessId = currentBusinessId();
   return inBusiness(async (db) => {
     // A WhatsApp customer is found by the number they write from, too.
@@ -74,6 +78,18 @@ export async function eraseCustomer(contact: { email?: string; phone?: string })
         or (${phone}::text is not null and right(regexp_replace(coalesce(phone, ''), '\\D', '', 'g'), 9) = ${phone}::text)
       )
     `);
-    return { conversations: conversations.rowCount ?? 0, leads: leadRows.rowCount ?? 0 };
+    const theirs = sql`business_id = ${businessId} and (
+        (${email}::text is not null and lower(customer_email) = ${email}::text)
+        or (${phone}::text is not null and right(regexp_replace(coalesce(customer_phone, ''), '\\D', '', 'g'), 9) = ${phone}::text)
+      )`;
+    await db.execute(sql`
+      update payments set payer_phone = null, payer_email = null
+      where business_id = ${businessId} and booking_id in (select id from bookings where ${theirs})
+    `);
+    const bookingRows = await db.execute(sql`
+      update bookings set customer_name = 'Erased on request', customer_email = null, customer_phone = null, customer_notes = null, updated_at = now()
+      where ${theirs}
+    `);
+    return { conversations: conversations.rowCount ?? 0, leads: leadRows.rowCount ?? 0, bookings: bookingRows.rowCount ?? 0 };
   }, businessId);
 }

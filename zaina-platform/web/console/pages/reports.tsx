@@ -12,6 +12,8 @@ import { ErrorLine, Icon, Tabs, useLoad } from "../ui.tsx";
 
 type Period = "7" | "30" | "90";
 
+const METHOD_NAMES: Record<string, string> = { paystack: "Paystack", mpesa_express: "M-Pesa prompt", mpesa_code: "M-Pesa code", cash: "Cash", bank: "Bank", other: "Other" };
+
 export function ReportsPage(props: { businessId: string }) {
   const [period, setPeriod] = useState<Period>("30");
   const report = useLoad(() => api<Report>("GET", businessPath(props.businessId, `/reports?days=${period}`)), [props.businessId, period]);
@@ -36,6 +38,22 @@ export function ReportsPage(props: { businessId: string }) {
             />
             <Kpi label="Bookings made in chat" value={count(data.outcomes.bookings)} detail={data.outcomes.depositsRequested.length ? `Deposits asked: ${data.outcomes.depositsRequested.map(money).join(" · ")}` : "No deposits asked yet"} />
           </div>
+
+          {data.stays ? (
+            <section className="stack-tight">
+              <h2>Stays</h2>
+              <div className="kpis">
+                <Kpi label="Confirmed bookings" value={count(data.stays.confirmed)} detail={`${count(data.stays.bookings)} made · ${count(data.stays.fromChat)} by Zaina · ${count(data.stays.waiting)} waiting · ${count(data.stays.lost)} lost`} />
+                <Kpi label="Nights sold" value={count(data.stays.nightsSold)} detail={data.stays.booked.length ? `Booked: ${data.stays.booked.map(money).join(" · ")}` : "Nothing booked yet"} />
+                <Kpi
+                  label="Deposits collected"
+                  value={data.stays.depositsCollected.length ? data.stays.depositsCollected.map(money).join(" · ") : "—"}
+                  detail={data.stays.collectedBy.length ? data.stays.collectedBy.map((entry) => `${METHOD_NAMES[entry.method] ?? entry.method} ${entry.payments}`).join(" · ") : "No payments yet"}
+                />
+                <Kpi label="Chats that led to a booking" value={percent(data.stays.chatToBooking)} detail={data.stays.conflicts ? `${data.stays.conflicts} paid booking(s) need rooms` : "Of chats in the period"} status={data.stays.conflicts ? "warning" : null} />
+              </div>
+            </section>
+          ) : null}
 
           <section className="card">
             <h2>Chats per day</h2>

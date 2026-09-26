@@ -2,10 +2,14 @@
 //
 // Which connector serves which business. The server registers the connectors
 // it runs at start-up (TBM's, when TBM's database is configured); tests
-// register scripted ones. Any other business gets the basic connector:
-// answers from its settings, and leads for its team.
+// register scripted ones. Any other business gets the platform's own
+// connector for its type: a place to stay gets rooms and bookings
+// (hospitality), anything else answers from its settings and takes leads
+// for its team (basic).
 
+import type { Business } from "../db/schema.ts";
 import { basicConnector } from "./basic/index.ts";
+import { hospitalityConnector } from "./hospitality/index.ts";
 import type { BusinessConnector } from "./types.ts";
 
 const connectors = new Map<string, BusinessConnector>();
@@ -25,9 +29,9 @@ export function hasConnector(businessId: string): boolean {
   return connectors.has(businessId);
 }
 
-export async function connectorFor(businessId: string): Promise<BusinessConnector> {
-  const connector = connectors.get(businessId);
+export async function connectorFor(business: Pick<Business, "id" | "businessType">): Promise<BusinessConnector> {
+  const connector = connectors.get(business.id);
   if (connector) return connector;
-  if (expected.has(businessId)) throw new Error(`The connector for "${businessId}" isn't configured on this server`);
-  return basicConnector;
+  if (expected.has(business.id)) throw new Error(`The connector for "${business.id}" isn't configured on this server`);
+  return business.businessType === "guesthouse" ? hospitalityConnector : basicConnector;
 }

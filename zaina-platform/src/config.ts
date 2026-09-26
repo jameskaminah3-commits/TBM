@@ -72,6 +72,8 @@ export type PlatformConfig = {
   rateLimits: RateLimits;
   /** Optional model prices, for cost reports. Unset means tokens only. */
   modelPriceUsdPerMillion: { input: number; output: number } | null;
+  /** The platform's own Paystack account, for businesses paid through its subaccounts; null when there is none. */
+  platformPaystackKey: string | null;
 };
 
 function required(env: NodeJS.ProcessEnv, name: string): string {
@@ -154,6 +156,14 @@ function databaseUrls(env: NodeJS.ProcessEnv): { owner: string; app: string | nu
   return { owner, app };
 }
 
+/** PLATFORM_PAYSTACK_SECRET_KEY: not TBM's PAYSTACK_SECRET_KEY, so one can't be taken for the other. */
+function platformPaystackKey(env: NodeJS.ProcessEnv): string | null {
+  const key = env.PLATFORM_PAYSTACK_SECRET_KEY?.trim();
+  if (!key) return null;
+  if (!/^sk_(live|test)_[A-Za-z0-9]{10,100}$/.test(key)) throw new Error("PLATFORM_PAYSTACK_SECRET_KEY is a Paystack secret key (sk_live_… or sk_test_…)");
+  return key;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): PlatformConfig {
   const sessionTokenSecret = required(env, "SESSION_TOKEN_SECRET");
   if (sessionTokenSecret.length < 32) throw new Error("SESSION_TOKEN_SECRET must be at least 32 characters");
@@ -191,5 +201,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): PlatformConfig
     modelPriceUsdPerMillion: inputPrice !== null && outputPrice !== null
       ? { input: inputPrice, output: outputPrice }
       : null,
+    platformPaystackKey: platformPaystackKey(env),
   };
 }

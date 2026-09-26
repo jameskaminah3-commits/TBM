@@ -206,6 +206,8 @@ const PATHS: Record<string, string> = {
   plus: "M12 5v14M5 12h14",
   search: "M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.3-4.3",
   refresh: "M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6",
+  calendar: "M4 6h16v14H4zM4 10h16M8 3v4M16 3v4",
+  bed: "M3 19V7M3 13h18v6M21 19v-4a3 3 0 0 0-3-3h-8v1M7 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4z",
 };
 
 export function Icon(props: { name: keyof typeof PATHS | string; size?: number; label?: string }) {

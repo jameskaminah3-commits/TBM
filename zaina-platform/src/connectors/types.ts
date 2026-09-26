@@ -32,6 +32,8 @@ export type ChatPaymentResult =
       /** Whether the booking's dates are now held while the team checks the code. */
       datesHeld: boolean;
       alreadyRecorded: boolean;
+      /** Where the customer hears it's confirmed: by email (the default), or here in the chat. */
+      confirmedIn?: "email" | "chat";
     }
   | { ok: false; reason: "no_booking" | "already_paid" | "failed"; detail?: string };
 

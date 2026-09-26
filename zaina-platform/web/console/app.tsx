@@ -9,15 +9,17 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, ApiError, businessPath } from "./api.ts";
+import { BookingsPage } from "./pages/bookings.tsx";
 import { InboxPage } from "./pages/inbox.tsx";
 import { KnowledgePage } from "./pages/knowledge.tsx";
 import { PlatformPage } from "./pages/platform.tsx";
 import { ReportsPage } from "./pages/reports.tsx";
+import { RoomsPage } from "./pages/rooms.tsx";
 import { SettingsPage } from "./pages/settings.tsx";
 import { TeamPage } from "./pages/team.tsx";
 import { alertsSupported, currentSubscription, turnAlertsOff, turnAlertsOn } from "./push.ts";
 import { atLeast, type Me, type Role } from "./types.ts";
-import { Button, Field, Icon, Message, Modal, Toggle, useAction, useEvery } from "./ui.tsx";
+import { Button, Field, Icon, Message, Modal, Toggle, useAction, useEvery, useLoad } from "./ui.tsx";
 
 type Route = { businessId: string | null; page: string; id: string | null };
 
@@ -97,8 +99,11 @@ function SignIn(props: { onSignedIn: () => void }) {
   );
 }
 
-const PAGES: Array<{ id: string; label: string; icon: string; minimum: Role }> = [
+const PAGES: Array<{ id: string; label: string; icon: string; minimum: Role; only?: string }> = [
   { id: "inbox", label: "Inbox", icon: "inbox", minimum: "viewer" },
+  // A place to stay's rooms and bookings (Phase 4).
+  { id: "bookings", label: "Bookings", icon: "calendar", minimum: "viewer", only: "guesthouse" },
+  { id: "rooms", label: "Rooms", icon: "bed", minimum: "manager", only: "guesthouse" },
   { id: "knowledge", label: "Knowledge", icon: "book", minimum: "viewer" },
   { id: "reports", label: "Reports", icon: "chart", minimum: "manager" },
   { id: "settings", label: "Settings", icon: "settings", minimum: "manager" },
@@ -117,6 +122,12 @@ function Console(props: { me: Me; route: Route; reloadMe: () => Promise<void> })
   const membership = me.businesses.find((business) => business.businessId === businessId);
   const role: Role | null = membership?.role ?? (admin && businessId ? "owner" : null);
   const page = route.page === "platform" ? "platform" : route.page;
+  // The business's type decides some pages; a platform admin without a membership asks for it.
+  const typeInfo = useLoad(
+    () => (membership?.businessType || !businessId || !role ? Promise.resolve(null) : api<{ business_type: string }>("GET", businessPath(businessId, "/operations"))),
+    [businessId, membership?.businessType, role],
+  );
+  const businessType = membership?.businessType ?? typeInfo.data?.business_type ?? null;
 
   useEffect(() => {
     if (!route.businessId && businessId && route.page !== "platform") go({ businessId, page: "inbox" });
@@ -160,13 +171,15 @@ function Console(props: { me: Me; route: Route; reloadMe: () => Promise<void> })
     );
   }
 
-  const visiblePages = role ? PAGES.filter((item) => atLeast(role, item.minimum)) : [];
+  const visiblePages = role ? PAGES.filter((item) => atLeast(role, item.minimum) && (!item.only || item.only === businessType)) : [];
   let content: JSX.Element;
   if (page === "platform" && admin) content = <PlatformPage />;
   else if (!businessId || !role) content = <div className="page"><p className="message error">You don't work for this business.</p></div>;
+  else if (page === "bookings" && businessType === "guesthouse") content = <BookingsPage businessId={businessId} role={role} bookingId={route.id} />;
+  else if (page === "rooms" && businessType === "guesthouse" && atLeast(role, "manager")) content = <RoomsPage businessId={businessId} role={role} />;
   else if (page === "knowledge") content = <KnowledgePage businessId={businessId} role={role} />;
   else if (page === "reports" && atLeast(role, "manager")) content = <ReportsPage businessId={businessId} />;
-  else if (page === "settings" && atLeast(role, "manager")) content = <SettingsPage businessId={businessId} role={role} me={me} />;
+  else if (page === "settings" && atLeast(role, "manager")) content = <SettingsPage businessId={businessId} role={role} me={me} businessType={businessType} />;
   else if (page === "team" && atLeast(role, "manager")) content = <TeamPage businessId={businessId} role={role} me={me} />;
   else content = <InboxPage businessId={businessId} role={role} me={me} chatId={route.page === "inbox" ? route.id : null} counts={counts} onChanged={refreshCounts} />;
 

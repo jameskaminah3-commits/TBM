@@ -9,11 +9,13 @@ import { api, businessPath } from "../api.ts";
 import { WEEKDAYS } from "../format.ts";
 import type { Me, Operations, Role, Settings, WhatsappState } from "../types.ts";
 import { Button, ErrorLine, Field, Message, Tabs, Toggle, useAction, useLoad } from "../ui.tsx";
+import { BookingSettings } from "./booking-settings.tsx";
 
-type Tab = "profile" | "widget" | "whatsapp" | "hours";
+type Tab = "profile" | "widget" | "whatsapp" | "hours" | "bookings";
 
-export function SettingsPage(props: { businessId: string; role: Role; me: Me }) {
+export function SettingsPage(props: { businessId: string; role: Role; me: Me; businessType?: string | null }) {
   const [tab, setTab] = useState<Tab>("profile");
+  const stays = props.businessType === "guesthouse";
   return (
     <div className="page">
       <div className="page-head"><h1>Settings</h1></div>
@@ -21,8 +23,15 @@ export function SettingsPage(props: { businessId: string; role: Role; me: Me }) 
         label="Settings"
         active={tab}
         onChange={setTab}
-        tabs={[{ id: "profile", label: "Business" }, { id: "widget", label: "Website widget" }, { id: "whatsapp", label: "WhatsApp" }, { id: "hours", label: "Hours" }]}
+        tabs={[
+          { id: "profile", label: "Business" },
+          ...(stays ? [{ id: "bookings" as const, label: "Bookings & payments" }] : []),
+          { id: "widget", label: "Website widget" },
+          { id: "whatsapp", label: "WhatsApp" },
+          { id: "hours", label: "Hours" },
+        ]}
       />
+      {tab === "bookings" && stays ? <BookingSettings businessId={props.businessId} role={props.role} /> : null}
       {tab === "profile" ? <Profile businessId={props.businessId} /> : null}
       {tab === "widget" ? <Widget businessId={props.businessId} role={props.role} me={props.me} /> : null}
       {tab === "whatsapp" ? <Whatsapp businessId={props.businessId} role={props.role} /> : null}

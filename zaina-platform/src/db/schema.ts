@@ -315,3 +315,131 @@ export const whatsappOutbound = pgTable("whatsapp_outbound", {
   createdAt: createdAt(),
   updatedAt: at("updated_at").notNull().defaultNow(),
 });
+
+// ── Phase 4: rooms, bookings and payments (migration 0007) ─────────────
+
+export const bookingCurrencies = ["KES", "USD"] as const;
+export type BookingCurrency = (typeof bookingCurrencies)[number];
+
+export const bookingModes = ["instant", "request", "enquiry"] as const;
+export type BookingMode = (typeof bookingModes)[number];
+
+export const bookingSettings = pgTable("booking_settings", {
+  businessId: text("business_id").primaryKey(),
+  currency: text("currency").$type<BookingCurrency>().notNull().default("KES"),
+  depositPercent: integer("deposit_percent").notNull().default(30),
+  holdMinutes: integer("hold_minutes").notNull().default(30),
+  requestHoldHours: integer("request_hold_hours").notNull().default(24),
+  checkInTime: text("check_in_time").notNull().default("14:00"),
+  checkOutTime: text("check_out_time").notNull().default("10:00"),
+  cancellationPolicy: text("cancellation_policy"),
+  taxName: text("tax_name"),
+  taxPercent: text("tax_percent"),
+  taxIncluded: boolean("tax_included").notNull().default(true),
+  paystackMode: text("paystack_mode").$type<"off" | "own_keys" | "subaccount">().notNull().default("off"),
+  paystackSubaccount: text("paystack_subaccount"),
+  mpesaExpress: boolean("mpesa_express").notNull().default(false),
+  mpesaEnvironment: text("mpesa_environment").$type<"sandbox" | "production">().notNull().default("production"),
+  mpesaType: text("mpesa_type").$type<"paybill" | "till" | null>(),
+  mpesaShortcode: text("mpesa_shortcode"),
+  mpesaTill: text("mpesa_till"),
+  mpesaManualType: text("mpesa_manual_type").$type<"paybill" | "till" | null>(),
+  mpesaManualNumber: text("mpesa_manual_number"),
+  mpesaManualAccount: text("mpesa_manual_account"),
+  payAtVenue: boolean("pay_at_venue").notNull().default(false),
+  updatedAt: at("updated_at").notNull().defaultNow(),
+  updatedBy: uuid("updated_by"),
+});
+export type BookingSettings = typeof bookingSettings.$inferSelect;
+
+export const offerings = pgTable("offerings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  businessId: text("business_id").notNull(),
+  kind: text("kind").$type<"room_type">().notNull().default("room_type"),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+  units: integer("units").notNull(),
+  maxGuests: integer("max_guests").notNull(),
+  bookingMode: text("booking_mode").$type<BookingMode>().notNull().default("instant"),
+  pricing: jsonb("pricing").$type<Record<string, unknown>>().notNull(),
+  status: text("status").$type<"active" | "hidden">().notNull().default("active"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: createdAt(),
+  updatedAt: at("updated_at").notNull().defaultNow(),
+  updatedBy: uuid("updated_by"),
+});
+export type Offering = typeof offerings.$inferSelect;
+
+export const offeringBlocks = pgTable("offering_blocks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  businessId: text("business_id").notNull(),
+  offeringId: uuid("offering_id").notNull(),
+  startsOn: date("starts_on", { mode: "string" }).notNull(),
+  endsOn: date("ends_on", { mode: "string" }).notNull(),
+  units: integer("units").notNull(),
+  reason: text("reason").notNull().default(""),
+  createdAt: createdAt(),
+  createdBy: uuid("created_by"),
+});
+export type OfferingBlock = typeof offeringBlocks.$inferSelect;
+
+export const bookingStatuses = ["held", "requested", "awaiting_payment", "confirmed", "conflict", "declined", "cancelled", "expired"] as const;
+export type BookingStatus = (typeof bookingStatuses)[number];
+
+export const bookings = pgTable("bookings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  businessId: text("business_id").notNull(),
+  reference: text("reference").notNull(),
+  offeringId: uuid("offering_id").notNull(),
+  checkIn: date("check_in", { mode: "string" }).notNull(),
+  checkOut: date("check_out", { mode: "string" }).notNull(),
+  units: integer("units").notNull().default(1),
+  guests: integer("guests").notNull(),
+  status: text("status").$type<BookingStatus>().notNull(),
+  holdExpiresAt: at("hold_expires_at"),
+  customerName: text("customer_name").notNull(),
+  customerEmail: text("customer_email"),
+  customerPhone: text("customer_phone"),
+  customerNotes: text("customer_notes"),
+  quote: jsonb("quote").$type<Record<string, unknown>>().notNull(),
+  currency: text("currency").$type<BookingCurrency>().notNull(),
+  totalMinor: bigint("total_minor", { mode: "number" }).notNull(),
+  depositMinor: bigint("deposit_minor", { mode: "number" }).notNull(),
+  paidMinor: bigint("paid_minor", { mode: "number" }).notNull().default(0),
+  payToken: text("pay_token").notNull(),
+  source: text("source").$type<"chat" | "staff">().notNull(),
+  sessionId: uuid("session_id"),
+  idempotencyKey: text("idempotency_key"),
+  conflict: text("conflict"),
+  staffNote: text("staff_note"),
+  decidedBy: uuid("decided_by"),
+  confirmedAt: at("confirmed_at"),
+  cancelledAt: at("cancelled_at"),
+  createdAt: createdAt(),
+  updatedAt: at("updated_at").notNull().defaultNow(),
+});
+export type Booking = typeof bookings.$inferSelect;
+
+export const paymentMethods = ["paystack", "mpesa_express", "mpesa_code", "cash", "bank", "other"] as const;
+export type PaymentMethod = (typeof paymentMethods)[number];
+
+export const payments = pgTable("payments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  businessId: text("business_id").notNull(),
+  bookingId: uuid("booking_id").notNull(),
+  method: text("method").$type<PaymentMethod>().notNull(),
+  amountMinor: bigint("amount_minor", { mode: "number" }).notNull(),
+  currency: text("currency").$type<BookingCurrency>().notNull(),
+  status: text("status").$type<"pending" | "succeeded" | "failed" | "rejected">().notNull(),
+  providerReference: text("provider_reference"),
+  receipt: text("receipt"),
+  payerPhone: text("payer_phone"),
+  payerEmail: text("payer_email"),
+  failure: text("failure"),
+  callbackToken: text("callback_token"),
+  recordedBy: uuid("recorded_by"),
+  createdAt: createdAt(),
+  settledAt: at("settled_at"),
+  updatedAt: at("updated_at").notNull().defaultNow(),
+});
+export type Payment = typeof payments.$inferSelect;

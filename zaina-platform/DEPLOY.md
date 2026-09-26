@@ -190,6 +190,48 @@ For each business's number:
 A number connected to the Cloud API can't be used in the WhatsApp Business
 phone app at the same time. The team answers in the console instead.
 
+## 5. A place to stay: rooms and deposits
+
+A business added as a place to stay (type `guesthouse`) gets **Bookings** and
+**Rooms** in the console. Its owner sets them up there:
+
+1. **Rooms.** Add each room type, or import a spreadsheet, with its prices.
+2. **Settings → Bookings & payments → Booking policy.** Set the deposit, how
+   long unpaid rooms are held, check-in and check-out times, tax and the
+   cancellation policy.
+3. **Where deposits are paid.** Connect one or more of:
+   - **Paystack, with the business's own account.**
+     1. In the Paystack dashboard, go to Settings → API Keys & Webhooks.
+     2. Copy the **secret key** (`sk_live_…`) into the console.
+     3. In the same Paystack page, set the **Webhook URL** to the address the
+        console shows: `https://<domain>/v1/payments/paystack/<business id>`.
+   - **Paystack, as a subaccount of the platform's account.** Only if the
+     platform has a Paystack account of its own:
+     1. Set `PLATFORM_PAYSTACK_SECRET_KEY` on the platform service.
+     2. Set that account's webhook URL to
+        `https://<domain>/v1/payments/paystack`.
+     3. Create the business's subaccount in Paystack (Subaccounts).
+     4. Enter the subaccount's code (`ACCT_…`) in the console.
+   - **M-Pesa Express, on the business's own paybill or till.**
+     1. On Safaricom's Daraja portal (developer.safaricom.co.ke), the business
+        creates an app with M-Pesa Express (Lipa na M-Pesa Online).
+     2. It takes the app live for its shortcode (Go Live). Safaricom then
+        gives the passkey.
+     3. In the console, enter the consumer key, consumer secret and passkey,
+        with the paybill number, or the store number and till number.
+
+     Safaricom calls back at `https://<domain>/v1/payments/mpesa/…`, so
+     `PUBLIC_BASE_URL` must be the service's public https address.
+   - **M-Pesa paid by hand.** Enter the paybill number (and account) or the
+     till number. The guest sends the M-Pesa code. The team checks it in the
+     M-Pesa statement and confirms it in the console (Bookings → Needs you).
+4. **Try it:** make a booking in the chat, open its payment page, and make a
+   small payment. Paystack's `sk_test_` keys and Daraja's sandbox work too
+   (choose Sandbox in the console).
+
+Deposits go straight to the business's account. Refunds are made there
+(Paystack's dashboard, or M-Pesa), not from the console.
+
 ## Backups
 
 On the Pro plan, Supabase keeps daily backups (Database → Backups);
@@ -203,3 +245,5 @@ point-in-time recovery is an add-on. A restored database needs the same
   code.
 - With WhatsApp set up: a message to the business's number gets Zaina's
   reply, and appears in the console's inbox under **All**.
+- For a place to stay: a test booking in the chat gets a payment link, and
+  its page shows the booking and the ways to pay.

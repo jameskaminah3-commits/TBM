@@ -11,6 +11,9 @@
 //   Zaina                  replies, how long they took, turns that failed
 //   outcomes               bookings, custom offers, verifications and leads made
 //                          in chat, with the deposits and totals asked for
+//   stays                  for a place to stay (Phase 4): bookings made and where
+//                          they stand, nights sold, the value booked, deposits
+//                          collected (by how they were paid), chats that led to one
 //   unanswered questions   what customers asked that the knowledge didn't answer
 //   cost                   model tokens and their estimated cost
 //   daily                  chats, handoffs and bookings per day (business time)
@@ -24,10 +27,28 @@ import { estimateCostUsd, type ModelPrices } from "../engine/telemetry.ts";
 /** The system notes a callback leaves in a chat. */
 const CALLBACK_NOTES = [CALLBACK_OFFLINE_NOTE, CALLBACK_UNCLAIMED_NOTE];
 
-const BOOKING_TOOLS = ["create_draft_booking", "create_service_booking"];
+const BOOKING_TOOLS = ["create_draft_booking", "create_service_booking", "create_booking"];
 const PAYABLE_TOOLS = [...BOOKING_TOOLS, "create_custom_offer", "create_listing_verification_request"];
 
 export type MoneyTotal = { currency: "KES" | "USD"; amount: number };
+
+export type StaysReport = {
+  /** Bookings made in the period, by Zaina and by the team. */
+  bookings: number;
+  fromChat: number;
+  confirmed: number;
+  /** Still waiting for a deposit or the team's answer. */
+  waiting: number;
+  /** Declined, cancelled, or their hold ended unpaid. */
+  lost: number;
+  conflicts: number;
+  nightsSold: number;
+  booked: MoneyTotal[];
+  depositsCollected: MoneyTotal[];
+  collectedBy: Array<{ method: string; currency: "KES" | "USD"; amount: number; payments: number }>;
+  /** Chats in the period that led to a booking. */
+  chatToBooking: number | null;
+};
 
 export type BusinessReport = {
   from: string;
@@ -58,6 +79,7 @@ export type BusinessReport = {
     depositsRequested: MoneyTotal[];
     feesRequested: MoneyTotal[];
   };
+  stays: StaysReport | null;
   unanswered: { total: number; top: Array<{ question: string; times: number }> };
   cost: { inputTokens: number; outputTokens: number; cachedTokens: number; costUsd: number | null; perChatUsd: number | null };
   daily: Array<{ day: string; chats: number; handoffs: number; bookings: number }>;
@@ -86,7 +108,7 @@ const numberOrNull = (value: unknown) => (value === null || value === undefined 
 
 export async function businessReport(
   businessId: string,
-  input: { days: number; timeZone: string; now?: Date; prices: ModelPrices | null },
+  input: { days: number; timeZone: string; now?: Date; prices: ModelPrices | null; stays?: boolean },
 ): Promise<BusinessReport> {
   const now = input.now ?? new Date();
   const days = Math.min(90, Math.max(1, Math.round(input.days)));
@@ -167,7 +189,7 @@ export async function businessReport(
     const fees = new Map<string, number>();
     for (const row of payable) {
       if (BOOKING_TOOLS.includes(row.tool_name)) {
-        addTo(bookingTotals, parseDisplayAmount(row.response?.total));
+        addTo(bookingTotals, parseDisplayAmount(row.response?.total ?? row.response?.total_display));
         addTo(deposits, parseDisplayAmount(row.response?.deposit_display));
       } else {
         addTo(fees, parseDisplayAmount(row.response?.fee_display));
@@ -211,6 +233,50 @@ export async function businessReport(
       [businessId, now, input.timeZone, days, BOOKING_TOOLS],
     );
 
+    let stays: StaysReport | null = null;
+    if (input.stays) {
+      const { rows: [made] } = await client.query<{
+        bookings: number; from_chat: number; confirmed: number; waiting: number; lost: number; conflicts: number; nights: number; chats: number;
+      }>(
+        `select count(*)::int as bookings,
+                count(*) filter (where source = 'chat')::int as from_chat,
+                count(*) filter (where status = 'confirmed')::int as confirmed,
+                count(*) filter (where status in ('held', 'requested', 'awaiting_payment'))::int as waiting,
+                count(*) filter (where status in ('declined', 'cancelled', 'expired'))::int as lost,
+                count(*) filter (where status = 'conflict')::int as conflicts,
+                coalesce(sum((check_out - check_in) * units) filter (where status = 'confirmed'), 0)::int as nights,
+                count(distinct session_id) filter (where source = 'chat')::int as chats
+         from bookings where business_id = $1 and created_at >= $2 and created_at < $3`,
+        range,
+      );
+      const { rows: booked } = await client.query<{ currency: "KES" | "USD"; total: string }>(
+        `select currency, sum(total_minor) as total from bookings
+         where business_id = $1 and created_at >= $2 and created_at < $3 and status = 'confirmed' group by currency order by currency`,
+        range,
+      );
+      const { rows: collected } = await client.query<{ method: string; currency: "KES" | "USD"; total: string; payments: number }>(
+        `select method, currency, sum(amount_minor) as total, count(*)::int as payments from payments
+         where business_id = $1 and status = 'succeeded' and settled_at >= $2 and settled_at < $3
+         group by method, currency order by method, currency`,
+        range,
+      );
+      const byCurrency = new Map<string, number>();
+      for (const row of collected) byCurrency.set(row.currency, (byCurrency.get(row.currency) ?? 0) + Number(row.total) / 100);
+      stays = {
+        bookings: made.bookings,
+        fromChat: made.from_chat,
+        confirmed: made.confirmed,
+        waiting: made.waiting,
+        lost: made.lost,
+        conflicts: made.conflicts,
+        nightsSold: made.nights,
+        booked: booked.map((row) => ({ currency: row.currency, amount: Number(row.total) / 100 })),
+        depositsCollected: asTotals(byCurrency),
+        collectedBy: collected.map((row) => ({ method: row.method, currency: row.currency, amount: Number(row.total) / 100, payments: row.payments })),
+        chatToBooking: share(made.chats, totalChats),
+      };
+    }
+
     const inputTokens = Number(turns.input_tokens);
     const outputTokens = Number(turns.output_tokens);
     const costUsd = estimateCostUsd({ inputTokens, outputTokens }, input.prices);
@@ -247,6 +313,7 @@ export async function businessReport(
         depositsRequested: asTotals(deposits),
         feesRequested: asTotals(fees),
       },
+      stays,
       unanswered: { total: missCount.count, top: misses },
       cost: {
         inputTokens,

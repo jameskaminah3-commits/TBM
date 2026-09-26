@@ -162,7 +162,7 @@ async function handleScopedTurn(input: TurnInput): Promise<ChatReply> {
   let result: TurnResult;
   let contactLine = "";
   try {
-    const connector = await connectorFor(input.business.id);
+    const connector = await connectorFor(input.business);
     contactLine = await connector.contactLine(input.business);
     result = await runTurn(input, connector, recorder);
   } catch (error) {
@@ -591,12 +591,12 @@ async function recordPaymentCode(
     return say.mpesaUnmatched(code);
   }
   if (result.alreadyRecorded) {
-    return say.mpesaAlreadyHave(code, result.bookingRef);
+    return say.mpesaAlreadyHave(code, result.bookingRef, result.confirmedIn);
   }
   await inBusiness((_db, client) => client.query(
     `insert into payment_claims (business_id, session_id, booking_ref, code, expected_amount, note)
      values ($1, $2, $3, $4, $5, $6) on conflict (business_id, code) do nothing`,
     [business.id, sessionId, result.bookingRef, code, result.expectedAmount, result.conflict],
   ));
-  return say.mpesaRecorded(code, result.bookingRef, result.expectedAmount, result.conflict ? "conflict" : result.datesHeld ? "held" : "none");
+  return say.mpesaRecorded(code, result.bookingRef, result.expectedAmount, result.conflict ? "conflict" : result.datesHeld ? "held" : "none", result.confirmedIn);
 }

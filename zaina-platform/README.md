@@ -51,11 +51,20 @@ staff console ──▶ staff API ──▶ platform database: businesses, conve
 - `src/console/` — serves the console and the widget script; the console's
   sign-in (an HttpOnly cookie) and phone alerts.
 - `src/reports/` — each business's report.
+- `src/booking/` — a place to stay's rooms and bookings (Phase 4): room
+  types and their pricing rules (`pricing.ts`, the one pricing module),
+  rooms free per night and holds (`availability.ts`), bookings from the first
+  ask to a confirmed stay (`bookings.ts`), booking settings, what the guest
+  and the team are told (`notices.ts`), and the staff routes.
+- `src/payments/` — deposits into each business's own account: Paystack
+  (`paystack.ts`), M-Pesa Express (`mpesa.ts`), M-Pesa codes the team checks,
+  the booking's payment page, and the providers' webhooks and callbacks.
 - `src/connectors/` — what a business plugs in. `tbm/` is TBM: its prompt and
   tools, its team alerts and chat M-Pesa recording; `tbm/tbm-app.ts` is the
   only file that reaches into the TBM app's code. `basic/` serves any other
   business: it answers from the business's own knowledge, takes leads and
-  hands over to a person.
+  hands over to a person. `hospitality/` serves a place to stay: its rooms,
+  prices and bookings.
 - `knowledge/tbm/` — TBM's knowledge (areas, travel, services, booking and
   payment, policies), imported at every release.
 - `src/businesses/` — the business directory, each business's settings, and
@@ -233,8 +242,69 @@ On it, the release step, sign-in as `zaina_app`, a chat and the team's
 inbox all work. Wrong certificates, passwords and host names fail with
 what to check.
 
-**Next: Phase 4 — hospitality pilot.** Generic offerings with room-type
-counts, shared pricing rules, each business's own payment account.
+**Phase 4 — hospitality pilot: built; the pilot itself needs three real
+businesses.** A guesthouse, lodge or small hotel sells its rooms through Zaina,
+on its website and on WhatsApp, and takes deposits into its own account:
+
+| Part | What it does |
+|---|---|
+| Room types (I11) | Each business's own room types: how many identical rooms, how many guests each sleeps, a description, and how it's booked. Ten identical studios are one room type with ten rooms. Added in the console one by one or from a spreadsheet (CSV). A room type with bookings is hidden, never deleted |
+| One pricing module (I1) | Each room type's rules: a nightly price, Friday and Saturday nights, seasons (which may cross the new year, with their own minimum stay), extra guests per night, fees (per booking, room, room night, guest or guest night: conservancy fees and levies), a deposit, and tax included or added. The same function prices Zaina's quotes, the payment page, the console and the charge, so they can't disagree. Amounts are whole cents; deposits are rounded to whole shillings |
+| Rooms free, and holds | A room is taken on a night by a confirmed booking, by an unpaid booking or a request while its hold lasts, or by closed dates. Booking locks the room type for one short transaction, so two guests can't both get the last room. An unpaid hold ends on its own (30 minutes by default), and the rooms are free again |
+| Ways to book | Online: the guest books and pays the deposit, and paying confirms it. On request: the team accepts, at the quoted price or one they agree, or declines. By enquiry: Zaina takes the guest's details for the team. With no deposit, a booking is confirmed at once and paid at the property. The team can also book for a guest who calls |
+| The business's own payment account | Paystack, with the business's own secret key (card and M-Pesa on Paystack's page, confirmed by Paystack's signed webhook or by asking Paystack) or as a subaccount of the platform's account. M-Pesa Express on the business's own paybill or till: a payment prompt on the guest's phone, confirmed by Safaricom's callback and then by asking Safaricom (callbacks aren't signed). A paybill or till the guest pays by hand, sending the M-Pesa code in the chat or on the payment page, which the team checks. Keys are checked with Paystack or Safaricom, then kept encrypted |
+| C1 at payment | Starting to pay re-checks the booking's rooms: a lapsed hold is renewed if they're still free, and refused if they're gone. Money that arrives after the rooms went marks the booking "paid, needs a room" and alerts managers, to move the guest or refund |
+| The payment page | Each booking's link: its price line by line, where it stands, and the ways to pay. No scripts, and a strict content policy. It reloads itself while a phone prompt waits. Payment attempts are limited per booking and per visitor, so a link can't be used to flood a phone with prompts |
+| Zaina's tools | `list_rooms`, `check_availability` (prices only from the pricing module), `create_booking` (with the name and phone or email the guest typed; on WhatsApp their number counts), `get_booking`, and leads. After a booking, the server writes the payment link and "what happens next", in English or Swahili. An M-Pesa code sent in the chat is recorded against the chat's booking (C5) |
+| Telling people | The guest hears in their chat (delivered on WhatsApp too) and by email: confirmed, accepted with the payment link, declined, cancelled, a code not found. The team gets web push and email: a request to answer, a code to check, a new booking, a paid booking without rooms |
+| Console | Bookings (upcoming, requests, awaiting deposit, needs you, past, cancelled) with each booking's price, payments and actions; a calendar of rooms free per night; Rooms with the pricing editor and "try a quote"; closed dates; Settings → Bookings & payments |
+| Reports | Stays: bookings made and where they stand, nights sold, value booked, deposits collected by how they were paid, and chats that led to a booking. The platform view tracks the pilot's exit check for each place to stay |
+| Deletion requests | A guest's bookings stay, as the business's records of money and nights, without their name, email, phone and notes |
+
+Exit check (the plan's: "three pilot businesses live for 30 days, with
+bookings and deposits flowing"). A real pilot needs three businesses; the
+capability is proven with a simulated one (`test/e2e/bookings.test.ts`, 15
+tests):
+- **Coral Cove Guesthouse** takes a website booking: the exact price, a
+  held room, a Paystack deposit into its own account (webhook, and the guest's
+  return), and a confirmation in the chat and by email.
+- **Lakeview Lodge** imports its rooms from a spreadsheet and takes a
+  WhatsApp booking with a conservancy fee per guest per night. The deposit
+  is paid by an M-Pesa prompt on its own till. The tests also cover a prompt
+  the guest cancels, one whose callback never arrives (found by asking), and
+  the limit on prompts.
+- **Old Town House** takes a request. The team accepts it at an agreed
+  price, and the guest pays the till by hand and sends the code in the chat.
+  The team confirms it, and the rest is paid at the house.
+
+The platform's overview then shows all three with bookings and deposits. It
+shows "3 of 3" once their first chats are moved 31 days back.
+
+Also checked:
+- **The rules hold under pressure.** Three guests racing for the last room
+  get one booking. A late payment for rooms that went meanwhile becomes a
+  conflict for the team. Each business sees only its own rooms, bookings and
+  payments (`test/db/bookings.test.ts`).
+- **In a browser.** Bookings, calendar, rooms, settings, reports, the
+  platform page and the payment page, in Chromium at desktop and phone
+  widths, light and dark: no content-policy violations, no page errors, no
+  sideways scrolling.
+- **TBM unchanged.** The 13 scripted conversations still give word-for-word
+  the same replies as the live Zaina. The evaluation gives the same results
+  and tokens per call as in Phase 3.
+
+Decisions to confirm:
+
+- The three pilot businesses, and which way each takes deposits.
+- Defaults for a new place to stay: a 30% deposit, rooms held 30 minutes
+  for it, requests held 24 hours, check-in 14:00 and check-out 10:00.
+- Whether the platform needs a Paystack account of its own (for businesses
+  paid through its subaccounts) or every business brings its own.
+- Refunds are made in Paystack's dashboard or M-Pesa, not from the console.
+
+**Next: Phase 5 — second business type, self-serve.** Time-slot
+availability for salons and restaurants, a calendar connector, an
+onboarding wizard, subscriptions and billing.
 
 ## Running it locally
 
@@ -256,6 +326,13 @@ snippet, the webhook, links in alerts), `WHATSAPP_APP_SECRET` and
 `WEB_PUSH_PRIVATE_KEY` and `WEB_PUSH_SUBJECT` (alerts on phones),
 `RESEND_API_KEY` and `ALERT_FROM_EMAIL` (alert emails), `ROUTE_ESCALATE_MINUTES`
 (3) and `AVAILABILITY_HOURS` (2).
+
+Phase 4, optional: `PLATFORM_PAYSTACK_SECRET_KEY` (the platform's own
+Paystack account, for businesses paid through its subaccounts). Payment links
+and M-Pesa callbacks need `PUBLIC_BASE_URL`. Tests only:
+`BOOKING_SWEEP_INTERVAL_MS` (60000) and `PAYMENT_CHECK_AFTER_MS` (20000 for
+the payment page, 45000 for the sweep: when a pending payment's provider is
+asked).
 
 Optional: `PLATFORM_APP_DATABASE_URL` (see below), `PLATFORM_DATABASE_CA`
 (the CA certificate that signs the database server's, so it is checked),
@@ -363,14 +440,34 @@ The sessions list also takes `filter=mine` and `filter=everything`, and
 answers with each chat's channel, customer and WhatsApp window. A team reply
 to a WhatsApp chat answers with its delivery (`delivered`, `window_closed`, …).
 
+Phase 4, a place to stay (least role needed):
+
+| Route | Who |
+|---|---|
+| `GET booking-settings` / `PATCH booking-settings` (`{ currency?, deposit_percent?, hold_minutes?, request_hold_hours?, check_in_time?, check_out_time?, cancellation_policy?, tax_name?, tax_percent?, tax_included?, pay_at_venue? }`) | viewer / manager |
+| `PUT payments/paystack` (`{ mode: "own_keys", secret_key }` or `{ mode: "subaccount", subaccount }`), `PUT payments/mpesa-express` (`{ environment, type, shortcode, till?, consumer_key, consumer_secret, passkey }`), `PUT payments/mpesa-manual` (`{ type, number, account? }`), `DELETE payments/:method` | owner |
+| `GET offerings` / `POST offerings`, `PUT offerings/:id`, `DELETE offerings/:id`, `POST offerings/import` (`{ csv }`) | viewer / manager |
+| `POST quote` (`{ offering_id, check_in, check_out, guests, rooms? }`), `GET calendar?from=&days=`, `GET blocks` | viewer |
+| `POST blocks` (`{ offering_id, starts_on, ends_on, units?, reason? }`), `DELETE blocks/:id` | manager |
+| `GET bookings?filter=upcoming\|requests\|unpaid\|attention\|past\|cancelled\|all`, `GET bookings/:id` | viewer |
+| `POST bookings`, `POST bookings/:id/accept` (`{ total?, note? }`), `…/decline`, `…/confirm` (`{ note?, force? }`; force: manager), `…/payments` (`{ method, amount, receipt? }`), `POST payments/:id/confirm`, `POST payments/:id/reject` | agent |
+| `POST bookings/:id/cancel` (`{ reason?, tell_customer? }`) | manager |
+
+Public: `GET /pay/:token` (the booking's payment page), `POST /pay/:token/paystack`,
+`GET /pay/:token/done`, `POST /pay/:token/mpesa`, `POST /pay/:token/mpesa-code`,
+`GET /pay/:token/status`. Providers: `POST /v1/payments/paystack/:businessId`
+(a business's own Paystack account), `POST /v1/payments/paystack` (the
+platform's), `POST /v1/payments/mpesa/:token` (Safaricom's callback).
+
 ## Tests
 
 ```
-npm test            # unit tests (no database): 132
-npm run test:db     # database checks, including separation between businesses: 32
+npm test            # unit tests (no database): 153
+npm run test:db     # database checks, including separation between businesses: 45
                     # PLATFORM_TEST_DATABASE_URL, a local database ending in _test (wiped)
 npm run test:e2e    # the whole service with a scripted model, TBM and a second business,
-                    # and the Phase 3 channels (WhatsApp, alerts, console, widget): 54
+                    # the Phase 3 channels (WhatsApp, alerts, console, widget), and the
+                    # Phase 4 pilot (three places to stay, their payments): 69
                     # also TBM_TEST_DATABASE_URL, a local copy of TBM's schema ending in _test
 npm run check       # type check (the service, and the widget and console)
 
@@ -380,7 +477,8 @@ npm run eval -- --scripted        # the evaluation harness itself, with the scri
 ```
 
 The end-to-end run uses `test/e2e/scripted-model.mjs` in place of the model,
-email, exchange-rate, WhatsApp (Graph API) and web push services, and
+email, exchange-rate, WhatsApp (Graph API), web push, Paystack and M-Pesa
+(Daraja) services, and
 refuses to run against any database that isn't local and named `*_test`.
 `E2E_SERVER_LOG=<file>` keeps the server's output.
 

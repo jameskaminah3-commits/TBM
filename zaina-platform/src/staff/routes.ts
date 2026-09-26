@@ -317,7 +317,7 @@ export function registerStaffAccountRoutes(app: Express, config: PlatformConfig)
     try {
       const business = staffOf(req).business!;
       const days = Math.min(90, Math.max(1, Number(req.query.days ?? 30) || 30));
-      res.json(await businessReport(business.id, { days, timeZone: business.timeZone, prices: config.modelPriceUsdPerMillion }));
+      res.json(await businessReport(business.id, { days, timeZone: business.timeZone, prices: config.modelPriceUsdPerMillion, stays: business.businessType === "guesthouse" }));
     } catch (error) {
       next(error);
     }
@@ -329,7 +329,7 @@ export function registerStaffAccountRoutes(app: Express, config: PlatformConfig)
       const phone = typeof req.body?.phone === "string" ? req.body.phone : undefined;
       if (!email && !phone) return res.status(400).json({ error: "contact_required", message: "Send an email or phone number." });
       const deleted = await eraseCustomer({ email, phone });
-      res.json({ deleted_conversations: deleted.conversations, deleted_leads: deleted.leads });
+      res.json({ deleted_conversations: deleted.conversations, deleted_leads: deleted.leads, anonymized_bookings: deleted.bookings });
     } catch (error) {
       next(error);
     }

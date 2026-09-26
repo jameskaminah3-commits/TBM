@@ -63,7 +63,8 @@ export function registerPlatformRoutes(app: Express, config: PlatformConfig): vo
       const rows = await Promise.all(businesses.map((business) => runForBusiness(business.id, () => inBusiness(async (_db, client) => {
         const { rows: [row] } = await client.query<{
           tokens_today: string | null; chats_7d: number; waiting: number; turns_24h: number; failed_24h: number;
-          last_activity: Date | null; whatsapp: boolean;
+          last_activity: Date | null; whatsapp: boolean; live_since: Date | null; bookings_30d: number;
+          deposits_30d: Array<{ currency: string; amount: number }>; last_booking: Date | null;
         }>(
           `select
              (select input_tokens + output_tokens from usage_daily where business_id = $1 and day = $2) as tokens_today,
@@ -74,7 +75,14 @@ export function registerPlatformRoutes(app: Express, config: PlatformConfig): vo
              (select count(*)::int from turn_metrics where business_id = $1 and started_at > now() - interval '24 hours'
                 and outcome in ('timeout', 'model_error', 'error')) as failed_24h,
              (select max(last_activity_at) from chat_sessions where business_id = $1) as last_activity,
-             exists (select 1 from whatsapp_numbers where business_id = $1 and status = 'active') as whatsapp`,
+             exists (select 1 from whatsapp_numbers where business_id = $1 and status = 'active') as whatsapp,
+             (select min(s.created_at) from chat_sessions as s where s.business_id = $1
+                and exists (select 1 from chat_events as e where e.business_id = s.business_id and e.session_id = s.id and e.actor = 'USER')) as live_since,
+             (select count(*)::int from bookings where business_id = $1 and status = 'confirmed' and created_at > now() - interval '30 days') as bookings_30d,
+             (select coalesce(json_agg(json_build_object('currency', currency, 'amount', total) order by currency), '[]'::json)
+                from (select currency, sum(amount_minor) / 100.0 as total from payments
+                      where business_id = $1 and status = 'succeeded' and settled_at > now() - interval '30 days' group by currency) as paid) as deposits_30d,
+             (select max(created_at) from bookings where business_id = $1 and status = 'confirmed') as last_booking`,
           [business.id, businessDay(business.timeZone)],
         );
         return {
@@ -89,6 +97,16 @@ export function registerPlatformRoutes(app: Express, config: PlatformConfig): vo
           failed_24h: row.failed_24h,
           last_activity_at: row.last_activity,
           whatsapp: row.whatsapp,
+          // Phase 4's exit check, for a place to stay: live 30 days, with bookings and deposits in the last 30.
+          stays: business.businessType === "guesthouse" ? {
+            live_since: row.live_since,
+            live_days: row.live_since ? Math.floor((Date.now() - row.live_since.getTime()) / 86_400_000) : 0,
+            bookings_30d: row.bookings_30d,
+            deposits_30d: row.deposits_30d.map((entry) => ({ currency: entry.currency, amount: Number(entry.amount) })),
+            last_booking_at: row.last_booking,
+            pilot_ready: Boolean(row.live_since && Date.now() - row.live_since.getTime() >= 30 * 86_400_000
+              && row.bookings_30d > 0 && row.deposits_30d.some((entry) => Number(entry.amount) > 0)),
+          } : null,
         };
       }, business.id))));
       res.json({

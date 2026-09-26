@@ -375,7 +375,7 @@ test("staff roles are per business; platform admins act as owners", async () => 
   assert.equal(await roleIn("tbm", otieno), "agent");
   assert.equal(await roleIn("acme", otieno), null);
   assert.equal(await roleIn("tbm", admin), "owner");
-  assert.deepEqual(await membershipsOf(amina.id), [{ businessId: "acme", businessName: "Acme Guesthouse", role: "manager" }]);
+  assert.deepEqual(await membershipsOf(amina.id), [{ businessId: "acme", businessName: "Acme Guesthouse", role: "manager", businessType: "general" }]);
   const acmeMembers = await inBusiness((db) => db.select().from(staffMemberships), "acme");
   assert.ok(acmeMembers.every((member) => member.businessId === "acme"));
 });
@@ -561,7 +561,7 @@ test("a customer's conversations and leads are deleted on request, by email or p
   await appendEvent({ businessId: "tbm", sessionId: atTbm.id, actor: "USER", content: "Brian here: brian.m@example.com" });
   await inBusiness((db) => db.insert(leads).values({ businessId: "acme", sessionId: byEmail.id, name: "Brian", email: "brian.m@example.com" }), "acme");
 
-  assert.deepEqual(await acme(() => eraseCustomer({ email: "brian.m@example.com", phone: "0722555111" })), { conversations: 2, leads: 1 });
+  assert.deepEqual(await acme(() => eraseCustomer({ email: "brian.m@example.com", phone: "0722555111" })), { conversations: 2, leads: 1, bookings: 0 });
   await acme(async () => {
     assert.equal(await getSession(byEmail.id), undefined);
     assert.equal(await getSession(byPhone.id), undefined);
