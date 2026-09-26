@@ -25,6 +25,7 @@ import { migrate, pendingMigrations } from "./db/migrate.ts";
 import type { EngineOptions } from "./engine/agent.ts";
 import { normalizeOrigin } from "./gateway/origin.ts";
 import { KNOWLEDGE_PATH, registerKnowledgeRoutes } from "./knowledge/routes.ts";
+import { PRICE_LIST_PATH, registerPriceListRoutes } from "./prices/routes.ts";
 import { pruneRateLimitCounters } from "./gateway/rate-limit.ts";
 import { registerGatewayRoutes } from "./gateway/routes.ts";
 import { registerPlatformRoutes } from "./platform/routes.ts";
@@ -109,11 +110,12 @@ export function createApp(config: PlatformConfig, engine: EngineOptions, whatsap
     if (req.secure) res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
     next();
   });
-  // Knowledge routes parse their own, bigger bodies (documents); the WhatsApp
-  // and Paystack webhooks need the raw body to check their signatures.
+  // Knowledge and price-list routes parse their own, bigger bodies (documents,
+  // pasted lists); the WhatsApp and Paystack webhooks need the raw body to
+  // check their signatures.
   const json = express.json({ limit: "32kb" });
   app.use((req: Request, res: Response, next: NextFunction) => (
-    KNOWLEDGE_PATH.test(req.path) || req.path === WEBHOOK_PATH || PAYMENT_WEBHOOK_PATH.test(req.path) ? next() : json(req, res, next)
+    KNOWLEDGE_PATH.test(req.path) || PRICE_LIST_PATH.test(req.path) || req.path === WEBHOOK_PATH || PAYMENT_WEBHOOK_PATH.test(req.path) ? next() : json(req, res, next)
   ));
   app.use(cors());
 
@@ -121,6 +123,7 @@ export function createApp(config: PlatformConfig, engine: EngineOptions, whatsap
   registerStaffAccountRoutes(app, config);
   registerStaffConversationRoutes(app, config);
   registerKnowledgeRoutes(app, config.sessionTokenSecret);
+  registerPriceListRoutes(app, config.sessionTokenSecret);
   registerPlatformRoutes(app, config);
   registerWhatsappRoutes(app, config, whatsapp);
   registerBookingRoutes(app, config);

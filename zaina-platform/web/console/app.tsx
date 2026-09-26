@@ -14,6 +14,7 @@ import { BookingsPage } from "./pages/bookings.tsx";
 import { InboxPage } from "./pages/inbox.tsx";
 import { KnowledgePage } from "./pages/knowledge.tsx";
 import { PlatformPage } from "./pages/platform.tsx";
+import { PricesPage } from "./pages/prices.tsx";
 import { ReportsPage } from "./pages/reports.tsx";
 import { RoomsPage } from "./pages/rooms.tsx";
 import { ServicesPage } from "./pages/services.tsx";
@@ -153,6 +154,8 @@ const PAGES: Array<{ id: string; label: string; icon: string; minimum: Role; onl
   { id: "bookings", label: "Bookings", icon: "calendar", minimum: "viewer", only: ["guesthouse", "salon", "restaurant"] },
   { id: "rooms", label: "Rooms", icon: "bed", minimum: "manager", only: ["guesthouse"] },
   { id: "services", label: "Services", icon: "scissors", minimum: "manager", only: ["salon", "restaurant"] },
+  // What the business charges for things not booked here; Zaina quotes only these (and rooms and services).
+  { id: "prices", label: "Prices", icon: "tag", minimum: "viewer", only: ["general", "guesthouse", "salon", "restaurant"] },
   { id: "knowledge", label: "Knowledge", icon: "book", minimum: "viewer" },
   { id: "reports", label: "Reports", icon: "chart", minimum: "manager" },
   { id: "settings", label: "Settings", icon: "settings", minimum: "manager" },
@@ -230,6 +233,7 @@ function Console(props: { me: Me; route: Route; reloadMe: () => Promise<void> })
   else if (page === "bookings" && ["guesthouse", "salon", "restaurant"].includes(businessType ?? "")) content = <BookingsPage businessId={businessId} role={role} bookingId={route.id} businessType={businessType} />;
   else if (page === "services" && (businessType === "salon" || businessType === "restaurant") && atLeast(role, "manager")) content = <ServicesPage businessId={businessId} role={role} businessType={businessType} />;
   else if (page === "rooms" && businessType === "guesthouse" && atLeast(role, "manager")) content = <RoomsPage businessId={businessId} role={role} />;
+  else if (page === "prices" && businessType !== "travel_concierge") content = <PricesPage businessId={businessId} role={role} businessType={businessType} />;
   else if (page === "knowledge") content = <KnowledgePage businessId={businessId} role={role} />;
   else if (page === "reports" && atLeast(role, "manager")) content = <ReportsPage businessId={businessId} />;
   else if (page === "settings" && atLeast(role, "manager")) content = <SettingsPage key={route.id ?? "settings"} businessId={businessId} role={role} me={me} businessType={businessType} tab={route.id} onBusinessChanged={() => void props.reloadMe()} />;

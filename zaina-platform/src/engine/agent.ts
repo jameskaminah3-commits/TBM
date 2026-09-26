@@ -40,6 +40,7 @@ import {
 import { alertTeam, type AlertEvent } from "../conversations/team-alerts.ts";
 import { businessDay, claimCapAlert, isOverCap, recordUsage, usageOn } from "../gateway/spend-cap.ts";
 import { runSearchKnowledge, SEARCH_KNOWLEDGE } from "../knowledge/tool.ts";
+import { GET_PRICES, runGetPrices } from "../prices/tool.ts";
 import { afterFailedTurn } from "./failure-policy.ts";
 import { buildHistory, MAX_EVENTS } from "./history.ts";
 import { withServerIdempotencyKey } from "./idempotency.ts";
@@ -61,7 +62,7 @@ import {
 } from "./reply-policy.ts";
 import { recordTurn, TurnRecorder, usageFromResponse, type ModelPrices, type TurnOutcome } from "./telemetry.ts";
 import { textArg } from "./tool-args.ts";
-import { ESCALATE_TO_HUMAN, isReadOnlyTool, toolDeclarationsFor } from "./tool-sets.ts";
+import { ESCALATE_TO_HUMAN, isReadOnlyTool, toolDeclarationsFor, TYPES_WITH_OWN_CONNECTOR } from "./tool-sets.ts";
 import { acquireTurnLock, releaseTurnLock } from "./turn-lock.ts";
 import { createTurnBudget, isBudgetError, TurnTimeoutError, type TurnBudget } from "./turn-budget.ts";
 import { turnContext } from "./turn-context.ts";
@@ -334,7 +335,9 @@ async function runLockedTurn(input: TurnInput, connector: BusinessConnector, rec
         ? await escalate(toolArgs)
         : call.name === SEARCH_KNOWLEDGE
           ? await runSearchKnowledge(toolArgs, { businessId: business.id, sessionId })
-          : await connector.executeTool(call.name, toolArgs, { business, sessionId });
+          : call.name === GET_PRICES && !TYPES_WITH_OWN_CONNECTOR.has(business.businessType)
+            ? await runGetPrices(toolArgs, { businessId: business.id, sessionId })
+            : await connector.executeTool(call.name, toolArgs, { business, sessionId });
       recorder.addTool(call.name, Date.now() - startedAt);
       return { call, toolResponseData };
     } catch (error) {

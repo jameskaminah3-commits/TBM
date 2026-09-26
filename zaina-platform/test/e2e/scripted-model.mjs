@@ -146,6 +146,11 @@ function messyReplyFor(name, result) {
   }
   if (name === "list_services" && r.ok) return `We offer ${r.services.map((service) => `${service.name} (${service.length}, ${service.price})`).join(", ")}. Open ${r.opening_hours}. Deposit: ${r.rules.deposit}.`;
   if (name === "create_appointment" && r.ok && !r.payment_link) return `Booked: ${r.service}, ${r.when} (${r.status}).`;
+  if (name === "get_prices") {
+    // Quotes the price list's lines as they come.
+    if (!(r.items || []).length) return `I'm not sure of that price — shall I ask the team for you?${r.sections ? ` (We list: ${r.sections.join(", ")}.)` : ""}`;
+    return `Our prices: ${r.items.map((item) => `${item.name}: ${item.price}`).join("; ")}.`;
+  }
   if (name === "search_knowledge") {
     const passage = (r.passages || [])[0];
     if (!passage) return "I'm not sure about that one — shall I ask the team for you?";

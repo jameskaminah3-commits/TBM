@@ -397,4 +397,5 @@ table.lines tr.total th, table.lines tr.total td { font-weight: 700; border-top:
 .plan > .button { justify-self: start; }
 @media (max-width: 820px) { .banner { margin: 12px 16px 0; } }
 .nowrap { white-space: nowrap; }
+.section-title { font-size: 15px; margin: 14px 0 2px; }
 .table .link { text-align: left; }

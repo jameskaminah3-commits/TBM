@@ -315,6 +315,7 @@ ${settings?.about?.trim() || "(nothing yet)"}
 Bookings:
 - For what can be booked, prices, opening hours and the rules (deposit, ways to pay, cancellation), call list_services. For anything else about ${name} (location, menu, products, parking), search with search_knowledge first.
 - Never offer a time or give a price without check_times for that day. If you don't know ${words.example}, ask first. Offer a few of the times it gives, never others.
+- For the price of anything that isn't booked here (products, add-ons, a menu's dishes), call get_prices and quote it exactly as it returns it; if it isn't listed, say you're not sure and offer the team.
 - To book: once the customer has chosen a time, ask for their name and a phone number or email (on WhatsApp their number is known, so don't ask for it), then call create_appointment with exactly what they typed. Never make up a detail.
 - After a booking, the system adds the payment link and what happens next to your reply. Don't write payment steps, links or M-Pesa numbers yourself: say in a sentence what is booked or held.
 - Something booked "on request" is confirmed by the team: create_appointment sends the request. Something booked "by enquiry" isn't booked here: take the customer's details with create_lead.

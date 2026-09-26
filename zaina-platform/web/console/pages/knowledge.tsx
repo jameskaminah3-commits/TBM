@@ -54,7 +54,7 @@ export function KnowledgePage(props: { businessId: string; role: Role }) {
     <div className="page">
       <div className="page-head">
         <h1>Knowledge</h1>
-        <p className="muted">What Zaina answers from. Prices and availability come from your booking system and the team, never from these documents: amounts written here are hidden from Zaina.</p>
+        <p className="muted">What Zaina answers from. Prices and availability come from your rooms or services and your price list, never from these documents: amounts written here are hidden from Zaina.</p>
       </div>
       <Tabs
         label="Knowledge"

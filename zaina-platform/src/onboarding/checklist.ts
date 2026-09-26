@@ -4,10 +4,11 @@
 // what it has actually done (nothing is ticked by hand):
 //
 //   profile    what Zaina says about the business, and how customers reach it
-//   knowledge  what customers ask about (FAQs, prices, policies); required for
-//              a business that only answers questions
+//   knowledge  what customers ask about (FAQs, policies, its website); required
+//              for a business that only answers questions
 //   offerings  what can be booked: rooms, or opening hours with people or
-//              tables and services
+//              tables and services; for a business that only answers
+//              questions, its price list (optional)
 //   rules      the deposit: the business's own choice, never Zaina's
 //   payments   a way to take that deposit online (nothing to connect with
 //              no deposit)
@@ -20,7 +21,7 @@
 
 import { and, count, eq, sql } from "drizzle-orm";
 import { getBusinessSettings } from "../businesses/settings.ts";
-import { chatEvents, chatSessions, knowledgeSources, offerings, resources, whatsappNumbers, takesBookings, booksTime, type Business } from "../db/schema.ts";
+import { chatEvents, chatSessions, knowledgeSources, offerings, priceItems, resources, whatsappNumbers, takesBookings, booksTime, type Business } from "../db/schema.ts";
 import { inBusiness } from "../db/tenant.ts";
 import { canTakeDeposits, getBookingSettings, paymentOptionsOf } from "../booking/settings.ts";
 
@@ -59,7 +60,8 @@ export async function checklist(business: Business): Promise<Step[]> {
         eq(chatSessions.businessId, business.id), eq(chatSessions.preview, true),
         sql`exists (select 1 from ${chatEvents} as e where e.business_id = ${chatSessions.businessId} and e.session_id = ${chatSessions.id} and e.actor = 'USER')`,
       ));
-      return { knowledge: knowledge.n, rooms: rooms.n, services: services.n, people: people.n, whatsapp: whatsapp.n, tried: tried.n };
+      const [prices] = await db.select({ n: count() }).from(priceItems).where(and(eq(priceItems.businessId, business.id), eq(priceItems.status, "active")));
+      return { knowledge: knowledge.n, rooms: rooms.n, services: services.n, people: people.n, whatsapp: whatsapp.n, tried: tried.n, prices: prices.n };
     }, business.id),
     planCheck(business),
   ]);
@@ -78,12 +80,14 @@ export async function checklist(business: Business): Promise<Step[]> {
   steps.push({
     id: "knowledge",
     title: "Add what customers ask about",
-    detail: "Your prices, opening times, policies and answers to common questions, so Zaina answers from them.",
+    detail: "Your opening times, policies and answers to common questions: read them from your website, add a PDF, or type them. Zaina answers from them.",
     done: counts.knowledge > 0,
     required: business.businessType === "general",
     page: "knowledge",
   });
-  if (business.businessType === "guesthouse") {
+  if (business.businessType === "general") {
+    steps.push({ id: "offerings", title: "Add your prices", detail: "What customers ask the price of, so Zaina quotes it exactly. Paste the list you have.", done: counts.prices > 0, required: false, page: "prices" });
+  } else if (business.businessType === "guesthouse") {
     steps.push({ id: "offerings", title: "Add your rooms", detail: "Each room type, how many there are, who they sleep and what they cost.", done: counts.rooms > 0, required: true, page: "rooms" });
   } else if (booksTime(business.businessType)) {
     const hours = Object.values(policy?.openingHours ?? {}).some((spans) => (spans ?? []).length > 0);

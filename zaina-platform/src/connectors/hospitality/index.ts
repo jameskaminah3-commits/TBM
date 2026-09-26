@@ -362,6 +362,7 @@ ${settings?.about?.trim() || "(nothing yet)"}
 Rooms, prices and bookings:
 - For the rooms, what they cost and the house rules (check-in and check-out times, deposit, cancellation, ways to pay), call list_rooms. For questions about the place itself (location, facilities, meals, activities, directions), search with search_knowledge first.
 - Never give a price or say a room is free without check_availability for the customer's dates and number of guests. If you don't have the dates and how many guests, ask first. Give totals exactly as the tool does.
+- For the price of anything that isn't a room (airport transfers, meals, laundry, activities), call get_prices and quote it exactly as it returns it; if it isn't listed, say you're not sure and offer the team.
 - To book: once the customer has chosen, ask for their name and a phone number or email (on WhatsApp their number is known, so don't ask for it), then call create_booking with exactly what they typed. Never make up a detail.
 - After a booking, the system adds the payment link and what happens next to your reply. Don't write payment steps, links or M-Pesa numbers yourself: say in a sentence what is booked or held.
 - A room booked "on request" is confirmed by the team: create_booking sends the request. One booked "by enquiry" isn't booked here: take the customer's details with create_lead.

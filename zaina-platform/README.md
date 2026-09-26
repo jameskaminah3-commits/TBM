@@ -377,6 +377,20 @@ Decisions to confirm:
 - A business that went live before plans were offered isn't asked to pay
   until it chooses a plan.
 
+**The SaaS layer: any business, set up without code.** What a business
+gives ("your website, WhatsApp number, services, prices, FAQs and
+policies") becomes its Zaina through the console, with nothing copied from
+TBM's code. Each business's data, conversations, customers, knowledge,
+offerings, settings, staff and secrets are its own, kept apart by Postgres
+row-level security (Phase 1), and every table added here is too:
+
+| Part | What it does |
+|---|---|
+| Website chat | `zaina.js` with `data-business="<id>"` on any business's website (see the Phase 3 table); a "Chat on WhatsApp instead" link when WhatsApp is connected (migration 0013) |
+| Knowledge | From the business's website (read by the platform, same site only, robots.txt respected), from PDFs and text files (read in the browser), or typed. Amounts in documents are hidden from Zaina |
+| Price list (migration 0014) | What the business charges for things that aren't booked here: a general business's services and products, a place to stay's extras (transfers, meals, laundry), a salon's products. By section, a fixed price or a range, what it's per, KSh or US$, shown or hidden. Added one at a time, or pasted as the business has it ("Airport transfer — KSh 3,500 per car"; a line with no price starts a section) and checked before it's added; pasting again updates prices. Zaina's `get_prices` tool (every business on the platform's own connectors) returns the matching items written out, to quote exactly; a price that isn't listed is never guessed, and the question joins the unanswered questions. Prices and availability therefore always come from structured data: rooms, services and this list |
+| Team accounts | "Forgot your password?", and new team members (or a business's first owner) choosing their own password from an emailed link |
+
 ## Running it locally
 
 It runs from the repository root, using the root `node_modules`. It needs
@@ -497,6 +511,8 @@ Per business, under `/v1/staff/businesses/:businessId/` (least role needed):
 | `GET knowledge/misses?days=30` (questions nothing answered) | agent |
 | `POST knowledge` (`{ title, kind?, url?, language?, content \| faqs, status? }`, replaces a source with the same title), `PUT knowledge/:sourceId`, `DELETE knowledge/:sourceId` | manager |
 | `POST knowledge/import-website` (`{ url, max_pages? (10, at most 25), status? }`: the site's pages as sources, ten reads an hour per business) | manager |
+| `GET price-list` | viewer |
+| `POST price-list` (`{ name, price, section?, description?, price_max?, currency?, unit?, status?, sort_order? }`, prices in shillings or dollars, not cents), `PATCH price-list/:itemId`, `DELETE price-list/:itemId`, `POST price-list/parse` (`{ text, currency? }`: a pasted list read into items and problems, nothing saved), `POST price-list/import` (`{ items, replace? }`) | manager |
 
 A business someone doesn't work for answers "not found", as if it didn't
 exist. A knowledge save answers with the passages it made and how many

@@ -676,3 +676,23 @@ export const invoicePayments = pgTable("invoice_payments", {
   settledAt: at("settled_at"),
 });
 export type InvoicePayment = typeof invoicePayments.$inferSelect;
+
+// ── Price list (migration 0014) ─────────────────────────────────────────
+
+export const priceItems = pgTable("price_items", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  businessId: text("business_id").notNull(),
+  section: text("section"),
+  name: text("name").notNull(),
+  description: text("description"),
+  priceMinor: bigint("price_minor", { mode: "number" }).notNull(),
+  priceMaxMinor: bigint("price_max_minor", { mode: "number" }),
+  currency: text("currency").$type<BookingCurrency>().notNull().default("KES"),
+  unit: text("unit"),
+  status: text("status").$type<"active" | "hidden">().notNull().default("active"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: createdAt(),
+  updatedAt: at("updated_at").notNull().defaultNow(),
+  updatedBy: uuid("updated_by"),
+});
+export type PriceItem = typeof priceItems.$inferSelect;

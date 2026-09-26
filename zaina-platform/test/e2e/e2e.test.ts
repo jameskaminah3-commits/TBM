@@ -542,7 +542,7 @@ test("Acme's chat runs on Acme's instructions and tools, and keeps Acme's leads"
   const chat = await openChat(nextIp(), "KES", acmeKey, ACME_ORIGIN);
   assert.equal(
     await say(chat, "TEST:whoami"),
-    "You are Zaina, the assistant for Acme Guesthouse, answering customers in a chat on its website. Tools: create_lead, search_knowledge, escalate_to_human.",
+    "You are Zaina, the assistant for Acme Guesthouse, answering customers in a chat on its website. Tools: create_lead, search_knowledge, escalate_to_human, get_prices.",
   );
   assert.doesNotMatch(await say(await openChat(), "TEST:whoami"), /Acme/, "TBM's chats are TBM's");
 

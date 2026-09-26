@@ -1,8 +1,9 @@
 // zaina-platform/src/engine/tool-sets.ts
 //
 // Which tools Zaina gets, by business type. Every business gets its
-// knowledge search and a handoff to its team; the rest comes from the
-// business's connector:
+// knowledge search and a handoff to its team, and every business on the
+// platform's own connectors its price list (get_prices); the rest comes from
+// the business's connector:
 //
 //   general           answers from its knowledge, and leads for its team
 //   guesthouse        the same until room bookings arrive (Phase 4)
@@ -16,6 +17,7 @@ import { Type, type FunctionDeclaration } from "@google/genai";
 import type { BusinessConnector } from "../connectors/types.ts";
 import type { Business, BusinessType } from "../db/schema.ts";
 import { SEARCH_KNOWLEDGE, searchKnowledgeDeclaration } from "../knowledge/tool.ts";
+import { GET_PRICES, getPricesDeclaration } from "../prices/tool.ts";
 
 export const ESCALATE_TO_HUMAN = "escalate_to_human";
 
@@ -32,13 +34,15 @@ export const escalateDeclaration: FunctionDeclaration = {
 /** Tools every business gets, answered by the engine itself. */
 export const SHARED_TOOLS: FunctionDeclaration[] = [searchKnowledgeDeclaration, escalateDeclaration];
 /** Shared tools that only read, and may run alongside other reads. */
-export const SHARED_READ_ONLY = new Set([SEARCH_KNOWLEDGE]);
+export const SHARED_READ_ONLY = new Set([SEARCH_KNOWLEDGE, GET_PRICES]);
 
 /** Business types whose tools need a connector of their own (no fallback). */
 export const TYPES_WITH_OWN_CONNECTOR: ReadonlySet<BusinessType> = new Set(["travel_concierge"]);
 
-export function toolDeclarationsFor(_business: Business, connector: BusinessConnector): FunctionDeclaration[] {
-  return [...connector.toolDeclarations(), ...SHARED_TOOLS];
+export function toolDeclarationsFor(business: Business, connector: BusinessConnector): FunctionDeclaration[] {
+  // A business with its own connector (TBM) prices through its own system.
+  const prices = TYPES_WITH_OWN_CONNECTOR.has(business.businessType) ? [] : [getPricesDeclaration];
+  return [...connector.toolDeclarations(), ...SHARED_TOOLS, ...prices];
 }
 
 export function isReadOnlyTool(name: string, connector: BusinessConnector): boolean {

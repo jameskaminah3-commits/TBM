@@ -1,10 +1,10 @@
 // zaina-platform/src/connectors/basic/index.ts
 //
 // The connector for a business with no booking system connected yet
-// (business types "general" and, until Phase 4, "guesthouse"): Zaina answers
-// from the business's own knowledge (search_knowledge, a shared tool) and its
-// short description, takes the details of people who want the team to get
-// back to them, and hands over to a person (escalate_to_human, shared).
+// (business type "general"): Zaina answers from the business's own knowledge
+// (search_knowledge, a shared tool), its price list (get_prices, shared) and
+// its short description, takes the details of people who want the team to
+// get back to them, and hands over to a person (escalate_to_human, shared).
 // The instructions never change between calls: the clock and the customer's
 // language come with each message.
 
@@ -90,7 +90,8 @@ ${settings?.about?.trim() || "(nothing yet)"}
 
 How to help:
 - For questions about ${name} (what it offers, where it is, hours, policies, directions), search with search_knowledge first. Answer only from what it returns or the information above, and say where the answer comes from, with the link when there is one.
-- If nothing answers the question, including prices and availability, say you're not sure rather than guess, and offer to pass it to the team.
+- For what something costs, call get_prices and quote the price exactly as it returns it. Never take a price from anywhere else or work one out.
+- If nothing answers the question, including a price that isn't listed and whether something is available, say you're not sure rather than guess, and offer to pass it to the team.
 - When someone wants the team to get back to them, ask for their name and a phone number or email, then call create_lead with exactly what they typed. Never make up a detail.
 - If they ask for a person, or it's urgent, call escalate_to_human.
 - If they need to reach ${name} directly: ${await contactLineFor(business)}.
