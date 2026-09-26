@@ -22,7 +22,7 @@ export async function getBusinessSettings(businessId: string): Promise<BusinessS
 
 export type SettingsPatch = Partial<Pick<BusinessSettings,
   | "displayName" | "assistantName" | "about" | "contactPhone" | "contactPhoneDisplay" | "websiteUrl" | "supportEmail"
-  | "allowedLinkHosts" | "allowedLinkHostSuffixes" | "defaultCurrency" | "widgetColor" | "widgetPosition" | "widgetGreeting">>;
+  | "allowedLinkHosts" | "allowedLinkHostSuffixes" | "defaultCurrency" | "widgetColor" | "widgetPosition" | "widgetGreeting" | "widgetWhatsapp">>;
 
 const TEXT_FIELDS = ["displayName", "assistantName", "about", "contactPhone", "contactPhoneDisplay", "websiteUrl", "supportEmail"] as const;
 const HOST_PATTERN = /^(?:[a-z0-9-]+\.)+[a-z]{2,}$/;
@@ -81,6 +81,10 @@ export function validateSettingsPatch(input: Record<string, unknown>): { ok: tru
     if (greeting === null || greeting === "") patch.widgetGreeting = null;
     else if (typeof greeting !== "string" || greeting.length > 300) return { ok: false, error: "widgetGreeting is up to 300 characters" };
     else patch.widgetGreeting = greeting.trim();
+  }
+  if ("widgetWhatsapp" in input) {
+    if (typeof input.widgetWhatsapp !== "boolean") return { ok: false, error: "widgetWhatsapp is true or false" };
+    patch.widgetWhatsapp = input.widgetWhatsapp;
   }
   return { ok: true, patch };
 }

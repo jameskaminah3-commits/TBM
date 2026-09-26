@@ -1,22 +1,24 @@
 // zaina-platform/src/gateway/routes.ts
 //
 // The public chat API a website widget calls. Every request is tied to a
-// business (by its public key, then by the signed session token), checked
-// against the business's allowed websites, and rate limited in Postgres
-// before any model is called (C6).
+// business (by its id or public key, then by the signed session token),
+// checked against the business's allowed websites, and rate limited in
+// Postgres before any model is called (C6).
 //
-//   POST /v1/sessions            open a chat: { business_key, display_currency }
+//   POST /v1/sessions            open a chat: { business (id or public key) | business_key, display_currency }
 //   POST /v1/chat                send a message (Authorization: Bearer <token>)
 //   GET  /v1/session             the chat's state (who is handling it)
 //   GET  /v1/chat/messages       messages after ?after=<id> (replies during a handoff)
-//   GET  /v1/widget/config       ?key=<public key>: the widget's name, colour, position and greeting
+//   GET  /v1/widget/config       ?business=<id> (or ?key=<public key>): the widget's name, colour, position,
+//                                greeting, and its WhatsApp link when it offers one
 
 import type { Express, NextFunction, Request, Response } from "express";
 import type { PlatformConfig } from "../config.ts";
 import type { Business } from "../db/schema.ts";
 import { runForBusiness } from "../db/tenant.ts";
-import { allowedOriginsFor, anyBusinessById, businessByPublicKey } from "../businesses/registry.ts";
+import { allowedOriginsFor, anyBusinessById, businessById, businessByPublicKey } from "../businesses/registry.ts";
 import { getBusinessSettings } from "../businesses/settings.ts";
+import { getNumber } from "../channels/whatsapp/numbers.ts";
 import { createSession, customerVisibleEvents, getSession, setDisplayCurrency } from "../conversations/store.ts";
 import { handleChatTurn, type EngineOptions } from "../engine/agent.ts";
 import { recordTurn, TurnRecorder } from "../engine/telemetry.ts";
@@ -35,6 +37,23 @@ function refuse(res: Response, status: number, error: string, message: string, e
 
 function currencyOf(value: unknown): "USD" | "KES" | null {
   return value === "USD" || value === "KES" ? value : null;
+}
+
+/**
+ * The live business a website names: by its id (zaina.js's data-business)
+ * or its public key (data-key, and older snippets). Ids never start with
+ * "pk_", so the two can't be confused.
+ */
+export async function namedBusiness(value: unknown): Promise<Business | undefined> {
+  const name = typeof value === "string" ? value.trim() : "";
+  if (!name || name.length > 120) return undefined;
+  return name.startsWith("pk_") ? businessByPublicKey(name) : businessById(name);
+}
+
+/** A wa.me link to a WhatsApp number as Meta shows it ("+254 712 345678"), or null. */
+export function whatsappLink(displayPhoneNumber: string | null | undefined): string | null {
+  const digits = (displayPhoneNumber ?? "").replace(/\D/g, "");
+  return digits.length >= 8 && digits.length <= 15 ? `https://wa.me/${digits}` : null;
 }
 
 export function registerGatewayRoutes(app: Express, config: PlatformConfig, engine: EngineOptions): void {
@@ -91,8 +110,7 @@ export function registerGatewayRoutes(app: Express, config: PlatformConfig, engi
 
   app.post("/v1/sessions", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const key = typeof req.body?.business_key === "string" ? req.body.business_key.trim() : "";
-      const business = key ? await businessByPublicKey(key) : undefined;
+      const business = await namedBusiness(req.body?.business ?? req.body?.business_key);
       if (!business) return refuse(res, 404, "unknown_business", "This chat is not available.");
       if (!isOriginAllowed(req.header("origin"), allowedOriginsFor(business))) {
         return refuse(res, 403, "origin_not_allowed", "This website can't use this chat.");
@@ -172,13 +190,14 @@ export function registerGatewayRoutes(app: Express, config: PlatformConfig, engi
   // What the website widget needs before the first message: public, per business.
   app.get("/v1/widget/config", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const key = typeof req.query.key === "string" ? req.query.key.trim() : "";
-      const business = key ? await businessByPublicKey(key) : undefined;
+      const business = await namedBusiness(req.query.business ?? req.query.key);
       if (!business) return refuse(res, 404, "unknown_business", "This chat is not available.");
       if (!isOriginAllowed(req.header("origin"), allowedOriginsFor(business))) {
         return refuse(res, 403, "origin_not_allowed", "This website can't use this chat.");
       }
       const settings = await getBusinessSettings(business.id);
+      // "Chat on WhatsApp", when the business has a number connected and offers it.
+      const number = settings?.widgetWhatsapp === false ? null : await getNumber(business.id);
       res.setHeader("Cache-Control", "no-store");
       res.json({
         name: settings?.displayName ?? business.name,
@@ -187,6 +206,7 @@ export function registerGatewayRoutes(app: Express, config: PlatformConfig, engi
         position: settings?.widgetPosition ?? "right",
         greeting: settings?.widgetGreeting ?? null,
         currency: settings?.defaultCurrency ?? "USD",
+        whatsapp: number?.status === "active" ? whatsappLink(number.displayPhoneNumber) : null,
       });
     } catch (error) {
       next(error);

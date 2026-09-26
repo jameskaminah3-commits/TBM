@@ -221,6 +221,7 @@ export const businessSettings = pgTable("business_settings", {
   widgetColor: text("widget_color").notNull().default("#0f766e"),
   widgetPosition: text("widget_position").$type<"right" | "left">().notNull().default("right"),
   widgetGreeting: text("widget_greeting"),
+  widgetWhatsapp: boolean("widget_whatsapp").notNull().default(true),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
   updatedBy: uuid("updated_by"),
 });

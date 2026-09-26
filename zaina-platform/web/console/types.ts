@@ -128,6 +128,7 @@ export type Settings = {
   widgetColor: string;
   widgetPosition: "right" | "left";
   widgetGreeting: string | null;
+  widgetWhatsapp: boolean;
 };
 
 export type StaffedHours = { days: number[]; open: string; close: string };

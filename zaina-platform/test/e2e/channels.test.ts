@@ -468,12 +468,33 @@ test("the website widget's settings: look, greeting, and only the business's own
 
   const config = await fetch(`${platform.base}/v1/widget/config?key=${key}`, { headers: { origin: ACME_ORIGIN } });
   assert.equal(config.status, 200);
-  assert.deepEqual(await config.json(), {
+  const expected = {
     name: "Acme Guesthouse", assistant_name: "Zaina", color: "#1d4ed8", position: "left",
     greeting: "Karibu Acme! Ask me anything about your stay.", currency: "USD",
-  });
+    // WhatsApp is connected: the chat offers the number too.
+    whatsapp: "https://wa.me/254700123456",
+  };
+  assert.deepEqual(await config.json(), expected);
   assert.equal((await fetch(`${platform.base}/v1/widget/config?key=${key}`, { headers: { origin: "https://evil.example" } })).status, 403);
   assert.equal((await fetch(`${platform.base}/v1/widget/config?key=pk_nobody_000000000000`, { headers: { origin: ACME_ORIGIN } })).status, 404);
+
+  // zaina.js names the business by its id (data-business): the same chat.
+  const byId = await fetch(`${platform.base}/v1/widget/config?business=acme`, { headers: { origin: ACME_ORIGIN } });
+  assert.deepEqual(await byId.json(), expected);
+  assert.equal((await fetch(`${platform.base}/v1/widget/config?business=acme`, { headers: { origin: "https://evil.example" } })).status, 403);
+  assert.equal((await fetch(`${platform.base}/v1/widget/config?business=nobody`, { headers: { origin: ACME_ORIGIN } })).status, 404);
+  const session = await fetch(`${platform.base}/v1/sessions`, { method: "POST", headers: { "content-type": "application/json", origin: ACME_ORIGIN }, body: JSON.stringify({ business: "acme", display_currency: "KES" }) });
+  assert.equal(session.status, 201);
+  assert.equal(((await session.json()) as any).display_currency, "KES");
+  const elsewhere = await fetch(`${platform.base}/v1/sessions`, { method: "POST", headers: { "content-type": "application/json", origin: "https://evil.example" }, body: JSON.stringify({ business: "acme" }) });
+  assert.equal(elsewhere.status, 403);
+
+  // The business can keep WhatsApp out of the website chat.
+  assert.equal((await api("PATCH", "/v1/staff/businesses/acme/settings", { widgetWhatsapp: "yes" }, ownerToken)).status, 400);
+  assert.equal((await api("PATCH", "/v1/staff/businesses/acme/settings", { widgetWhatsapp: false }, ownerToken)).status, 200);
+  const without = await fetch(`${platform.base}/v1/widget/config?business=acme`, { headers: { origin: ACME_ORIGIN } });
+  assert.equal(((await without.json()) as any).whatsapp, null);
+  assert.equal((await api("PATCH", "/v1/staff/businesses/acme/settings", { widgetWhatsapp: true }, ownerToken)).status, 200);
 });
 
 test("hours, time zone and websites: managers run the hours, only an owner changes the websites", async () => {
@@ -558,7 +579,14 @@ test("the widget script loads on any website; the console is served with a stric
   assert.match(script.headers.get("content-type") ?? "", /javascript/);
   assert.equal(script.headers.get("access-control-allow-origin"), "*");
   assert.equal(script.headers.get("cross-origin-resource-policy"), "cross-origin");
-  assert.match(await script.text(), /data-key/);
+  const code = await script.text();
+  assert.match(code, /data-key/);
+  // zaina.js is the same script, for any business's website.
+  const zaina = await fetch(`${platform.base}/zaina.js`);
+  assert.equal(zaina.status, 200);
+  assert.equal(zaina.headers.get("access-control-allow-origin"), "*");
+  assert.equal(await zaina.text(), code);
+  assert.match(code, /data-business/);
 
   const redirect = await fetch(`${platform.base}/console`, { redirect: "manual" });
   assert.equal(redirect.status, 301);

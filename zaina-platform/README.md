@@ -187,7 +187,7 @@ WhatsApp, and its team works from a console:
 
 | Part | What it does |
 |---|---|
-| Website widget | One script tag per business (its public key). Only the business's own websites can use it. It has the business's name, colour, corner and greeting. The chat resumes on the next visit, and the team's replies appear while they have the chat. Shadow DOM, keyboard and screen-reader friendly, full screen on phones, 12 KB |
+| Website widget | One script tag on any business's website: `<script src="https://<platform>/zaina.js" data-business="<business id>" async></script>` (the console's Settings → Website widget shows it; older snippets with `widget.js` and `data-key` keep working). Only the business's own websites can use it. It has the business's name, colour, corner and greeting, and, with WhatsApp connected, a "Chat on WhatsApp instead" link to its number (the business can turn it off; migration 0013). The chat resumes on the next visit, and the team's replies appear while they have the chat. Shadow DOM, keyboard and screen-reader friendly, full screen on phones, 13 KB |
 | WhatsApp | The WhatsApp Cloud API through one webhook for the platform, checked against Meta's signature. Messages are stored once (Meta retries) and answered together when they arrive together. Replies go out in order: free-form within 24 hours of the customer's last message; after that, the business's approved follow-up template and the reply waits for the customer. Delivery statuses, retries when Meta is busy, and a failed message skipped rather than blocking the chat. Photos, voice notes and documents are kept for the team, and Zaina says she reads text only. The customer's number counts as a contact they gave. Blue ticks and "typing…" |
 | Connecting a number | An owner enters the phone number ID, account ID and a permanent token. Meta checks the token before anything is saved; the token is stored encrypted and never shown again. A number can belong to one business only |
 | Handoff routing | A waiting chat goes first to one person who is taking chats (the one with the fewest in hand), then to everyone after 3 minutes. The unclaimed timeout, callbacks and "hand back to Zaina" work as before. People show they're taking chats in the console |
@@ -462,8 +462,9 @@ unrestricted, or if the two addresses aren't the same database.
 
 ## API
 
-Public (the widget): `POST /v1/sessions` with `{ business_key, display_currency }`
-returns a `token`; send it as `Authorization: Bearer …` to `POST /v1/chat`
+Public (the widget): `POST /v1/sessions` with `{ business, display_currency }`
+(`business` is the business's id, or its public key; `business_key` still
+works) returns a `token`; send it as `Authorization: Bearer …` to `POST /v1/chat`
 (`{ message }`), `GET /v1/session` and `GET /v1/chat/messages?after=<id>`.
 
 Staff sign in with `POST /v1/staff/login` (`{ email, password }`) and send the
@@ -518,8 +519,8 @@ Phase 3:
 
 | Route | Who |
 |---|---|
-| `GET /widget.js` | any website (it only works on the business's own) |
-| `GET /v1/widget/config?key=<public key>` | the business's websites: name, colour, corner, greeting |
+| `GET /zaina.js` (also `/widget.js`, for older snippets) | any website (it only works on the business's own) |
+| `GET /v1/widget/config?business=<id>` (or `?key=<public key>`) | the business's websites: name, colour, corner, greeting, and its WhatsApp link (`https://wa.me/<number>`) when WhatsApp is connected and `widgetWhatsapp` is on |
 | `GET`, `POST /v1/whatsapp/webhook` | Meta: the handshake, then signed deliveries |
 | `POST`, `DELETE /v1/console/session`, `GET /v1/console/me` | the console: sign in and out (cookie), who is signed in |
 | `POST`, `DELETE /v1/console/push-subscriptions` | anyone signed in: alerts on this phone or browser |

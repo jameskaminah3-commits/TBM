@@ -1,12 +1,16 @@
 // zaina-platform/web/widget/widget.ts
 //
-// The website widget: one script tag per business.
+// The website widget: one script tag on any business's website.
 //
-//   <script src="https://<platform>/widget.js" data-key="pk_…" async></script>
+//   <script src="https://<platform>/zaina.js" data-business="<business id>" async></script>
 //
+// (Older snippets load /widget.js with data-key="pk_…": the same script.)
 // Optional attributes: data-currency="KES" (prices in shillings), and
 // data-open="true" (open on load). The page can also call
 // window.Zaina.open(), .close() and .setCurrency("USD" | "KES").
+//
+// When the business has WhatsApp connected (and offers it), the chat also
+// has a "Chat on WhatsApp" link to its number.
 //
 // Everything lives in a shadow root, so the site's styles and the widget's
 // never touch. Messages are shown as text (links made clickable), never as
@@ -14,7 +18,7 @@
 // browser for 30 days), and while the team has the chat, their replies appear
 // as they come.
 
-type Config = { name: string; assistant_name: string; color: string; position: "right" | "left"; greeting: string | null; currency: "USD" | "KES" };
+type Config = { name: string; assistant_name: string; color: string; position: "right" | "left"; greeting: string | null; currency: "USD" | "KES"; whatsapp?: string | null };
 type Message = { id: number; from: "customer" | "zaina" | "team"; text: string; author?: string };
 type Stored = { token: string; sessionId: string };
 
@@ -31,15 +35,16 @@ const POLL_OPEN_MS = 30_000;
 (function start() {
   if (window.__zainaWidgetLoaded) return;
   const script = (document.currentScript as HTMLScriptElement | null)
-    ?? document.querySelector<HTMLScriptElement>('script[src*="widget.js"][data-key]');
-  const key = script?.dataset.key?.trim();
-  if (!script || !key) {
-    console.warn("[zaina] The widget script needs data-key=\"<your public key>\".");
+    ?? document.querySelector<HTMLScriptElement>('script[src*="zaina.js"][data-business], script[src*="widget.js"][data-key], script[src*="zaina.js"][data-key]');
+  // The business: its id (data-business) or its public key (data-key).
+  const business = (script?.dataset.business ?? script?.dataset.key)?.trim();
+  if (!script || !business) {
+    console.warn("[zaina] The chat's script needs data-business=\"<your business id>\" (see Settings → Website chat in the Zaina console).");
     return;
   }
   window.__zainaWidgetLoaded = true;
   const api = new URL(script.src, location.href).origin;
-  const storageKey = `zaina:${key}`;
+  const storageKey = `zaina:${business}`;
 
   let config: Config;
   let currency: "USD" | "KES" | null = script.dataset.currency === "KES" || script.dataset.currency === "USD" ? script.dataset.currency : null;
@@ -144,6 +149,11 @@ textarea { flex: 1; resize: none; border: 1px solid var(--line); border-radius: 
 .send { background: var(--brand); color: var(--on-brand); border: none; border-radius: 12px; width: 44px; height: 42px; cursor: pointer; display: grid; place-items: center; }
 .send:disabled { opacity: .5; cursor: default; }
 .footer { text-align: center; font-size: 11px; color: var(--muted); padding: 0 0 8px; }
+.whatsapp { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 0 10px 8px; padding: 7px 10px; border-radius: 10px;
+  font-size: 13px; font-weight: 600; color: #075e54; background: #dcf8c6; text-decoration: none; }
+.whatsapp:hover { background: #cdf2b1; }
+.whatsapp svg { width: 16px; height: 16px; flex: none; }
+@media (prefers-color-scheme: dark) { .whatsapp { color: #d9fdd3; background: #0b3d2e; } .whatsapp:hover { background: #0f4d3a; } }
 @media (max-width: 480px) {
   .root { ${side}: 12px; bottom: 12px; }
   .panel.open { position: fixed; inset: 0; width: auto; height: auto; border-radius: 0; border: none; }
@@ -156,6 +166,7 @@ textarea { flex: 1; resize: none; border: 1px solid var(--line); border-radius: 
     chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>',
     close: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
     send: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 12l16-8-6 16-2-7-8-1z"/></svg>',
+    whatsapp: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 21l1.6-4.8A8.5 8.5 0 1 1 7.8 19.4L3 21z"/><path d="M9 9.5c0 3 2.5 5.5 5.5 5.5l1-1.5-2-1-1 .8a4 4 0 0 1-1.8-1.8l.8-1-1-2L9 9.5z"/></svg>',
   };
 
   function element<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
@@ -251,7 +262,18 @@ textarea { flex: 1; resize: none; border: 1px solid var(--line); border-radius: 
     });
 
     const footer = element("div", "footer", "Powered by Zaina");
-    panel.append(header, log, composer, footer);
+    panel.append(header, log, composer);
+    // Customers who'd rather carry on in WhatsApp: the business's own number, with a first line ready.
+    if (config.whatsapp && /^https:\/\/wa\.me\/\d{8,15}$/.test(config.whatsapp)) {
+      const whatsapp = element("a", "whatsapp");
+      whatsapp.href = `${config.whatsapp}?text=${encodeURIComponent(`Hi ${config.name}!`)}`;
+      whatsapp.target = "_blank";
+      whatsapp.rel = "noopener noreferrer";
+      whatsapp.innerHTML = icons.whatsapp;
+      whatsapp.append(document.createTextNode("Chat on WhatsApp instead"));
+      panel.append(whatsapp);
+    }
+    panel.append(footer);
     panel.addEventListener("keydown", (event) => {
       if (event.key === "Escape") setOpen(false);
     });
@@ -333,7 +355,7 @@ textarea { flex: 1; resize: none; border: 1px solid var(--line); border-radius: 
   }
 
   async function openSession(): Promise<boolean> {
-    const result = await call("/v1/sessions", { method: "POST", json: { business_key: key, display_currency: currency ?? config.currency } });
+    const result = await call("/v1/sessions", { method: "POST", json: { business, display_currency: currency ?? config.currency } });
     if (result.status !== 201) {
       notice(result.body?.message ?? "The chat isn't available right now. Please try again later.", true);
       return false;
@@ -408,7 +430,7 @@ textarea { flex: 1; resize: none; border: 1px solid var(--line); border-radius: 
   async function boot() {
     let result: { status: number; body: any };
     try {
-      const response = await fetch(`${api}/v1/widget/config?key=${encodeURIComponent(key!)}`, { credentials: "omit" });
+      const response = await fetch(`${api}/v1/widget/config?business=${encodeURIComponent(business!)}`, { credentials: "omit" });
       result = { status: response.status, body: await response.json().catch(() => null) };
     } catch {
       console.warn("[zaina] The chat couldn't load.");

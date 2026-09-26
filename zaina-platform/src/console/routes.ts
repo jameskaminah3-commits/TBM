@@ -1,7 +1,7 @@
 // zaina-platform/src/console/routes.ts
 //
-// The business console (a single-page app at /console/) and the website
-// widget script (/widget.js), and the routes only the console uses:
+// The business console (a single-page app at /console/), the website widget
+// script (/zaina.js, also /widget.js), and the routes only the console uses:
 //
 //   POST   /v1/console/session              sign in: { email, password } → sets the console's cookie
 //   DELETE /v1/console/session              sign out
@@ -60,7 +60,8 @@ export function registerConsoleRoutes(app: Express, config: PlatformConfig): voi
   if (!directory) console.warn("[platform] the widget and console aren't built (npm run build:web); /widget.js and /console/ are off");
 
   // ── The widget script: any website may load it; it only works where the business allows. ──
-  app.get("/widget.js", (_req: Request, res: Response) => {
+  // /zaina.js (with data-business) is its name for every business; /widget.js (with data-key) stays for older snippets.
+  app.get(["/zaina.js", "/widget.js"], (_req: Request, res: Response) => {
     if (!directory) return res.status(404).type("text/plain").send("// The widget isn't built on this server.");
     res.setHeader("Cache-Control", "public, max-age=300");
     res.setHeader("Access-Control-Allow-Origin", "*");

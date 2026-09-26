@@ -129,20 +129,22 @@ function Profile(props: { businessId: string }) {
 function Widget(props: { businessId: string; role: Role; me: Me }) {
   const loaded = useSettings(props.businessId);
   const operations = useLoad(() => api<Operations>("GET", businessPath(props.businessId, "/operations")), [props.businessId]);
-  const [look, setLook] = useState<{ color: string; position: "right" | "left"; greeting: string } | null>(null);
+  const whatsapp = useLoad(() => api<WhatsappState>("GET", businessPath(props.businessId, "/whatsapp")).catch(() => null), [props.businessId]);
+  const [look, setLook] = useState<{ color: string; position: "right" | "left"; greeting: string; whatsapp: boolean } | null>(null);
   const [origins, setOrigins] = useState<string>("");
   const lookAction = useAction();
   const originsAction = useAction();
   const [copied, setCopied] = useState(false);
   useEffect(() => {
-    if (loaded.data) setLook({ color: loaded.data.widgetColor, position: loaded.data.widgetPosition, greeting: loaded.data.widgetGreeting ?? "" });
+    if (loaded.data) setLook({ color: loaded.data.widgetColor, position: loaded.data.widgetPosition, greeting: loaded.data.widgetGreeting ?? "", whatsapp: loaded.data.widgetWhatsapp });
   }, [loaded.data]);
   useEffect(() => {
     if (operations.data) setOrigins(operations.data.allowed_origins.join("\n"));
   }, [operations.data]);
   if (!look || !operations.data) return <ErrorLine error={loaded.error ?? operations.error} />;
   const base = props.me.public_base_url ?? location.origin;
-  const snippet = `<script src="${base}/widget.js" data-key="${operations.data.public_key}" async></script>`;
+  const snippet = `<script src="${base}/zaina.js" data-business="${props.businessId}" async></script>`;
+  const number = whatsapp.data?.connection?.status === "active" ? whatsapp.data.connection.display_phone_number : null;
   return (
     <div className="stack">
       <section className="card">
@@ -150,13 +152,13 @@ function Widget(props: { businessId: string; role: Role; me: Me }) {
         <p className="muted">Paste this just before <code>&lt;/body&gt;</code> on every page where the chat should appear. It only works on the websites listed below.</p>
         <pre className="snippet">{snippet}</pre>
         <Button small onClick={() => void navigator.clipboard.writeText(snippet).then(() => setCopied(true))}>{copied ? "Copied" : "Copy the code"}</Button>
-        <p className="muted small">Optional: <code>data-currency="KES"</code> shows prices in shillings; <code>data-open="true"</code> opens the chat on load. If your site has a Content Security Policy, allow <code>{base}</code> in <code>script-src</code> and <code>connect-src</code>.</p>
+        <p className="muted small">Optional: <code>data-currency="KES"</code> shows prices in shillings; <code>data-open="true"</code> opens the chat on load. If your site has a Content Security Policy, allow <code>{base}</code> in <code>script-src</code> and <code>connect-src</code>. An older code with <code>widget.js</code> and <code>data-key</code> keeps working.</p>
       </section>
       <form
         className="form card"
         onSubmit={async (event) => {
           event.preventDefault();
-          await lookAction.run(() => api("PATCH", businessPath(props.businessId, "/settings"), { widgetColor: look.color, widgetPosition: look.position, widgetGreeting: look.greeting.trim() || null }), "Saved. Visitors see the new look on their next page load.");
+          await lookAction.run(() => api("PATCH", businessPath(props.businessId, "/settings"), { widgetColor: look.color, widgetPosition: look.position, widgetGreeting: look.greeting.trim() || null, widgetWhatsapp: look.whatsapp }), "Saved. Visitors see the new look on their next page load.");
         }}
       >
         <h2>Look and greeting</h2>
@@ -173,6 +175,12 @@ function Widget(props: { businessId: string; role: Role; me: Me }) {
         <Field label="First message" hint={`Shown when a visitor opens the chat. Leave empty for: "Hi! I'm ${loaded.data?.assistantName ?? "Zaina"}, ${loaded.data?.displayName ?? "your"}'s assistant. How can I help?"`} wide>
           <textarea rows={2} maxLength={300} value={look.greeting} onChange={(event) => setLook({ ...look, greeting: event.target.value })} />
         </Field>
+        {number ? (
+          <label className="check">
+            <input type="checkbox" checked={look.whatsapp} onChange={(event) => setLook({ ...look, whatsapp: event.target.checked })} />
+            <span>Offer "Chat on WhatsApp instead" in the chat, to {number}</span>
+          </label>
+        ) : <p className="muted small">Connect WhatsApp (below) and the chat can also offer your WhatsApp number.</p>}
         <Message message={lookAction.message} />
         <div className="actions"><Button kind="primary" type="submit" busy={lookAction.busy}>Save</Button></div>
       </form>
