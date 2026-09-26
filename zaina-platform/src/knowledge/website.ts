@@ -15,7 +15,9 @@ import { htmlToText } from "./import.ts";
 export const MAX_WEBSITE_PAGES = 25;
 const PAGE_BYTES = 2 * 1024 * 1024;
 const PAGE_TIMEOUT_MS = 12_000;
-const MIN_TEXT = 80;
+/** A page with less text than this, or only a "turn on JavaScript" notice, has nothing to read without a browser. */
+const MIN_TEXT = 30;
+const NEEDS_SCRIPT = /(enable|turn on|requires?|needs?)\s+javascript|javascript (is )?(required|disabled|needed)/i;
 
 export type WebsitePage = { url: string; title: string; text: string; description: string | null };
 export type WebsiteRead = { site: string; pages: WebsitePage[]; skipped: Array<{ url: string; reason: string }> };
@@ -169,7 +171,7 @@ export async function readWebsite(start: string, options: { maxPages?: number; t
     const html = response.body.toString("utf8");
     const { title, text } = htmlToText(html);
     const fingerprint = createHash("sha256").update(text).digest("hex");
-    if (text.length < MIN_TEXT) {
+    if (text.length < MIN_TEXT || (text.length < 400 && NEEDS_SCRIPT.test(text))) {
       skipped.push({ url: response.url.toString(), reason: "It has no text to read (it may need JavaScript)." });
     } else if (texts.has(fingerprint)) {
       skipped.push({ url: response.url.toString(), reason: "The same text as another page." });

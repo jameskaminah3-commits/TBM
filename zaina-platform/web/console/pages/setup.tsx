@@ -1,17 +1,19 @@
 // zaina-platform/web/console/pages/setup.tsx
 //
-// Setting up a business that signed up by itself: the checklist the platform
-// reads from what the business has done (each step opens the page where
-// it's done), a chat to try Zaina as a customer would, and going live once
-// every required step is done.
+// Setting up a business that signed up by itself: a start from its website
+// (Zaina reads it into knowledge, and the site's own description can become
+// the business's), the checklist the platform reads from what the business
+// has done (each step opens the page where it's done), a chat to try Zaina as
+// a customer would, and going live once every required step is done.
 
 import { useRef, useState } from "react";
 import { api, businessPath } from "../api.ts";
 import { go } from "../app.tsx";
 import { atLeast, type Role } from "../types.ts";
-import { Button, ErrorLine, Icon, Message, useAction, useLoad } from "../ui.tsx";
+import { Button, ErrorLine, Field, Icon, Message, useAction, useLoad } from "../ui.tsx";
 
 type Step = { id: string; title: string; detail: string; done: boolean; required: boolean; page: string; tab?: string };
+type WebsiteRead = { site: string; pages: Array<{ url: string; source: { title: string } }>; skipped: Array<{ url: string; reason: string }>; description: string | null };
 type Onboarding = { status: "onboarding" | "active" | "paused"; pause_reason: "platform" | "billing" | null; went_live_at: string | null; steps: Step[]; done: number; ready: boolean };
 
 export function SetupPage(props: { businessId: string; role: Role; onLive: () => void }) {
@@ -37,6 +39,7 @@ export function SetupPage(props: { businessId: string; role: Role; onLive: () =>
       ) : (
         <p className="muted">Do these steps in any order. Zaina doesn't answer your customers until you go live.</p>
       )}
+      {data.status === "onboarding" && atLeast(props.role, "manager") ? <StartFromWebsite businessId={props.businessId} onChanged={() => void loaded.reload()} /> : null}
       <div className="progress" role="progressbar" aria-valuemin={0} aria-valuemax={data.steps.length} aria-valuenow={data.done} aria-label="Steps done">
         <span style={{ width: `${Math.round((data.done / data.steps.length) * 100)}%` }} />
       </div>
@@ -74,6 +77,61 @@ export function SetupPage(props: { businessId: string; role: Role; onLive: () =>
         </section>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * The quickest start: Zaina reads the business's website (its rooms, menu,
+ * services, FAQs, policies) into knowledge, and the site's own description
+ * can become what Zaina says about the business.
+ */
+function StartFromWebsite(props: { businessId: string; onChanged: () => void }) {
+  const settings = useLoad(() => api<{ settings: { websiteUrl: string | null; about: string } }>("GET", businessPath(props.businessId, "/settings")), [props.businessId]);
+  const [address, setAddress] = useState<string | null>(null);
+  const [result, setResult] = useState<WebsiteRead | null>(null);
+  const [aboutSaved, setAboutSaved] = useState(false);
+  const action = useAction();
+  const value = address ?? settings.data?.settings.websiteUrl ?? "";
+  const about = settings.data?.settings.about?.trim() ?? "";
+  const suggestion = result?.description && result.description.length >= 40 && about.length < 40 && !aboutSaved ? result.description : null;
+  return (
+    <section className="card stack-tight">
+      <h2>Start from your website</h2>
+      <p className="muted">Zaina reads your website (your rooms or services, menu, FAQs, policies and contact details) and answers customers from it. Prices on it are left out: Zaina quotes them only from your rooms, services and price list.</p>
+      <form
+        className="form-row"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          await action.run(async () => {
+            setResult(await api<WebsiteRead>("POST", businessPath(props.businessId, "/knowledge/import-website"), { url: value.trim(), max_pages: 15 }));
+            props.onChanged();
+          });
+        }}
+      >
+        <Field label="Your website"><input required placeholder="https://www.example.co.ke" value={value} onChange={(event) => setAddress(event.target.value)} /></Field>
+        <div className="actions start"><Button kind="primary" type="submit" busy={action.busy}>{result ? "Read it again" : "Read my website"}</Button></div>
+      </form>
+      {action.busy ? <p className="muted small" aria-live="polite">Reading your website: this can take up to a minute…</p> : null}
+      <Message message={action.message} />
+      {result ? (
+        <p className="message success">
+          Read {result.pages.length} page{result.pages.length === 1 ? "" : "s"} from {result.site}: Zaina answers from them now.
+          {result.skipped.length ? ` ${result.skipped.length} couldn't be read (see Knowledge → Read your website).` : ""} Check them under Knowledge.
+        </p>
+      ) : null}
+      {suggestion ? (
+        <div className="stack-tight">
+          <p className="small">Your website describes you as: <em>“{suggestion}”</em></p>
+          <div className="actions start">
+            <Button onClick={() => void action.run(async () => {
+              await api("PATCH", businessPath(props.businessId, "/settings"), { about: suggestion });
+              setAboutSaved(true);
+              props.onChanged();
+            }, "Saved as what Zaina says about your business. Change it any time in Settings → Business.")}>Use it as your description</Button>
+          </div>
+        </div>
+      ) : null}
+    </section>
   );
 }
 
