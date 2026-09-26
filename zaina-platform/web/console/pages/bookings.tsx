@@ -1,8 +1,9 @@
 // zaina-platform/web/console/pages/bookings.tsx
 //
-// A place to stay's bookings: what's coming up, requests to answer, unpaid
+// A business's bookings: what's coming up, requests to answer, unpaid
 // holds, anything that needs the team (an M-Pesa code to check, a payment
-// whose rooms had gone), and a calendar of rooms free per night. A booking
+// whose rooms or time had gone), and a calendar: rooms free per night for a
+// place to stay, or the day's schedule for a salon or restaurant. A booking
 // opens in a panel with its price, payments and what the team can do next.
 
 import { useEffect, useMemo, useState } from "react";
@@ -11,6 +12,7 @@ import { go } from "../app.tsx";
 import { clock, day, timeAgo } from "../format.ts";
 import { atLeast, type BookingDetail, type BookingRow, type BookingStatus, type CalendarData, type Offering, type Quote, type Role } from "../types.ts";
 import { Button, Empty, ErrorLine, Field, Icon, Message, Modal, Tabs, Toggle, useAction, useEvery, useLoad } from "../ui.tsx";
+import { NewSlotBooking, ScheduleView } from "./schedule.tsx";
 
 type Filter = "upcoming" | "requests" | "unpaid" | "attention" | "past" | "cancelled" | "all" | "calendar";
 
@@ -19,7 +21,7 @@ const STATUS: Record<BookingStatus, { label: string; tone: string }> = {
   requested: { label: "Request", tone: "waiting" },
   awaiting_payment: { label: "Awaiting deposit", tone: "waiting" },
   confirmed: { label: "Confirmed", tone: "ok" },
-  conflict: { label: "Paid, needs a room", tone: "callback" },
+  conflict: { label: "Paid late: needs you", tone: "callback" },
   declined: { label: "Declined", tone: "" },
   cancelled: { label: "Cancelled", tone: "" },
   expired: { label: "Hold ended", tone: "" },
@@ -30,9 +32,13 @@ export function StatusChip(props: { status: BookingStatus }) {
   return <span className={`chip ${status.tone}`}>{status.label}</span>;
 }
 
-const stay = (row: Pick<BookingRow, "check_in" | "check_out" | "nights">) => `${day(row.check_in)} → ${day(row.check_out)} · ${row.nights} night${row.nights === 1 ? "" : "s"}`;
+const stay = (row: Pick<BookingRow, "check_in" | "check_out" | "nights" | "starts_at" | "when">) =>
+  row.starts_at ? row.when ?? day(row.check_in) : `${day(row.check_in)} → ${day(row.check_out)} · ${row.nights} night${row.nights === 1 ? "" : "s"}`;
 
-export function BookingsPage(props: { businessId: string; role: Role; bookingId: string | null }) {
+const people = (row: Pick<BookingRow, "guests" | "starts_at">) => (row.starts_at ? `${row.guests} ${row.guests === 1 ? "person" : "people"}` : `${row.guests} guest${row.guests === 1 ? "" : "s"}`);
+
+export function BookingsPage(props: { businessId: string; role: Role; bookingId: string | null; businessType: string | null }) {
+  const slots = props.businessType === "salon" || props.businessType === "restaurant";
   const [filter, setFilter] = useState<Filter>("upcoming");
   const [creating, setCreating] = useState(false);
   const list = useLoad(
@@ -71,46 +77,52 @@ export function BookingsPage(props: { businessId: string; role: Role; bookingId:
           { id: "requests", label: "Requests", count: counts.data?.requests },
           { id: "unpaid", label: "Awaiting deposit" },
           { id: "attention", label: "Needs you", count: counts.data?.attention },
-          { id: "calendar", label: "Calendar" },
+          { id: "calendar", label: slots ? "Schedule" : "Calendar" },
           { id: "past", label: "Past" },
           { id: "cancelled", label: "Cancelled" },
           { id: "all", label: "All" },
         ]}
       />
-      {filter === "calendar" ? <CalendarView businessId={props.businessId} /> : <BookingTable loaded={list} onOpen={open} filter={filter} />}
+      {filter === "calendar"
+        ? slots ? <ScheduleView businessId={props.businessId} onOpen={open} /> : <CalendarView businessId={props.businessId} />
+        : <BookingTable loaded={list} onOpen={open} filter={filter} slots={slots} />}
       {props.bookingId ? <BookingPanel businessId={props.businessId} role={props.role} bookingId={props.bookingId} onClose={() => open(null)} onChanged={refresh} /> : null}
-      {creating ? <NewBooking businessId={props.businessId} onClose={() => setCreating(false)} onCreated={(id) => { setCreating(false); refresh(); open(id); }} /> : null}
+      {creating
+        ? slots
+          ? <NewSlotBooking businessId={props.businessId} onClose={() => setCreating(false)} onCreated={(id) => { setCreating(false); refresh(); open(id); }} />
+          : <NewBooking businessId={props.businessId} onClose={() => setCreating(false)} onCreated={(id) => { setCreating(false); refresh(); open(id); }} />
+        : null}
     </div>
   );
 }
 
 const EMPTY_TEXT: Record<Exclude<Filter, "calendar">, string> = {
-  upcoming: "No confirmed stays coming up.",
+  upcoming: "No confirmed bookings coming up.",
   requests: "No requests waiting for an answer.",
   unpaid: "No bookings waiting for a deposit.",
-  attention: "Nothing needs you: no M-Pesa codes to check, no paid bookings without rooms.",
-  past: "No past stays yet.",
+  attention: "Nothing needs you: no M-Pesa codes to check, no late payments to sort out.",
+  past: "No past bookings yet.",
   cancelled: "Nothing cancelled, declined or lapsed.",
   all: "No bookings yet. They appear here as Zaina and the team make them.",
 };
 
-function BookingTable(props: { loaded: ReturnType<typeof useLoad<{ bookings: BookingRow[] }>>; onOpen: (id: string) => void; filter: Exclude<Filter, "calendar"> }) {
+function BookingTable(props: { loaded: ReturnType<typeof useLoad<{ bookings: BookingRow[] }>>; onOpen: (id: string) => void; filter: Exclude<Filter, "calendar">; slots: boolean }) {
   const rows = props.loaded.data?.bookings;
   if (!rows) return <ErrorLine error={props.loaded.error} />;
   if (!rows.length) return <Empty title={EMPTY_TEXT[props.filter]} />;
   return (
     <table className="table bookings-table">
       <thead>
-        <tr><th>Booking</th><th>Guest</th><th>Stay</th><th>Status</th><th className="number">Paid / total</th></tr>
+        <tr><th>Booking</th><th>{props.slots ? "Customer" : "Guest"}</th><th>{props.slots ? "When" : "Stay"}</th><th>Status</th><th className="number">Paid / total</th></tr>
       </thead>
       <tbody>
         {rows.map((row) => (
           <tr key={row.id}>
             <td>
               <button type="button" className="link" onClick={() => props.onOpen(row.id)}>{row.reference}</button>
-              <div className="muted small">{row.units > 1 ? `${row.units} × ` : ""}{row.room_type}</div>
+              <div className="muted small">{row.units > 1 ? `${row.units} × ` : ""}{row.room_type}{row.resource_name ? ` · ${row.resource_name}` : ""}</div>
             </td>
-            <td>{row.customer.name}<div className="muted small">{row.guests} guest{row.guests === 1 ? "" : "s"} · {row.source === "chat" ? "via Zaina" : "by the team"}</div></td>
+            <td>{row.customer.name}<div className="muted small">{people(row)} · {row.source === "chat" ? "via Zaina" : "by the team"}</div></td>
             <td>{stay(row)}</td>
             <td>
               <StatusChip status={row.status} />
@@ -162,17 +174,18 @@ function BookingPanel(props: { businessId: string; role: Role; bookingId: string
     <Modal title={`Booking ${booking.reference}`} onClose={props.onClose}>
       <div className="booking-head">
         <StatusChip status={booking.status} />
-        {booking.hold_expires_at && ["held", "awaiting_payment", "requested"].includes(booking.status) ? <span className="muted small">Rooms held until {clock(booking.hold_expires_at)}</span> : null}
+        {booking.hold_expires_at && ["held", "awaiting_payment", "requested"].includes(booking.status) ? <span className="muted small">{booking.starts_at ? "Held" : "Rooms held"} until {clock(booking.hold_expires_at)}</span> : null}
       </div>
       {booking.conflict ? <p className="message error">{booking.conflict}</p> : null}
       <dl className="facts">
-        <div><dt>Guest</dt><dd>{booking.customer.name}</dd></div>
+        <div><dt>{booking.starts_at ? "Customer" : "Guest"}</dt><dd>{booking.customer.name}</dd></div>
         {booking.customer.phone ? <div><dt>Phone</dt><dd>{booking.customer.phone}</dd></div> : null}
         {booking.customer.email ? <div><dt>Email</dt><dd>{booking.customer.email}</dd></div> : null}
-        <div><dt>Room</dt><dd>{booking.units > 1 ? `${booking.units} × ` : ""}{booking.room_type}</dd></div>
-        <div><dt>Stay</dt><dd>{stay(booking)}</dd></div>
-        <div><dt>Guests</dt><dd>{booking.guests}</dd></div>
-        <div><dt>Booked</dt><dd>{timeAgo(booking.created_at)}, {booking.source === "chat" ? "by Zaina" : "by the team"}</dd></div>
+        <div><dt>{booking.starts_at ? "Booked" : "Room"}</dt><dd>{booking.units > 1 ? `${booking.units} × ` : ""}{booking.room_type}</dd></div>
+        <div><dt>{booking.starts_at ? "When" : "Stay"}</dt><dd>{stay(booking)}{booking.time_range ? ` (${booking.time_range})` : ""}</dd></div>
+        {booking.resource_name ? <div><dt>With</dt><dd>{booking.resource_name}</dd></div> : null}
+        <div><dt>{booking.starts_at ? "People" : "Guests"}</dt><dd>{booking.guests}</dd></div>
+        <div><dt>Made</dt><dd>{timeAgo(booking.created_at)}, {booking.source === "chat" ? "by Zaina" : "by the team"}</dd></div>
       </dl>
       {booking.notes ? <p><strong>Guest's notes:</strong> {booking.notes}</p> : null}
       {booking.session_id ? <p><a href={`#/b/${encodeURIComponent(props.businessId)}/inbox/${booking.session_id}`}>Open the chat</a></p> : null}
@@ -250,7 +263,7 @@ function BookingPanel(props: { businessId: string; role: Role; bookingId: string
       ) : null}
       {mode === "confirm" ? (
         <div className="form card">
-          <p>{booking.status === "conflict" ? "Confirm only once you've made room for this guest." : "Confirm without an online payment: the guest paid you directly, or pays at the property."}</p>
+          <p>{booking.status === "conflict" ? "Confirm only once you've made room for this booking." : "Confirm without an online payment: they paid you directly, or pay when they arrive."}</p>
           <Field label="Note (for the team)"><input maxLength={300} value={text} onChange={(event) => setText(event.target.value)} /></Field>
           <div className="actions"><Button onClick={() => setMode(null)}>Back</Button><Button kind="primary" busy={action.busy} onClick={() => void post(`/bookings/${booking.id}/confirm`, { note: text || null, force: booking.status === "conflict" }, "Confirmed. The guest has been told.")}>Confirm</Button></div>
         </div>
@@ -272,7 +285,7 @@ function BookingPanel(props: { businessId: string; role: Role; bookingId: string
           {agent && booking.status === "requested" ? <><Button onClick={() => setMode("decline")}>Decline</Button><Button kind="primary" onClick={() => setMode("accept")}>Accept…</Button></> : null}
           {agent && (waitingForMoney || booking.status === "confirmed") && booking.due_minor > 0 ? <Button onClick={() => { setMode("payment"); setAmount(String(booking.due_minor / 100)); }}>Record a payment</Button> : null}
           {agent && (waitingForMoney || booking.status === "requested") ? <Button onClick={() => setMode("confirm")}>Confirm without payment</Button> : null}
-          {manager && booking.status === "conflict" ? <Button kind="primary" onClick={() => setMode("confirm")}>Confirm (room found)</Button> : null}
+          {manager && booking.status === "conflict" ? <Button kind="primary" onClick={() => setMode("confirm")}>Confirm (room made)</Button> : null}
           {manager && ["held", "requested", "awaiting_payment", "confirmed", "conflict"].includes(booking.status) ? <Button kind="danger" onClick={() => setMode("cancel")}>Cancel booking</Button> : null}
         </div>
       ) : null}

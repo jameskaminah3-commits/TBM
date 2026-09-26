@@ -340,3 +340,22 @@ table.lines tr.total th, table.lines tr.total td { font-weight: 700; border-top:
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* Time slots (Phase 5): the day's schedule, picking a time, a week of hours. */
+.schedule { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.schedule-column h3 { margin: 0 0 8px; }
+.schedule-list { display: grid; gap: 8px; }
+.schedule-list li { border-left: 3px solid var(--brand); padding-left: 8px; }
+.schedule-list li.schedule-closed { border-left-color: var(--danger); color: var(--muted); }
+.slot-picker { border: 0; padding: 0; margin: 0; }
+.slot-picker legend { font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+.slot-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+.slot { font: inherit; border: 1px solid var(--line-strong); background: var(--surface); color: var(--text); border-radius: 8px; padding: 6px 10px; cursor: pointer; min-width: 64px; }
+.slot.chosen { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+.week { display: grid; gap: 6px; }
+.week-day { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 8px; align-items: center; }
+.week-times { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.week-times input { width: auto; }
+.checks { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; display: flex; flex-wrap: wrap; gap: 12px; }
+.checks legend { font-weight: 600; font-size: 14px; padding: 0 4px; }
+@media (max-width: 560px) { .week-day { grid-template-columns: 1fr; } }

@@ -43,7 +43,7 @@ import type { Express, NextFunction, Request, Response } from "express";
 import { and, asc, eq, sql } from "drizzle-orm";
 import type { PlatformConfig } from "../config.ts";
 import { deleteSecret, listSecrets, putSecret } from "../businesses/secrets.ts";
-import { offeringBlocks, offerings, payments, type Booking, type Business, type Offering, type Payment } from "../db/schema.ts";
+import { booksTime, offeringBlocks, offerings, payments, type Booking, type Business, type Offering, type Payment } from "../db/schema.ts";
 import { inBusiness } from "../db/tenant.ts";
 import { requireBusinessRole, requireStaff, ROLE_RANK, staffOf } from "../staff/auth.ts";
 import { afterSettlement, amountDue, paystackAccountFor, platformPaystackKey } from "../payments/checkout.ts";
@@ -56,6 +56,7 @@ import {
   cancelBooking,
   confirmBooking,
   createBooking,
+  createSlotBooking,
   declineBooking,
   getBooking,
   listBookings,
@@ -67,8 +68,10 @@ import {
   type BookingFilter,
 } from "./bookings.ts";
 import { formatMoney, toMinor } from "./money.ts";
-import { payLink, tellCustomer } from "./notices.ts";
-import { createOffering, getOffering, listOfferings, publicOffering, removeOffering, roomsFromCsv, updateOffering, validateOffering, valuesOf } from "./offerings.ts";
+import { bookingWhen, payLink, tellCustomer } from "./notices.ts";
+import { createOffering, getOffering, listOfferings, offeringKindFor, offeringLinks, publicOffering, removeOffering, roomsFromCsv, setOfferingResources, updateOffering, validateOffering, valuesOf } from "./offerings.ts";
+import { getResource, listResources } from "./resources.ts";
+import { localParts, TIME_PATTERN, zonedInstant } from "./local-time.ts";
 import { addDays, isoDate, nightsOf, parseDate } from "./pricing.ts";
 import { checkDepositRule, getBookingSettings, MPESA_SECRETS, PAYSTACK_SECRET, publicBookingSettings, saveBookingSettings, validatePolicyPatch } from "./settings.ts";
 import { businessDay } from "../gateway/spend-cap.ts";
@@ -88,7 +91,7 @@ function handle(handler: Handler) {
   };
 }
 
-export function publicBooking(booking: Booking, offeringName: string, extra: { codeToCheck?: boolean } = {}) {
+export function publicBooking(booking: Booking, offeringName: string, extra: { codeToCheck?: boolean; timeZone?: string; resourceName?: string | null } = {}) {
   const money = (minor: number) => formatMoney(minor, booking.currency);
   return {
     id: booking.id,
@@ -97,7 +100,13 @@ export function publicBooking(booking: Booking, offeringName: string, extra: { c
     room_type: offeringName,
     check_in: booking.checkIn,
     check_out: booking.checkOut,
-    nights: nightsOf(booking.checkIn, booking.checkOut).length,
+    nights: booking.startsAt ? 0 : nightsOf(booking.checkIn, booking.checkOut).length,
+    starts_at: booking.startsAt,
+    ends_at: booking.endsAt,
+    resource_id: booking.resourceId,
+    resource_name: extra.resourceName ?? null,
+    when: extra.timeZone ? bookingWhen(booking, extra.timeZone) : null,
+    time_range: booking.startsAt && booking.endsAt && extra.timeZone ? `${localParts(extra.timeZone, booking.startsAt).time}–${localParts(extra.timeZone, booking.endsAt).time}` : null,
     units: booking.units,
     guests: booking.guests,
     status: booking.status,
@@ -259,15 +268,36 @@ export function registerBookingRoutes(app: Express, config: PlatformConfig): voi
   // ── Room types ───────────────────────────────────────────────────────
   app.get(`${base}/offerings`, ...role("viewer"), handle(async (_req, res, { business }) => {
     const settings = await getBookingSettings(business.id);
-    res.json({ currency: settings.currency, offerings: (await listOfferings(business.id)).map((offering) => publicOffering(offering, settings.currency)) });
+    const links = await offeringLinks(business.id);
+    const linked = (id: string) => links.filter((link) => link.offeringId === id).map((link) => link.resourceId);
+    res.json({ currency: settings.currency, offerings: (await listOfferings(business.id)).map((offering) => publicOffering(offering, settings.currency, linked(offering.id))) });
   }));
 
+  /** The resources a service may be done by (resource_ids), checked to be the business's own. */
+  async function resourceIdsFrom(business: Business, input: unknown): Promise<string[] | null | "invalid"> {
+    if (input === undefined) return null;
+    if (!Array.isArray(input) || input.length > 100) return "invalid";
+    const own = new Set((await listResources(business.id)).map((resource) => resource.id));
+    const ids = [...new Set(input.map(String))];
+    return ids.every((id) => own.has(id)) ? ids : "invalid";
+  }
+
+  async function offeringView(business: Business, offering: Offering) {
+    const links = await offeringLinks(business.id);
+    return publicOffering(offering, (await getBookingSettings(business.id)).currency, links.filter((link) => link.offeringId === offering.id).map((link) => link.resourceId));
+  }
+
+  const noun = (business: Business) => (business.businessType === "guesthouse" ? "room type" : business.businessType === "restaurant" ? "table booking" : "service");
+
   app.post(`${base}/offerings`, ...role("manager"), handle(async (req, res, { business, userId }) => {
-    const checked = validateOffering(req.body ?? {});
+    const checked = validateOffering(req.body ?? {}, undefined, offeringKindFor(business.businessType));
     if (!checked.ok) return res.status(400).json({ error: "invalid_offering", message: checked.error });
+    const resourceIds = await resourceIdsFrom(business, req.body?.resource_ids);
+    if (resourceIds === "invalid") return res.status(400).json({ error: "invalid_offering", message: "resource_ids lists your own people, chairs or tables." });
     const created = await createOffering(business.id, checked.value, userId);
-    if (created === "name_taken") return res.status(409).json({ error: "name_taken", message: "Another room type has that name." });
-    res.status(201).json({ offering: publicOffering(created, (await getBookingSettings(business.id)).currency) });
+    if (created === "name_taken") return res.status(409).json({ error: "name_taken", message: `Another ${noun(business)} has that name.` });
+    if (resourceIds) await setOfferingResources(business.id, created.id, resourceIds);
+    res.status(201).json({ offering: await offeringView(business, created) });
   }));
 
   app.put(`${base}/offerings/:offeringId`, ...role("manager"), handle(async (req, res, { business, userId }) => {
@@ -275,10 +305,13 @@ export function registerBookingRoutes(app: Express, config: PlatformConfig): voi
     if (!current) return res.status(404).json({ error: "not_found" });
     const checked = validateOffering(req.body ?? {}, valuesOf(current));
     if (!checked.ok) return res.status(400).json({ error: "invalid_offering", message: checked.error });
+    const resourceIds = await resourceIdsFrom(business, req.body?.resource_ids);
+    if (resourceIds === "invalid") return res.status(400).json({ error: "invalid_offering", message: "resource_ids lists your own people, chairs or tables." });
     const updated = await updateOffering(business.id, current.id, checked.value, userId);
-    if (updated === "name_taken") return res.status(409).json({ error: "name_taken", message: "Another room type has that name." });
+    if (updated === "name_taken") return res.status(409).json({ error: "name_taken", message: `Another ${noun(business)} has that name.` });
     if (!updated) return res.status(404).json({ error: "not_found" });
-    res.json({ offering: publicOffering(updated, (await getBookingSettings(business.id)).currency) });
+    if (resourceIds) await setOfferingResources(business.id, updated.id, resourceIds);
+    res.json({ offering: await offeringView(business, updated) });
   }));
 
   app.delete(`${base}/offerings/:offeringId`, ...role("manager"), handle(async (req, res, { business }) => {
@@ -375,13 +408,21 @@ export function registerBookingRoutes(app: Express, config: PlatformConfig): voi
     const filter = (typeof req.query.filter === "string" ? req.query.filter : "upcoming") as BookingFilter;
     if (!bookingFilters.includes(filter)) return res.status(400).json({ error: "invalid_filter", message: `filter is one of ${bookingFilters.join(", ")}.` });
     const rows = await listBookings(business.id, filter, business.timeZone);
-    res.json({ bookings: rows.map((row) => publicBooking(row.booking, row.offeringName, { codeToCheck: row.codeToCheck })) });
+    const names = new Map((await listResources(business.id)).map((resource) => [resource.id, resource.name]));
+    res.json({ bookings: rows.map((row) => publicBooking(row.booking, row.offeringName, { codeToCheck: row.codeToCheck, timeZone: business.timeZone, resourceName: row.booking.resourceId ? names.get(row.booking.resourceId) ?? null : null })) });
   }));
 
   async function bookingView(business: Business, booking: Booking) {
-    const [name, list] = await Promise.all([offeringNameOf(business.id, booking.offeringId), paymentsOf(business.id, booking.id)]);
+    const [name, list, resource] = await Promise.all([
+      offeringNameOf(business.id, booking.offeringId),
+      paymentsOf(business.id, booking.id),
+      booking.resourceId ? getResource(business.id, booking.resourceId) : Promise.resolve(undefined),
+    ]);
     return {
-      booking: { ...publicBooking(booking, name, { codeToCheck: list.some((payment) => payment.method === "mpesa_code" && payment.status === "pending") }), quote: booking.quote },
+      booking: {
+        ...publicBooking(booking, name, { codeToCheck: list.some((payment) => payment.method === "mpesa_code" && payment.status === "pending"), timeZone: business.timeZone, resourceName: resource?.name ?? null }),
+        quote: booking.quote,
+      },
       payments: list.map(publicPayment),
     };
   }
@@ -400,6 +441,29 @@ export function registerBookingRoutes(app: Express, config: PlatformConfig): voi
     if (!name || name.length > 120) return res.status(400).json({ error: "name_required", message: "The customer's name is needed." });
     if (email && !EMAIL.test(email)) return res.status(400).json({ error: "invalid_email" });
     if (!email && !phone) return res.status(400).json({ error: "contact_required", message: "A phone number or email is needed." });
+    if (booksTime(business.businessType)) {
+      // A time slot: { offering_id, date, time, party?, resource_id? }.
+      const date = String(body.date ?? "");
+      const time = String(body.time ?? "");
+      if (!parseDate(date) || !TIME_PATTERN.test(time)) return res.status(400).json({ error: "invalid_time", message: "date is YYYY-MM-DD and time HH:MM." });
+      const slot = await createSlotBooking({
+        businessId: business.id,
+        timeZone: business.timeZone,
+        offeringId: String(body.offering_id ?? ""),
+        startsAt: zonedInstant(date, time, business.timeZone),
+        party: Number(body.party ?? 1),
+        resourceId: typeof body.resource_id === "string" && body.resource_id ? body.resource_id : null,
+        customer: { name, email, phone },
+        notes: typeof body.notes === "string" && body.notes.trim() ? body.notes.trim().slice(0, 1000) : null,
+        source: "staff",
+        sessionId: null,
+        idempotencyKey: null,
+        confirmNow: body.confirm_now === true,
+        staffUserId: userId,
+      });
+      if (!slot.ok) return res.status(slot.error === "not_found" ? 404 : 409).json({ error: slot.error, message: slot.message });
+      return res.status(201).json(await bookingView(business, slot.booking));
+    }
     const created = await createBooking({
       businessId: business.id,
       timeZone: business.timeZone,

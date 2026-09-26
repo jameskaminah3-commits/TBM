@@ -131,6 +131,8 @@ function AddBusiness(props: { onClose: () => void; onAdded: (message: string) =>
             <select value={form.type} onChange={(event) => setForm({ ...form, type: event.target.value })}>
               <option value="general">General (answers from its knowledge, takes leads)</option>
               <option value="guesthouse">A place to stay (rooms, bookings, deposits)</option>
+              <option value="salon">A salon, barber or spa (services, appointments)</option>
+              <option value="restaurant">A restaurant (table bookings)</option>
             </select>
           </Field>
           <Field label="Website" hint="Where the chat widget will run."><input type="url" placeholder="https://" value={form.origin} onChange={(event) => setForm({ ...form, origin: event.target.value })} /></Field>

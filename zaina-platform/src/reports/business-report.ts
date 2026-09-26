@@ -27,7 +27,7 @@ import { estimateCostUsd, type ModelPrices } from "../engine/telemetry.ts";
 /** The system notes a callback leaves in a chat. */
 const CALLBACK_NOTES = [CALLBACK_OFFLINE_NOTE, CALLBACK_UNCLAIMED_NOTE];
 
-const BOOKING_TOOLS = ["create_draft_booking", "create_service_booking", "create_booking"];
+const BOOKING_TOOLS = ["create_draft_booking", "create_service_booking", "create_booking", "create_appointment"];
 const PAYABLE_TOOLS = [...BOOKING_TOOLS, "create_custom_offer", "create_listing_verification_request"];
 
 export type MoneyTotal = { currency: "KES" | "USD"; amount: number };

@@ -6,7 +6,7 @@
 // on the customer's phone, the page reloads itself.
 
 import type { Booking, BookingSettings, Payment } from "../db/schema.ts";
-import { formatDay, holdUntil, stayDates } from "../booking/notices.ts";
+import { formatDay, holdUntil, slotTime, stayDates } from "../booking/notices.ts";
 import { formatMoney } from "../booking/money.ts";
 import type { StayQuote } from "../booking/pricing.ts";
 import { onlineWays, type PaymentOptions } from "../booking/settings.ts";
@@ -18,6 +18,7 @@ export const PAGE_MESSAGES: Record<string, { kind: "error" | "info" | "ok"; text
   over_limit: { kind: "error", text: "That amount is more than the business takes that way. Please pay another way." },
   email_needed: { kind: "error", text: "Please give an email address for your receipt." },
   rooms_gone: { kind: "error", text: "Sorry, the rooms for this booking were taken after its hold ended. Please contact us about other dates." },
+  time_gone: { kind: "error", text: "Sorry, this time was taken after its hold ended. Please contact us about another time." },
   wrong_status: { kind: "error", text: "This booking can't be paid now." },
   nothing_due: { kind: "info", text: "There's nothing to pay on this booking now." },
   provider_failed: { kind: "error", text: "The payment couldn't be started just now. Please try again, or pay another way." },
@@ -48,27 +49,35 @@ export type PageView = {
   token: string;
 };
 
+/** Rooms for a stay, a time for a slot: the words the page uses for what a booking holds. */
+function wordsFor(booking: Booking) {
+  return booking.startsAt
+    ? { held: "This time is", lapsed: "The time to pay has passed, so this time isn't held any more.", retry: "If it's still free, you can pay now to book it.", stays: "The time stays held meanwhile.", venue: "when you arrive", confirm: "your booking" }
+    : { held: "Your rooms are", lapsed: "The time to pay has passed, so these rooms aren't held any more.", retry: "If they're still free, you can pay now to book them.", stays: "Your rooms stay held meanwhile.", venue: "at the property", confirm: "your room" };
+}
+
 function statusNotice(view: PageView): { kind: "info" | "warn" | "ok" | "error"; lines: string[] } {
   const { booking, businessName } = view;
   const holding = booking.holdExpiresAt !== null && booking.holdExpiresAt > view.now;
   const until = booking.holdExpiresAt ? holdUntil(booking.holdExpiresAt, view.timeZone) : "";
+  const words = wordsFor(booking);
   switch (booking.status) {
     case "held":
       return holding
-        ? { kind: "info", lines: [`Your rooms are held until ${until}.`, "Pay the deposit to confirm your booking."] }
-        : { kind: "warn", lines: ["The time to pay has passed, so these rooms aren't held any more.", "If they're still free, you can pay now to book them."] };
+        ? { kind: "info", lines: [`${words.held} held until ${until}.`, `Pay the ${booking.depositMinor >= booking.totalMinor ? "amount" : "deposit"} to confirm your booking.`] }
+        : { kind: "warn", lines: [words.lapsed, words.retry] };
     case "awaiting_payment":
       return holding
         ? { kind: "info", lines: [booking.source === "chat" ? `${businessName} has accepted your booking.` : `${businessName} is holding your booking.`, `Pay the deposit by ${until} to confirm it.`] }
-        : { kind: "warn", lines: ["The time to pay has passed, so these rooms aren't held any more.", "If they're still free, you can pay now to book them."] };
+        : { kind: "warn", lines: [words.lapsed, words.retry] };
     case "expired":
-      return { kind: "warn", lines: ["The time to pay has passed, so these rooms aren't held any more.", "If they're still free, you can pay now to book them."] };
+      return { kind: "warn", lines: [words.lapsed, words.retry] };
     case "requested":
       return { kind: "info", lines: [`Your request is with ${businessName}.`, holding ? `They'll reply by ${until}, in your chat and by email if you gave one.` : "They'll reply in your chat, and by email if you gave one."] };
     case "confirmed":
-      return { kind: "ok", lines: ["Your booking is confirmed.", `See you on ${formatDay(booking.checkIn)}.`] };
+      return { kind: "ok", lines: ["Your booking is confirmed.", `See you on ${booking.startsAt ? slotTime(booking.startsAt, view.timeZone) : formatDay(booking.checkIn)}.`] };
     case "conflict":
-      return { kind: "warn", lines: ["We've received your payment.", `The team at ${businessName} will contact you shortly to confirm your room.`] };
+      return { kind: "warn", lines: ["We've received your payment.", `The team at ${businessName} will contact you shortly to confirm ${words.confirm}.`] };
     case "declined":
       return { kind: "error", lines: [`${businessName} couldn't take this booking request.`] };
     case "cancelled":
@@ -84,7 +93,7 @@ function pendingNotice(view: PageView): string {
     return `<section class="notice info" role="status"><p><strong>Check your phone.</strong> Enter your M-Pesa PIN to pay ${escapeHtml(amount)}.</p><p>This page updates by itself.</p></section>`;
   }
   if (payment.method === "mpesa_code") {
-    return `<section class="notice info" role="status"><p>We've got your M-Pesa code <strong>${escapeHtml(payment.providerReference ?? "")}</strong> for ${escapeHtml(amount)}.</p><p>The team is checking it and will confirm your booking. Your rooms stay held meanwhile.</p></section>`;
+    return `<section class="notice info" role="status"><p>We've got your M-Pesa code <strong>${escapeHtml(payment.providerReference ?? "")}</strong> for ${escapeHtml(amount)}.</p><p>The team is checking it and will confirm your booking. ${wordsFor(view.booking).stays}</p></section>`;
   }
   return `<section class="notice info" role="status"><p>Your payment of ${escapeHtml(amount)} is being confirmed.</p><p>This page updates by itself.</p></section>`;
 }
@@ -102,7 +111,8 @@ function priceTable(view: PageView): string {
   if (booking.paidMinor > 0) rows.push(`<tr class="sub"><th scope="row">Paid</th><td>${money(booking.paidMinor)}</td></tr>`);
   const balance = booking.totalMinor - booking.paidMinor;
   if (["confirmed", "held", "awaiting_payment", "requested", "expired"].includes(booking.status) && balance > 0) {
-    rows.push(`<tr class="sub"><th scope="row">${booking.status === "confirmed" ? "Balance, paid at the property" : "Balance, paid at the property after the deposit"}</th><td>${money(booking.status === "confirmed" ? balance : booking.totalMinor - booking.depositMinor)}</td></tr>`);
+    const venue = wordsFor(booking).venue;
+    rows.push(`<tr class="sub"><th scope="row">${booking.status === "confirmed" ? `Balance, paid ${venue}` : `Balance, paid ${venue} after the deposit`}</th><td>${money(booking.status === "confirmed" ? balance : booking.totalMinor - booking.depositMinor)}</td></tr>`);
   }
   return `<table class="lines"><tbody>${rows.join("")}</tbody></table>`;
 }
@@ -141,12 +151,20 @@ ${booking.customerEmail ? "" : '<label>Email for your receipt<input name="email"
     return `<section class="card"><h2>Paying</h2><p>The team will tell you how to pay. Questions? ${escapeHtml(view.contactLine)}.</p></section>`;
   }
   const heading = confirmed ? `Pay the balance now: ${amount}` : booking.depositMinor >= booking.totalMinor ? `Pay in full: ${amount}` : `Pay the deposit: ${amount}`;
-  return `<section class="card"><h2>${heading}</h2>${confirmed ? '<p class="small">Optional: you can also pay at the property.</p>' : ""}${methods.join("")}</section>`;
+  return `<section class="card"><h2>${heading}</h2>${confirmed ? '<p class="small">Optional: you can also pay ' + wordsFor(booking).venue + '.</p>' : ""}${methods.join("")}</section>`;
+}
+
+/** "1 hour 30 minutes". */
+function lengthText(booking: Booking): string {
+  const minutes = Math.round((booking.endsAt!.getTime() - booking.startsAt!.getTime()) / 60_000);
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return [hours ? `${hours} hour${hours === 1 ? "" : "s"}` : "", rest ? `${rest} minutes` : ""].filter(Boolean).join(" ");
 }
 
 export function renderPayPage(view: PageView): string {
   const { booking } = view;
-  const message = view.message ? PAGE_MESSAGES[view.message] : null;
+  const message = view.message ? PAGE_MESSAGES[booking.startsAt && view.message === "rooms_gone" ? "time_gone" : view.message] : null;
   const waiting = view.pending !== null && view.pending.method !== "mpesa_code";
   const failure = view.lastFailure && !view.pending && booking.status !== "confirmed"
     ? `<section class="notice error" role="alert"><p>Your last payment didn't go through${view.lastFailure.failure ? `: ${escapeHtml(view.lastFailure.failure)}` : ""}.</p><p>You can try again below.</p></section>`
@@ -154,6 +172,14 @@ export function renderPayPage(view: PageView): string {
   const status = statusNotice(view);
   const nights = Math.round((Date.parse(booking.checkOut) - Date.parse(booking.checkIn)) / 86_400_000);
   const [checkInDay, checkOutDay] = stayDates(booking.checkIn, booking.checkOut).split(" – ");
+  const facts = booking.startsAt
+    ? `<div><dt>When</dt><dd>${escapeHtml(slotTime(booking.startsAt, view.timeZone))}</dd></div>
+<div><dt>Length</dt><dd>${escapeHtml(lengthText(booking))}</dd></div>
+${booking.guests > 1 ? `<div><dt>People</dt><dd>${booking.guests}</dd></div>` : ""}`
+    : `<div><dt>Check-in</dt><dd>${escapeHtml(checkInDay)}, from ${escapeHtml(view.settings.checkInTime)}</dd></div>
+<div><dt>Check-out</dt><dd>${escapeHtml(checkOutDay)}, by ${escapeHtml(view.settings.checkOutTime)}</dd></div>
+<div><dt>Nights</dt><dd>${nights}</dd></div>
+<div><dt>Guests</dt><dd>${booking.guests}</dd></div>`;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -179,10 +205,7 @@ ${failure}
 <section class="card">
 <h2>${escapeHtml(booking.units > 1 ? `${booking.units} × ${view.offeringName}` : view.offeringName)}</h2>
 <dl class="facts">
-<div><dt>Check-in</dt><dd>${escapeHtml(checkInDay)}, from ${escapeHtml(view.settings.checkInTime)}</dd></div>
-<div><dt>Check-out</dt><dd>${escapeHtml(checkOutDay)}, by ${escapeHtml(view.settings.checkOutTime)}</dd></div>
-<div><dt>Nights</dt><dd>${nights}</dd></div>
-<div><dt>Guests</dt><dd>${booking.guests}</dd></div>
+${facts}
 <div><dt>Name</dt><dd>${escapeHtml(booking.customerName)}</dd></div>
 </dl>
 ${priceTable(view)}
@@ -195,7 +218,7 @@ ${view.settings.cancellationPolicy ? `<p><strong>Cancellation:</strong> ${escape
 </section>
 <footer>
 <p>Always check the address bar starts with ${escapeHtml(view.host)} before you pay.</p>
-<p>Card details are entered on Paystack's page, never here.</p>
+${view.options.paystack ? "<p>Card details are entered on Paystack's page, never here.</p>" : ""}
 </footer>
 </main>
 </body>

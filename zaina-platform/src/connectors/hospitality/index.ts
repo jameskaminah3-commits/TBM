@@ -26,7 +26,7 @@ import { inBusiness } from "../../db/tenant.ts";
 import { roomsTaken } from "../../booking/availability.ts";
 import { bookingsOfSession, checkStayDates, createBooking, getBookingByReference, quoteFor } from "../../booking/bookings.ts";
 import { formatMoney } from "../../booking/money.ts";
-import { holdUntil, payLink, stayDates, tellTeam } from "../../booking/notices.ts";
+import { bookingWhen, holdUntil, payLink, stayDates, tellTeam } from "../../booking/notices.ts";
 import { listOfferings } from "../../booking/offerings.ts";
 import { fromNightly, type PricingRules, type StayQuote } from "../../booking/pricing.ts";
 import { canTakeDeposits, depositChosen, depositText, getBookingSettings, paymentMethodsText, paymentOptionsOf } from "../../booking/settings.ts";
@@ -179,7 +179,7 @@ async function checkAvailability(args: any, context: ToolContext) {
 }
 
 /** The customer's name, and a phone number or email they typed (their WhatsApp number counts). */
-function customerDetails(args: any, typed: string[]): { ok: true; name: string; email: string | null; phone: string | null } | { ok: false; missing: "name" | "contact" } {
+export function customerDetails(args: any, typed: string[]): { ok: true; name: string; email: string | null; phone: string | null } | { ok: false; missing: "name" | "contact" } {
   const written = typed.join("\n").toLowerCase();
   const name = textArg(args?.customer_name).replace(/\s+/g, " ");
   const nameWords = (name.toLowerCase().match(/[\p{L}'-]{2,}/gu) ?? []).filter((word) => !["guest", "customer", "client", "unknown", "mr", "mrs", "ms"].includes(word));
@@ -194,7 +194,7 @@ function customerDetails(args: any, typed: string[]): { ok: true; name: string; 
 }
 
 /** The deposit's share for the payment block: a percentage, the whole amount, or (fixed) just its amount. */
-function depositShare(booking: Booking): { deposit_percent?: number; pays_in_full?: boolean } {
+export function depositShare(booking: Booking): { deposit_percent?: number; pays_in_full?: boolean } {
   const quote = booking.quote as unknown as StayQuote;
   if (booking.depositMinor >= booking.totalMinor) return { pays_in_full: true };
   return typeof quote.deposit_percent === "number" && quote.deposit_rule !== "fixed" ? { deposit_percent: quote.deposit_percent } : {};
@@ -288,7 +288,7 @@ async function makeBooking(args: any, context: ToolContext) {
   return bookingResult(business, created.booking, room, session?.language ?? "en");
 }
 
-async function getBooking(args: any, context: ToolContext) {
+export async function getBooking(args: any, context: ToolContext) {
   const { business, sessionId } = context;
   const reference = textArg(args?.reference);
   let found: Booking[] = [];
@@ -308,10 +308,10 @@ async function getBooking(args: any, context: ToolContext) {
   const rooms = await listOfferings(business.id);
   const describe = (booking: Booking) => {
     const due = amountDue(booking);
+    const name = rooms.find((room) => room.id === booking.offeringId)?.name ?? "booking";
     return {
       reference: booking.reference,
-      room_type: rooms.find((room) => room.id === booking.offeringId)?.name ?? "room",
-      dates: stayDates(booking.checkIn, booking.checkOut),
+      ...(booking.startsAt ? { service: name, when: bookingWhen(booking, business.timeZone) } : { room_type: name, dates: stayDates(booking.checkIn, booking.checkOut) }),
       guests: booking.guests,
       status: booking.status,
       total: formatMoney(booking.totalMinor, booking.currency),
@@ -324,7 +324,7 @@ async function getBooking(args: any, context: ToolContext) {
 }
 
 /** C5 for bookings: an M-Pesa code sent in the chat is recorded against this chat's booking, for the team to check. */
-async function recordChatPayment(business: Business, input: { sessionId: string; code: string }): Promise<ChatPaymentResult> {
+export async function recordChatPayment(business: Business, input: { sessionId: string; code: string }): Promise<ChatPaymentResult> {
   const payable = (await bookingsOfSession(business.id, input.sessionId))
     .find((booking) => ["held", "awaiting_payment", "expired", "requested", "confirmed"].includes(booking.status) && amountDue(booking) > 0);
   if (!payable) {

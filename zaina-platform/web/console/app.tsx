@@ -15,6 +15,7 @@ import { KnowledgePage } from "./pages/knowledge.tsx";
 import { PlatformPage } from "./pages/platform.tsx";
 import { ReportsPage } from "./pages/reports.tsx";
 import { RoomsPage } from "./pages/rooms.tsx";
+import { ServicesPage } from "./pages/services.tsx";
 import { SettingsPage } from "./pages/settings.tsx";
 import { TeamPage } from "./pages/team.tsx";
 import { alertsSupported, currentSubscription, turnAlertsOff, turnAlertsOn } from "./push.ts";
@@ -99,11 +100,12 @@ function SignIn(props: { onSignedIn: () => void }) {
   );
 }
 
-const PAGES: Array<{ id: string; label: string; icon: string; minimum: Role; only?: string }> = [
+const PAGES: Array<{ id: string; label: string; icon: string; minimum: Role; only?: string[] }> = [
   { id: "inbox", label: "Inbox", icon: "inbox", minimum: "viewer" },
-  // A place to stay's rooms and bookings (Phase 4).
-  { id: "bookings", label: "Bookings", icon: "calendar", minimum: "viewer", only: "guesthouse" },
-  { id: "rooms", label: "Rooms", icon: "bed", minimum: "manager", only: "guesthouse" },
+  // Bookings: a place to stay's rooms (Phase 4), a salon's services and a restaurant's tables (Phase 5).
+  { id: "bookings", label: "Bookings", icon: "calendar", minimum: "viewer", only: ["guesthouse", "salon", "restaurant"] },
+  { id: "rooms", label: "Rooms", icon: "bed", minimum: "manager", only: ["guesthouse"] },
+  { id: "services", label: "Services", icon: "scissors", minimum: "manager", only: ["salon", "restaurant"] },
   { id: "knowledge", label: "Knowledge", icon: "book", minimum: "viewer" },
   { id: "reports", label: "Reports", icon: "chart", minimum: "manager" },
   { id: "settings", label: "Settings", icon: "settings", minimum: "manager" },
@@ -171,11 +173,12 @@ function Console(props: { me: Me; route: Route; reloadMe: () => Promise<void> })
     );
   }
 
-  const visiblePages = role ? PAGES.filter((item) => atLeast(role, item.minimum) && (!item.only || item.only === businessType)) : [];
+  const visiblePages = role ? PAGES.filter((item) => atLeast(role, item.minimum) && (!item.only || item.only.includes(businessType ?? ""))) : [];
   let content: JSX.Element;
   if (page === "platform" && admin) content = <PlatformPage />;
   else if (!businessId || !role) content = <div className="page"><p className="message error">You don't work for this business.</p></div>;
-  else if (page === "bookings" && businessType === "guesthouse") content = <BookingsPage businessId={businessId} role={role} bookingId={route.id} />;
+  else if (page === "bookings" && ["guesthouse", "salon", "restaurant"].includes(businessType ?? "")) content = <BookingsPage businessId={businessId} role={role} bookingId={route.id} businessType={businessType} />;
+  else if (page === "services" && (businessType === "salon" || businessType === "restaurant") && atLeast(role, "manager")) content = <ServicesPage businessId={businessId} role={role} businessType={businessType} />;
   else if (page === "rooms" && businessType === "guesthouse" && atLeast(role, "manager")) content = <RoomsPage businessId={businessId} role={role} />;
   else if (page === "knowledge") content = <KnowledgePage businessId={businessId} role={role} />;
   else if (page === "reports" && atLeast(role, "manager")) content = <ReportsPage businessId={businessId} />;
@@ -218,7 +221,7 @@ function Console(props: { me: Me; route: Route; reloadMe: () => Promise<void> })
         {visiblePages.map((item) => (
           <a key={item.id} href={`#/b/${encodeURIComponent(businessId ?? "")}/${item.id}`} className={page === item.id ? "active" : ""} aria-current={page === item.id ? "page" : undefined}>
             <Icon name={item.icon} />
-            <span>{item.label}</span>
+            <span>{item.id === "services" && businessType === "restaurant" ? "Tables" : item.label}</span>
             {item.id === "inbox" && counts.pending > 0 ? <span className="count" aria-label={`${counts.pending} waiting`}>{counts.pending}</span> : null}
           </a>
         ))}

@@ -30,11 +30,12 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { allBusinesses } from "../businesses/registry.ts";
 import type pg from "pg";
 import { appPool, type PlatformDb } from "../db/platform-db.ts";
-import { bookingSettings, bookings, offerings, payments, type Booking, type BookingSettings, type Offering, type Payment } from "../db/schema.ts";
+import { bookingSettings, bookings, offeringResources, offerings, payments, resources, takesBookings, type Booking, type BookingSettings, type Offering, type Payment, type Resource } from "../db/schema.ts";
 import { inBusiness } from "../db/tenant.ts";
 import { businessDay } from "../gateway/spend-cap.ts";
 import { lockOffering, roomsTaken } from "./availability.ts";
-import { addDays, isoDate, parseDate, quoteStay, withAgreedTotal, type PricingRules, type StayQuote } from "./pricing.ts";
+import { addDays, isoDate, parseDate, quoteSlot, quoteStay, withAgreedTotal, type PricingRules, type SlotPricing, type StayQuote } from "./pricing.ts";
+import { busyBetween, dayProblem, eligibleResources, lockSlots, resourceBusy, resourceWorks } from "./slots.ts";
 import { localParts } from "./local-time.ts";
 import { canTakeDeposits, defaultBookingSettings, depositChosen, depositRuleOf, paymentOptionsOf, taxRuleOf } from "./settings.ts";
 
@@ -163,65 +164,210 @@ export async function createBooking(input: CreateBookingInput): Promise<CreatedB
     }
 
     const quote = priced.quote;
-    const options = paymentOptionsOf(settings);
-    const minutes = (count: number) => new Date(now.getTime() + count * 60_000);
-    const requestHold = settings.requestHoldHours > 0 ? minutes(settings.requestHoldHours * 60) : null;
-    let status: Booking["status"];
-    let hold: Date | null;
-    if (input.source === "staff" && input.confirmNow) {
-      [status, hold] = ["confirmed", null];
-    } else if (input.source === "staff") {
-      // Booked by the team for a customer who pays the deposit through the link.
-      [status, hold] = quote.deposit === 0 ? ["confirmed", null] : ["awaiting_payment", minutes(settings.acceptedHoldHours * 60)];
-    } else if (!depositChosen(settings) && !offeringSetsDeposit(offering)) {
-      // The business hasn't chosen its deposit: the team decides and arranges payment.
-      [status, hold] = ["requested", requestHold];
-    } else if (quote.deposit === 0 && offering.bookingMode !== "request") {
-      [status, hold] = ["confirmed", null];
-    } else if (offering.bookingMode === "instant" && canTakeDeposits(options, quote.deposit)) {
-      [status, hold] = ["held", minutes(settings.holdMinutes)];
-    } else {
-      [status, hold] = ["requested", requestHold];
+    const { status, hold } = initialStatus({ ...input, settings, offering, deposit: quote.deposit, now });
+    const booking = await insertBooking(db, client, {
+      businessId: input.businessId,
+      offeringId: offering.id,
+      checkIn: input.checkIn,
+      checkOut: input.checkOut,
+      units: input.units,
+      guests: input.guests,
+      status,
+      holdExpiresAt: hold,
+      customerName: input.customer.name,
+      customerEmail: input.customer.email,
+      customerPhone: input.customer.phone,
+      customerNotes: input.notes,
+      quote: quote as unknown as Record<string, unknown>,
+      currency: quote.currency,
+      totalMinor: quote.total,
+      depositMinor: quote.deposit,
+      source: input.source,
+      sessionId: input.sessionId,
+      idempotencyKey: input.idempotencyKey,
+      decidedBy: input.source === "staff" ? input.staffUserId ?? null : null,
+      confirmedAt: status === "confirmed" ? now : null,
+    });
+    return { ok: true, booking, offering, settings, replay: false } as const;
+  }, input.businessId);
+}
+
+/**
+ * Where a new booking starts, by the business's rules: confirmed, held for
+ * the deposit, or a request for the team (see the top of this file).
+ */
+export function initialStatus(input: {
+  source: "chat" | "staff";
+  confirmNow?: boolean;
+  settings: BookingSettings;
+  offering: Offering;
+  deposit: number;
+  now: Date;
+}): { status: Booking["status"]; hold: Date | null } {
+  const { settings, offering, now } = input;
+  const minutes = (count: number) => new Date(now.getTime() + count * 60_000);
+  const requestHold = settings.requestHoldHours > 0 ? minutes(settings.requestHoldHours * 60) : null;
+  if (input.source === "staff" && input.confirmNow) return { status: "confirmed", hold: null };
+  // Booked by the team for a customer who pays the deposit through the link.
+  if (input.source === "staff") return input.deposit === 0 ? { status: "confirmed", hold: null } : { status: "awaiting_payment", hold: minutes(settings.acceptedHoldHours * 60) };
+  // The business hasn't chosen its deposit: the team decides and arranges payment.
+  if (!depositChosen(settings) && !offeringSetsDeposit(offering)) return { status: "requested", hold: requestHold };
+  if (input.deposit === 0 && offering.bookingMode !== "request") return { status: "confirmed", hold: null };
+  if (offering.bookingMode === "instant" && canTakeDeposits(paymentOptionsOf(settings), input.deposit)) return { status: "held", hold: minutes(settings.holdMinutes) };
+  return { status: "requested", hold: requestHold };
+}
+
+type NewBooking = Omit<typeof bookings.$inferInsert, "reference" | "payToken">;
+
+/** Inserts a booking with a fresh reference and payment link. */
+async function insertBooking(db: Db, client: Client, values: NewBooking): Promise<Booking> {
+  for (let attempt = 0; ; attempt += 1) {
+    await client.query("savepoint new_booking");
+    try {
+      const [booking] = await db.insert(bookings).values({ ...values, reference: newReference(), payToken: newPayToken() }).returning();
+      await client.query("release savepoint new_booking");
+      return booking;
+    } catch (error) {
+      await client.query("rollback to savepoint new_booking");
+      const database = ((error as { cause?: unknown }).cause ?? error) as { code?: string; constraint?: string };
+      // A reference already used (rare): pick another.
+      if (database.code === "23505" && database.constraint === "bookings_business_id_reference_key" && attempt < 5) continue;
+      throw error;
+    }
+  }
+}
+
+// ── Time slots (Phase 5) ──────────────────────────────────────────────
+
+export type CreateSlotBookingInput = {
+  businessId: string;
+  timeZone: string;
+  offeringId: string;
+  /** When it starts. */
+  startsAt: Date;
+  party: number;
+  /** A stylist or table the customer asked for; otherwise the best one free. */
+  resourceId?: string | null;
+  customer: { name: string; email: string | null; phone: string | null };
+  notes: string | null;
+  source: "chat" | "staff";
+  sessionId: string | null;
+  idempotencyKey: string | null;
+  confirmNow?: boolean;
+  staffUserId?: string | null;
+  now?: Date;
+};
+
+export type SlotProblem = {
+  ok: false;
+  error: "not_found" | "enquiry_only" | "unavailable" | "too_soon" | "too_far" | "invalid_dates" | "closed" | "too_many_guests" | "too_few_guests" | "resource_unavailable";
+  message: string;
+  min_party?: number;
+  max_party?: number;
+};
+
+/**
+ * Books a time slot: a service with a stylist or chair, or a table. The
+ * business's slots are locked while it checks the time is still free, so two
+ * customers can't both get the last table at 8pm.
+ */
+export async function createSlotBooking(input: CreateSlotBookingInput): Promise<CreatedBooking | SlotProblem> {
+  const now = input.now ?? new Date();
+  const refuse = (error: SlotProblem["error"], message: string, extra: Partial<SlotProblem> = {}): SlotProblem => ({ ok: false, error, message, ...extra });
+  return inBusiness(async (db, client) => {
+    const [offering] = await db.select().from(offerings)
+      .where(and(eq(offerings.businessId, input.businessId), eq(offerings.id, input.offeringId), eq(offerings.status, "active")))
+      .limit(1);
+    if (!offering || (offering.kind !== "service" && offering.kind !== "table")) return refuse("not_found", "That isn't available to book.");
+    const settings = await settingsIn(db, input.businessId);
+    if (offering.bookingMode === "enquiry" && input.source === "chat") {
+      return refuse("enquiry_only", `${offering.name} isn't booked online: the team takes enquiries and gets back to the customer.`);
+    }
+    if (!Number.isInteger(input.party) || input.party < offering.minParty) {
+      return refuse("too_few_guests", `${offering.name} is for parties of at least ${offering.minParty}.`, { min_party: offering.minParty, max_party: offering.maxGuests });
+    }
+    if (input.party > offering.maxGuests) {
+      return refuse("too_many_guests", `${offering.name} takes up to ${offering.maxGuests} ${offering.maxGuests === 1 ? "person" : "people"}.`, { min_party: offering.minParty, max_party: offering.maxGuests });
+    }
+    const local = localParts(input.timeZone, input.startsAt);
+    const day = dayProblem(local.date, input.timeZone, settings, now);
+    if (day) return refuse(day.error, day.message);
+    if (input.startsAt < now) return refuse("too_soon", "That time has passed.");
+    if (input.source === "chat" && input.startsAt.getTime() < now.getTime() + settings.minNoticeHours * 3_600_000) {
+      return refuse("too_soon", `Online bookings need ${settings.minNoticeHours} hours' notice.`);
     }
 
-    for (let attempt = 0; ; attempt += 1) {
-      await client.query("savepoint new_booking");
-      try {
-        const [booking] = await db.insert(bookings).values({
-          businessId: input.businessId,
-          reference: newReference(),
-          offeringId: offering.id,
-          checkIn: input.checkIn,
-          checkOut: input.checkOut,
-          units: input.units,
-          guests: input.guests,
-          status,
-          holdExpiresAt: hold,
-          customerName: input.customer.name,
-          customerEmail: input.customer.email,
-          customerPhone: input.customer.phone,
-          customerNotes: input.notes,
-          quote: quote as unknown as Record<string, unknown>,
-          currency: quote.currency,
-          totalMinor: quote.total,
-          depositMinor: quote.deposit,
-          payToken: newPayToken(),
-          source: input.source,
-          sessionId: input.sessionId,
-          idempotencyKey: input.idempotencyKey,
-          decidedBy: input.source === "staff" ? input.staffUserId ?? null : null,
-          confirmedAt: status === "confirmed" ? now : null,
-        }).returning();
-        await client.query("release savepoint new_booking");
-        return { ok: true, booking, offering, settings, replay: false } as const;
-      } catch (error) {
-        await client.query("rollback to savepoint new_booking");
-        const database = ((error as { cause?: unknown }).cause ?? error) as { code?: string; constraint?: string };
-        // A reference already used (rare): pick another.
-        if (database.code === "23505" && database.constraint === "bookings_business_id_reference_key" && attempt < 5) continue;
-        throw error;
-      }
+    await lockSlots(client, input.businessId);
+    if (input.idempotencyKey) {
+      const [existing] = await db.select().from(bookings)
+        .where(and(eq(bookings.businessId, input.businessId), eq(bookings.idempotencyKey, input.idempotencyKey)))
+        .limit(1);
+      if (existing) return { ok: true, booking: existing, offering, settings, replay: true } as const;
     }
+    const endsAt = new Date(input.startsAt.getTime() + (offering.durationMinutes ?? 60) * 60_000);
+    const busyUntil = new Date(endsAt.getTime() + offering.bufferMinutes * 60_000);
+    const [all, links] = await Promise.all([
+      db.select().from(resources).where(eq(resources.businessId, input.businessId)),
+      db.select({ offeringId: offeringResources.offeringId, resourceId: offeringResources.resourceId }).from(offeringResources).where(eq(offeringResources.businessId, input.businessId)),
+    ]);
+    const eligible = eligibleResources(offering, all, links, input.party);
+    if (!eligible.length) return refuse("unavailable", `Nobody is set up to take ${offering.name}${offering.kind === "table" ? ` for ${input.party}` : ""}.`);
+    const working = input.source === "staff" ? eligible : eligible.filter((resource) => resourceWorks(resource, settings.openingHours, input.startsAt, endsAt, input.timeZone));
+    if (!working.length) return refuse("closed", `We're not open for ${offering.name} at ${local.time} on ${local.date}.`);
+    const busy = await busyBetween(client, input.businessId, new Date(input.startsAt.getTime() - 13 * 3_600_000), new Date(busyUntil.getTime() + 13 * 3_600_000));
+    const free = working.filter((resource) => !resourceBusy(resource.id, input.startsAt, endsAt, busyUntil, busy));
+    let resource = free[0];
+    if (input.resourceId) {
+      const wanted = free.find((candidate) => candidate.id === input.resourceId);
+      if (!wanted) {
+        const name = all.find((candidate) => candidate.id === input.resourceId)?.name ?? "That choice";
+        return refuse("resource_unavailable", `${name} isn't free then${free.length ? `; ${free.map((candidate) => candidate.name).join(", ")} ${free.length === 1 ? "is" : "are"}` : ""}.`);
+      }
+      resource = wanted;
+    }
+    if (!resource) return refuse("unavailable", `${local.time} on ${local.date} is taken for ${offering.name}.`);
+
+    const quote = quoteSlot({
+      rules: offering.pricing as SlotPricing,
+      service: offering.name,
+      startsAt: input.startsAt,
+      durationMinutes: offering.durationMinutes ?? 60,
+      party: input.party,
+      currency: settings.currency,
+      tax: taxRuleOf(settings),
+      deposit: depositRuleOf(settings),
+    });
+    const { status, hold } = initialStatus({ ...input, settings, offering, deposit: quote.deposit, now });
+    const nextDay = isoDate(addDays(parseDate(local.date)!, 1));
+    const booking = await insertBooking(db, client, {
+      businessId: input.businessId,
+      offeringId: offering.id,
+      // A slot's day, and the day after: lists by date work for stays and slots alike.
+      checkIn: local.date,
+      checkOut: nextDay,
+      units: 1,
+      guests: input.party,
+      startsAt: input.startsAt,
+      endsAt,
+      busyUntil,
+      resourceId: resource.id,
+      status,
+      holdExpiresAt: hold,
+      customerName: input.customer.name,
+      customerEmail: input.customer.email,
+      customerPhone: input.customer.phone,
+      customerNotes: input.notes,
+      quote: quote as unknown as Record<string, unknown>,
+      currency: quote.currency,
+      totalMinor: quote.total,
+      depositMinor: quote.deposit,
+      source: input.source,
+      sessionId: input.sessionId,
+      idempotencyKey: input.idempotencyKey,
+      decidedBy: input.source === "staff" ? input.staffUserId ?? null : null,
+      confirmedAt: status === "confirmed" ? now : null,
+    });
+    return { ok: true, booking, offering, settings, replay: false } as const;
   }, input.businessId);
 }
 
@@ -306,6 +452,35 @@ async function lockedBooking(db: Db, businessId: string, id: string): Promise<Bo
   return row;
 }
 
+/** Whether a booking's place is still its own: its rooms, or (a time slot) a resource free for its time. */
+async function placeFreeFor(client: Client, booking: Booking): Promise<boolean> {
+  return booking.startsAt ? slotFreeFor(client, booking) : roomsFreeFor(client, booking);
+}
+
+/**
+ * A time slot is still free if its resource is, or another that can take it
+ * (the booking then moves to that one: a different table, the same time).
+ */
+async function slotFreeFor(client: Client, booking: Booking): Promise<boolean> {
+  await lockSlots(client, booking.businessId);
+  const [{ rows: all }, { rows: links }, { rows: [offering] }] = await Promise.all([
+    client.query<Record<string, unknown>>("select * from resources where business_id = $1", [booking.businessId]),
+    client.query<{ offering_id: string; resource_id: string }>("select offering_id, resource_id from offering_resources where business_id = $1", [booking.businessId]),
+    client.query<{ id: string; kind: Offering["kind"] }>("select id, kind from offerings where business_id = $1 and id = $2", [booking.businessId, booking.offeringId]),
+  ]);
+  if (!offering) return false;
+  const list = all.map((row) => ({ id: row.id, name: row.name, kind: row.kind, seats: row.seats, minParty: row.min_party, status: row.status, sortOrder: row.sort_order, hours: row.hours }) as Resource);
+  const eligible = eligibleResources(offering, list, links.map((link) => ({ offeringId: link.offering_id, resourceId: link.resource_id })), booking.guests);
+  const busy = await busyBetween(client, booking.businessId, booking.startsAt!, booking.busyUntil!, booking.id);
+  const ordered = [...eligible.filter((resource) => resource.id === booking.resourceId), ...eligible.filter((resource) => resource.id !== booking.resourceId)];
+  const free = ordered.find((resource) => !resourceBusy(resource.id, booking.startsAt!, booking.endsAt!, booking.busyUntil!, busy));
+  if (!free) return false;
+  if (free.id !== booking.resourceId) {
+    await client.query("update bookings set resource_id = $3, updated_at = now() where business_id = $1 and id = $2", [booking.businessId, booking.id, free.id]);
+  }
+  return true;
+}
+
 async function roomsFreeFor(client: Client, booking: Booking): Promise<boolean> {
   await lockOffering(client, booking.offeringId);
   const { rows: [room] } = await client.query<{ units: number }>("select units from offerings where business_id = $1 and id = $2", [booking.businessId, booking.offeringId]);
@@ -324,7 +499,7 @@ export async function acceptBooking(businessId: string, id: string, staffUserId:
     if (!booking) return problem("not_found", "No such booking.");
     if (booking.status !== "requested") return problem("wrong_status", `Only a request can be accepted; this booking is ${booking.status.replace("_", " ")}.`);
     const settings = await settingsIn(db, businessId);
-    if (!(await roomsFreeFor(client, booking))) return problem("unavailable", "Those rooms have been booked meanwhile: decline the request, or free a room first.");
+    if (!(await placeFreeFor(client, booking))) return problem("unavailable", "Those rooms have been booked meanwhile: decline the request, or free a room first.");
     const quote = input.agreedTotal !== undefined && input.agreedTotal !== null
       ? withAgreedTotal(booking.quote as unknown as StayQuote, input.agreedTotal, input.note ?? null)
       : booking.quote as unknown as StayQuote;
@@ -375,7 +550,7 @@ export async function confirmBooking(businessId: string, id: string, staffUserId
       return problem("wrong_status", `A booking that is ${booking.status.replace("_", " ")} can't be confirmed.`);
     }
     if (booking.status === "conflict" && !input.force) return problem("rooms_gone", "This booking's rooms went to someone else: confirm it only once you've made room.");
-    if (!input.force && !(await roomsFreeFor(client, booking))) return problem("unavailable", "Those rooms are no longer free.");
+    if (!input.force && !(await placeFreeFor(client, booking))) return problem("unavailable", "Those rooms are no longer free.");
     const [updated] = await db.update(bookings).set({
       status: "confirmed", holdExpiresAt: null, confirmedAt: now, conflict: null, decidedBy: staffUserId, staffNote: input.note ?? booking.staffNote, updatedAt: now,
     }).where(and(eq(bookings.businessId, businessId), eq(bookings.id, id))).returning();
@@ -400,7 +575,7 @@ export async function holdForPayment(businessId: string, id: string, now = new D
     }
     if (booking.paidMinor >= booking.depositMinor && booking.depositMinor > 0) return problem("wrong_status", "The deposit is already paid.");
     const holding = booking.status !== "expired" && booking.holdExpiresAt !== null && booking.holdExpiresAt > now;
-    if (!holding && !(await roomsFreeFor(client, booking))) {
+    if (!holding && !(await placeFreeFor(client, booking))) {
       if (booking.status !== "expired") {
         await db.update(bookings).set({ status: "expired", updatedAt: now }).where(and(eq(bookings.businessId, businessId), eq(bookings.id, id)));
       }
@@ -494,7 +669,7 @@ export async function settlePayment(
     const coversDeposit = paidMinor >= booking.depositMinor;
     if (["held", "awaiting_payment", "requested", "expired"].includes(booking.status) && coversDeposit) {
       const holding = booking.status !== "expired" && booking.holdExpiresAt !== null && booking.holdExpiresAt > now;
-      if (holding || (await roomsFreeFor(client, booking))) {
+      if (holding || (await placeFreeFor(client, booking))) {
         status = "confirmed";
       } else {
         status = "conflict";
@@ -542,7 +717,7 @@ export async function shortenHold(businessId: string, bookingId: string, minutes
 export async function expireHolds(now = new Date()): Promise<Array<{ businessId: string; booking: Booking }>> {
   const expired: Array<{ businessId: string; booking: Booking }> = [];
   for (const business of await allBusinesses()) {
-    if (business.businessType !== "guesthouse") continue;
+    if (!takesBookings(business.businessType)) continue;
     try {
       const rows = await inBusiness((db) => db.update(bookings).set({ status: "expired", updatedAt: now })
         .where(and(

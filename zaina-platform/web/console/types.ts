@@ -247,7 +247,58 @@ export type BookingRow = {
   cancelled_at: string | null;
   pay_link: string;
   code_to_check: boolean;
+  /** A time slot (a salon or restaurant booking). */
+  starts_at: string | null;
+  ends_at: string | null;
+  resource_id: string | null;
+  resource_name: string | null;
+  /** When it is, in words: its stay dates or its time. */
+  when: string | null;
+  /** A time slot's local "14:30–15:30". */
+  time_range: string | null;
 };
+
+export type WeekHours = Partial<Record<"0" | "1" | "2" | "3" | "4" | "5" | "6", Array<[string, string]>>>;
+
+export type SlotPricing = { price?: number; per_person?: number; fees?: Array<{ name: string; amount: number; per: "booking" | "guest" }>; deposit_percent?: number; deposit_fixed?: number };
+
+/** A service (salon) or table booking (restaurant). */
+export type Service = {
+  id: string;
+  kind: "service" | "table";
+  name: string;
+  description: string;
+  duration_minutes: number;
+  buffer_minutes: number;
+  min_party: number;
+  max_party: number;
+  booking_mode: BookingMode;
+  pricing: SlotPricing;
+  price_display: string;
+  resource_ids: string[];
+  status: "active" | "hidden";
+  sort_order: number;
+};
+
+export type ResourceKind = "staff" | "chair" | "table" | "room" | "other";
+
+export type ResourceRow = {
+  id: string;
+  name: string;
+  kind: ResourceKind;
+  seats: number;
+  min_party: number;
+  hours: WeekHours | null;
+  hours_text: string | null;
+  status: "active" | "hidden";
+  sort_order: number;
+};
+
+export type Closure = { id: string; resource_id: string | null; starts_at: string; ends_at: string; reason: string; source: "staff" | "calendar" };
+
+export type SlotsView = { date: string; party: number; slots: Array<{ time: string; starts_at: string; ends_at: string; free: Array<{ id: string; name: string }> }> };
+
+export type ScheduleView = { date: string; resources: ResourceRow[]; bookings: BookingRow[]; closures: Closure[] };
 
 export type PaymentRow = {
   id: string;
@@ -285,6 +336,9 @@ export type BookingSettingsView = {
   min_notice_hours: number;
   pay_attempts_limit: number;
   mpesa_prompts_limit: number;
+  opening_hours: WeekHours;
+  opening_hours_text: string;
+  slot_interval_minutes: number;
   payment_order: PaymentWay[];
   method_max_minor: Partial<Record<PaymentWay, number>>;
   bounds: Record<"hold_minutes" | "request_hold_hours" | "accepted_hold_hours" | "payment_hold_minutes" | "code_check_hours" | "booking_horizon_days" | "max_nights" | "min_notice_hours" | "pay_attempts_limit" | "mpesa_prompts_limit", [number, number]>;

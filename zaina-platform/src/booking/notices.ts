@@ -65,6 +65,18 @@ export function holdUntil(at: Date, timeZone: string, language: ChatLanguage = "
     : `${time} on ${dayOf(day, "en", false)} (${zone})`;
 }
 
+/** A time slot: "Mon 26 Oct 2026 at 2:30 PM" ("Jumatatu, 26 Okt 2026 saa 14:30"). */
+export function slotTime(startsAt: Date, timeZone: string, language: ChatLanguage = "en"): string {
+  const day = startsAt.toLocaleDateString("en-CA", { timeZone });
+  const time = startsAt.toLocaleTimeString(language === "sw" ? "en-GB" : "en-US", { timeZone, hour: "numeric", minute: "2-digit" });
+  return language === "sw" ? `${dayOf(day, "sw", true)} saa ${time}` : `${dayOf(day, "en", true)} at ${time}`;
+}
+
+/** When a booking is, in words: its stay dates, or its time slot. */
+export function bookingWhen(booking: Pick<Booking, "checkIn" | "checkOut" | "startsAt">, timeZone: string, language: ChatLanguage = "en"): string {
+  return booking.startsAt ? slotTime(booking.startsAt, timeZone, language) : stayDates(booking.checkIn, booking.checkOut, language);
+}
+
 export type CustomerNotice = "confirmed" | "accepted" | "declined" | "cancelled" | "conflict" | "code_rejected";
 
 type Context = { business: Business; booking: Booking; offering: Pick<Offering, "name">; language: ChatLanguage; businessName: string };
@@ -73,11 +85,16 @@ function customerText(notice: CustomerNotice, context: Context, detail: { reason
   const { booking, offering, language, businessName } = context;
   const sw = language === "sw";
   const money = (minor: number) => formatMoney(minor, booking.currency);
+  const slot = booking.startsAt !== null;
   const nights = nightsOf(booking.checkIn, booking.checkOut).length;
-  const dates = stayDates(booking.checkIn, booking.checkOut, language);
-  const stay = sw
-    ? `${offering.name}, ${dates} (usiku ${nights}), wageni ${booking.guests}`
-    : `${offering.name}, ${dates} (${nights} night${nights === 1 ? "" : "s"}), ${booking.guests} guest${booking.guests === 1 ? "" : "s"}`;
+  const dates = bookingWhen(booking, context.business.timeZone, language);
+  const people = booking.guests > 1 ? (sw ? `, watu ${booking.guests}` : `, ${booking.guests} people`) : "";
+  const stay = slot
+    ? `${offering.name}, ${dates}${people}`
+    : sw
+      ? `${offering.name}, ${dates} (usiku ${nights}), wageni ${booking.guests}`
+      : `${offering.name}, ${dates} (${nights} night${nights === 1 ? "" : "s"}), ${booking.guests} guest${booking.guests === 1 ? "" : "s"}`;
+  const venue = slot ? (sw ? "ukifika" : "when you arrive") : (sw ? "ukifika" : "at the property");
   const reason = detail.reason?.trim() ? (sw ? `: ${detail.reason.trim()}` : `: ${detail.reason.trim()}`) : "";
   switch (notice) {
     case "confirmed": {
@@ -87,21 +104,23 @@ function customerText(notice: CustomerNotice, context: Context, detail: { reason
         : "";
       const rest = balance <= 0
         ? (sw ? "Umelipa kikamilifu." : "Paid in full.")
-        : (sw ? `Salio la ${money(balance)} litalipwa ukifika.` : `The balance of ${money(balance)} is paid at the property.`);
+        : (sw ? `Salio la ${money(balance)} litalipwa ${venue}.` : `The balance of ${money(balance)} is paid ${venue}.`);
+      const nothing = booking.totalMinor === 0 ? "" : `${paid}${rest} `;
+      const times = slot ? "" : sw ? `Kuingia kuanzia saa ${detail.checkInTime}, kutoka kabla ya saa ${detail.checkOutTime}. ` : `Check-in from ${detail.checkInTime}, check-out by ${detail.checkOutTime}. `;
       return sw
-        ? `Habari njema: uhifadhi wako ${booking.reference} katika ${businessName} umethibitishwa. ${stay}. ${paid}${rest} Kuingia kuanzia saa ${detail.checkInTime}, kutoka kabla ya saa ${detail.checkOutTime}. Maelezo ya uhifadhi wako: ${payLink(booking)}`
-        : `Good news: your booking ${booking.reference} at ${businessName} is confirmed. ${stay}. ${paid}${rest} Check-in from ${detail.checkInTime}, check-out by ${detail.checkOutTime}. Your booking: ${payLink(booking)}`;
+        ? `Habari njema: uhifadhi wako ${booking.reference} katika ${businessName} umethibitishwa. ${stay}. ${nothing}${times}Maelezo ya uhifadhi wako: ${payLink(booking)}`
+        : `Good news: your booking ${booking.reference} at ${businessName} is confirmed. ${stay}. ${nothing}${times}Your booking: ${payLink(booking)}`;
     }
     case "accepted": {
       const until = booking.holdExpiresAt ? holdUntil(booking.holdExpiresAt, context.business.timeZone, language) : null;
       return sw
-        ? `${businessName} imekubali ombi lako la uhifadhi ${booking.reference}: ${stay}. Jumla: ${money(booking.totalMinor)}. Ili kulithibitisha, lipa amana ya ${money(booking.depositMinor)} hapa: ${payLink(booking)}${until ? ` Vyumba vimehifadhiwa kwa ajili yako hadi ${until}.` : ""}`
-        : `${businessName} has accepted your booking request ${booking.reference}: ${stay}. Total: ${money(booking.totalMinor)}. To confirm it, pay the deposit of ${money(booking.depositMinor)} here: ${payLink(booking)}${until ? ` The rooms are kept for you until ${until}.` : ""}`;
+        ? `${businessName} imekubali ombi lako la uhifadhi ${booking.reference}: ${stay}. Jumla: ${money(booking.totalMinor)}. Ili kulithibitisha, lipa amana ya ${money(booking.depositMinor)} hapa: ${payLink(booking)}${until ? ` ${slot ? "Muda huo" : "Vyumba"} vimehifadhiwa kwa ajili yako hadi ${until}.` : ""}`
+        : `${businessName} has accepted your booking request ${booking.reference}: ${stay}. Total: ${money(booking.totalMinor)}. To confirm it, pay the deposit of ${money(booking.depositMinor)} here: ${payLink(booking)}${until ? ` ${slot ? "The time is" : "The rooms are"} kept for you until ${until}.` : ""}`;
     }
     case "declined":
       return sw
         ? `Samahani, ${businessName} haiwezi kupokea ombi lako la uhifadhi ${booking.reference} (${offering.name}, ${dates})${reason}. Jibu hapa ukipenda tarehe nyingine.`
-        : `Sorry, ${businessName} can't take your booking request ${booking.reference} (${offering.name}, ${dates})${reason}. Reply here if you'd like to try other dates.`;
+        : `Sorry, ${businessName} can't take your booking request ${booking.reference} (${offering.name}, ${dates})${reason}. Reply here if you'd like to try ${slot ? "another time" : "other dates"}.`;
     case "cancelled": {
       const refund = booking.paidMinor > 0 ? (sw ? " Timu itawasiliana nawe kuhusu malipo yako." : " The team will be in touch about your payment.") : "";
       return sw
@@ -115,7 +134,7 @@ function customerText(notice: CustomerNotice, context: Context, detail: { reason
     case "conflict":
       return sw
         ? `Tumepokea malipo yako ya ${money(booking.paidMinor)} kwa uhifadhi ${booking.reference}. Timu itawasiliana nawe hivi punde kuthibitisha chumba chako.`
-        : `We've received your payment of ${money(booking.paidMinor)} for booking ${booking.reference}. The team will contact you shortly to confirm your room.`;
+        : `We've received your payment of ${money(booking.paidMinor)} for booking ${booking.reference}. The team will contact you shortly to confirm your ${slot ? "booking" : "room"}.`;
   }
 }
 
@@ -166,9 +185,10 @@ export async function tellCustomer(business: Business, booking: Booking, offerin
 }
 
 /** One line for the team: "ABC123 · Deluxe room · Fri 2 Oct – Mon 5 Oct 2026 · 2 guests · Jane W." */
-export function bookingSummary(booking: Booking, offering: Pick<Offering, "name">): string {
+export function bookingSummary(booking: Booking, offering: Pick<Offering, "name">, timeZone = "Africa/Nairobi"): string {
   const total = formatMoney(booking.totalMinor, booking.currency);
-  return `${booking.reference} · ${booking.units > 1 ? `${booking.units} × ` : ""}${offering.name} · ${stayDates(booking.checkIn, booking.checkOut)} · ${booking.guests} guest${booking.guests === 1 ? "" : "s"} · ${booking.customerName} · ${total}`;
+  const who = booking.startsAt ? (booking.guests > 1 ? ` · ${booking.guests} people` : "") : ` · ${booking.guests} guest${booking.guests === 1 ? "" : "s"}`;
+  return `${booking.reference} · ${booking.units > 1 ? `${booking.units} × ` : ""}${offering.name} · ${bookingWhen(booking, timeZone)}${who} · ${booking.customerName} · ${total}`;
 }
 
 /** Tells the team about a booking. Never throws. */
@@ -179,7 +199,7 @@ export async function tellTeam(business: Business, booking: Booking, offering: P
       what,
       bookingId: booking.id,
       sessionId: booking.sessionId,
-      summary: `${bookingSummary(booking, offering)}${extra ? `. ${extra}` : ""}`,
+      summary: `${bookingSummary(booking, offering, business.timeZone)}${extra ? `. ${extra}` : ""}`,
     });
   } catch (error) {
     console.error(`[bookings] alerting the team about ${booking.reference} failed:`, error);

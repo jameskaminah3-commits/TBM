@@ -25,8 +25,12 @@ const createdAt = () => timestamp("created_at", { withTimezone: true, mode: "dat
 export type StaffedHours = { days: number[]; open: string; close: string };
 
 /** Which tools Zaina gets: see engine/tool-sets.ts. */
-export const businessTypes = ["general", "travel_concierge", "guesthouse"] as const;
+export const businessTypes = ["general", "travel_concierge", "guesthouse", "salon", "restaurant"] as const;
 export type BusinessType = (typeof businessTypes)[number];
+/** The types that take bookings and payments through the platform: nights (guesthouse) or time slots (salon, restaurant). */
+export const bookingBusinessTypes: readonly BusinessType[] = ["guesthouse", "salon", "restaurant"];
+export const takesBookings = (type: BusinessType) => bookingBusinessTypes.includes(type);
+export const booksTime = (type: BusinessType) => type === "salon" || type === "restaurant";
 
 /** The languages Zaina answers in; fixed texts exist in each. */
 export const chatLanguages = ["en", "sw"] as const;
@@ -329,6 +333,10 @@ export type DepositType = (typeof depositTypes)[number];
 export const paymentWays = ["mpesa_express", "paystack", "mpesa_manual", "pay_at_venue"] as const;
 export type PaymentWay = (typeof paymentWays)[number];
 
+/** room_type: nights in a place to stay; service: an appointment (a haircut); table: a table booking. */
+export const offeringKinds = ["room_type", "service", "table"] as const;
+export type OfferingKind = (typeof offeringKinds)[number];
+
 export const bookingModes = ["instant", "request", "enquiry"] as const;
 export type BookingMode = (typeof bookingModes)[number];
 
@@ -355,6 +363,8 @@ export const bookingSettings = pgTable("booking_settings", {
   mpesaManualNumber: text("mpesa_manual_number"),
   mpesaManualAccount: text("mpesa_manual_account"),
   payAtVenue: boolean("pay_at_venue").notNull().default(false),
+  openingHours: jsonb("opening_hours").$type<WeekHours>().notNull().default({}),
+  slotIntervalMinutes: integer("slot_interval_minutes").notNull().default(30),
   depositType: text("deposit_type").$type<DepositType>().notNull().default("not_set"),
   depositFixedMinor: bigint("deposit_fixed_minor", { mode: "number" }),
   paymentOrder: text("payment_order").array().$type<PaymentWay[]>().notNull().default([]),
@@ -376,13 +386,17 @@ export type BookingSettings = typeof bookingSettings.$inferSelect;
 export const offerings = pgTable("offerings", {
   id: uuid("id").primaryKey().defaultRandom(),
   businessId: text("business_id").notNull(),
-  kind: text("kind").$type<"room_type">().notNull().default("room_type"),
+  kind: text("kind").$type<OfferingKind>().notNull().default("room_type"),
   name: text("name").notNull(),
   description: text("description").notNull().default(""),
   units: integer("units").notNull(),
   maxGuests: integer("max_guests").notNull(),
   bookingMode: text("booking_mode").$type<BookingMode>().notNull().default("instant"),
   pricing: jsonb("pricing").$type<Record<string, unknown>>().notNull(),
+  /** A service or table booking's length, and the time after it before its resource is free. */
+  durationMinutes: integer("duration_minutes"),
+  bufferMinutes: integer("buffer_minutes").notNull().default(0),
+  minParty: integer("min_party").notNull().default(1),
   status: text("status").$type<"active" | "hidden">().notNull().default("active"),
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: createdAt(),
@@ -404,6 +418,47 @@ export const offeringBlocks = pgTable("offering_blocks", {
 });
 export type OfferingBlock = typeof offeringBlocks.$inferSelect;
 
+/** A business's week: for each weekday (0 Sunday … 6 Saturday) the times it is open, like [["09:00", "13:00"], ["14:00", "18:00"]]. */
+export type WeekHours = Partial<Record<"0" | "1" | "2" | "3" | "4" | "5" | "6", Array<[string, string]>>>;
+
+export const resourceKinds = ["staff", "chair", "table", "room", "other"] as const;
+export type ResourceKind = (typeof resourceKinds)[number];
+
+export const resources = pgTable("resources", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  businessId: text("business_id").notNull(),
+  name: text("name").notNull(),
+  kind: text("kind").$type<ResourceKind>().notNull(),
+  seats: integer("seats").notNull().default(1),
+  minParty: integer("min_party").notNull().default(1),
+  hours: jsonb("hours").$type<WeekHours | null>(),
+  status: text("status").$type<"active" | "hidden">().notNull().default("active"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: createdAt(),
+  updatedAt: at("updated_at").notNull().defaultNow(),
+});
+export type Resource = typeof resources.$inferSelect;
+
+export const offeringResources = pgTable("offering_resources", {
+  businessId: text("business_id").notNull(),
+  offeringId: uuid("offering_id").notNull(),
+  resourceId: uuid("resource_id").notNull(),
+});
+
+export const resourceBlocks = pgTable("resource_blocks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  businessId: text("business_id").notNull(),
+  resourceId: uuid("resource_id"),
+  startsAt: at("starts_at").notNull(),
+  endsAt: at("ends_at").notNull(),
+  reason: text("reason").notNull().default(""),
+  source: text("source").$type<"staff" | "calendar">().notNull().default("staff"),
+  externalId: text("external_id"),
+  createdAt: createdAt(),
+  createdBy: uuid("created_by"),
+});
+export type ResourceBlock = typeof resourceBlocks.$inferSelect;
+
 export const bookingStatuses = ["held", "requested", "awaiting_payment", "confirmed", "conflict", "declined", "cancelled", "expired"] as const;
 export type BookingStatus = (typeof bookingStatuses)[number];
 
@@ -416,6 +471,11 @@ export const bookings = pgTable("bookings", {
   checkOut: date("check_out", { mode: "string" }).notNull(),
   units: integer("units").notNull().default(1),
   guests: integer("guests").notNull(),
+  /** A time-slot booking: when it starts and ends, when its resource is free again, and which resource. */
+  startsAt: at("starts_at"),
+  endsAt: at("ends_at"),
+  busyUntil: at("busy_until"),
+  resourceId: uuid("resource_id"),
   status: text("status").$type<BookingStatus>().notNull(),
   holdExpiresAt: at("hold_expires_at"),
   customerName: text("customer_name").notNull(),

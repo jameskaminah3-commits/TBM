@@ -134,6 +134,14 @@ function messyReplyFor(name, result) {
     return r.has_account ? "Good news — that email already has a TBM account!" : `Status: ${r.client_status ?? r.error}`;
   }
   if (name === "escalate_to_human") return "Let me connect you with someone from our team.";
+  // Phase 5: times free for a service or table, and what can be booked.
+  if (name === "check_times" && r.ok) {
+    return r.times.length
+      ? `Free on ${r.day}: ${r.times.join(", ")}. It's ${r.total}${r.with ? ` with ${r.with.join(" or ")}` : ""}.`
+      : `${r.day} is full. Next free: ${(r.next_free || []).map((entry) => `${entry.day} ${entry.times.join(", ")}`).join("; ")}.`;
+  }
+  if (name === "list_services" && r.ok) return `We offer ${r.services.map((service) => `${service.name} (${service.length}, ${service.price})`).join(", ")}. Open ${r.opening_hours}. Deposit: ${r.rules.deposit}.`;
+  if (name === "create_appointment" && r.ok && !r.payment_link) return `Booked: ${r.service}, ${r.when} (${r.status}).`;
   if (name === "search_knowledge") {
     const passage = (r.passages || [])[0];
     if (!passage) return "I'm not sure about that one — shall I ask the team for you?";

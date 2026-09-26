@@ -14,7 +14,7 @@ import { api, businessPath } from "../api.ts";
 import { atLeast, type BookingSettingsView, type DepositType, type PaymentWay, type Role } from "../types.ts";
 import { Button, ErrorLine, Field, Message, Toggle, useAction, useLoad } from "../ui.tsx";
 
-export function BookingSettings(props: { businessId: string; role: Role }) {
+export function BookingSettings(props: { businessId: string; role: Role; slots?: boolean }) {
   const loaded = useLoad(() => api<BookingSettingsView>("GET", businessPath(props.businessId, "/booking-settings")), [props.businessId]);
   const [settings, setSettings] = useState<BookingSettingsView | null>(null);
   useEffect(() => setSettings(loaded.data), [loaded.data]);
@@ -23,7 +23,7 @@ export function BookingSettings(props: { businessId: string; role: Role }) {
   return (
     <div className="stack">
       <Deposit key={`deposit-${settings.deposit_type}`} businessId={props.businessId} settings={settings} onSaved={setSettings} />
-      <Policy businessId={props.businessId} settings={settings} onSaved={setSettings} />
+      <Policy businessId={props.businessId} settings={settings} onSaved={setSettings} slots={props.slots ?? false} />
       <h2>Where deposits are paid</h2>
       {!settings.payments.takes_deposits ? (
         <p className="message error">No payment account is connected, so bookings with a deposit become requests the team handles. Connect at least one below.</p>
@@ -33,7 +33,7 @@ export function BookingSettings(props: { businessId: string; role: Role }) {
       <MpesaExpress businessId={props.businessId} settings={settings} owner={owner} onSaved={setSettings} />
       <MpesaManual businessId={props.businessId} settings={settings} owner={owner} onSaved={setSettings} />
       <WaysToPay businessId={props.businessId} settings={settings} onSaved={setSettings} />
-      <Limits businessId={props.businessId} settings={settings} onSaved={setSettings} />
+      <Limits businessId={props.businessId} settings={settings} onSaved={setSettings} slots={props.slots ?? false} />
     </div>
   );
 }
@@ -64,7 +64,7 @@ const LIMITS: Array<{ field: LimitField; label: string; hint: string }> = [
   { field: "mpesa_prompts_limit", label: "M-Pesa prompts per booking (per 10 minutes)", hint: "So a phone isn't flooded with prompts." },
 ];
 
-function Policy(props: { businessId: string; settings: BookingSettingsView; onSaved: (settings: BookingSettingsView) => void }) {
+function Policy(props: { businessId: string; settings: BookingSettingsView; onSaved: (settings: BookingSettingsView) => void; slots: boolean }) {
   const initial = props.settings;
   const [form, setForm] = useState({
     currency: initial.currency,
@@ -100,8 +100,8 @@ function Policy(props: { businessId: string; settings: BookingSettingsView; onSa
       <h2>Booking policy</h2>
       <div className="form-row">
         <Field label="Prices in"><select value={form.currency} onChange={(event) => set("currency", event.target.value)}><option value="KES">Kenyan shillings</option><option value="USD">US dollars</option></select></Field>
-        <Field label="Check-in from"><input type="time" required value={form.check_in_time} onChange={(event) => set("check_in_time", event.target.value)} /></Field>
-        <Field label="Check-out by"><input type="time" required value={form.check_out_time} onChange={(event) => set("check_out_time", event.target.value)} /></Field>
+        {props.slots ? null : <Field label="Check-in from"><input type="time" required value={form.check_in_time} onChange={(event) => set("check_in_time", event.target.value)} /></Field>}
+        {props.slots ? null : <Field label="Check-out by"><input type="time" required value={form.check_out_time} onChange={(event) => set("check_out_time", event.target.value)} /></Field>}
       </div>
       <div className="form-row">
         <Field label="Tax name" hint="Like VAT. Empty: no tax shown."><input maxLength={40} value={form.tax_name} onChange={(event) => set("tax_name", event.target.value)} /></Field>
@@ -221,9 +221,11 @@ function WaysToPay(props: { businessId: string; settings: BookingSettingsView; o
 }
 
 /** Holds and limits: the business's own, within the platform's safe bounds. */
-function Limits(props: { businessId: string; settings: BookingSettingsView; onSaved: (settings: BookingSettingsView) => void }) {
+function Limits(props: { businessId: string; settings: BookingSettingsView; onSaved: (settings: BookingSettingsView) => void; slots: boolean }) {
   const initial = props.settings;
-  const [form, setForm] = useState<Record<LimitField, string>>(Object.fromEntries(LIMITS.map(({ field }) => [field, String(initial[field])])) as Record<LimitField, string>);
+  // Nights don't apply to time slots.
+  const limits = LIMITS.filter(({ field }) => !(props.slots && field === "max_nights"));
+  const [form, setForm] = useState<Record<LimitField, string>>(Object.fromEntries(limits.map(({ field }) => [field, String(initial[field])])) as Record<LimitField, string>);
   const action = useAction();
   return (
     <form
@@ -231,14 +233,14 @@ function Limits(props: { businessId: string; settings: BookingSettingsView; onSa
       onSubmit={async (event) => {
         event.preventDefault();
         await action.run(async () => {
-          props.onSaved(await api<BookingSettingsView>("PATCH", businessPath(props.businessId, "/booking-settings"), Object.fromEntries(LIMITS.map(({ field }) => [field, Number(form[field])]))));
+          props.onSaved(await api<BookingSettingsView>("PATCH", businessPath(props.businessId, "/booking-settings"), Object.fromEntries(limits.map(({ field }) => [field, Number(form[field])]))));
         }, "Saved.");
       }}
     >
       <h2>Holds and limits</h2>
       <p className="muted">Your choice; the values here to start with are only suggestions.</p>
       <div className="form-grid">
-        {LIMITS.map(({ field, label, hint }) => {
+        {limits.map(({ field, label, hint }) => {
           const [min, max] = initial.bounds[field];
           return (
             <Field key={field} label={label} hint={`${hint} ${min} to ${max}.`}>

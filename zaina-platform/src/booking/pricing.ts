@@ -177,7 +177,7 @@ function seasonFor(night: string, seasons: Season[] | undefined): Season | null 
 
 // ── Quotes ────────────────────────────────────────────────────────────
 
-export type QuoteLine = { label: string; amount: number; display: string; kind: "rooms" | "extra_guests" | "fee" | "tax"; included?: boolean };
+export type QuoteLine = { label: string; amount: number; display: string; kind: "rooms" | "extra_guests" | "service" | "people" | "fee" | "tax"; included?: boolean };
 
 export type StayQuote = {
   currency: BookingCurrency;
@@ -401,4 +401,141 @@ export function withAgreedTotal(quote: StayQuote, total: number, note: string | 
     ...(tax?.included ? [{ kind: "tax" as const, label: `Includes ${tax.name} ${tax.percent}%`, amount: tax.amount, display: money(tax.amount), included: true }] : []),
   ];
   return { ...quote, lines, tax, total, deposit, balance: total - deposit, total_display: money(total), deposit_display: money(deposit), balance_display: money(total - deposit) };
+}
+
+// ── Time slots (Phase 5) ──────────────────────────────────────────────
+//
+// A service or table booking's rules (offerings.pricing), in minor units:
+//
+//   price            per booking (a haircut: KSh 1,500); absent: nothing
+//   per_person       per person in the party (a set menu, a class)
+//   fees             fixed amounts, per booking or per person
+//   deposit_percent  or deposit_fixed: instead of the business's usual deposit
+//
+// A table booking is usually free (no price), so it has no deposit; a
+// restaurant that wants one prices the booking (per person, or a fee).
+
+export const slotFeeBases = ["booking", "guest"] as const;
+
+export type SlotPricing = {
+  price?: number;
+  per_person?: number;
+  fees?: Array<{ name: string; amount: number; per: (typeof slotFeeBases)[number] }>;
+  deposit_percent?: number;
+  deposit_fixed?: number;
+};
+
+export function validateSlotPricing(input: unknown): { ok: true; rules: SlotPricing } | { ok: false; error: string } {
+  if (input === undefined || input === null) return { ok: true, rules: {} };
+  if (typeof input !== "object" || Array.isArray(input)) return { ok: false, error: "pricing is an object of rules" };
+  const raw = input as Record<string, unknown>;
+  const known = new Set(["price", "per_person", "fees", "deposit_percent", "deposit_fixed"]);
+  const unknown = Object.keys(raw).find((key) => !known.has(key));
+  if (unknown) return { ok: false, error: `pricing has an unknown rule: ${unknown}` };
+  const rules: SlotPricing = {};
+  for (const key of ["price", "per_person"] as const) {
+    if (raw[key] === undefined) continue;
+    if (!isWhole(raw[key], 0, MAX_AMOUNT)) return { ok: false, error: `${key} is an amount` };
+    rules[key] = raw[key] as number;
+  }
+  if (raw.deposit_percent !== undefined) {
+    if (!isWhole(raw.deposit_percent, 0, 100)) return { ok: false, error: "deposit_percent is 0 to 100" };
+    rules.deposit_percent = raw.deposit_percent;
+  }
+  if (raw.deposit_fixed !== undefined) {
+    if (raw.deposit_percent !== undefined) return { ok: false, error: "the deposit is a percentage or a fixed amount, not both" };
+    if (!isWhole(raw.deposit_fixed, 1, MAX_AMOUNT)) return { ok: false, error: "deposit_fixed is an amount" };
+    rules.deposit_fixed = raw.deposit_fixed;
+  }
+  if (raw.fees !== undefined) {
+    if (!Array.isArray(raw.fees) || raw.fees.length > 10) return { ok: false, error: "fees is a list of up to 10" };
+    rules.fees = [];
+    for (const [index, value] of raw.fees.entries()) {
+      const fee = (value ?? {}) as Record<string, unknown>;
+      const label = `fee ${index + 1}`;
+      if (typeof fee.name !== "string" || !fee.name.trim() || fee.name.length > 60) return { ok: false, error: `${label} needs a name (up to 60 characters)` };
+      if (!isWhole(fee.amount, 1, MAX_AMOUNT)) return { ok: false, error: `${label} needs an amount` };
+      if (!slotFeeBases.includes(fee.per as (typeof slotFeeBases)[number])) return { ok: false, error: `${label}: per is booking or guest` };
+      rules.fees.push({ name: fee.name.trim(), amount: fee.amount, per: fee.per as (typeof slotFeeBases)[number] });
+    }
+  }
+  return { ok: true, rules };
+}
+
+export type SlotQuote = {
+  kind: "slot";
+  currency: BookingCurrency;
+  service: string;
+  starts_at: string;
+  duration_minutes: number;
+  party: number;
+  lines: QuoteLine[];
+  fees_total: number;
+  tax: StayQuote["tax"];
+  total: number;
+  deposit_rule: DepositRule["type"];
+  deposit_percent: number | null;
+  deposit: number;
+  balance: number;
+  total_display: string;
+  deposit_display: string;
+  balance_display: string;
+};
+
+/** The price of a time slot: the service, the party, fees, tax and the deposit. */
+export function quoteSlot(input: {
+  rules: SlotPricing;
+  service: string;
+  startsAt: Date;
+  durationMinutes: number;
+  party: number;
+  currency: BookingCurrency;
+  tax: TaxRule | null;
+  deposit: DepositRule;
+}): SlotQuote {
+  const { rules, party, currency } = input;
+  const money = (amount: number) => formatMoney(amount, currency);
+  const lines: QuoteLine[] = [];
+  const price = rules.price ?? 0;
+  if (price > 0) lines.push({ kind: "service", label: input.service, amount: price, display: money(price) });
+  const people = (rules.per_person ?? 0) * party;
+  if (people > 0) lines.push({ kind: "people", label: `${party} ${party === 1 ? "person" : "people"} × ${money(rules.per_person!)}`, amount: people, display: money(people) });
+  const fees = (rules.fees ?? []).map((fee) => ({ fee, amount: fee.amount * (fee.per === "guest" ? party : 1) }));
+  for (const entry of fees) {
+    lines.push({ kind: "fee", label: `${entry.fee.name}${entry.fee.per === "guest" && party > 1 ? ` (${party} people)` : ""}`, amount: entry.amount, display: money(entry.amount) });
+  }
+  const feesTotal = fees.reduce((sum, entry) => sum + entry.amount, 0);
+  const gross = price + people + feesTotal;
+  let tax: StayQuote["tax"] = null;
+  let total = gross;
+  if (input.tax && input.tax.percent > 0 && gross > 0) {
+    const amount = input.tax.included ? Math.round((gross * input.tax.percent) / (100 + input.tax.percent)) : Math.round((gross * input.tax.percent) / 100);
+    tax = { name: input.tax.name, percent: input.tax.percent, included: input.tax.included, amount };
+    if (!input.tax.included) total = gross + amount;
+    lines.push(tax.included
+      ? { kind: "tax", label: `Includes ${tax.name} ${tax.percent}%`, amount, display: money(amount), included: true }
+      : { kind: "tax", label: `${tax.name} ${tax.percent}%`, amount, display: money(amount) });
+  }
+  const rule = depositRuleFor(rules, input.deposit);
+  // Never more than the total: a free booking (most tables) has nothing to pay.
+  const deposit = depositOf(total, rule);
+  return {
+    kind: "slot",
+    currency,
+    service: input.service,
+    starts_at: input.startsAt.toISOString(),
+    duration_minutes: input.durationMinutes,
+    party,
+    lines,
+    fees_total: feesTotal,
+    tax,
+    total,
+    deposit_rule: rule.type,
+    deposit_percent: depositPercentOf(rule),
+    deposit,
+    balance: total - deposit,
+    total_display: money(total),
+    deposit_display: money(deposit),
+    balance_display: money(total - deposit),
+  };
 }

@@ -15,6 +15,7 @@ import { eq } from "drizzle-orm";
 import { bookingSettings, depositTypes, paymentWays, type BookingCurrency, type BookingSettings, type DepositType, type PaymentWay } from "../db/schema.ts";
 import { inBusiness } from "../db/tenant.ts";
 import { formatMoney } from "./money.ts";
+import { describeWeek, validateWeekHours } from "./slots.ts";
 import type { DepositRule, TaxRule } from "./pricing.ts";
 
 export const PAYSTACK_SECRET = "paystack_secret_key";
@@ -44,6 +45,8 @@ export function defaultBookingSettings(businessId: string): BookingSettings {
     mpesaManualNumber: null,
     mpesaManualAccount: null,
     payAtVenue: false,
+    openingHours: {},
+    slotIntervalMinutes: 30,
     depositType: "not_set",
     depositFixedMinor: null,
     paymentOrder: [],
@@ -234,6 +237,15 @@ export function validatePolicyPatch(input: Record<string, unknown>): { ok: true;
     if (!whole(input[field], min, max)) return { ok: false, error: `${field} is ${min} to ${max}` };
     (patch as Record<string, number>)[key] = input[field] as number;
   }
+  if ("opening_hours" in input) {
+    const checked = validateWeekHours(input.opening_hours);
+    if (!checked.ok) return { ok: false, error: checked.error.replace(/^hours/, "opening_hours") };
+    patch.openingHours = checked.hours;
+  }
+  if ("slot_interval_minutes" in input) {
+    if (![5, 10, 15, 20, 30, 45, 60, 90, 120].includes(input.slot_interval_minutes as number)) return { ok: false, error: "slot_interval_minutes is 5, 10, 15, 20, 30, 45, 60, 90 or 120" };
+    patch.slotIntervalMinutes = input.slot_interval_minutes as number;
+  }
   if ("payment_order" in input) {
     const order = input.payment_order;
     if (!Array.isArray(order) || order.length > paymentWays.length || new Set(order).size !== order.length || !order.every((way) => paymentWays.includes(way))) {
@@ -309,6 +321,9 @@ export function publicBookingSettings(settings: BookingSettings, secrets: Set<st
     min_notice_hours: settings.minNoticeHours,
     pay_attempts_limit: settings.payAttemptsLimit,
     mpesa_prompts_limit: settings.mpesaPromptsLimit,
+    opening_hours: settings.openingHours,
+    opening_hours_text: describeWeek(settings.openingHours),
+    slot_interval_minutes: settings.slotIntervalMinutes,
     payment_order: options.order,
     method_max_minor: settings.methodMaxMinor,
     bounds: POLICY_BOUNDS,

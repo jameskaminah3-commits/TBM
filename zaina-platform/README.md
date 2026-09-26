@@ -304,9 +304,23 @@ Decisions to confirm:
   paid through its subaccounts) or every business brings its own.
 - Refunds are made in Paystack's dashboard or M-Pesa, not from the console.
 
-**Next: Phase 5 — second business type, self-serve.** Time-slot
-availability for salons and restaurants, a calendar connector, an
-onboarding wizard, subscriptions and billing.
+### Phase 5: second business type, self-serve (in progress)
+
+Salons and restaurants book time, not nights. They use the same bookings,
+payments, payment page, deposits and notices as a place to stay; what
+changes is what is booked and how "free" is worked out (migration 0009).
+
+| Part | What it does |
+|---|---|
+| Business types | `salon` (a salon, barber or spa: services with a stylist or chair) and `restaurant` (tables for a party). Each gets the appointments connector and the Services (or Tables) page |
+| Opening hours | The business's week, a list of spans per day (a closing time before the opening one runs past midnight: a Friday 18:00–01:00), and how often a booking can start (every 5 to 120 minutes) |
+| People, chairs and tables | What a booking takes. Each can keep its own working hours inside the business's; a table has its seats and the smallest party it's given to, so a table for ten isn't used for two |
+| Services and table bookings | A length, the time after each before the next (clean-up, resetting a table), party sizes, a price per booking and/or per person (a table is usually free), how it's booked (online, on request, by enquiry), and who can do it (none listed: anyone that fits) |
+| Free times | Every interval from opening while the booking ends by closing, after the business's notice, within how far ahead it takes bookings, with someone free: not booked (confirmed, or held while the hold lasts, plus the buffer) and not closed. Booking locks the business's slots for one short transaction, so the last table at 8 pm goes to one customer. Tables go to the smallest that fits |
+| Closures | Time off or a private event, for one person or table or the whole place |
+| Holds and late payments | As for rooms: an unpaid slot is held for the deposit, a lapsed hold is renewed at payment if the time is still free, and a late payment moves to another free person or table at the same time if its own was taken; otherwise the team sorts it out |
+| Zaina's tools | `list_services` (what can be booked, hours, the business's rules), `check_times` (times free on a day, and the next days with times if it's full), `create_appointment` (with the customer's own details), `get_booking`, and leads. The server writes the payment block ("This time is held until…", "The rest is paid when you arrive") |
+| Console | Services (or Tables): opening hours, services, people and tables, closures. Bookings: the same lists, with each booking's time and who it's with; a day's schedule per person or table; booking a time for a customer who calls. Settings → Bookings & payments without check-in times and nights |
 
 ## Running it locally
 
@@ -449,6 +463,12 @@ Phase 4, a place to stay (least role needed):
 | `GET booking-settings` / `PATCH booking-settings` (`{ currency?, deposit_type? (none, percent, fixed, full), deposit_percent?, deposit_fixed_minor?, payment_order?, method_max_minor?, pay_at_venue?, hold_minutes?, request_hold_hours?, accepted_hold_hours?, payment_hold_minutes?, code_check_hours?, booking_horizon_days?, max_nights?, min_notice_hours?, pay_attempts_limit?, mpesa_prompts_limit?, check_in_time?, check_out_time?, cancellation_policy?, tax_name?, tax_percent?, tax_included? }`; the reply includes each limit's `bounds`) | viewer / manager |
 | `PUT payments/paystack` (`{ mode: "own_keys", secret_key }` or `{ mode: "subaccount", subaccount }`), `PUT payments/mpesa-express` (`{ environment, type, shortcode, till?, consumer_key, consumer_secret, passkey }`), `PUT payments/mpesa-manual` (`{ type, number, account? }`), `DELETE payments/:method` | owner |
 | `GET offerings` / `POST offerings`, `PUT offerings/:id`, `DELETE offerings/:id`, `POST offerings/import` (`{ csv }`) | viewer / manager |
+| Time slots (salons, restaurants): `PATCH booking-settings` also takes `{ opening_hours, slot_interval_minutes }`; offerings are services or table bookings (`{ name, duration_minutes, buffer_minutes?, min_party?, max_party?, pricing: { price?, per_person?, fees?, deposit_percent? or deposit_fixed? }, booking_mode?, resource_ids? }`) | viewer / manager |
+| `GET resources` / `POST resources`, `PUT resources/:id`, `DELETE resources/:id` (`{ name, kind: staff, chair, table, room or other, seats?, min_party?, hours? }`) | viewer / manager |
+| `GET slots?offering_id=&date=&party=&resource_id=`: the times free that day, and who's free for each | viewer |
+| `GET schedule?date=`: each person or table's bookings and closures that day | viewer |
+| `GET closures?from=&days=` / `POST closures` (`{ resource_id?, starts_at, ends_at, reason? }`), `DELETE closures/:id` | viewer / manager |
+| `POST bookings` for a time slot: `{ offering_id, date, time, party?, resource_id?, customer_name, customer_phone or customer_email, notes?, confirm_now? }` | agent |
 | `POST quote` (`{ offering_id, check_in, check_out, guests, rooms? }`), `GET calendar?from=&days=`, `GET blocks` | viewer |
 | `POST blocks` (`{ offering_id, starts_on, ends_on, units?, reason? }`), `DELETE blocks/:id` | manager |
 | `GET bookings?filter=upcoming\|requests\|unpaid\|attention\|past\|cancelled\|all`, `GET bookings/:id` | viewer |
@@ -464,12 +484,13 @@ platform's), `POST /v1/payments/mpesa/:token` (Safaricom's callback).
 ## Tests
 
 ```
-npm test            # unit tests (no database): 153
-npm run test:db     # database checks, including separation between businesses: 45
+npm test            # unit tests (no database): 164
+npm run test:db     # database checks, including separation between businesses: 53
                     # PLATFORM_TEST_DATABASE_URL, a local database ending in _test (wiped)
 npm run test:e2e    # the whole service with a scripted model, TBM and a second business,
                     # the Phase 3 channels (WhatsApp, alerts, console, widget), and the
-                    # Phase 4 pilot (three places to stay, their payments): 69
+                    # Phase 4 pilot (three places to stay, their payments), and a
+                    # salon and a restaurant booking time (Phase 5): 73
                     # also TBM_TEST_DATABASE_URL, a local copy of TBM's schema ending in _test
 npm run check       # type check (the service, and the widget and console)
 

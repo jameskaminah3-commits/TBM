@@ -270,6 +270,8 @@ export type PaymentDetails = {
   depositPercent?: number;
   /** The whole amount is paid up front (the business's rule). */
   paysInFull?: boolean;
+  /** A time slot (a salon or table booking): its time is held, not rooms. */
+  slot?: boolean;
   holdUntil?: string;
   payBy?: string;
 };
@@ -280,6 +282,7 @@ const PAYMENT_TOOL_KINDS: Record<string, PaymentKind> = {
   create_custom_offer: "custom_request",
   create_listing_verification_request: "listing_verification",
   create_booking: "room_booking",
+  create_appointment: "room_booking",
 };
 
 /** Returns payment details when a tool call created (or replayed) something payable. */
@@ -297,6 +300,7 @@ export function paymentDetailsFromToolResult(toolName: string, result: any): Pay
       totalDisplay: text(result.total_display),
       depositPercent: typeof result.deposit_percent === "number" ? result.deposit_percent : undefined,
       paysInFull: result.pays_in_full === true,
+      slot: result.slot === true,
       holdUntil: text(result.hold_until),
       payBy: text(result.pay_by),
     };
@@ -339,7 +343,11 @@ function roomBookingSection(details: PaymentDetails, language: ChatLanguage): st
       full
         ? "• Malipo yakifika, uhifadhi wako unathibitishwa na utapata ujumbe hapa."
         : "• Amana ikifika, uhifadhi wako unathibitishwa na utapata ujumbe hapa. Kiasi kilichobaki kinalipwa ukifika.",
-      details.holdUntil ? `• Vyumba vimeshikiliwa hadi ${details.holdUntil}; baada ya hapo vinaweza kupewa mtu mwingine.` : null,
+      details.holdUntil
+        ? details.slot
+          ? `• Muda huu umeshikiliwa hadi ${details.holdUntil}; baada ya hapo unaweza kupewa mtu mwingine.`
+          : `• Vyumba vimeshikiliwa hadi ${details.holdUntil}; baada ya hapo vinaweza kupewa mtu mwingine.`
+        : null,
       host ? `• Kila mara hakikisha anwani inaanza na ${host} kabla ya kulipa.` : null,
     ].filter((line) => line !== null).join("\n");
   }
@@ -353,8 +361,10 @@ function roomBookingSection(details: PaymentDetails, language: ChatLanguage): st
     `• The page shows your booking and its total${details.totalDisplay ? ` (${details.totalDisplay})` : ""}.${details.payBy ? ` Pay by ${details.payBy}.` : ""}`,
     full
       ? "• Once the payment arrives, your booking is confirmed and you'll get a message here."
-      : "• Once the deposit arrives, your booking is confirmed and you'll get a message here. The rest is paid at the property.",
-    details.holdUntil ? `• The rooms are held until ${details.holdUntil}; after that they may go to someone else.` : null,
+      : `• Once the deposit arrives, your booking is confirmed and you'll get a message here. The rest is paid ${details.slot ? "when you arrive" : "at the property"}.`,
+    details.holdUntil
+      ? `• ${details.slot ? "This time is" : "The rooms are"} held until ${details.holdUntil}; after that ${details.slot ? "it" : "they"} may go to someone else.`
+      : null,
     host ? `• Always check the address starts with ${host} before you pay.` : null,
   ].filter((line) => line !== null).join("\n");
 }

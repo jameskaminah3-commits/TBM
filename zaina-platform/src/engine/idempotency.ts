@@ -21,6 +21,8 @@ export const IDEMPOTENT_ZAINA_TOOLS = new Set([
   "create_listing_verification_request",
   // A room booking on the platform (the hospitality connector).
   "create_booking",
+  // A time slot on the platform (the appointments connector).
+  "create_appointment",
 ]);
 
 function canonicalize(value: unknown): unknown {

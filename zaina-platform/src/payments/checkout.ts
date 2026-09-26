@@ -21,7 +21,7 @@ import { randomBytes } from "node:crypto";
 import { and, eq, inArray, lt, sql } from "drizzle-orm";
 import { allBusinesses, businessById } from "../businesses/registry.ts";
 import { getSecret } from "../businesses/secrets.ts";
-import { offerings, payments, type Booking, type Business, type Payment } from "../db/schema.ts";
+import { offerings, payments, takesBookings, type Booking, type Business, type Payment } from "../db/schema.ts";
 import { inBusiness } from "../db/tenant.ts";
 import {
   bookingByPayToken,
@@ -358,7 +358,7 @@ export async function checkMpesaPayment(business: Business, payment: Payment): P
 export async function sweepPendingPayments(now = new Date()): Promise<number> {
   let settled = 0;
   for (const business of await allBusinesses()) {
-    if (business.businessType !== "guesthouse") continue;
+    if (!takesBookings(business.businessType)) continue;
     try {
       const pending = await inBusiness((db) => db.select().from(payments).where(and(
         eq(payments.businessId, business.id),

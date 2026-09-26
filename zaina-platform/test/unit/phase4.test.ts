@@ -117,7 +117,7 @@ test("the payment page escapes what customers typed, and shows only fixed messag
     businessName: "Coral <Cove>",
     offeringName: "Ocean \"double\"",
     booking: {
-      id: "b", businessId: "coral", reference: "K7Q2MPXA", offeringId: "o", checkIn: "2026-10-26", checkOut: "2026-10-28", units: 1, guests: 2,
+      id: "b", businessId: "coral", reference: "K7Q2MPXA", offeringId: "o", checkIn: "2026-10-26", checkOut: "2026-10-28", units: 1, guests: 2, startsAt: null, endsAt: null, busyUntil: null, resourceId: null,
       status: "held", holdExpiresAt: new Date(Date.now() + 600_000), customerName: "<script>alert(1)</script>", customerEmail: null, customerPhone: "0712345678",
       customerNotes: null, quote: { lines: [{ label: "2 nights", amount: 1800000, display: "KSh 18,000", kind: "rooms" }], deposit_percent: 30 } as never,
       currency: "KES", totalMinor: 1800000, depositMinor: 540000, paidMinor: 0, payToken: "t".repeat(24), source: "chat", sessionId: null, idempotencyKey: null,
@@ -148,7 +148,7 @@ test("the payment page offers the business's ways to pay in its order, within it
   const view = (order: PaymentWay[], maxMinor: Partial<Record<PaymentWay, number>>) => renderPayPage({
     businessName: "Coral Cove", offeringName: "Ocean double",
     booking: {
-      id: "b", businessId: "coral", reference: "K7Q2MPXA", offeringId: "o", checkIn: "2026-10-26", checkOut: "2026-10-28", units: 1, guests: 2,
+      id: "b", businessId: "coral", reference: "K7Q2MPXA", offeringId: "o", checkIn: "2026-10-26", checkOut: "2026-10-28", units: 1, guests: 2, startsAt: null, endsAt: null, busyUntil: null, resourceId: null,
       status: "held", holdExpiresAt: new Date(Date.now() + 600_000), customerName: "Jane", customerEmail: "jane@example.com", customerPhone: "0712345678",
       customerNotes: null, quote: { lines: [], deposit_rule: "fixed", deposit_percent: null } as never,
       currency: "KES", totalMinor: 1800000, depositMinor: 500000, paidMinor: 0, payToken: "t".repeat(24), source: "chat", sessionId: null, idempotencyKey: null,

@@ -31,6 +31,7 @@ import { registerPlatformRoutes } from "./platform/routes.ts";
 import { registerStaffAccountRoutes } from "./staff/routes.ts";
 import { expireHolds } from "./booking/bookings.ts";
 import { configureBookingNotices } from "./booking/notices.ts";
+import { registerSlotRoutes } from "./booking/slot-routes.ts";
 import { registerBookingRoutes } from "./booking/staff-routes.ts";
 import { configurePayments, sweepPendingPayments } from "./payments/checkout.ts";
 import { PAYMENT_WEBHOOK_PATH, registerPaymentRoutes } from "./payments/routes.ts";
@@ -93,6 +94,7 @@ export function createApp(config: PlatformConfig, engine: EngineOptions, whatsap
   registerPlatformRoutes(app, config);
   registerWhatsappRoutes(app, config, whatsapp);
   registerBookingRoutes(app, config);
+  registerSlotRoutes(app, config);
   registerPaymentRoutes(app, config);
   registerConsoleRoutes(app, config);
 

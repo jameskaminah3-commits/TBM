@@ -36,9 +36,13 @@ function mentionsWord(text: string, word: string): boolean {
   return new RegExp(`(^|[^\\p{L}])${escaped}($|[^\\p{L}])`, "u").test(text);
 }
 
-/** Phone numbers in a piece of text, as written ("0712 345 678"). */
+/**
+ * Phone numbers in a piece of text, as written ("0712 345 678"). A space or
+ * dot joins digits only when more digits follow it, so the end of a sentence
+ * ("call 0712345678. 2pm works") doesn't run into the next number.
+ */
 export function phoneNumbersWritten(text: string): string[] {
-  return (text.match(/\+?\d[\d\s().-]{5,}\d/g) ?? [])
+  return (text.match(/\+?\d(?:[\d()-]|[\s.](?=[\d(]))+\d/g) ?? [])
     .map((number) => number.trim())
     .filter((number) => number.replace(/\D/g, "").length >= 7);
 }
