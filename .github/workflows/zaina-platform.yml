@@ -1,0 +1,89 @@
+# The Zaina Platform (zaina-platform/): type checks, unit, database and
+# end-to-end tests, and the production build, on every push and pull request
+# that touches it. TBM's own app isn't built or deployed here.
+#
+# The tests use a throwaway Postgres 16 in the job (no secrets, no real
+# data): zaina_platform_test is wiped and migrated by the tests; tbm_test gets
+# TBM's schema from drizzle-kit, and the tests seed it themselves.
+
+name: Zaina Platform
+
+on:
+  push:
+    paths:
+      - "zaina-platform/**"
+      - "shared/**"
+      - "server/**"
+      - "package.json"
+      - "package-lock.json"
+      - "drizzle.config.ts"
+      - ".github/workflows/zaina-platform.yml"
+  pull_request:
+    paths:
+      - "zaina-platform/**"
+      - "shared/**"
+      - "server/**"
+      - "package.json"
+      - "package-lock.json"
+      - "drizzle.config.ts"
+      - ".github/workflows/zaina-platform.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zaina-platform-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          # Local to the job's container and gone when it ends: nothing to protect.
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PLATFORM_TEST_DATABASE_URL: postgres://postgres@127.0.0.1:5432/zaina_platform_test
+      TBM_TEST_DATABASE_URL: postgres://postgres@127.0.0.1:5432/tbm_test
+      TZ: UTC
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Test databases
+        run: |
+          psql -h 127.0.0.1 -U postgres -v ON_ERROR_STOP=1 -c "create database zaina_platform_test" -c "create database tbm_test"
+          DATABASE_URL="$TBM_TEST_DATABASE_URL" npx drizzle-kit push --force
+
+      - name: Type check
+        run: npm run check --prefix zaina-platform
+
+      - name: Unit tests
+        run: npm test --prefix zaina-platform
+
+      - name: Database tests
+        run: npm run test:db --prefix zaina-platform
+
+      - name: End-to-end tests
+        run: npm run test:e2e --prefix zaina-platform
+
+      - name: Production build
+        run: npm run build --prefix zaina-platform
