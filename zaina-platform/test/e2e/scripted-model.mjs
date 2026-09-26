@@ -521,8 +521,8 @@ globalThis.fetch = async (input, init) => {
     // Simulated email provider: slow on purpose to expose blocking sends.
     await new Promise((resolve) => setTimeout(resolve, Number(process.env.FAKE_EMAIL_DELAY_MS || 0)));
     if (process.env.FAKE_EMAIL_LOG) {
-      const { subject, text } = JSON.parse(init?.body ?? "{}");
-      appendFileSync(process.env.FAKE_EMAIL_LOG, JSON.stringify({ at: new Date().toISOString(), subject, text }) + "\n");
+      const { subject, text, to } = JSON.parse(init?.body ?? "{}");
+      appendFileSync(process.env.FAKE_EMAIL_LOG, JSON.stringify({ at: new Date().toISOString(), to, subject, text }) + "\n");
     }
     return new Response(JSON.stringify({ id: "fake-email" }), { status: 200, headers: { "content-type": "application/json" } });
   }
