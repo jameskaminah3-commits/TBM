@@ -3,14 +3,17 @@
 // Builds the service:
 //   dist/server.js, dist/release.js   the service and its release step (Node;
 //                                     packages stay in node_modules)
-//   dist/public/widget.js             the website widget (one script tag per business)
-//   dist/public/console/              the business console (a single-page app)
+//   dist/public/widget.js             the website widget (one script tag per business; served
+//                                     as /zaina.js and /widget.js)
+//   dist/public/console/              the business console (a single-page app), with its PDF
+//                                     reader (pdf-reader.js and pdf.js's worker), loaded when needed
 //
 //   node zaina-platform/scripts/build.mjs [--web] [--outdir <dir>]
 //   --web builds the web assets only (tests and local development).
 
 import { build } from "esbuild";
 import { cpSync, mkdirSync, rmSync } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -52,6 +55,15 @@ async function buildWeb() {
     target: ["es2020", "safari14"],
     jsx: "automatic",
   });
+  // Reading PDFs in the browser (pdf.js): its own file, loaded only when someone picks a PDF.
+  await build({
+    ...common,
+    entryPoints: [path.join(PLATFORM, "web/console/pdf-reader.ts")],
+    outfile: path.join(publicDir, "console/pdf-reader.js"),
+    format: "esm",
+    target: ["es2020", "safari14"],
+  });
+  cpSync(createRequire(import.meta.url).resolve("pdfjs-dist/legacy/build/pdf.worker.min.mjs"), path.join(publicDir, "console/pdf.worker.min.mjs"));
   // The service worker (alerts on staff phones) is a classic script.
   await build({
     ...common,

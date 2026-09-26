@@ -9,24 +9,14 @@
 
 import { promises as dns } from "node:dns";
 import { isIP } from "node:net";
+import { privateAddress } from "../net/public-fetch.ts";
+
+export { privateAddress };
 
 const MAX_BYTES = 3 * 1024 * 1024;
 const MAX_REDIRECTS = 3;
 
 export class IcsFetchError extends Error {}
-
-/** Whether an IP address is on a network the platform must not reach. */
-export function privateAddress(address: string): boolean {
-  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address);
-  const ip = mapped ? mapped[1] : address;
-  if (isIP(ip) === 4) {
-    const [a, b] = ip.split(".").map(Number);
-    return a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254)
-      || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 192 && b === 0) || (a === 198 && (b === 18 || b === 19)) || a >= 224;
-  }
-  const lower = ip.toLowerCase();
-  return lower === "::" || lower === "::1" || lower.startsWith("fc") || lower.startsWith("fd") || lower.startsWith("fe8") || lower.startsWith("fe9") || lower.startsWith("fea") || lower.startsWith("feb") || lower.startsWith("ff");
-}
 
 /** A link a business typed, as an https URL, or why it can't be used. */
 export function icsUrl(input: string): URL {

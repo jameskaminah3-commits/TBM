@@ -167,7 +167,8 @@ textarea { resize: vertical; }
 .card > .button { justify-self: start; }
 .empty { padding: 32px 16px; text-align: center; color: var(--muted); display: grid; gap: 6px; }
 .empty-title { font-weight: 650; color: var(--text-2); }
-.table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; font-size: 14px; }
+/* Positioned, so hidden labels in its cells stay inside it when it scrolls sideways on a phone. */
+.table { position: relative; width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; font-size: 14px; }
 .table th, .table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .table th { font-size: 12.5px; color: var(--muted); font-weight: 600; background: var(--surface-2); }
 .table .number { text-align: right; font-variant-numeric: tabular-nums; }

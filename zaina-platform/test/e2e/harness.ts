@@ -30,7 +30,7 @@ export type Platform = {
   work: string;
   db: pg.Pool;
   output: () => string;
-  log: (name: "emails" | "model" | "whatsapp" | "push" | "paystack" | "mpesa" | "google") => any[];
+  log: (name: "emails" | "model" | "whatsapp" | "push" | "paystack" | "mpesa" | "google" | "website") => any[];
   /** Marks a Paystack transaction paid, as if the customer finished on Paystack's page. */
   payOnPaystack: (reference: string) => void;
   /** The fake Google's busy events per calendar ({ "<calendar id>": [event, …] }). */
@@ -39,6 +39,8 @@ export type Platform = {
   revokeGoogle: (refreshToken: string) => void;
   /** Publishes an iCal file at https://ical.example/<name>.ics. */
   publishIcs: (name: string, text: string) => void;
+  /** Publishes a website's file at https://<host>/<file> ("index.html" is "/", "rooms.html" is "/rooms", "robots.txt", "_redirects.json"). */
+  publishPage: (host: string, file: string, content: string | Buffer) => void;
   stop: () => Promise<void>;
   cli: (script: string, args: string[], env?: Record<string, string>) => void;
 };
@@ -61,10 +63,13 @@ export async function startPlatform(options: { port: number; env?: Record<string
     paystack: path.join(work, "paystack.log"),
     mpesa: path.join(work, "mpesa.log"),
     google: path.join(work, "google.log"),
+    website: path.join(work, "website.log"),
   };
   const googleEvents = path.join(work, "google-events.json");
   const googleRevoked = path.join(work, "google-revoked.txt");
   const icsDir = path.join(work, "ics");
+  const websiteDir = path.join(work, "websites");
+  mkdirSync(websiteDir);
   writeFileSync(googleEvents, "{}");
   writeFileSync(googleRevoked, "");
   mkdirSync(icsDir);
@@ -104,6 +109,8 @@ export async function startPlatform(options: { port: number; env?: Record<string
       FAKE_GOOGLE_EVENTS: googleEvents,
       FAKE_GOOGLE_REVOKED: googleRevoked,
       FAKE_ICS_DIR: icsDir,
+      FAKE_WEBSITE_DIR: websiteDir,
+      FAKE_WEBSITE_LOG: logs.website,
       ...options.env,
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -131,6 +138,11 @@ export async function startPlatform(options: { port: number; env?: Record<string
     setGoogleEvents: (events) => writeFileSync(googleEvents, JSON.stringify(events)),
     revokeGoogle: (refreshToken) => appendFileSync(googleRevoked, `${refreshToken}\n`),
     publishIcs: (name, text) => writeFileSync(path.join(icsDir, `${name}.ics`), text),
+    publishPage: (host, file, content) => {
+      const target = path.join(websiteDir, host, file);
+      mkdirSync(path.dirname(target), { recursive: true });
+      writeFileSync(target, content);
+    },
     cli: (script, args, env = {}) => {
       const run = spawnSync(process.execPath, ["--import", "tsx", `zaina-platform/src/cli/${script}`, ...args], {
         cwd: REPO,

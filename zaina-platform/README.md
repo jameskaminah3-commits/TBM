@@ -496,6 +496,7 @@ Per business, under `/v1/staff/businesses/:businessId/` (least role needed):
 | `GET knowledge`, `GET knowledge/:sourceId`, `POST knowledge/search` (`{ query }`: what Zaina would find) | viewer |
 | `GET knowledge/misses?days=30` (questions nothing answered) | agent |
 | `POST knowledge` (`{ title, kind?, url?, language?, content \| faqs, status? }`, replaces a source with the same title), `PUT knowledge/:sourceId`, `DELETE knowledge/:sourceId` | manager |
+| `POST knowledge/import-website` (`{ url, max_pages? (10, at most 25), status? }`: the site's pages as sources, ten reads an hour per business) | manager |
 
 A business someone doesn't work for answers "not found", as if it didn't
 exist. A knowledge save answers with the passages it made and how many
@@ -505,8 +506,25 @@ amounts it hides from Zaina.
 (`title`, `kind`: page, faq, policy, guide, menu or document, `url`,
 `language`: en or sw), or an FAQ list (`[{ question, answer }]`). The import
 command also reads a folder of such files or fetches a web page
-(`--url https://…`); PDFs are converted to text first (for example with
-`pdftotext`).
+(`--url https://…`).
+
+**From the business's website and PDFs.** In the console (Knowledge →
+Read your website), the platform reads the home page and the pages it links
+to on the same site, most useful first (rooms, menu, services, FAQs,
+policies, contact), up to 25: only pages robots.txt allows, only HTML, each
+page's readable text; pages that need JavaScript to show text are skipped
+and listed. Each page becomes a source (its kind guessed: menu, faq, policy
+or page), never replacing one the team wrote; reading again updates the same
+sources. Every address is read through `net/public-fetch.ts`: https only,
+and each address a name resolves to must be public, checked when the
+connection is made (so a name can't point somewhere private between a check
+and the request), redirects checked the same way, 2 MB a page. A PDF (or a
+.txt or .md file) is read in the browser by pdf.js, loaded only then from
+its own file (`console/pdf-reader.js` and its worker): the team checks the
+text and saves it like any document, and the file never reaches the server.
+Scanned PDFs (pictures of text) have no text to read: the console says so.
+Amounts in any document are hidden from Zaina: prices and availability come
+from the rooms, services and price list.
 
 Platform admins: `GET /v1/platform/businesses`, and `POST /v1/platform/businesses`
 with `{ id, name, allowed_origins, business_type?, time_zone?, daily_token_cap?,

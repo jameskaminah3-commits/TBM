@@ -2,18 +2,50 @@
 //
 // What Zaina knows about the business: its documents (pages, FAQs,
 // policies…), a way to check what Zaina would find for a question, and the
-// questions customers asked that nothing answered.
+// questions customers asked that nothing answered. Documents come from
+// typing, from the business's website (read by the platform), or from a PDF
+// or text file (read here, in the browser: the file itself is never sent).
 
-import { useState } from "react";
-import { api, businessPath } from "../api.ts";
+import { useRef, useState } from "react";
+import { api, ApiError, businessPath } from "../api.ts";
 import { timeAgo } from "../format.ts";
 import { atLeast, type KnowledgeSourceRow, type Role } from "../types.ts";
 import { Button, Empty, ErrorLine, Field, Icon, Message, Modal, Tabs, useAction, useLoad } from "../ui.tsx";
 
 type Passage = { sourceId: string; title: string; url: string | null; kind: string; section: string | null; text: string; relevance: number };
 type Source = { id: string; title: string; kind: string; url: string | null; language: "en" | "sw"; content: string; status: "published" | "draft" };
+/** A new document to review before saving: from a PDF or a text file. */
+type Draft = { draft: Pick<Source, "title" | "kind" | "content">; note: string | null };
+type WebsiteImport = {
+  site: string;
+  pages: Array<{ url: string; source: { title: string; kind: string; status: string }; passages: number; hidden_amounts: number; unchanged: boolean }>;
+  skipped: Array<{ url: string; reason: string }>;
+  description: string | null;
+};
 
 const KINDS = ["page", "faq", "policy", "guide", "menu", "document"];
+const MAX_FILE_BYTES = 20 * 1024 * 1024;
+
+/** The kind a file probably is, from its name. */
+function kindOfFile(name: string): string {
+  const words = name.toLowerCase();
+  if (/menu|food|drink|wine/.test(words)) return "menu";
+  if (/faq|question/.test(words)) return "faq";
+  if (/polic|terms|rules|condition|cancel/.test(words)) return "policy";
+  return "document";
+}
+
+/** A PDF's or text file's text, read in this browser. */
+async function readFile(file: File): Promise<{ text: string; note: string | null }> {
+  if (file.size > MAX_FILE_BYTES) throw new Error("That file is over 20 MB. Split it, or copy the text in.");
+  if (/\.(txt|md|markdown)$/i.test(file.name) || file.type.startsWith("text/")) return { text: (await file.text()).trim(), note: null };
+  if (!/\.pdf$/i.test(file.name) && file.type !== "application/pdf") throw new Error("Choose a PDF, or a .txt or .md file.");
+  // pdf.js is only loaded now, from its own file beside the console.
+  const reader = await import(/* @vite-ignore */ new URL("./pdf-reader.js", import.meta.url).href) as { readPdf(data: ArrayBuffer): Promise<{ pages: number; read: number; text: string }> };
+  const result = await reader.readPdf(await file.arrayBuffer());
+  const note = result.read < result.pages ? `Only the first ${result.read} of ${result.pages} pages were read.` : null;
+  return { text: result.text, note };
+}
 
 export function KnowledgePage(props: { businessId: string; role: Role }) {
   const [tab, setTab] = useState<"sources" | "check" | "missed">("sources");
@@ -43,13 +75,42 @@ export function KnowledgePage(props: { businessId: string; role: Role }) {
 
 function Sources(props: { businessId: string; canEdit: boolean }) {
   const sources = useLoad(() => api<{ sources: KnowledgeSourceRow[] }>("GET", businessPath(props.businessId, "/knowledge")), [props.businessId]);
-  const [editing, setEditing] = useState<Source | "new" | null>(null);
+  const [editing, setEditing] = useState<Source | "new" | Draft | null>(null);
+  const [website, setWebsite] = useState(false);
   const action = useAction();
+  const fileInput = useRef<HTMLInputElement>(null);
+  const chooseFile = (file: File | undefined) => {
+    if (!file) return;
+    void action.run(async () => {
+      let read: { text: string; note: string | null };
+      try {
+        read = await readFile(file);
+      } catch (problem) {
+        throw new ApiError(400, "unreadable", problem instanceof Error && problem.message && !/pdf|worker|fetch/i.test(problem.message) ? problem.message : "That file couldn't be read. If it's a PDF, try saving it again from its app, or copy the text in.");
+      }
+      if (!read.text) throw new ApiError(400, "no_text", "No text was found in that file: it's probably a scanned picture. Type or paste its text instead.");
+      const title = file.name.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ").trim().slice(0, 200) || "Document";
+      setEditing({ draft: { title, kind: kindOfFile(file.name), content: read.text.slice(0, 200_000) }, note: read.note });
+    });
+  };
   return (
     <section>
       {props.canEdit ? (
         <div className="toolbar">
           <Button kind="primary" onClick={() => setEditing("new")}><Icon name="plus" size={15} /> Add a document</Button>
+          <Button onClick={() => setWebsite(true)}>Read your website</Button>
+          <Button busy={action.busy} onClick={() => fileInput.current?.click()}>Add from a PDF</Button>
+          <input
+            ref={fileInput}
+            type="file"
+            accept="application/pdf,.pdf,.txt,.md,text/plain,text/markdown"
+            className="visually-hidden"
+            aria-label="A PDF or text file"
+            onChange={(event) => {
+              chooseFile(event.target.files?.[0]);
+              event.target.value = "";
+            }}
+          />
         </div>
       ) : null}
       <ErrorLine error={sources.error} />
@@ -93,10 +154,18 @@ function Sources(props: { businessId: string; canEdit: boolean }) {
           </tbody>
         </table>
       ) : null}
+      {website ? (
+        <ReadWebsite
+          businessId={props.businessId}
+          onClose={() => setWebsite(false)}
+          onRead={async () => { await sources.reload(); }}
+        />
+      ) : null}
       {editing ? (
         <SourceEditor
           businessId={props.businessId}
-          source={editing === "new" ? null : editing}
+          source={editing === "new" || "draft" in editing ? null : editing}
+          draft={editing !== "new" && "draft" in editing ? editing : null}
           onClose={() => setEditing(null)}
           onSaved={async (text) => {
             setEditing(null);
@@ -109,16 +178,17 @@ function Sources(props: { businessId: string; canEdit: boolean }) {
   );
 }
 
-function SourceEditor(props: { businessId: string; source: Source | null; onClose: () => void; onSaved: (message: string) => void }) {
-  const [title, setTitle] = useState(props.source?.title ?? "");
-  const [kind, setKind] = useState(props.source?.kind ?? "page");
+function SourceEditor(props: { businessId: string; source: Source | null; draft: Draft | null; onClose: () => void; onSaved: (message: string) => void }) {
+  const start = props.source ?? props.draft?.draft ?? null;
+  const [title, setTitle] = useState(start?.title ?? "");
+  const [kind, setKind] = useState(start?.kind ?? "page");
   const [url, setUrl] = useState(props.source?.url ?? "");
   const [language, setLanguage] = useState<"en" | "sw">(props.source?.language ?? "en");
-  const [content, setContent] = useState(props.source?.content ?? "");
+  const [content, setContent] = useState(start?.content ?? "");
   const [status, setStatus] = useState<"published" | "draft">(props.source?.status ?? "published");
   const action = useAction();
   return (
-    <Modal title={props.source ? `Edit "${props.source.title}"` : "Add a document"} onClose={props.onClose}>
+    <Modal title={props.source ? `Edit "${props.source.title}"` : props.draft ? "Check the text, then save" : "Add a document"} onClose={props.onClose}>
       <form
         className="form"
         onSubmit={async (event) => {
@@ -135,6 +205,7 @@ function SourceEditor(props: { businessId: string; source: Source | null; onClos
           });
         }}
       >
+        {props.draft ? <p className="muted small">This is the text found in the file{props.draft.note ? ` (${props.draft.note})` : ""}. Tidy anything that came out jumbled, such as tables. Prices are hidden from Zaina: keep them in your rooms, services or price list.</p> : null}
         <Field label="Title"><input required maxLength={200} value={title} onChange={(event) => setTitle(event.target.value)} /></Field>
         <div className="form-row">
           <Field label="Kind">
@@ -165,6 +236,75 @@ function SourceEditor(props: { businessId: string; source: Source | null; onClos
           <Button kind="primary" type="submit" busy={action.busy}>Save</Button>
         </div>
       </form>
+    </Modal>
+  );
+}
+
+function ReadWebsite(props: { businessId: string; onClose: () => void; onRead: () => Promise<void> }) {
+  const settings = useLoad(() => api<{ settings: { websiteUrl: string | null } }>("GET", businessPath(props.businessId, "/settings")), [props.businessId]);
+  const [address, setAddress] = useState<string | null>(null);
+  const [pages, setPages] = useState("10");
+  const [status, setStatus] = useState<"published" | "draft">("published");
+  const [result, setResult] = useState<WebsiteImport | null>(null);
+  const action = useAction();
+  const value = address ?? settings.data?.settings.websiteUrl ?? "";
+  return (
+    <Modal title="Read your website" onClose={props.onClose}>
+      {result ? (
+        <div className="stack-tight">
+          <p>Read <strong>{result.site}</strong>: {result.pages.length} page{result.pages.length === 1 ? "" : "s"} saved{status === "draft" ? " as drafts" : ", and Zaina answers from them now"}.</p>
+          <ul className="plain-list">
+            {result.pages.map((page) => (
+              <li key={page.url}>
+                <strong>{page.source.title}</strong> <span className="muted small">({page.source.kind}{page.unchanged ? ", unchanged" : `, ${page.passages} passage${page.passages === 1 ? "" : "s"}`}{page.hidden_amounts ? `, ${page.hidden_amounts} price${page.hidden_amounts === 1 ? "" : "s"} hidden from Zaina` : ""})</span>
+              </li>
+            ))}
+          </ul>
+          {result.skipped.length ? (
+            <details>
+              <summary className="muted small">{result.skipped.length} page{result.skipped.length === 1 ? "" : "s"} not read</summary>
+              <ul className="plain-list small">{result.skipped.map((entry) => <li key={entry.url}><span className="ellipsis">{entry.url}</span>: {entry.reason}</li>)}</ul>
+            </details>
+          ) : null}
+          <p className="muted small">Check the pages under Documents: edit or delete anything out of date. Read the website again after you change it.</p>
+          <div className="actions"><Button kind="primary" onClick={props.onClose}>Done</Button></div>
+        </div>
+      ) : (
+        <form
+          className="form"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            await action.run(async () => {
+              setResult(await api<WebsiteImport>("POST", businessPath(props.businessId, "/knowledge/import-website"), { url: value.trim(), max_pages: Number(pages), status }));
+              await props.onRead();
+            });
+          }}
+        >
+          <p className="muted">Zaina reads your home page and the pages it links to (rooms, menu, services, FAQs, policies, contact), and keeps each as a document. Prices on the pages are hidden from Zaina: they come from your rooms, services and price list.</p>
+          <Field label="Your website"><input required placeholder="https://www.example.co.ke" value={value} onChange={(event) => setAddress(event.target.value)} /></Field>
+          <div className="form-row">
+            <Field label="Pages to read">
+              <select value={pages} onChange={(event) => setPages(event.target.value)}>
+                <option value="5">Up to 5</option>
+                <option value="10">Up to 10</option>
+                <option value="25">Up to 25</option>
+              </select>
+            </Field>
+            <Field label="Status">
+              <select value={status} onChange={(event) => setStatus(event.target.value as "published" | "draft")}>
+                <option value="published">Published (Zaina uses them now)</option>
+                <option value="draft">Drafts (I'll check them first)</option>
+              </select>
+            </Field>
+          </div>
+          {action.busy ? <p className="muted small" aria-live="polite">Reading your website: this can take up to a minute…</p> : null}
+          <Message message={action.message} />
+          <div className="actions">
+            <Button onClick={props.onClose}>Cancel</Button>
+            <Button kind="primary" type="submit" busy={action.busy}>Read my website</Button>
+          </div>
+        </form>
+      )}
     </Modal>
   );
 }

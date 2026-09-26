@@ -9,11 +9,17 @@
 //   POST   …/knowledge { title, kind?, url?, language?, content | faqs, status? }   manager   add, or replace by title
 //   PUT    …/knowledge/:sourceId { … }                             manager  change
 //   DELETE …/knowledge/:sourceId                                   manager  remove
+//   POST   …/knowledge/import-website { url, max_pages?, status? }  manager  read the business's website
+//                                                                  (website.ts): a source per page with text
 //
 // A save answers with how many passages it made and how many amounts it
-// hides from Zaina (prices belong in the booking system, not in documents).
+// hides from Zaina (prices belong in the booking system and the price list,
+// not in documents). A PDF is read in the console, in the browser, and saved
+// as text like any other source.
 
 import express, { type Express, type NextFunction, type Request, type Response } from "express";
+import { consumeLimits } from "../gateway/rate-limit.ts";
+import { PublicFetchError } from "../net/public-fetch.ts";
 import { requireBusinessRole, requireStaff, staffOf } from "../staff/auth.ts";
 import { faqToMarkdown } from "./import.ts";
 import { searchKnowledge } from "./search.ts";
@@ -22,10 +28,12 @@ import {
   getKnowledgeSource,
   listKnowledgeMisses,
   listKnowledgeSources,
+  MAX_KNOWLEDGE_CHARS,
   saveKnowledgeSource,
   validateKnowledgeInput,
   type SaveResult,
 } from "./store.ts";
+import { kindOfPage, MAX_WEBSITE_PAGES, pageTitles, readWebsite } from "./website.ts";
 
 /** Knowledge routes take bigger bodies than the rest of the API. */
 export const KNOWLEDGE_PATH = /^\/v1\/staff\/businesses\/[^/]+\/knowledge(?:\/|$)/;
@@ -102,6 +110,52 @@ export function registerKnowledgeRoutes(app: Express, secret: string): void {
       const { business, user } = staffOf(req);
       const result = await saveKnowledgeSource(business!.id, checked.value, user.id);
       res.json(saved(result!));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post(`${base}/import-website`, knowledgeBody, staff, requireBusinessRole("manager"), async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { business, user } = staffOf(req);
+      const address = typeof req.body?.url === "string" ? req.body.url.trim() : "";
+      if (!address || address.length > 500) return res.status(400).json({ error: "url_required", message: "Your website's address, please." });
+      const maxPages = Number.isInteger(req.body?.max_pages) ? Math.min(Math.max(req.body.max_pages, 1), MAX_WEBSITE_PAGES) : 10;
+      const status = req.body?.status === "draft" ? "draft" : "published";
+      const verdict = await consumeLimits([
+        { key: `website-import:business:${business!.id}`, limit: 10, windowSeconds: 3600 },
+        { key: "website-import:all", limit: 300, windowSeconds: 3600 },
+      ]);
+      if (!verdict.allowed) {
+        res.setHeader("Retry-After", String(verdict.retryAfterSeconds));
+        return res.status(429).json({ error: "rate_limited", message: "The website was read several times this hour. Please try again later." });
+      }
+      let read;
+      try {
+        read = await readWebsite(address, { maxPages });
+      } catch (error) {
+        if (error instanceof PublicFetchError) return res.status(400).json({ error: "website_unreadable", message: `The website couldn't be read: ${error.message}` });
+        throw error;
+      }
+      // A page never replaces a source the team wrote (same title, not from this page): it takes a title of its own.
+      const existing = new Map((await listKnowledgeSources(business!.id)).map((source) => [source.title, source.url]));
+      const titles = pageTitles(read.pages).map((title, index) => {
+        const url = read.pages[index].url;
+        if (!existing.has(title) || existing.get(title) === url) return title;
+        let own = `${title.slice(0, 185)} (website)`;
+        for (let n = 2; existing.has(own) && existing.get(own) !== url; n += 1) own = `${title.slice(0, 180)} (website ${n})`;
+        return own;
+      });
+      const pages = [];
+      for (const [index, page] of read.pages.entries()) {
+        const checked = validateKnowledgeInput({ title: titles[index], kind: kindOfPage(page), url: page.url, content: page.text.slice(0, MAX_KNOWLEDGE_CHARS), status });
+        if (!checked.ok) {
+          read.skipped.push({ url: page.url, reason: checked.error });
+          continue;
+        }
+        pages.push({ ...saved((await saveKnowledgeSource(business!.id, checked.value, user.id))!), url: page.url });
+      }
+      res.json({ site: read.site, pages, skipped: read.skipped, description: read.pages[0]?.description ?? null });
     } catch (error) {
       next(error);
     }

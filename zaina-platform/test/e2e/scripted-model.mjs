@@ -16,8 +16,11 @@
 // number, its own payment steps) so the server-side reply policy is tested.
 // Token counts are estimated at four characters each, so telemetry has
 // numbers to add up.
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import dns from "node:dns";
+import { EventEmitter } from "node:events";
+import https from "node:https";
+import { Readable } from "node:stream";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 
@@ -494,6 +497,45 @@ dns.promises.lookup = async (hostname, options) => {
     return options?.all ? [{ address, family: 4 }] : { address, family: 4 };
   }
   return realLookup(hostname, options);
+};
+
+// ── Websites at https://<name>.example/… (knowledge from a business's website) ──
+// Read through node:https (net/public-fetch.ts), so that is what's replaced
+// here. Each page is a file under FAKE_WEBSITE_DIR/<host>/: "/" is
+// index.html, "/rooms" is rooms.html (or rooms/index.html), robots.txt is
+// itself, and a file ending in .gz is sent gzip-compressed. _redirects.json
+// maps a path to where it redirects. The platform's own lookup runs first,
+// on the names above, so private.example is refused as a real one would be.
+const realHttpsRequest = https.request;
+https.request = function request(url, options, callback) {
+  if (!(url instanceof URL) || !url.hostname.endsWith(".example") || !process.env.FAKE_WEBSITE_DIR) return realHttpsRequest.apply(this, arguments);
+  const sent = new EventEmitter();
+  const respond = () => {
+    const dir = path.join(process.env.FAKE_WEBSITE_DIR, url.hostname);
+    const redirects = existsSync(path.join(dir, "_redirects.json")) ? JSON.parse(readFileSync(path.join(dir, "_redirects.json"), "utf8")) : {};
+    const reply = (status, headers, body) => {
+      const response = Readable.from(body ? [body] : []);
+      response.statusCode = status;
+      response.headers = headers;
+      if (process.env.FAKE_WEBSITE_LOG) appendFileSync(process.env.FAKE_WEBSITE_LOG, JSON.stringify({ at: new Date().toISOString(), url: url.toString(), status }) + "\n");
+      callback(response);
+    };
+    if (redirects[url.pathname]) return reply(301, { location: redirects[url.pathname] }, null);
+    const name = url.pathname === "/" ? "index.html" : url.pathname.replace(/^\/+|\/+$/g, "");
+    const candidates = [name, `${name}.html`, `${name}/index.html`, `${name}.html.gz`];
+    const file = candidates.map((candidate) => path.join(dir, candidate)).find((candidate) => candidate.startsWith(dir) && existsSync(candidate) && statSync(candidate).isFile());
+    if (!file) return reply(404, { "content-type": "text/html" }, Buffer.from("<html><body>Not found</body></html>"));
+    const type = file.endsWith(".txt") ? "text/plain" : "text/html; charset=utf-8";
+    return reply(200, { "content-type": type, ...(file.endsWith(".gz") ? { "content-encoding": "gzip" } : {}) }, readFileSync(file));
+  };
+  sent.end = () => {
+    const lookup = options?.lookup;
+    if (lookup) lookup(url.hostname, { all: true }, (error) => (error ? sent.emit("error", error) : respond()));
+    else respond();
+    return sent;
+  };
+  sent.destroy = () => sent;
+  return sent;
 };
 
 globalThis.fetch = async (input, init) => {
