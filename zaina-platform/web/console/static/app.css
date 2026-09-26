@@ -361,3 +361,26 @@ table.lines tr.total th, table.lines tr.total td { font-weight: 700; border-top:
 @media (max-width: 560px) { .week-day { grid-template-columns: 1fr; } }
 .danger-text { color: var(--danger); }
 .sources li { align-items: flex-start; }
+
+/* Setting up (Phase 5): progress, the checklist, and trying Zaina. */
+.progress { height: 8px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.progress > span { display: block; height: 100%; background: var(--brand); border-radius: 999px; transition: width .3s; }
+.steps-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.step { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.step-mark { width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; border: 2px solid var(--line-strong); color: var(--text-2); }
+.step.done .step-mark { background: var(--success-soft); border-color: var(--success); color: var(--success); }
+.step-body p { margin: 4px 0 0; }
+.step-body .chip { margin-left: 8px; }
+.try-chat { display: grid; gap: 8px; }
+.try-lines { display: grid; gap: 8px; max-height: 420px; overflow-y: auto; padding: 8px; border: 1px solid var(--line); border-radius: 10px; }
+.bubble { margin: 0; padding: 8px 12px; border-radius: 12px; max-width: 85%; white-space: pre-wrap; overflow-wrap: anywhere; }
+.bubble.you { justify-self: end; background: var(--brand); color: var(--brand-ink); }
+.bubble.zaina { justify-self: start; background: var(--surface-2, var(--line)); }
+.bubble.note { justify-self: center; font-size: 13px; color: var(--muted); }
+.try-input { display: flex; gap: 8px; }
+.try-input input { flex: 1; min-width: 0; }
+.signin-card.wide { max-width: 480px; }
+@media (max-width: 560px) { .step { grid-template-columns: 28px minmax(0, 1fr); } .step > .button { grid-column: 2; justify-self: start; } }
+/* A plain checkbox with its label (the switch-style .toggle hides the box). */
+.check { display: inline-flex; align-items: flex-start; gap: 8px; cursor: pointer; font-size: 14px; }
+.check input { width: 18px; height: 18px; margin: 1px 0 0; flex: none; accent-color: var(--brand); }

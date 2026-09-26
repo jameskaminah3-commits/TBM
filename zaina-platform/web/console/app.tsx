@@ -18,6 +18,8 @@ import { RoomsPage } from "./pages/rooms.tsx";
 import { ServicesPage } from "./pages/services.tsx";
 import { SettingsPage } from "./pages/settings.tsx";
 import { TeamPage } from "./pages/team.tsx";
+import { ResendLink, SignUp, type SignupConfig } from "./pages/signup.tsx";
+import { SetupPage } from "./pages/setup.tsx";
 import { alertsSupported, currentSubscription, turnAlertsOff, turnAlertsOn } from "./push.ts";
 import { atLeast, type Me, type Role } from "./types.ts";
 import { Button, Field, Icon, Message, Modal, Toggle, useAction, useEvery, useLoad } from "./ui.tsx";
@@ -71,22 +73,41 @@ export function App() {
   return <Console me={me} route={route} reloadMe={loadMe} />;
 }
 
+const CONFIRMED: Record<string, { kind: "success" | "error"; text: string }> = {
+  yes: { kind: "success", text: "Your email is confirmed. Sign in to set up your business." },
+  expired: { kind: "error", text: "That link has expired or was already replaced. Sign in to ask for a new one." },
+};
+
 function SignIn(props: { onSignedIn: () => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [unconfirmed, setUnconfirmed] = useState(false);
+  const [signingUp, setSigningUp] = useState(false);
+  const signup = useLoad(() => api<SignupConfig>("GET", "/v1/signup/config").catch(() => ({ open: false, business_types: [] })), []);
+  const confirmed = CONFIRMED[new URLSearchParams(location.search).get("confirmed") ?? ""] ?? null;
   const action = useAction();
+  if (signingUp && signup.data?.open) return <SignUp config={signup.data} onBack={() => setSigningUp(false)} />;
   return (
     <main className="signin">
       <form
         className="signin-card"
         onSubmit={async (event) => {
           event.preventDefault();
-          if (await action.run(() => api("POST", "/v1/console/session", { email, password }))) props.onSignedIn();
+          setUnconfirmed(false);
+          if (await action.run(async () => {
+            try {
+              await api("POST", "/v1/console/session", { email, password });
+            } catch (problem) {
+              if (problem instanceof ApiError && problem.code === "email_not_confirmed") setUnconfirmed(true);
+              throw problem;
+            }
+          })) props.onSignedIn();
         }}
       >
         <div className="brand-mark" aria-hidden="true">Z</div>
         <h1>Sign in to Zaina</h1>
         <p className="muted">Your business's chats, knowledge and reports.</p>
+        {confirmed && !action.message ? <Message message={confirmed} /> : null}
         <Field label="Email">
           <input type="email" autoComplete="username" required value={email} onChange={(event) => setEmail(event.target.value)} />
         </Field>
@@ -94,13 +115,17 @@ function SignIn(props: { onSignedIn: () => void }) {
           <input type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} />
         </Field>
         <Message message={action.message} />
+        {unconfirmed ? <ResendLink email={email} /> : null}
         <Button kind="primary" type="submit" busy={action.busy}>Sign in</Button>
+        {signup.data?.open ? <p className="muted small">New here? <button type="button" className="link" onClick={() => setSigningUp(true)}>Sign up your business</button></p> : null}
       </form>
     </main>
   );
 }
 
-const PAGES: Array<{ id: string; label: string; icon: string; minimum: Role; only?: string[] }> = [
+const PAGES: Array<{ id: string; label: string; icon: string; minimum: Role; only?: string[]; status?: string }> = [
+  // A business that signed up by itself, until it goes live (Phase 5).
+  { id: "setup", label: "Set up", icon: "check", minimum: "viewer", status: "onboarding" },
   { id: "inbox", label: "Inbox", icon: "inbox", minimum: "viewer" },
   // Bookings: a place to stay's rooms (Phase 4), a salon's services and a restaurant's tables (Phase 5).
   { id: "bookings", label: "Bookings", icon: "calendar", minimum: "viewer", only: ["guesthouse", "salon", "restaurant"] },
@@ -126,13 +151,15 @@ function Console(props: { me: Me; route: Route; reloadMe: () => Promise<void> })
   const page = route.page === "platform" ? "platform" : route.page;
   // The business's type decides some pages; a platform admin without a membership asks for it.
   const typeInfo = useLoad(
-    () => (membership?.businessType || !businessId || !role ? Promise.resolve(null) : api<{ business_type: string }>("GET", businessPath(businessId, "/operations"))),
+    () => (membership?.businessType || !businessId || !role ? Promise.resolve(null) : api<{ business_type: string; status: string }>("GET", businessPath(businessId, "/operations"))),
     [businessId, membership?.businessType, role],
   );
   const businessType = membership?.businessType ?? typeInfo.data?.business_type ?? null;
+  // A business still setting up opens on its setup page.
+  const businessStatus = membership?.businessStatus ?? typeInfo.data?.status ?? null;
 
   useEffect(() => {
-    if (!route.businessId && businessId && route.page !== "platform") go({ businessId, page: "inbox" });
+    if (!route.businessId && businessId && route.page !== "platform") go({ businessId, page: businessStatus === "onboarding" ? "setup" : "inbox" });
     if (!businessId && admin && route.page !== "platform") go({ businessId: null });
   }, [route.businessId, route.page, businessId, admin]);
 
@@ -173,10 +200,11 @@ function Console(props: { me: Me; route: Route; reloadMe: () => Promise<void> })
     );
   }
 
-  const visiblePages = role ? PAGES.filter((item) => atLeast(role, item.minimum) && (!item.only || item.only.includes(businessType ?? ""))) : [];
+  const visiblePages = role ? PAGES.filter((item) => atLeast(role, item.minimum) && (!item.only || item.only.includes(businessType ?? "")) && (!item.status || item.status === businessStatus)) : [];
   let content: JSX.Element;
   if (page === "platform" && admin) content = <PlatformPage />;
   else if (!businessId || !role) content = <div className="page"><p className="message error">You don't work for this business.</p></div>;
+  else if (page === "setup") content = <SetupPage businessId={businessId} role={role} onLive={() => void props.reloadMe()} />;
   else if (page === "bookings" && ["guesthouse", "salon", "restaurant"].includes(businessType ?? "")) content = <BookingsPage businessId={businessId} role={role} bookingId={route.id} businessType={businessType} />;
   else if (page === "services" && (businessType === "salon" || businessType === "restaurant") && atLeast(role, "manager")) content = <ServicesPage businessId={businessId} role={role} businessType={businessType} />;
   else if (page === "rooms" && businessType === "guesthouse" && atLeast(role, "manager")) content = <RoomsPage businessId={businessId} role={role} />;

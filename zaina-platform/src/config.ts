@@ -78,6 +78,9 @@ export type PlatformConfig = {
   google: { clientId: string; clientSecret: string } | null;
   /** Whether businesses can sign up by themselves (PLATFORM_SIGNUP=open); off until the platform team opens it. */
   signupOpen: boolean;
+  /** The platform's terms of service and privacy policy, linked from the sign-up form. */
+  termsUrl: string | null;
+  privacyUrl: string | null;
 };
 
 function required(env: NodeJS.ProcessEnv, name: string): string {
@@ -179,6 +182,19 @@ function googleConfig(env: NodeJS.ProcessEnv): { clientId: string; clientSecret:
   return { clientId, clientSecret };
 }
 
+/** An optional https address (a page of the platform's). */
+function httpsUrl(env: NodeJS.ProcessEnv, name: string): string | null {
+  const raw = env[name]?.trim();
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    if (url.protocol === "https:") return url.toString();
+  } catch {
+    // Reported below.
+  }
+  throw new Error(`${name} is an https:// address`);
+}
+
 /** PLATFORM_SIGNUP=open lets businesses sign up; it needs email (to confirm accounts) and the public address (for the links). */
 function signupOpen(env: NodeJS.ProcessEnv): boolean {
   const value = env.PLATFORM_SIGNUP?.trim().toLowerCase();
@@ -229,5 +245,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): PlatformConfig
     platformPaystackKey: platformPaystackKey(env),
     google: googleConfig(env),
     signupOpen: signupOpen(env),
+    termsUrl: httpsUrl(env, "PLATFORM_TERMS_URL"),
+    privacyUrl: httpsUrl(env, "PLATFORM_PRIVACY_URL"),
   };
 }

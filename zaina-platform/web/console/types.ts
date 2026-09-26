@@ -4,7 +4,7 @@ export type Role = "viewer" | "agent" | "manager" | "owner";
 export const ROLE_RANK: Record<Role, number> = { viewer: 1, agent: 2, manager: 3, owner: 4 };
 export const atLeast = (role: Role, minimum: Role) => ROLE_RANK[role] >= ROLE_RANK[minimum];
 
-export type Membership = { businessId: string; businessName: string; role: Role; businessType?: string };
+export type Membership = { businessId: string; businessName: string; role: Role; businessType?: string; businessStatus?: "onboarding" | "active" | "paused" };
 
 export type Me = {
   user: { id: string; email: string; name: string; is_platform_admin: boolean };

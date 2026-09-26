@@ -101,7 +101,7 @@ export function registerSignupRoutes(app: Express, config: PlatformConfig): void
   }
 
   app.get("/v1/signup/config", (_req: Request, res: Response) => {
-    res.json({ open: config.signupOpen, business_types: config.signupOpen ? SIGNUP_TYPES : [] });
+    res.json({ open: config.signupOpen, business_types: config.signupOpen ? SIGNUP_TYPES : [], terms_url: config.termsUrl, privacy_url: config.privacyUrl });
   });
 
   app.post("/v1/signup", async (req: Request, res: Response, next: NextFunction) => {

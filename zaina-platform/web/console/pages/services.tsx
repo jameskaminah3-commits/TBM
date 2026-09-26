@@ -211,7 +211,7 @@ function ServiceForm(props: { businessId: string; restaurant: boolean; currency:
           <fieldset className="checks">
             <legend>{props.restaurant ? "Tables it can use" : "Who can do it"} <span className="muted small">(none ticked: any that fits)</span></legend>
             {candidates.map((person) => (
-              <label key={person.id} className="toggle">
+              <label key={person.id} className="check">
                 <input type="checkbox" checked={who.includes(person.id)} onChange={(event) => setWho(event.target.checked ? [...who, person.id] : who.filter((id) => id !== person.id))} />
                 {person.name}
               </label>
