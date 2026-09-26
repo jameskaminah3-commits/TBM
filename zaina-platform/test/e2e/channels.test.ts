@@ -189,7 +189,11 @@ test("a WhatsApp customer's question gets Zaina's answer from Acme's knowledge, 
   assert.equal(chat.channel, "whatsapp");
   assert.equal(chat.customer_name, "Jane Wanjiru");
   assert.equal(chat.display_currency, "KES", "a Kenyan number sees shillings");
-  const outbound = (await platform.db.query("select * from whatsapp_outbound where session_id = $1", [chat.id])).rows;
+  // The send is recorded just after Meta accepts it.
+  const outbound = await eventually(async () => {
+    const rows = (await platform.db.query("select * from whatsapp_outbound where session_id = $1", [chat.id])).rows;
+    return rows.length > 0 && rows[0].status === "sent" && rows;
+  }, "the reply was recorded as sent");
   assert.equal(outbound.length, 1);
   assert.equal(outbound[0].status, "sent");
 
@@ -446,7 +450,7 @@ test("the console signs in with a cookie that page scripts can't read, and the c
   assert.equal(me.status, 200);
   const profile = (await me.json()) as any;
   assert.equal(profile.user.email, "wanjiku@example.com");
-  assert.deepEqual(profile.businesses, [{ businessId: "acme", businessName: "Acme Guesthouse", role: "agent", businessType: "guesthouse" }]);
+  assert.deepEqual(profile.businesses, [{ businessId: "acme", businessName: "Acme Guesthouse", role: "agent", businessType: "guesthouse", businessStatus: "active" }]);
   assert.equal(profile.push.public_key, vapid.publicKey);
   assert.equal(profile.push.devices, 1);
 

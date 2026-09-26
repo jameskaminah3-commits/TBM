@@ -23,7 +23,7 @@
 import type { Express, NextFunction, Request, Response } from "express";
 import { and, eq } from "drizzle-orm";
 import type { PlatformConfig } from "../config.ts";
-import { businessById } from "../businesses/registry.ts";
+import { anyBusinessById } from "../businesses/registry.ts";
 import { deleteSecret, getSecret, putSecret } from "../businesses/secrets.ts";
 import { booksTime, calendarConnections, calendarSources, type Business } from "../db/schema.ts";
 import { getStaffUser } from "../db/platform-scope.ts";
@@ -101,7 +101,7 @@ export function registerCalendarRoutes(app: Express, config: PlatformConfig): vo
       res.setHeader("X-Content-Type-Options", "nosniff");
       const token = FEED_PATH.exec(req.path)![1];
       const found = await feedForToken(token);
-      const business = found ? await businessById(found.businessId) : undefined;
+      const business = found ? await anyBusinessById(found.businessId) : undefined;
       if (!found || !business) return res.status(404).type("text/plain").send("Not found");
       const verdict = await consumeLimits([{ key: `calendar-feed:${found.feedId}`, limit: 120, windowSeconds: 3600 }]);
       if (!verdict.allowed) return res.status(429).type("text/plain").send("Too many requests");
@@ -129,7 +129,7 @@ export function registerCalendarRoutes(app: Express, config: PlatformConfig): vo
       if (!state) return back(null, "expired");
       if (typeof req.query.error === "string") return back(state.businessId, "declined");
       const code = typeof req.query.code === "string" ? req.query.code : "";
-      const [business, user] = await Promise.all([businessById(state.businessId), getStaffUser(state.userId)]);
+      const [business, user] = await Promise.all([anyBusinessById(state.businessId), getStaffUser(state.userId)]);
       if (!business || !user || user.disabledAt || !code) return back(null, "expired");
       const allowed = await roleIn(business.id, user);
       if (!allowed || ROLE_RANK[allowed] < ROLE_RANK.owner) return back(business.id, "forbidden");

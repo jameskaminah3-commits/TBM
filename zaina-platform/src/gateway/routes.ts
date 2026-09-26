@@ -15,7 +15,7 @@ import type { Express, NextFunction, Request, Response } from "express";
 import type { PlatformConfig } from "../config.ts";
 import type { Business } from "../db/schema.ts";
 import { runForBusiness } from "../db/tenant.ts";
-import { allowedOriginsFor, businessById, businessByPublicKey } from "../businesses/registry.ts";
+import { allowedOriginsFor, anyBusinessById, businessByPublicKey } from "../businesses/registry.ts";
 import { getBusinessSettings } from "../businesses/settings.ts";
 import { createSession, customerVisibleEvents, getSession, setDisplayCurrency } from "../conversations/store.ts";
 import { handleChatTurn, type EngineOptions } from "../engine/agent.ts";
@@ -41,19 +41,31 @@ export function registerGatewayRoutes(app: Express, config: PlatformConfig, engi
   const secret = config.sessionTokenSecret;
   const limits = config.rateLimits;
 
-  /** The business and session behind the request's token, or a refusal. */
+  const consoleOrigin = config.publicBaseUrl ? [config.publicBaseUrl] : [];
+
+  /**
+   * The business and session behind the request's token, or a refusal. A
+   * business's own team trying Zaina in the console (a preview chat) may do
+   * so before the business is live, from the console's own address.
+   */
   async function authorize(req: Request, res: Response): Promise<Authorized | null> {
     const claims = verifySessionToken(secret, bearerToken(req.header("authorization")));
     if (!claims) {
       refuse(res, 401, "invalid_session", "This chat has expired. Please start a new one.");
       return null;
     }
-    const business = await businessById(claims.businessId);
-    if (!business) {
+    const business = await anyBusinessById(claims.businessId);
+    const live = business?.status === "active";
+    const originAllowed = business ? isOriginAllowed(req.header("origin"), allowedOriginsFor(business)) : false;
+    // Only when it matters: is this the team's own preview chat?
+    const preview = business && (!live || !originAllowed)
+      ? (await runForBusiness(business.id, () => getSession(claims.sessionId)))?.preview === true
+      : false;
+    if (!business || (!live && !preview)) {
       refuse(res, 404, "unknown_business", "This chat is not available.");
       return null;
     }
-    if (!isOriginAllowed(req.header("origin"), allowedOriginsFor(business))) {
+    if (!originAllowed && !(preview && isOriginAllowed(req.header("origin"), consoleOrigin))) {
       refuse(res, 403, "origin_not_allowed", "This website can't use this chat.");
       return null;
     }

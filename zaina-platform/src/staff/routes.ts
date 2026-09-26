@@ -67,6 +67,9 @@ export async function signIn(secret: string, req: Request): Promise<SignInOutcom
   const user = email ? await findStaffByEmail(email) : undefined;
   const valid = user && !user.disabledAt ? await verifyPassword(password, user.passwordHash) : await verifyAgainstNothing(password);
   if (!user || !valid) return { ok: false, status: 401, body: { error: "invalid_login", message: "That email and password don't match." } };
+  if (!user.emailVerifiedAt) {
+    return { ok: false, status: 403, body: { error: "email_not_confirmed", message: "Please confirm your email first: we sent you a link when you signed up." } };
+  }
   return { ok: true, user };
 }
 
@@ -383,6 +386,7 @@ export function registerStaffAccountRoutes(app: Express, config: PlatformConfig)
     unclaimed_timeout_minutes: business.unclaimedTimeoutMinutes,
     allowed_origins: business.allowedOrigins,
     business_type: business.businessType,
+    status: business.status,
     public_key: business.publicKey,
     daily_token_cap: business.dailyTokenCap,
     retention_days: business.retentionDays,

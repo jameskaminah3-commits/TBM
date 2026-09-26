@@ -20,12 +20,12 @@ const isUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 
 export async function createSession(
   businessId: string,
-  options: { displayCurrency: Currency; visitorKey: string | null },
+  options: { displayCurrency: Currency; visitorKey: string | null; preview?: boolean },
 ): Promise<ChatSession> {
   return inBusiness(async (db) => {
     const [row] = await db
       .insert(chatSessions)
-      .values({ businessId, displayCurrency: options.displayCurrency, visitorKey: options.visitorKey })
+      .values({ businessId, displayCurrency: options.displayCurrency, visitorKey: options.visitorKey, preview: options.preview ?? false })
       .returning();
     return row;
   }, businessId);

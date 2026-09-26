@@ -35,6 +35,9 @@ import { registerSlotRoutes } from "./booking/slot-routes.ts";
 import { registerBookingRoutes } from "./booking/staff-routes.ts";
 import { configurePayments, sweepPendingPayments } from "./payments/checkout.ts";
 import { configureGoogle } from "./calendars/google.ts";
+import { configureMailer } from "./platform/mailer.ts";
+import { registerSignupRoutes } from "./signup/routes.ts";
+import { registerOnboardingRoutes } from "./onboarding/routes.ts";
 import { registerCalendarRoutes } from "./calendars/routes.ts";
 import { configureCalendarSync, syncAllCalendars } from "./calendars/sync.ts";
 import { PAYMENT_WEBHOOK_PATH, registerPaymentRoutes } from "./payments/routes.ts";
@@ -81,6 +84,7 @@ export function createApp(config: PlatformConfig, engine: EngineOptions, whatsap
     ? { ...config.google, redirectUri: `${config.publicBaseUrl}/v1/calendar/google/callback`, stateSecret: config.sessionTokenSecret }
     : null);
   configureCalendarSync({ publicBaseUrl: config.publicBaseUrl });
+  configureMailer(config.alertEmail);
   setWhatsappRuntime(whatsapp);
 
   const app = express();
@@ -104,6 +108,8 @@ export function createApp(config: PlatformConfig, engine: EngineOptions, whatsap
   registerSlotRoutes(app, config);
   registerPaymentRoutes(app, config);
   registerCalendarRoutes(app, config);
+  registerSignupRoutes(app, config);
+  registerOnboardingRoutes(app, config);
   registerConsoleRoutes(app, config);
 
   app.use((_req: Request, res: Response) => {

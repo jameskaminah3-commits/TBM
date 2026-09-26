@@ -19,7 +19,7 @@
 
 import { randomBytes } from "node:crypto";
 import { and, eq, inArray, lt, sql } from "drizzle-orm";
-import { allBusinesses, businessById } from "../businesses/registry.ts";
+import { anyBusinessById, everyBusiness } from "../businesses/registry.ts";
 import { getSecret } from "../businesses/secrets.ts";
 import { offerings, payments, takesBookings, type Booking, type Business, type Payment } from "../db/schema.ts";
 import { inBusiness } from "../db/tenant.ts";
@@ -272,7 +272,7 @@ export async function handlePaystackWebhook(businessId: string | null, rawBody: 
   const charge = chargeFromWebhook(body);
   const reference = charge?.reference ?? (body as { data?: { reference?: string } })?.data?.reference ?? "";
   const ownerId = businessId ?? (reference ? await businessForToken("paystack", reference) : null);
-  const business = ownerId ? await businessById(ownerId) : undefined;
+  const business = ownerId ? await anyBusinessById(ownerId) : undefined;
   let secretKey: string | null = null;
   if (businessId && business) {
     const settings = await getBookingSettings(business.id);
@@ -324,7 +324,7 @@ async function applyStk(business: Business, payment: Payment, account: MpesaAcco
 /** Safaricom's callback for one payment prompt (the token is in its address). */
 export async function handleMpesaCallback(token: string, body: unknown): Promise<void> {
   const businessId = await businessForToken("mpesa", token);
-  const business = businessId ? await businessById(businessId) : undefined;
+  const business = businessId ? await anyBusinessById(businessId) : undefined;
   const callback = readStkCallback(body);
   if (!business || !callback) return;
   const [payment] = await inBusiness((db) => db.select().from(payments)
@@ -357,7 +357,7 @@ export async function checkMpesaPayment(business: Business, payment: Payment): P
 /** Payments still pending that a provider may have settled without telling us: ask. */
 export async function sweepPendingPayments(now = new Date()): Promise<number> {
   let settled = 0;
-  for (const business of await allBusinesses()) {
+  for (const business of await everyBusiness()) {
     if (!takesBookings(business.businessType)) continue;
     try {
       const pending = await inBusiness((db) => db.select().from(payments).where(and(
@@ -397,7 +397,7 @@ export async function sweepPendingPayments(now = new Date()): Promise<number> {
 export async function bookingForPage(token: string): Promise<{ business: Business; booking: Booking } | null> {
   if (!/^[A-Za-z0-9_-]{24,64}$/.test(token)) return null;
   const businessId = await businessForToken("pay", token);
-  const business = businessId ? await businessById(businessId) : undefined;
+  const business = businessId ? await anyBusinessById(businessId) : undefined;
   if (!business) return null;
   const booking = await bookingByPayToken(business.id, token);
   return booking ? { business, booking } : null;

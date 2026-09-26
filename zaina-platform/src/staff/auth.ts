@@ -23,7 +23,7 @@
 
 import type { NextFunction, Request, Response } from "express";
 import { and, eq } from "drizzle-orm";
-import { businessById } from "../businesses/registry.ts";
+import { anyBusinessById } from "../businesses/registry.ts";
 import { getStaffUser } from "../db/platform-scope.ts";
 import { staffMemberships, type Business, type StaffRole, type StaffUser } from "../db/schema.ts";
 import { inBusiness, runForBusiness } from "../db/tenant.ts";
@@ -93,7 +93,8 @@ export function requireBusinessRole(minimum: StaffRole) {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
       const context = staffOf(req);
-      const business = await businessById(String(req.params.businessId ?? ""));
+      // The team reaches its business in any state: setting up, live or paused.
+      const business = await anyBusinessById(String(req.params.businessId ?? ""));
       const role = business ? await roleIn(business.id, context.user) : null;
       // The same answer whether the business doesn't exist or isn't theirs.
       if (!business || !role) {

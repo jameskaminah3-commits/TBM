@@ -13,6 +13,7 @@ import {
   staffMemberships,
   staffPushSubscriptions,
   staffUsers,
+  type BusinessStatus,
   type BusinessType,
   type StaffedHours,
   type StaffRole,
@@ -51,10 +52,10 @@ export async function setStaffPassword(userId: string, passwordHash: string): Pr
     .where(eq(staffUsers.id, userId));
 }
 
-/** The businesses a person works for, and as what. */
-export async function membershipsOf(userId: string): Promise<Array<{ businessId: string; businessName: string; role: StaffRole; businessType: BusinessType }>> {
+/** The businesses a person works for, as what, and whether each is live yet. */
+export async function membershipsOf(userId: string): Promise<Array<{ businessId: string; businessName: string; role: StaffRole; businessType: BusinessType; businessStatus: BusinessStatus }>> {
   return ownerDb()
-    .select({ businessId: staffMemberships.businessId, businessName: businesses.name, role: staffMemberships.role, businessType: businesses.businessType })
+    .select({ businessId: staffMemberships.businessId, businessName: businesses.name, role: staffMemberships.role, businessType: businesses.businessType, businessStatus: businesses.status })
     .from(staffMemberships)
     .innerJoin(businesses, eq(businesses.id, staffMemberships.businessId))
     .where(eq(staffMemberships.userId, userId));
@@ -139,4 +140,47 @@ export type DirectoryPatch = {
 export async function updateBusinessDirectory(businessId: string, patch: DirectoryPatch): Promise<void> {
   if (Object.keys(patch).length === 0) return;
   await ownerDb().update(businesses).set({ ...patch, updatedAt: new Date() }).where(eq(businesses.id, businessId));
+}
+
+// ── Self-serve (Phase 5) ──────────────────────────────────────────────
+
+/**
+ * A business that signed up itself: setting up (onboarding) until it goes
+ * live, with its settings and its first owner, whose email isn't confirmed
+ * yet. All or nothing.
+ */
+export async function createSelfServeBusiness(input: {
+  business: { id: string; name: string; publicKey: string; allowedOrigins: string[]; timeZone: string; dailyTokenCap: number; retentionDays: number; businessType: BusinessType; websiteUrl: string | null };
+  owner: { email: string; name: string; passwordHash: string };
+}): Promise<StaffUser> {
+  return ownerDb().transaction(async (tx) => {
+    const { websiteUrl, ...business } = input.business;
+    await tx.insert(businesses).values({ ...business, status: "onboarding", source: "self_serve" });
+    await tx.insert(businessSettings).values({ businessId: business.id, displayName: business.name, websiteUrl });
+    const [owner] = await tx.insert(staffUsers).values({
+      email: input.owner.email.trim().toLowerCase(), name: input.owner.name.trim(), passwordHash: input.owner.passwordHash, emailVerifiedAt: null,
+    }).returning();
+    await tx.insert(staffMemberships).values({ businessId: business.id, userId: owner.id, role: "owner" });
+    return owner;
+  });
+}
+
+/** Confirms a person's email, if it's still the email the link was for. */
+export async function confirmStaffEmail(userId: string, email: string): Promise<StaffUser | undefined> {
+  const [row] = await ownerDb().update(staffUsers)
+    .set({ emailVerifiedAt: sql`coalesce(${staffUsers.emailVerifiedAt}, now())`, updatedAt: new Date() })
+    .where(and(eq(staffUsers.id, userId), eq(staffUsers.email, email.trim().toLowerCase())))
+    .returning();
+  return row;
+}
+
+/** Moves a business between setting up, live and paused. Going live the first time is remembered. */
+export async function setBusinessStatus(businessId: string, status: BusinessStatus): Promise<void> {
+  await ownerDb().update(businesses)
+    .set({
+      status,
+      ...(status === "active" ? { wentLiveAt: sql`coalesce(${businesses.wentLiveAt}, now())` } : {}),
+      updatedAt: new Date(),
+    })
+    .where(eq(businesses.id, businessId));
 }

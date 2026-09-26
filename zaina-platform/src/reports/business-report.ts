@@ -119,7 +119,7 @@ export async function businessReport(
     const { rows: chatRows } = await client.query<{ channel: string; chats: number; resolved: number }>(
       `select s.channel, count(*)::int as chats, count(*) filter (where s.first_handoff_at is null)::int as resolved
        from chat_sessions as s
-       where s.business_id = $1 and s.created_at >= $2 and s.created_at < $3
+       where s.business_id = $1 and s.created_at >= $2 and s.created_at < $3 and not s.preview
          and exists (select 1 from chat_events as e where e.business_id = s.business_id and e.session_id = s.id and e.actor = 'USER')
        group by s.channel`,
       range,
@@ -129,7 +129,8 @@ export async function businessReport(
     const resolved = chatRows.reduce((sum, row) => sum + row.resolved, 0);
 
     const { rows: [messages] } = await client.query<{ count: number }>(
-      "select count(*)::int as count from chat_events where business_id = $1 and actor = 'USER' and created_at >= $2 and created_at < $3",
+      `select count(*)::int as count from chat_events as e where e.business_id = $1 and e.actor = 'USER' and e.created_at >= $2 and e.created_at < $3
+         and not exists (select 1 from chat_sessions as p where p.business_id = e.business_id and p.id = e.session_id and p.preview)`,
       range,
     );
 
@@ -150,7 +151,7 @@ export async function businessReport(
          select min(e.created_at) as at from chat_events as e
          where e.business_id = s.business_id and e.session_id = s.id and e.actor = 'AGENT' and e.created_at >= s.handoff_at
        ) as reply on s.handoff_at is not null
-       where s.business_id = $1 and s.first_handoff_at >= $2 and s.first_handoff_at < $3`,
+       where s.business_id = $1 and s.first_handoff_at >= $2 and s.first_handoff_at < $3 and not s.preview`,
       range,
     );
 
@@ -178,9 +179,10 @@ export async function businessReport(
     // Payable items made in chat, each counted once (a repeated call returns the same booking).
     const { rows: payable } = await client.query<{ tool_name: string; response: any }>(
       `select distinct on (tool_name, coalesce(tool_response->>'booking_id', id::text)) tool_name, tool_response as response
-       from chat_events
+       from chat_events as e
        where business_id = $1 and actor = 'SYSTEM_TOOL' and created_at >= $2 and created_at < $3
          and tool_name = any($4::text[]) and (tool_response->>'ok')::boolean is true
+         and not exists (select 1 from chat_sessions as p where p.business_id = e.business_id and p.id = e.session_id and p.preview)
        order by tool_name, coalesce(tool_response->>'booking_id', id::text), id`,
       [...range, PAYABLE_TOOLS],
     );
@@ -221,13 +223,13 @@ export async function businessReport(
        )
        select days.day,
          (select count(*)::int from chat_sessions as s
-          where s.business_id = $1 and to_char(s.created_at at time zone $3, 'YYYY-MM-DD') = days.day
+          where s.business_id = $1 and not s.preview and to_char(s.created_at at time zone $3, 'YYYY-MM-DD') = days.day
             and exists (select 1 from chat_events as e where e.business_id = s.business_id and e.session_id = s.id and e.actor = 'USER')) as chats,
          (select count(*)::int from chat_sessions as s
-          where s.business_id = $1 and to_char(s.first_handoff_at at time zone $3, 'YYYY-MM-DD') = days.day) as handoffs,
+          where s.business_id = $1 and not s.preview and to_char(s.first_handoff_at at time zone $3, 'YYYY-MM-DD') = days.day) as handoffs,
          (select count(distinct coalesce(e.tool_response->>'booking_id', e.id::text))::int from chat_events as e
           where e.business_id = $1 and e.actor = 'SYSTEM_TOOL' and e.tool_name = any($5::text[])
-            and (e.tool_response->>'ok')::boolean is true
+            and (e.tool_response->>'ok')::boolean is true and not exists (select 1 from chat_sessions as p where p.business_id = e.business_id and p.id = e.session_id and p.preview)
             and to_char(e.created_at at time zone $3, 'YYYY-MM-DD') = days.day) as bookings
        from days order by days.day`,
       [businessId, now, input.timeZone, days, BOOKING_TOOLS],

@@ -39,7 +39,8 @@ export type ChatLanguage = (typeof chatLanguages)[number];
 export const businesses = pgTable("businesses", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
-  status: text("status").notNull().default("active"),
+  /** onboarding: signed up and setting up (the team works in the console; customers aren't answered yet). */
+  status: text("status").$type<BusinessStatus>().notNull().default("active"),
   businessType: text("business_type").$type<BusinessType>().notNull().default("general"),
   publicKey: text("public_key").notNull(),
   allowedOrigins: text("allowed_origins").array().notNull().default([]),
@@ -48,10 +49,14 @@ export const businesses = pgTable("businesses", {
   unclaimedTimeoutMinutes: integer("unclaimed_timeout_minutes").notNull().default(10),
   dailyTokenCap: bigint("daily_token_cap", { mode: "number" }),
   retentionDays: integer("retention_days"),
+  wentLiveAt: timestamp("went_live_at", { withTimezone: true, mode: "date" }),
+  source: text("source").$type<"platform" | "self_serve">().notNull().default("platform"),
   createdAt: createdAt(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
 });
 export type Business = typeof businesses.$inferSelect;
+export const businessStatuses = ["onboarding", "active", "paused"] as const;
+export type BusinessStatus = (typeof businessStatuses)[number];
 
 /** Where a conversation happens. */
 export const channels = ["web", "whatsapp"] as const;
@@ -75,6 +80,8 @@ export const chatSessions = pgTable("chat_sessions", {
   turnLockId: uuid("turn_lock_id"),
   turnLockUntil: at("turn_lock_until"),
   channel: text("channel").$type<Channel>().notNull().default("web"),
+  /** The business's own team trying Zaina in the console: not a customer's chat. */
+  preview: boolean("preview").notNull().default(false),
   customerAddress: text("customer_address"),
   customerName: text("customer_name"),
   customerLastMessageAt: at("customer_last_message_at"),
@@ -162,6 +169,8 @@ export const staffUsers = pgTable("staff_users", {
   isPlatformAdmin: boolean("is_platform_admin").notNull().default(false),
   tokenVersion: integer("token_version").notNull().default(1),
   disabledAt: timestamp("disabled_at", { withTimezone: true, mode: "date" }),
+  /** Null until someone who signed up themselves confirms their email. */
+  emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true, mode: "date" }),
   createdAt: createdAt(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
 });

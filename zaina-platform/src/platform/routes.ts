@@ -15,18 +15,18 @@
 import { randomBytes } from "node:crypto";
 import type { Express, NextFunction, Request, Response } from "express";
 import type { PlatformConfig } from "../config.ts";
-import { allBusinesses, clearBusinessCache } from "../businesses/registry.ts";
+import { anyBusinessById, clearBusinessCache, everyBusiness } from "../businesses/registry.ts";
 import { inBusiness, runForBusiness } from "../db/tenant.ts";
 import { businessDay } from "../gateway/spend-cap.ts";
-import { createBusinessWithOwner, findStaffByEmail } from "../db/platform-scope.ts";
+import { createBusinessWithOwner, findStaffByEmail, setBusinessStatus } from "../db/platform-scope.ts";
 import { businessTypes, type BusinessType } from "../db/schema.ts";
 import { TYPES_WITH_OWN_CONNECTOR } from "../engine/tool-sets.ts";
 import { normalizeOrigin } from "../gateway/origin.ts";
 import { requirePlatformAdmin, requireStaff } from "../staff/auth.ts";
 import { hashPassword, passwordProblem } from "../staff/passwords.ts";
 
-const DEFAULT_DAILY_TOKEN_CAP = 5_000_000;
-const DEFAULT_RETENTION_DAYS = 90;
+export const DEFAULT_DAILY_TOKEN_CAP = 5_000_000;
+export const DEFAULT_RETENTION_DAYS = 90;
 
 /** A positive whole number from the request, the default when absent, or null when invalid. */
 function positiveWhole(value: unknown, fallback: number): number | null {
@@ -39,7 +39,7 @@ export function registerPlatformRoutes(app: Express, config: PlatformConfig): vo
 
   app.get("/v1/platform/businesses", staff, requirePlatformAdmin, async (_req: Request, res: Response, next: NextFunction) => {
     try {
-      const businesses = await allBusinesses();
+      const businesses = await everyBusiness();
       res.json({
         businesses: businesses.map((business) => ({
           id: business.id,
@@ -50,6 +50,8 @@ export function registerPlatformRoutes(app: Express, config: PlatformConfig): vo
           allowed_origins: business.allowedOrigins,
           time_zone: business.timeZone,
           created_at: business.createdAt,
+          went_live_at: business.wentLiveAt,
+          source: business.source,
         })),
       });
     } catch (error) {
@@ -57,9 +59,27 @@ export function registerPlatformRoutes(app: Express, config: PlatformConfig): vo
     }
   });
 
+  // Pausing a business stops its chats (website and WhatsApp) until it's resumed; its team keeps the console.
+  app.patch("/v1/platform/businesses/:businessId", staff, requirePlatformAdmin, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const business = await anyBusinessById(String(req.params.businessId));
+      if (!business) return res.status(404).json({ error: "not_found" });
+      const status = req.body?.status;
+      if (status !== "active" && status !== "paused") return res.status(400).json({ error: "invalid_status", message: "status is active or paused." });
+      if (status === "active" && business.status === "onboarding") {
+        return res.status(409).json({ error: "setting_up", message: "The business puts itself live when its setup is done." });
+      }
+      await setBusinessStatus(business.id, status);
+      clearBusinessCache();
+      res.json({ id: business.id, status });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get("/v1/platform/overview", staff, requirePlatformAdmin, async (_req: Request, res: Response, next: NextFunction) => {
     try {
-      const businesses = await allBusinesses();
+      const businesses = await everyBusiness();
       const rows = await Promise.all(businesses.map((business) => runForBusiness(business.id, () => inBusiness(async (_db, client) => {
         const { rows: [row] } = await client.query<{
           tokens_today: string | null; chats_7d: number; waiting: number; turns_24h: number; failed_24h: number;

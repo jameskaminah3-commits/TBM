@@ -30,13 +30,28 @@ export function clearBusinessCache() {
   cache = null;
 }
 
-/** Every active business (for jobs that go business by business). */
+/** Every live business (for jobs that answer customers, business by business). */
 export async function allBusinesses(): Promise<Business[]> {
   return (await all()).filter((business) => business.status === "active");
 }
 
+/**
+ * Every business, live or not: one setting up (onboarding) or paused still
+ * has bookings to expire, payments to settle, calendars and conversations to
+ * keep, and a team that signs in.
+ */
+export async function everyBusiness(): Promise<Business[]> {
+  return all();
+}
+
+/** A live business: what customers reach (the website chat, WhatsApp). */
 export async function businessById(id: string): Promise<Business | undefined> {
   return (await all()).find((business) => business.id === id && business.status === "active");
+}
+
+/** A business in any state: for its team, and for payments and calendars already under way. */
+export async function anyBusinessById(id: string): Promise<Business | undefined> {
+  return (await all()).find((business) => business.id === id);
 }
 
 export async function businessByPublicKey(publicKey: string): Promise<Business | undefined> {

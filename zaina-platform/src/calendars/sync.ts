@@ -20,7 +20,7 @@
 // One sync per business at a time (in this process).
 
 import { and, eq, gte } from "drizzle-orm";
-import { allBusinesses } from "../businesses/registry.ts";
+import { everyBusiness } from "../businesses/registry.ts";
 import { getSecret } from "../businesses/secrets.ts";
 import { bookings, calendarConnections, calendarEvents, calendarSources, offeringBlocks, offerings, resourceBlocks, resources, takesBookings, type Booking, type Business, type CalendarConnection, type CalendarSource } from "../db/schema.ts";
 import { inBusiness } from "../db/tenant.ts";
@@ -258,7 +258,7 @@ export async function syncBusiness(business: Business, now = new Date()): Promis
 /** Every business with calendars to keep in step. */
 export async function syncAllCalendars(now = new Date()): Promise<number> {
   let synced = 0;
-  for (const business of await allBusinesses()) {
+  for (const business of await everyBusiness()) {
     if (!takesBookings(business.businessType)) continue;
     try {
       // Only the business's own rows are visible in its scope.

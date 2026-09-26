@@ -10,12 +10,12 @@
 // security is the second guard, not the only one.
 
 import { sql } from "drizzle-orm";
-import { allBusinesses } from "../businesses/registry.ts";
+import { everyBusiness } from "../businesses/registry.ts";
 import { currentBusinessId, inBusiness, runForBusiness } from "../db/tenant.ts";
 
 export async function deleteExpiredConversations(now: Date = new Date()): Promise<number> {
   let deleted = 0;
-  for (const business of await allBusinesses()) {
+  for (const business of await everyBusiness()) {
     if (!business.retentionDays) continue;
     const cutoff = new Date(now.getTime() - business.retentionDays * 24 * 60 * 60 * 1000);
     try {

@@ -27,7 +27,7 @@
 
 import { randomBytes } from "node:crypto";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { allBusinesses } from "../businesses/registry.ts";
+import { everyBusiness } from "../businesses/registry.ts";
 import type pg from "pg";
 import { appPool, type PlatformDb } from "../db/platform-db.ts";
 import { bookingSettings, bookings, offeringResources, offerings, payments, resources, takesBookings, type Booking, type BookingSettings, type Offering, type Payment, type Resource } from "../db/schema.ts";
@@ -716,7 +716,7 @@ export async function shortenHold(businessId: string, bookingId: string, minutes
 /** Unpaid bookings whose hold has ended, in every business: they let go of their rooms. */
 export async function expireHolds(now = new Date()): Promise<Array<{ businessId: string; booking: Booking }>> {
   const expired: Array<{ businessId: string; booking: Booking }> = [];
-  for (const business of await allBusinesses()) {
+  for (const business of await everyBusiness()) {
     if (!takesBookings(business.businessType)) continue;
     try {
       const rows = await inBusiness((db) => db.update(bookings).set({ status: "expired", updatedAt: now })

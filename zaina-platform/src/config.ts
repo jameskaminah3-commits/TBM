@@ -76,6 +76,8 @@ export type PlatformConfig = {
   platformPaystackKey: string | null;
   /** The platform's Google OAuth app, for businesses connecting Google Calendar; null when there is none. */
   google: { clientId: string; clientSecret: string } | null;
+  /** Whether businesses can sign up by themselves (PLATFORM_SIGNUP=open); off until the platform team opens it. */
+  signupOpen: boolean;
 };
 
 function required(env: NodeJS.ProcessEnv, name: string): string {
@@ -177,6 +179,16 @@ function googleConfig(env: NodeJS.ProcessEnv): { clientId: string; clientSecret:
   return { clientId, clientSecret };
 }
 
+/** PLATFORM_SIGNUP=open lets businesses sign up; it needs email (to confirm accounts) and the public address (for the links). */
+function signupOpen(env: NodeJS.ProcessEnv): boolean {
+  const value = env.PLATFORM_SIGNUP?.trim().toLowerCase();
+  if (!value || value === "closed") return false;
+  if (value !== "open") throw new Error("PLATFORM_SIGNUP is open or closed");
+  if (!alertEmailConfig(env)) throw new Error("PLATFORM_SIGNUP=open needs RESEND_API_KEY and ALERT_FROM_EMAIL (new accounts confirm their email)");
+  if (!env.PUBLIC_BASE_URL?.trim()) throw new Error("PLATFORM_SIGNUP=open needs PUBLIC_BASE_URL (the links in its emails)");
+  return true;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): PlatformConfig {
   const sessionTokenSecret = required(env, "SESSION_TOKEN_SECRET");
   if (sessionTokenSecret.length < 32) throw new Error("SESSION_TOKEN_SECRET must be at least 32 characters");
@@ -216,5 +228,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): PlatformConfig
       : null,
     platformPaystackKey: platformPaystackKey(env),
     google: googleConfig(env),
+    signupOpen: signupOpen(env),
   };
 }

@@ -481,7 +481,7 @@ test("staff sign in with their own password; wrong ones are refused, then slowed
   assert.equal(me.status, 200);
   assert.deepEqual(me.body.user, { ...me.body.user, email: "amina@example.com", name: "Amina", is_platform_admin: false });
   assert.doesNotMatch(JSON.stringify(me.body), /scrypt|password/i);
-  assert.deepEqual(me.body.businesses, [{ businessId: "tbm", businessName: "Tembea Bila Matata", role: "agent", businessType: "travel_concierge" }]);
+  assert.deepEqual(me.body.businesses, [{ businessId: "tbm", businessName: "Tembea Bila Matata", role: "agent", businessType: "travel_concierge", businessStatus: "active" }]);
 
   // Ten tries per account every 15 minutes, whichever addresses they come from.
   const statuses = [];
@@ -527,7 +527,7 @@ test("the platform adds a second business, with its first owner, in one step", a
 
   acmeOwnerToken = await tokenFor("otieno@example.com");
   const me = await staff("GET", "/v1/staff/me", undefined, acmeOwnerToken);
-  assert.deepEqual(me.body.businesses, [{ businessId: "acme", businessName: "Acme Guesthouse", role: "owner", businessType: "general" }]);
+  assert.deepEqual(me.body.businesses, [{ businessId: "acme", businessName: "Acme Guesthouse", role: "owner", businessType: "general", businessStatus: "active" }]);
   const settings = await staff("PATCH", "/v1/staff/businesses/acme/settings", {
     about: "Acme Guesthouse: six rooms in Watamu, breakfast included.",
     contactPhone: "+254700111222",
