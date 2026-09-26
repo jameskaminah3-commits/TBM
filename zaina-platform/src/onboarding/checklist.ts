@@ -137,7 +137,7 @@ export async function checklist(business: Business): Promise<Step[]> {
     required: true,
     page: "setup",
   });
-  if (plan) steps.push({ id: "plan", title: "Choose your plan", detail: plan.detail, done: plan.done, required: true, page: "billing" });
+  if (plan) steps.push({ id: "plan", title: "Choose your plan", detail: plan.detail, done: plan.done, required: true, page: "settings", tab: "billing" });
   return steps;
 }
 

@@ -12,7 +12,7 @@ import { atLeast, type Role } from "../types.ts";
 import { Button, ErrorLine, Icon, Message, useAction, useLoad } from "../ui.tsx";
 
 type Step = { id: string; title: string; detail: string; done: boolean; required: boolean; page: string; tab?: string };
-type Onboarding = { status: "onboarding" | "active" | "paused"; went_live_at: string | null; steps: Step[]; done: number; ready: boolean };
+type Onboarding = { status: "onboarding" | "active" | "paused"; pause_reason: "platform" | "billing" | null; went_live_at: string | null; steps: Step[]; done: number; ready: boolean };
 
 export function SetupPage(props: { businessId: string; role: Role; onLive: () => void }) {
   const loaded = useLoad(() => api<Onboarding>("GET", businessPath(props.businessId, "/onboarding")), [props.businessId]);
@@ -29,7 +29,11 @@ export function SetupPage(props: { businessId: string; role: Role; onLive: () =>
       {data.status === "active" ? (
         <p className="message success">Zaina is answering your customers. Put the chat on your website from Settings → Website widget, and see every conversation in the Inbox.</p>
       ) : data.status === "paused" ? (
-        <p className="message error">This business is paused by the Zaina team, so customers aren't answered. Please contact them.</p>
+        <p className="message error">
+          {data.pause_reason === "billing"
+            ? "Zaina is paused for an unpaid invoice, so customers aren't answered. Pay it in Settings → Plan & billing and Zaina answers again straight away."
+            : "This business is paused by the Zaina team, so customers aren't answered. Please contact them."}
+        </p>
       ) : (
         <p className="muted">Do these steps in any order. Zaina doesn't answer your customers until you go live.</p>
       )}

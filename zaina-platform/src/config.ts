@@ -81,6 +81,10 @@ export type PlatformConfig = {
   /** The platform's terms of service and privacy policy, linked from the sign-up form. */
   termsUrl: string | null;
   privacyUrl: string | null;
+  /** Days a live business keeps answering after an invoice is due, before it pauses (BILLING_GRACE_DAYS, default 7). */
+  billingGraceDays: number;
+  /** How to pay an invoice by hand (bank or M-Pesa), shown with every invoice (BILLING_PAYMENT_INSTRUCTIONS). */
+  billingPaymentInstructions: string | null;
 };
 
 function required(env: NodeJS.ProcessEnv, name: string): string {
@@ -205,6 +209,22 @@ function signupOpen(env: NodeJS.ProcessEnv): boolean {
   return true;
 }
 
+/** BILLING_GRACE_DAYS: 0 to 60 days (0 pauses a live business as soon as an invoice is overdue). */
+function billingGraceDays(env: NodeJS.ProcessEnv): number {
+  const raw = env.BILLING_GRACE_DAYS?.trim();
+  if (!raw) return 7;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 0 || value > 60) throw new Error("BILLING_GRACE_DAYS is a whole number of days, 0 to 60");
+  return value;
+}
+
+function billingPaymentInstructions(env: NodeJS.ProcessEnv): string | null {
+  const raw = env.BILLING_PAYMENT_INSTRUCTIONS?.trim().replace(/\s+/g, " ");
+  if (!raw) return null;
+  if (raw.length > 500) throw new Error("BILLING_PAYMENT_INSTRUCTIONS is up to 500 characters");
+  return raw;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): PlatformConfig {
   const sessionTokenSecret = required(env, "SESSION_TOKEN_SECRET");
   if (sessionTokenSecret.length < 32) throw new Error("SESSION_TOKEN_SECRET must be at least 32 characters");
@@ -247,5 +267,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): PlatformConfig
     signupOpen: signupOpen(env),
     termsUrl: httpsUrl(env, "PLATFORM_TERMS_URL"),
     privacyUrl: httpsUrl(env, "PLATFORM_PRIVACY_URL"),
+    billingGraceDays: billingGraceDays(env),
+    billingPaymentInstructions: billingPaymentInstructions(env),
   };
 }

@@ -15,6 +15,7 @@ import {
   staffUsers,
   type BusinessStatus,
   type BusinessType,
+  type PauseReason,
   type StaffedHours,
   type StaffRole,
   type StaffUser,
@@ -52,10 +53,10 @@ export async function setStaffPassword(userId: string, passwordHash: string): Pr
     .where(eq(staffUsers.id, userId));
 }
 
-/** The businesses a person works for, as what, and whether each is live yet. */
-export async function membershipsOf(userId: string): Promise<Array<{ businessId: string; businessName: string; role: StaffRole; businessType: BusinessType; businessStatus: BusinessStatus }>> {
+/** The businesses a person works for, as what, whether each is live yet, and why one is paused. */
+export async function membershipsOf(userId: string): Promise<Array<{ businessId: string; businessName: string; role: StaffRole; businessType: BusinessType; businessStatus: BusinessStatus; pauseReason: PauseReason | null }>> {
   return ownerDb()
-    .select({ businessId: staffMemberships.businessId, businessName: businesses.name, role: staffMemberships.role, businessType: businesses.businessType, businessStatus: businesses.status })
+    .select({ businessId: staffMemberships.businessId, businessName: businesses.name, role: staffMemberships.role, businessType: businesses.businessType, businessStatus: businesses.status, pauseReason: businesses.pauseReason })
     .from(staffMemberships)
     .innerJoin(businesses, eq(businesses.id, staffMemberships.businessId))
     .where(eq(staffMemberships.userId, userId));
@@ -174,11 +175,16 @@ export async function confirmStaffEmail(userId: string, email: string): Promise<
   return row;
 }
 
-/** Moves a business between setting up, live and paused. Going live the first time is remembered. */
-export async function setBusinessStatus(businessId: string, status: BusinessStatus): Promise<void> {
+/**
+ * Moves a business between setting up, live and paused (by the platform
+ * team, unless billing says otherwise). Going live the first time is
+ * remembered.
+ */
+export async function setBusinessStatus(businessId: string, status: BusinessStatus, pauseReason: PauseReason = "platform"): Promise<void> {
   await ownerDb().update(businesses)
     .set({
       status,
+      pauseReason: status === "paused" ? pauseReason : null,
       ...(status === "active" ? { wentLiveAt: sql`coalesce(${businesses.wentLiveAt}, now())` } : {}),
       updatedAt: new Date(),
     })

@@ -388,7 +388,7 @@ test("staff roles are per business; platform admins act as owners", async () => 
   assert.equal(await roleIn("tbm", otieno), "agent");
   assert.equal(await roleIn("acme", otieno), null);
   assert.equal(await roleIn("tbm", admin), "owner");
-  assert.deepEqual(await membershipsOf(amina.id), [{ businessId: "acme", businessName: "Acme Guesthouse", role: "manager", businessType: "general", businessStatus: "active" }]);
+  assert.deepEqual(await membershipsOf(amina.id), [{ businessId: "acme", businessName: "Acme Guesthouse", role: "manager", businessType: "general", businessStatus: "active", pauseReason: null }]);
   const acmeMembers = await inBusiness((db) => db.select().from(staffMemberships), "acme");
   assert.ok(acmeMembers.every((member) => member.businessId === "acme"));
 });

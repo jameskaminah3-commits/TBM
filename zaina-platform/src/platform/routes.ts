@@ -2,12 +2,15 @@
 //
 // The platform's own console (platform admins only):
 //
-//   GET  /v1/platform/businesses   every business on the platform
-//   GET  /v1/platform/overview     every business's day: model use against its budget, chats,
-//                                  waiting handoffs, failed turns, WhatsApp; and what the platform has switched on
-//   POST /v1/platform/businesses   { id, name, allowed_origins, business_type?, time_zone?, daily_token_cap?,
-//                                    retention_days?, owner: { email, name, password } }
-//                                  → the business, its settings and its first owner
+//   GET   /v1/platform/businesses      every business on the platform
+//   PATCH /v1/platform/businesses/:id  { status: active | paused }: the platform team pauses or resumes one
+//   GET   /v1/platform/overview        every business's day: model use against its budget, chats,
+//                                      waiting handoffs, failed turns, WhatsApp; and what the platform has switched on
+//   POST  /v1/platform/businesses      { id, name, allowed_origins, business_type?, time_zone?, daily_token_cap?,
+//                                        retention_days?, owner: { email, name, password } }
+//                                      → the business, its settings and its first owner
+//
+// Plans, subscriptions and invoices: billing/routes.ts.
 //
 // A new business starts with a daily model budget and a retention period, so
 // none runs with unlimited spend or keeps conversations forever by accident.
@@ -52,6 +55,7 @@ export function registerPlatformRoutes(app: Express, config: PlatformConfig): vo
           created_at: business.createdAt,
           went_live_at: business.wentLiveAt,
           source: business.source,
+          pause_reason: business.pauseReason,
         })),
       });
     } catch (error) {
@@ -69,9 +73,15 @@ export function registerPlatformRoutes(app: Express, config: PlatformConfig): vo
       if (status === "active" && business.status === "onboarding") {
         return res.status(409).json({ error: "setting_up", message: "The business puts itself live when its setup is done." });
       }
-      await setBusinessStatus(business.id, status);
+      // Paused for an unpaid invoice: it resumes itself when the invoice is paid (or marked paid, or waived, in Billing).
+      if (status === "active" && business.status === "paused" && business.pauseReason === "billing") {
+        return res.status(409).json({ error: "unpaid_invoice", message: "This business is paused for an unpaid invoice: mark it paid or waive it in Billing, and it resumes." });
+      }
+      // A business paused before it ever went live goes back to setting up.
+      const next = status === "active" && !business.wentLiveAt ? "onboarding" : status;
+      await setBusinessStatus(business.id, next, "platform");
       clearBusinessCache();
-      res.json({ id: business.id, status });
+      res.json({ id: business.id, status: next });
     } catch (error) {
       next(error);
     }

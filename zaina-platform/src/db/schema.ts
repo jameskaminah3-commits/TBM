@@ -51,12 +51,15 @@ export const businesses = pgTable("businesses", {
   retentionDays: integer("retention_days"),
   wentLiveAt: timestamp("went_live_at", { withTimezone: true, mode: "date" }),
   source: text("source").$type<"platform" | "self_serve">().notNull().default("platform"),
+  /** Why a paused business is paused: by the platform team, or for an invoice unpaid past its grace period. */
+  pauseReason: text("pause_reason").$type<PauseReason | null>(),
   createdAt: createdAt(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
 });
 export type Business = typeof businesses.$inferSelect;
 export const businessStatuses = ["onboarding", "active", "paused"] as const;
 export type BusinessStatus = (typeof businessStatuses)[number];
+export type PauseReason = "platform" | "billing";
 
 /** Where a conversation happens. */
 export const channels = ["web", "whatsapp"] as const;
@@ -591,3 +594,84 @@ export const payments = pgTable("payments", {
   updatedAt: at("updated_at").notNull().defaultNow(),
 });
 export type Payment = typeof payments.$inferSelect;
+
+// ── Billing (Phase 5): what businesses pay the platform ────────────────
+
+export const billingIntervals = ["month", "year"] as const;
+export type BillingInterval = (typeof billingIntervals)[number];
+
+export const plans = pgTable("plans", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+  priceMinor: bigint("price_minor", { mode: "number" }).notNull(),
+  currency: text("currency").$type<BookingCurrency>().notNull(),
+  billingInterval: text("billing_interval").$type<BillingInterval>().notNull().default("month"),
+  trialDays: integer("trial_days").notNull().default(0),
+  /** How many conversations a month the plan is meant for: shown, not cut off. */
+  conversationsPerMonth: integer("conversations_per_month"),
+  status: text("status").$type<"active" | "hidden">().notNull().default("active"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: createdAt(),
+  updatedAt: at("updated_at").notNull().defaultNow(),
+});
+export type Plan = typeof plans.$inferSelect;
+
+export const subscriptionStatuses = ["incomplete", "trialing", "active", "past_due", "cancelled"] as const;
+export type SubscriptionStatus = (typeof subscriptionStatuses)[number];
+
+export const subscriptions = pgTable("subscriptions", {
+  businessId: text("business_id").primaryKey(),
+  planId: text("plan_id").notNull(),
+  status: text("status").$type<SubscriptionStatus>().notNull(),
+  /** Set once a trial starts, and kept: a business has one free trial. */
+  trialEndsAt: at("trial_ends_at"),
+  currentPeriodStart: at("current_period_start"),
+  currentPeriodEnd: at("current_period_end"),
+  cancelAtPeriodEnd: boolean("cancel_at_period_end").notNull().default(false),
+  createdAt: createdAt(),
+  updatedAt: at("updated_at").notNull().defaultNow(),
+});
+export type Subscription = typeof subscriptions.$inferSelect;
+
+export type InvoiceStatus = "open" | "paid" | "void";
+export type InvoiceMethod = "paystack" | "manual" | "waived";
+
+export const invoices = pgTable("invoices", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  businessId: text("business_id").notNull(),
+  number: text("number").notNull(),
+  planId: text("plan_id").notNull(),
+  planName: text("plan_name").notNull(),
+  billingInterval: text("billing_interval").$type<BillingInterval>().notNull(),
+  periodStart: at("period_start").notNull(),
+  periodEnd: at("period_end").notNull(),
+  amountMinor: bigint("amount_minor", { mode: "number" }).notNull(),
+  currency: text("currency").$type<BookingCurrency>().notNull(),
+  status: text("status").$type<InvoiceStatus>().notNull(),
+  dueAt: at("due_at").notNull(),
+  paidAt: at("paid_at"),
+  method: text("method").$type<InvoiceMethod | null>(),
+  receipt: text("receipt"),
+  recordedBy: uuid("recorded_by"),
+  voidedAt: at("voided_at"),
+  createdAt: createdAt(),
+});
+export type Invoice = typeof invoices.$inferSelect;
+
+export const invoicePayments = pgTable("invoice_payments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  businessId: text("business_id").notNull(),
+  invoiceId: uuid("invoice_id").notNull(),
+  reference: text("reference").notNull(),
+  amountMinor: bigint("amount_minor", { mode: "number" }).notNull(),
+  currency: text("currency").$type<BookingCurrency>().notNull(),
+  status: text("status").$type<"pending" | "succeeded" | "failed">().notNull().default("pending"),
+  payerEmail: text("payer_email"),
+  authorizationUrl: text("authorization_url"),
+  receipt: text("receipt"),
+  note: text("note"),
+  createdAt: createdAt(),
+  settledAt: at("settled_at"),
+});
+export type InvoicePayment = typeof invoicePayments.$inferSelect;

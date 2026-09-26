@@ -384,3 +384,14 @@ table.lines tr.total th, table.lines tr.total td { font-weight: 700; border-top:
 /* A plain checkbox with its label (the switch-style .toggle hides the box). */
 .check { display: inline-flex; align-items: flex-start; gap: 8px; cursor: pointer; font-size: 14px; }
 .check input { width: 18px; height: 18px; margin: 1px 0 0; flex: none; accent-color: var(--brand); }
+
+/* Billing (Phase 5): a paused business's banner, the plans on offer. */
+.banner { display: flex; align-items: flex-start; gap: 8px; margin: 16px 24px 0; padding: 10px 14px; border-radius: 10px; background: var(--danger-soft); color: var(--danger); font-size: 14px; }
+.banner .icon { flex: none; margin-top: 2px; }
+.banner a { color: inherit; font-weight: 650; }
+.plans-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.plan h3 { margin: 0; }
+.plan.current { border-color: var(--brand); }
+.plan-price { margin: 0; font-size: 20px; font-weight: 650; }
+.plan > .button { justify-self: start; }
+@media (max-width: 820px) { .banner { margin: 12px 16px 0; } }

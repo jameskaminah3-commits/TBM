@@ -2,7 +2,7 @@
 //
 // The HTTP app and the service's start-up: database, migrations check,
 // routes and the background jobs (unclaimed handoffs, retention, rate-limit
-// counters).
+// counters, bookings and payments, calendars, billing).
 
 import express, { type Express, type NextFunction, type Request, type Response } from "express";
 import type { Server } from "node:http";
@@ -41,6 +41,11 @@ import { registerOnboardingRoutes } from "./onboarding/routes.ts";
 import { registerCalendarRoutes } from "./calendars/routes.ts";
 import { configureCalendarSync, syncAllCalendars } from "./calendars/sync.ts";
 import { PAYMENT_WEBHOOK_PATH, registerPaymentRoutes } from "./payments/routes.ts";
+import { configureBilling } from "./billing/config.ts";
+import { sweepInvoicePayments } from "./billing/payments.ts";
+import { planStep, registerBillingRoutes } from "./billing/routes.ts";
+import { sweepBilling } from "./billing/store.ts";
+import { setPlanCheck } from "./onboarding/checklist.ts";
 
 /** Browsers may call the API from any website a business allows. */
 function cors() {
@@ -85,6 +90,14 @@ export function createApp(config: PlatformConfig, engine: EngineOptions, whatsap
     : null);
   configureCalendarSync({ publicBaseUrl: config.publicBaseUrl });
   configureMailer(config.alertEmail);
+  configureBilling({
+    graceDays: config.billingGraceDays,
+    publicBaseUrl: config.publicBaseUrl,
+    platformPaystackKey: config.platformPaystackKey,
+    paymentInstructions: config.billingPaymentInstructions,
+  });
+  // A business that signed up by itself chooses a plan before going live, once the platform offers plans.
+  setPlanCheck(planStep);
   setWhatsappRuntime(whatsapp);
 
   const app = express();
@@ -110,6 +123,7 @@ export function createApp(config: PlatformConfig, engine: EngineOptions, whatsap
   registerCalendarRoutes(app, config);
   registerSignupRoutes(app, config);
   registerOnboardingRoutes(app, config);
+  registerBillingRoutes(app, config);
   registerConsoleRoutes(app, config);
 
   app.use((_req: Request, res: Response) => {
@@ -206,6 +220,12 @@ export async function startServer(config: PlatformConfig): Promise<{ server: Ser
     ...(whatsapp ? [every("whatsapp", Number(process.env.WHATSAPP_SWEEP_INTERVAL_MS ?? "") || 5_000, () => sweepWhatsapp(whatsapp))] : []),
     // Busy times from connected calendars and iCal links in; confirmed bookings out to Google Calendar.
     every("calendars", Number(process.env.CALENDAR_SYNC_INTERVAL_MS ?? "") || 10 * 60_000, () => syncAllCalendars()),
+    // Plans move on: invoices out a week ahead, overdue ones marked, unpaid businesses paused, ended plans closed.
+    every("billing", Number(process.env.BILLING_SWEEP_INTERVAL_MS ?? "") || 5 * 60_000, async () => {
+      const moved = await sweepBilling();
+      if (moved) console.log(`[platform] billing moved on for ${moved} business(es)`);
+      await sweepInvoicePayments();
+    }),
   ];
 
   const stop = async () => {

@@ -43,6 +43,7 @@ export function registerOnboardingRoutes(app: Express, config: PlatformConfig): 
     const steps = await checklist(business);
     return {
       status: business.status,
+      pause_reason: business.pauseReason,
       went_live_at: business.wentLiveAt,
       steps,
       done: steps.filter((step) => step.done).length,
@@ -56,7 +57,12 @@ export function registerOnboardingRoutes(app: Express, config: PlatformConfig): 
 
   app.post(`${base}/go-live`, ...role("owner"), handle(async (_req, res, { business }) => {
     if (business.status === "active") return res.status(409).json({ error: "already_live", message: "This business is already live." });
-    if (business.status === "paused") return res.status(409).json({ error: "paused", message: "This business is paused by the Zaina team. Please contact them." });
+    if (business.status === "paused") {
+      return res.status(409).json({
+        error: "paused",
+        message: business.pauseReason === "billing" ? "This business is paused for an unpaid invoice: pay it in Billing." : "This business is paused by the Zaina team. Please contact them.",
+      });
+    }
     const steps = await checklist(business);
     if (!readyToGoLive(steps)) {
       const left = steps.filter((step) => step.required && !step.done).map((step) => step.title);

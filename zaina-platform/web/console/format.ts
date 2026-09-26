@@ -48,3 +48,12 @@ export function day(value: string): string {
 }
 
 export const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** An instant's date, like "1 Oct 2026". */
+export function date(value: string | null | undefined): string {
+  if (!value) return "";
+  return new Date(value).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
+/** An amount in cents, like "KSh 2,500" or "$29". */
+export const cents = (amount: number, currency: "KES" | "USD") => money({ currency, amount: amount / 100 });

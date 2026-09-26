@@ -39,6 +39,7 @@ import type { BookingSettings, PaymentWay } from "../db/schema.ts";
 import { formatMoney } from "../booking/money.ts";
 import { chargeFromWebhook, initializeCheckout, validWebhookSignature, verifyTransaction, type PaystackAccount, type VerifiedTransaction } from "./paystack.ts";
 import { mpesaPhone, readStkCallback, stkPush, stkQuery, type MpesaAccount } from "./mpesa.ts";
+import { applyInvoiceCharge } from "../billing/payments.ts";
 
 let config: { publicBaseUrl: string | null; platformPaystackKey: string | null } = { publicBaseUrl: null, platformPaystackKey: null };
 
@@ -259,8 +260,9 @@ async function applyPaystack(business: Business, payment: Payment, transaction: 
 
 /**
  * A Paystack webhook: for one business's own account (businessId), or for
- * the platform's account and its subaccounts (businessId null). Returns
- * false when the signature doesn't match.
+ * the platform's account: its subaccounts' bookings, and the invoices it
+ * sends businesses ("zi_…", billing/payments.ts). Returns false when the
+ * signature doesn't match.
  */
 export async function handlePaystackWebhook(businessId: string | null, rawBody: Buffer, signature: string | undefined): Promise<boolean> {
   let body: unknown;
@@ -271,6 +273,12 @@ export async function handlePaystackWebhook(businessId: string | null, rawBody: 
   }
   const charge = chargeFromWebhook(body);
   const reference = charge?.reference ?? (body as { data?: { reference?: string } })?.data?.reference ?? "";
+  // An invoice the platform sent a business, paid into the platform's own account.
+  if (!businessId && reference.startsWith("zi_")) {
+    if (!config.platformPaystackKey || !validWebhookSignature(config.platformPaystackKey, rawBody, signature)) return false;
+    if (charge) await applyInvoiceCharge(charge);
+    return true;
+  }
   const ownerId = businessId ?? (reference ? await businessForToken("paystack", reference) : null);
   const business = ownerId ? await anyBusinessById(ownerId) : undefined;
   let secretKey: string | null = null;

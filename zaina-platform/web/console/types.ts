@@ -4,7 +4,15 @@ export type Role = "viewer" | "agent" | "manager" | "owner";
 export const ROLE_RANK: Record<Role, number> = { viewer: 1, agent: 2, manager: 3, owner: 4 };
 export const atLeast = (role: Role, minimum: Role) => ROLE_RANK[role] >= ROLE_RANK[minimum];
 
-export type Membership = { businessId: string; businessName: string; role: Role; businessType?: string; businessStatus?: "onboarding" | "active" | "paused" };
+export type Membership = {
+  businessId: string;
+  businessName: string;
+  role: Role;
+  businessType?: string;
+  businessStatus?: "onboarding" | "active" | "paused";
+  /** Why a paused business is paused: by the Zaina team, or for an unpaid invoice. */
+  pauseReason?: "platform" | "billing" | null;
+};
 
 export type Me = {
   user: { id: string; email: string; name: string; is_platform_admin: boolean };
@@ -365,3 +373,63 @@ export type CalendarData = {
 };
 
 export type Block = { id: string; offering_id: string; starts_on: string; ends_on: string; units: number; reason: string; source?: "staff" | "calendar" };
+
+// ── Billing (Phase 5) ──────────────────────────────────────────────────
+
+export type Plan = {
+  id: string;
+  name: string;
+  description: string;
+  price_minor: number;
+  currency: "KES" | "USD";
+  billing_interval: "month" | "year";
+  trial_days: number;
+  conversations_per_month: number | null;
+  status: "active" | "hidden";
+  sort_order: number;
+  price_text: string;
+};
+
+export type Invoice = {
+  id: string;
+  number: string;
+  plan_id: string;
+  plan_name: string;
+  billing_interval: "month" | "year";
+  period_start: string;
+  period_end: string;
+  amount_minor: number;
+  currency: "KES" | "USD";
+  status: "open" | "paid" | "void";
+  due_at: string;
+  overdue: boolean;
+  paid_at: string | null;
+  method: "paystack" | "manual" | "waived" | null;
+  receipt: string | null;
+};
+
+export type SubscriptionStatus = "incomplete" | "trialing" | "active" | "past_due" | "cancelled";
+
+export type Billing = {
+  enabled: boolean;
+  billed_by_team: boolean;
+  can_manage: boolean;
+  business: { status: "onboarding" | "active" | "paused"; pause_reason: "platform" | "billing" | null };
+  plans: Plan[];
+  subscription: null | {
+    plan: Plan | null;
+    status: SubscriptionStatus;
+    trial_ends_at: string | null;
+    current_period_start: string | null;
+    current_period_end: string | null;
+    cancel_at_period_end: boolean;
+  };
+  trial_available: boolean;
+  open_invoice: Invoice | null;
+  pauses_at: string | null;
+  invoices: Invoice[];
+  conversations_this_month: number;
+  pay_online: boolean;
+  payment_instructions: string | null;
+  grace_days: number;
+};

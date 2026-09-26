@@ -9,7 +9,8 @@
 //
 //   The owner pool bypasses row-level security. It is used for migrations
 //   and for the platform's own work across businesses (db/platform-scope.ts:
-//   creating businesses, staff sign-in), and nowhere else.
+//   creating businesses, staff sign-in; billing/: plans, subscriptions and
+//   invoices, which only the platform changes), and nowhere else.
 //
 //   App connections either sign in as zaina_app (appConnectionString, the
 //   stronger setup, and the one to use on Supabase) or sign in as the owner
@@ -83,7 +84,7 @@ export function appDb(): PlatformDb {
   return drizzle(appPool(), { schema });
 }
 
-/** Bypasses row-level security: only for migrations and db/platform-scope.ts. */
+/** Bypasses row-level security: only for migrations, db/platform-scope.ts and billing (the platform's own records). */
 export function ownerPool(): pg.Pool {
   if (!owner) throw new Error("The platform database is not open (call initPlatformDb first)");
   return owner;

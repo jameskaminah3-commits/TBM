@@ -210,7 +210,7 @@ function Console(props: { me: Me; route: Route; reloadMe: () => Promise<void> })
   else if (page === "rooms" && businessType === "guesthouse" && atLeast(role, "manager")) content = <RoomsPage businessId={businessId} role={role} />;
   else if (page === "knowledge") content = <KnowledgePage businessId={businessId} role={role} />;
   else if (page === "reports" && atLeast(role, "manager")) content = <ReportsPage businessId={businessId} />;
-  else if (page === "settings" && atLeast(role, "manager")) content = <SettingsPage key={route.id ?? "settings"} businessId={businessId} role={role} me={me} businessType={businessType} tab={route.id} />;
+  else if (page === "settings" && atLeast(role, "manager")) content = <SettingsPage key={route.id ?? "settings"} businessId={businessId} role={role} me={me} businessType={businessType} tab={route.id} onBusinessChanged={() => void props.reloadMe()} />;
   else if (page === "team" && atLeast(role, "manager")) content = <TeamPage businessId={businessId} role={role} me={me} />;
   else content = <InboxPage businessId={businessId} role={role} me={me} chatId={route.page === "inbox" ? route.id : null} counts={counts} onChanged={refreshCounts} />;
 
@@ -260,9 +260,29 @@ function Console(props: { me: Me; route: Route; reloadMe: () => Promise<void> })
           </a>
         ) : null}
       </nav>
-      <main className="main">{content}</main>
+      <main className="main">
+        {membership?.businessStatus === "paused" && page !== "platform" ? <PausedBanner businessId={businessId!} reason={membership.pauseReason ?? "platform"} canPay={atLeast(role ?? "viewer", "manager")} /> : null}
+        {content}
+      </main>
       {dialog === "password" ? <PasswordDialog onClose={() => setDialog(null)} /> : null}
       {dialog === "alerts" ? <AlertsDialog me={me} businessId={membership ? businessId : null} onClose={() => { setDialog(null); void props.reloadMe(); }} /> : null}
+    </div>
+  );
+}
+
+/** Customers aren't answered while a business is paused: why, and (for an unpaid invoice) where to pay it. */
+function PausedBanner(props: { businessId: string; reason: "platform" | "billing"; canPay: boolean }) {
+  return (
+    <div className="banner" role="status">
+      <Icon name="alert" size={16} />
+      {props.reason === "billing" ? (
+        <span>
+          Zaina is paused: an invoice is unpaid, so customers aren't answered.{" "}
+          {props.canPay ? <><a href={`#/b/${encodeURIComponent(props.businessId)}/settings/billing`}>Pay it</a> and Zaina answers again straight away.</> : "An owner can pay it in Settings."}
+        </span>
+      ) : (
+        <span>Zaina is paused by the Zaina team, so customers aren't answered. Please contact them.</span>
+      )}
     </div>
   );
 }

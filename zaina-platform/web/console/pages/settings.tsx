@@ -2,26 +2,31 @@
 //
 // How the business shows up and works: its profile (what Zaina says about
 // it, how customers reach it), the website widget and the websites it runs
-// on, the WhatsApp connection, and the team's hours.
+// on, the WhatsApp connection, the team's hours, and its plan and billing.
 
 import { useEffect, useState } from "react";
 import { api, businessPath } from "../api.ts";
 import { WEEKDAYS } from "../format.ts";
 import type { Me, Operations, Role, Settings, WhatsappState } from "../types.ts";
 import { Button, ErrorLine, Field, Message, Tabs, Toggle, useAction, useLoad } from "../ui.tsx";
+import { BillingSettings } from "./billing.tsx";
 import { BookingSettings } from "./booking-settings.tsx";
 import { Calendars } from "./calendars.tsx";
 
-type Tab = "profile" | "widget" | "whatsapp" | "hours" | "bookings" | "calendars";
-const TABS: Tab[] = ["profile", "widget", "whatsapp", "hours", "bookings", "calendars"];
+type Tab = "profile" | "widget" | "whatsapp" | "hours" | "bookings" | "calendars" | "billing";
+const TABS: Tab[] = ["profile", "widget", "whatsapp", "hours", "bookings", "calendars", "billing"];
 
-/** The tab in the address (#/b/<business>/settings/<tab>?google=<outcome>), and what Google said. */
+/**
+ * The tab in the address (#/b/<business>/settings/<tab>?…), and what a
+ * provider said on the way back: Google (?google=…) or Paystack (?paid=…).
+ */
 function fromAddress(value: string | null | undefined): { tab: Tab; outcome: string | null } {
   const [name, query] = (value ?? "").split("?");
-  return { tab: TABS.includes(name as Tab) ? name as Tab : "profile", outcome: new URLSearchParams(query ?? "").get("google") };
+  const params = new URLSearchParams(query ?? "");
+  return { tab: TABS.includes(name as Tab) ? name as Tab : "profile", outcome: params.get("google") ?? params.get("paid") };
 }
 
-export function SettingsPage(props: { businessId: string; role: Role; me: Me; businessType?: string | null; tab?: string | null }) {
+export function SettingsPage(props: { businessId: string; role: Role; me: Me; businessType?: string | null; tab?: string | null; onBusinessChanged?: () => void }) {
   const initial = fromAddress(props.tab);
   const [tab, setTab] = useState<Tab>(initial.tab);
   const stays = ["guesthouse", "salon", "restaurant"].includes(props.businessType ?? "");
@@ -38,6 +43,7 @@ export function SettingsPage(props: { businessId: string; role: Role; me: Me; bu
           { id: "widget", label: "Website widget" },
           { id: "whatsapp", label: "WhatsApp" },
           { id: "hours", label: "Hours" },
+          { id: "billing", label: "Plan & billing" },
         ]}
       />
       {tab === "bookings" && stays ? <BookingSettings businessId={props.businessId} role={props.role} slots={props.businessType !== "guesthouse"} /> : null}
@@ -46,6 +52,7 @@ export function SettingsPage(props: { businessId: string; role: Role; me: Me; bu
       {tab === "widget" ? <Widget businessId={props.businessId} role={props.role} me={props.me} /> : null}
       {tab === "whatsapp" ? <Whatsapp businessId={props.businessId} role={props.role} /> : null}
       {tab === "hours" ? <Hours businessId={props.businessId} /> : null}
+      {tab === "billing" ? <BillingSettings businessId={props.businessId} outcome={initial.tab === "billing" ? initial.outcome : null} onChanged={props.onBusinessChanged} /> : null}
     </div>
   );
 }
