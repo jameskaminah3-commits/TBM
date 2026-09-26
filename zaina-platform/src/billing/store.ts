@@ -493,11 +493,13 @@ export async function platformBilling(now = new Date()): Promise<PlatformBilling
     .innerJoin(businesses, eq(businesses.id, invoices.businessId))
     .orderBy(sql`${invoices.status} = 'open' desc`, desc(invoices.createdAt))
     .limit(100);
+  // Money that arrived without paying an invoice: paid after the invoice was paid or void, or for
+  // another amount (Paystack's transaction is kept). Declined and abandoned tries aren't money.
   const attentionRows = await db.select({ payment: invoicePayments, businessName: businesses.name, invoiceNumber: invoices.number })
     .from(invoicePayments)
     .innerJoin(businesses, eq(businesses.id, invoicePayments.businessId))
     .innerJoin(invoices, eq(invoices.id, invoicePayments.invoiceId))
-    .where(isNotNull(invoicePayments.note))
+    .where(sql`(${invoicePayments.status} = 'succeeded' and ${invoicePayments.note} is not null) or (${invoicePayments.status} = 'failed' and ${invoicePayments.receipt} is not null)`)
     .orderBy(desc(invoicePayments.createdAt))
     .limit(50);
   const collected = await db.select({ currency: invoices.currency, amountMinor: sql<string>`sum(${invoices.amountMinor})` })

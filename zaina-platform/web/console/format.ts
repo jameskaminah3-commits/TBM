@@ -57,3 +57,12 @@ export function date(value: string | null | undefined): string {
 
 /** An amount in cents, like "KSh 2,500" or "$29". */
 export const cents = (amount: number, currency: "KES" | "USD") => money({ currency, amount: amount / 100 });
+
+/** A period like "Sep 26 – Oct 26, 2026" (the year once, when both ends share it). */
+export function period(start: string, end: string): string {
+  const from = new Date(start);
+  const to = new Date(end);
+  const sameYear = from.getFullYear() === to.getFullYear();
+  const first = from.toLocaleDateString(undefined, sameYear ? { day: "numeric", month: "short" } : { day: "numeric", month: "short", year: "numeric" });
+  return `${first} – ${date(end)}`;
+}

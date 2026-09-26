@@ -395,3 +395,5 @@ table.lines tr.total th, table.lines tr.total td { font-weight: 700; border-top:
 .plan-price { margin: 0; font-size: 20px; font-weight: 650; }
 .plan > .button { justify-self: start; }
 @media (max-width: 820px) { .banner { margin: 12px 16px 0; } }
+.nowrap { white-space: nowrap; }
+.table .link { text-align: left; }

@@ -8,7 +8,7 @@
 import { useState } from "react";
 import { api } from "../api.ts";
 import { go } from "../app.tsx";
-import { cents, date } from "../format.ts";
+import { cents, count, date, period } from "../format.ts";
 import type { Invoice, Plan, SubscriptionStatus } from "../types.ts";
 import { Button, Empty, ErrorLine, Field, Icon, Message, Modal, useAction, useLoad } from "../ui.tsx";
 
@@ -73,7 +73,7 @@ export function PlatformBillingSection() {
                   <td><strong>{plan.name}</strong><div className="small muted">{plan.id}</div></td>
                   <td>{plan.price_text}</td>
                   <td className="number">{plan.trial_days ? `${plan.trial_days} days` : "—"}</td>
-                  <td className="number">{plan.conversations_per_month ?? "—"}</td>
+                  <td className="number">{plan.conversations_per_month ? count(plan.conversations_per_month) : "—"}</td>
                   <td>{plan.status === "active" ? <span className="chip ok">Offered</span> : <span className="chip">Hidden</span>}</td>
                   <td className="row-actions"><Button small onClick={() => setEditing(plan)}>Edit</Button></td>
                 </tr>
@@ -92,7 +92,7 @@ export function PlatformBillingSection() {
               {open.map((invoice) => (
                 <tr key={invoice.id}>
                   <td><button type="button" className="link" onClick={() => go({ businessId: invoice.business_id, page: "settings", id: "billing" })}><strong>{invoice.business_name}</strong></button></td>
-                  <td>{invoice.number}<div className="small muted">{invoice.plan_name}, {date(invoice.period_start)} to {date(invoice.period_end)}</div></td>
+                  <td><span className="nowrap">{invoice.number}</span><div className="small muted">{invoice.plan_name}, {period(invoice.period_start, invoice.period_end)}</div></td>
                   <td className="number">{cents(invoice.amount_minor, invoice.currency)}</td>
                   <td>
                     {date(invoice.due_at)}

@@ -285,6 +285,88 @@ Every business that takes bookings has **Settings → Calendars**:
   returns is kept encrypted as the business's secret; disconnecting revokes
   it at Google.
 
+## 8. Businesses signing up by themselves (optional)
+
+Sign-up is closed until you open it. Before opening it:
+
+1. Publish your **terms of service** and **privacy policy** as web pages.
+   Set their addresses (https) as `PLATFORM_TERMS_URL` and
+   `PLATFORM_PRIVACY_URL`; the sign-up form links to both, and a business
+   must accept the terms to sign up.
+2. Make sure email works (section 3: `RESEND_API_KEY` and `ALERT_FROM_EMAIL`)
+   and `PUBLIC_BASE_URL` is set: every new owner confirms their email by a
+   link before signing in.
+3. Set `PLATFORM_SIGNUP=open` and redeploy. The service refuses to start if
+   email or `PUBLIC_BASE_URL` is missing.
+
+The console's sign-in page then offers **Sign up your business**. A new
+business starts **setting up**: its owner signs in, works through **Set up**
+(what Zaina says about the business, its knowledge, its rooms or services,
+its deposit and a way to take it, where customers chat, a test chat with
+Zaina, and a plan once you offer plans), then puts it live. Nobody from the
+platform team is needed.
+
+The platform page lists every business, where it came from, and when it
+went live. **Pausing** one stops its website chat and WhatsApp until you
+resume it; its team keeps the console. Sign-ups are limited per visitor
+(5 an hour), per email (3 a day) and in all (500 a day). Set
+`PLATFORM_SIGNUP=closed` (or remove it) to close sign-up again; businesses
+already signed up carry on.
+
+## 9. Billing (optional)
+
+Billing is off until you offer a plan: businesses go live without choosing
+one. Prices are yours to decide: none is built in.
+
+1. **How businesses pay.** Either or both:
+   - **Card or M-Pesa, through the platform's own Paystack account.** Set
+     `PLATFORM_PAYSTACK_SECRET_KEY` (the account's `sk_live_…` key; the same
+     one subaccounts use, section 5). In Paystack (Settings → API Keys &
+     Webhooks), set the **Webhook URL** to
+     `https://<domain>/v1/payments/paystack`. Invoices are told apart from
+     bookings by their references (`zi_…`), so one webhook serves both.
+   - **By hand**, to a bank account or an M-Pesa paybill or till of the
+     platform's. Set `BILLING_PAYMENT_INSTRUCTIONS` to what the owner should
+     do (up to 500 characters), for example "M-Pesa paybill 123456, account
+     ZAINA." It's shown with every invoice and in the invoice emails, with
+     the invoice's number as the reference. When the money arrives, **mark
+     the invoice paid** on the platform page, with the M-Pesa code or bank
+     reference.
+2. **Plans.** On the platform page, under **Billing → Add a plan**: a name,
+   what it's for, a price a month or a year, in shillings or dollars, a free
+   trial (0 to 90 days; one trial per business), and how many conversations
+   a month it's meant for (shown to the business, not enforced). Offer
+   several; hide one to stop offering it (businesses on it keep it). A new
+   price applies from each business's next invoice.
+3. **Grace period.** `BILLING_GRACE_DAYS` (7 by default, 0 to 60): how long a
+   live business keeps answering customers after an invoice is due. After
+   that it pauses until the invoice is paid, then resumes at once. Days it
+   was paused aren't charged: its paid period starts when it pays.
+
+What happens then, with no one from the platform team:
+
+- A business that signed up by itself chooses a plan in **Settings → Plan &
+  billing** before going live: a free trial starts at once, or its first
+  invoice is due at once.
+- Each next period's invoice goes out a week before the period starts
+  (halfway through a short trial), by email to the business's owners, with
+  how to pay. A receipt follows each payment.
+- Owners can change plan (from their next invoice) or cancel (at the end of
+  what they've paid for).
+
+On the platform page you **mark paid** an invoice paid by hand, **waive**
+one (the business gets that period free), or **void** one (it isn't owed; a
+plan still running gets a new invoice at its current price). **Payments to
+look at** lists money Paystack reported for a different amount, or for an
+invoice already paid (two tabs): refund those in Paystack's dashboard.
+
+Businesses the platform team added (like TBM) aren't billed here: you bill
+them as agreed. A business that signed up and went live before you offered
+plans isn't asked to pay until it chooses one.
+
+Invoices are the platform's billing records, not tax invoices: VAT and KRA
+eTIMS stay with the platform's accountant for now.
+
 ## Backups
 
 On the Pro plan, Supabase keeps daily backups (Database → Backups);
@@ -300,3 +382,7 @@ point-in-time recovery is an add-on. A restored database needs the same
   reply, and appears in the console's inbox under **All**.
 - For a place to stay: a test booking in the chat gets a payment link, and
   its page shows the booking and the ways to pay.
+- With sign-up open: the sign-in page offers **Sign up your business**, and a
+  test sign-up gets its confirmation email.
+- With billing on: the platform page's **Billing** shows your plans and says
+  whether paying online is on.

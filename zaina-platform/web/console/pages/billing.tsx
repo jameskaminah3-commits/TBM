@@ -6,7 +6,7 @@
 // An owner chooses and pays; the rest of the team can look.
 
 import { api, businessPath } from "../api.ts";
-import { cents, count, date } from "../format.ts";
+import { cents, count, date, period } from "../format.ts";
 import type { Billing, Invoice, Plan } from "../types.ts";
 import { Button, Empty, ErrorLine, Message, useAction, useEvery, useLoad } from "../ui.tsx";
 
@@ -81,7 +81,9 @@ function CurrentPlan(props: { data: Billing; busy: boolean; onCancel: () => void
   let line: string;
   switch (subscription.status) {
     case "trialing":
-      line = subscription.cancel_at_period_end ? `Free trial until ${end}. It ends then, as you asked.` : `Free trial until ${end}. The first invoice comes a few days before.`;
+      line = subscription.cancel_at_period_end
+        ? `Free trial until ${end}. It ends then, as you asked.`
+        : open ? `Free trial until ${end}. Pay the invoice below to carry on after it.` : `Free trial until ${end}. The first invoice comes a few days before.`;
       break;
     case "active":
       line = subscription.cancel_at_period_end ? `Paid through ${end}. It ends then, as you asked.` : `Paid through ${end}.`;
@@ -137,7 +139,7 @@ function PayInvoice(props: { businessId: string; data: Billing; invoice: Invoice
       <h2>Invoice {invoice.number}</h2>
       <dl className="facts">
         <div><dt>{invoice.plan_name} ({invoice.billing_interval === "year" ? "yearly" : "monthly"})</dt><dd>{cents(invoice.amount_minor, invoice.currency)}</dd></div>
-        <div><dt>Period</dt><dd>{date(invoice.period_start)} to {date(invoice.period_end)}</dd></div>
+        <div><dt>Period</dt><dd>{period(invoice.period_start, invoice.period_end)}</dd></div>
         <div><dt>{invoice.overdue ? "Was due" : "Due"}</dt><dd>{date(invoice.due_at)}</dd></div>
       </dl>
       {data.can_manage && data.pay_online ? (
@@ -219,8 +221,8 @@ function Invoices(props: { invoices: Invoice[] }) {
           <tbody>
             {props.invoices.map((invoice) => (
               <tr key={invoice.id}>
-                <td><strong>{invoice.number}</strong><div className="small muted">{invoice.plan_name}</div></td>
-                <td>{date(invoice.period_start)} to {date(invoice.period_end)}</td>
+                <td><strong className="nowrap">{invoice.number}</strong><div className="small muted">{invoice.plan_name}</div></td>
+                <td>{period(invoice.period_start, invoice.period_end)}</td>
                 <td className="number">{cents(invoice.amount_minor, invoice.currency)}</td>
                 <td>
                   {invoice.status === "paid" ? <><span className="chip ok">{invoice.method === "waived" ? "Waived" : "Paid"}</span> <span className="small muted">{date(invoice.paid_at)}{invoice.method && invoice.method !== "waived" ? `, ${HOW[invoice.method]}` : ""}</span></>

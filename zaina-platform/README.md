@@ -24,8 +24,9 @@ WhatsApp ────────┘   (tokens,     (one turn: static  (TBM or  
 
 staff console ──▶ staff API ──▶ platform database: businesses, conversations (web and WhatsApp),
 (inbox, knowledge,  (cookie or     telemetry, usage, limits, staff, presence, settings, encrypted
- reports, settings,  token;        secrets, leads, knowledge, WhatsApp numbers and messages.
- team, platform)     roles)        Every business's rows are kept apart by Postgres.
+ bookings, reports,  token;        secrets, leads, knowledge, WhatsApp numbers and messages,
+ settings, team,     roles)        bookings and payments, calendars, plans and invoices.
+ set up, platform)                 Every business's rows are kept apart by Postgres.
      ▲
      └── alerts: web push to staff phones and browsers, and email
 ```
@@ -71,7 +72,11 @@ staff console ──▶ staff API ──▶ platform database: businesses, conve
   its encrypted secrets.
 - `src/staff/` — staff accounts, sign-in, roles, and the business console
   routes (settings, people, secrets, leads, reports, deletion requests).
-- `src/platform/` — the platform's own routes: adding businesses, and every business's day.
+- `src/platform/` — the platform's own routes: adding businesses, pausing them, and every business's day; the platform's own emails (`mailer.ts`).
+- `src/calendars/` — the calendar connector (Phase 5): calendar links (iCal feeds), busy times from Google Calendar and iCal links, confirmed bookings out to Google.
+- `src/signup/` — businesses signing up by themselves, and confirming the owner's email.
+- `src/onboarding/` — setting a business up: its checklist, trying Zaina in the console, going live.
+- `src/billing/` — what businesses pay the platform: plans, subscriptions and invoices (`store.ts`, with the rules), their dates (`periods.ts`), paying through the platform's Paystack account (`payments.ts`), the owners' emails, and the routes.
 - `src/db/` — the two database connections and business scope (`tenant.ts`).
 - `src/cli/` — creating the first staff accounts; importing knowledge; the
   release step run before each deploy.
@@ -304,11 +309,14 @@ Decisions to confirm:
   paid through its subaccounts) or every business brings its own.
 - Refunds are made in Paystack's dashboard or M-Pesa, not from the console.
 
-### Phase 5: second business type, self-serve (in progress)
+**Phase 5 — second business type, self-serve: built.** Salons and
+restaurants book time, not nights; businesses find their own way in: they
+sign up, set themselves up, choose a plan and go live, with no one from the
+platform team and no code changes.
 
-Salons and restaurants book time, not nights. They use the same bookings,
-payments, payment page, deposits and notices as a place to stay; what
-changes is what is booked and how "free" is worked out (migration 0009).
+Salons and restaurants use the same bookings, payments, payment page,
+deposits and notices as a place to stay; what changes is what is booked and
+how "free" is worked out (migration 0009).
 
 | Part | What it does |
 |---|---|
@@ -322,6 +330,52 @@ changes is what is booked and how "free" is worked out (migration 0009).
 | Zaina's tools | `list_services` (what can be booked, hours, the business's rules), `check_times` (times free on a day, and the next days with times if it's full), `create_appointment` (with the customer's own details), `get_booking`, and leads. The server writes the payment block ("This time is held until…", "The rest is paid when you arrive") |
 | Console | Services (or Tables): opening hours, services, people and tables, closures. Bookings: the same lists, with each booking's time and who it's with; a day's schedule per person or table; booking a time for a customer who calls. Settings → Bookings & payments without check-in times and nights |
 | Calendar connector (migration 0010) | For every business that takes bookings. **Calendar links**: private iCal links to the bookings (all, or one person's or table's) for any calendar app; only a hash of each link's token is kept, a link is shown once, and cancelled bookings drop out; names and times, no phone numbers. **Busy times in**: a Google calendar, or an iCal link from Airbnb, Booking.com or a channel manager, closes a room type's nights (one room per event) or a person's, table's or the whole business's time; each sync replaces what that calendar closed, and a calendar that can't be read keeps its last busy times and says why. **Bookings out**: with Google connected and a calendar chosen, confirmed bookings become events there, are rewritten when they change and removed when cancelled; the platform's own events are marked, so reading a calendar skips them. Every 10 minutes, or "Sync now". Links from outside are fetched only from public https addresses (checked after each redirect, 3 MB and 15 seconds at most). Google's sign-in is signed, expires in 15 minutes and must come back to an owner; its refresh token is an encrypted business secret, revoked at Google on disconnecting |
+| Signing up (migration 0011) | Open once the platform team sets `PLATFORM_SIGNUP=open`. The owner gives their name, email and password, the business's name, kind (a place to stay, a salon, a restaurant, or another business Zaina answers questions for) and website, and accepts the terms. Their email is confirmed by a signed link (48 hours) before they can sign in. The answer is the same whether or not the email already has an account (that person is emailed instead), so sign-up can't tell anyone who has one. Limited per visitor, per email and in all. A travel concierge still needs its own connector, from the platform team |
+| Setting up | A new business is "setting up": its team has the console, and customers aren't answered. The console opens on **Set up**, a checklist read from what the business has done (nothing is ticked by hand): what Zaina says about it and how customers reach it; its knowledge (required for a business that only answers questions); its rooms, or its hours, people and services (or tables); its deposit, its own choice, and a way to take it; where customers chat (its website or WhatsApp); a chat with Zaina; and, once the platform offers plans, a plan. Each step opens the page where it's done |
+| Trying Zaina | A chat in the console, as a customer would have it, through the same service customers use, before and after going live. Only from the console; these chats stay out of the reports |
+| Going live | An owner puts the business live once every required step is done: its website chat and WhatsApp then answer customers. The platform team can pause a business (customers aren't answered; its team keeps the console) and resume it |
+| Billing (migration 0012) | Plans are the platform team's price list, kept as data: a price a month or a year, in shillings or dollars, a free trial (one per business), and how many conversations a month it's for (shown, not cut off). Billing is off until the team offers a plan. A business that signed up by itself then chooses one before going live; one the team added is billed by the team, outside Zaina. The next period's invoice goes out a week ahead (halfway through a short trial) and is due when the period starts. Unpaid, a live business keeps answering through the grace period (7 days by default), then pauses until it's paid and resumes at once; days it was paused aren't charged. Invoices are paid by card or M-Pesa through the platform's own Paystack account (settled once, from Paystack's signed webhook, the owner's way back or the sweep; money for an invoice already paid is kept, to refund), by hand (marked paid by the team), or waived. Owners get each invoice and receipt by email. Only the platform changes billing records: a business reads its own, and the database refuses its writes |
+| Console | Sign-up and the confirmation link; Set up (the checklist, Try Zaina, Go live); Settings → Plan & billing (the plan, the invoice to pay, the plans offered, past invoices); a banner while a business is paused; and on the platform page, plans, open invoices (mark paid, waive, void), payments to look at, and every business's plan |
+
+Exit check (the plan's: "a business signs up and goes live without code
+changes"), run end to end on the scripted model:
+- **Studio Nywele**, a salon, signs up and confirms its email. It sets up its
+  hours, a stylist, a haircut and its own deposit, tries Zaina in the console,
+  and goes live. Its website chat then offers haircuts at its price and
+  deposit (`test/e2e/signup.test.ts`, 4 tests).
+- **Duka la Mama**, a shop Zaina answers questions for, chooses a plan with a
+  14-day free trial and goes live. The trial's invoice goes out a week ahead
+  and is paid by card through Paystack; the next is paid through Paystack's
+  webhook. Left unpaid past the grace period, the shop pauses, and it answers
+  again the moment the platform team marks its payment made by hand. A plan
+  it cancels runs to the end of what it paid for
+  (`test/e2e/billing.test.ts`, 7 tests).
+- **Salons and restaurants book time** (`test/e2e/appointments.test.ts`), and
+  **calendars stay in step** (`test/e2e/calendars.test.ts`).
+
+Also checked:
+- **The rules hold with the clock moved by hand:** the trial, the invoice a
+  week ahead, past due, the pause and the resume, one trial per business,
+  changing plan, a free plan, payments settled once, and each business
+  reading only its own billing (`test/db/billing.test.ts`); the last slot
+  going to one customer (`test/db/slots.test.ts`).
+- **In a browser.** Sign-up, Set up, services and schedule, calendars, Plan
+  & billing and the platform's billing, in Chromium at desktop and phone
+  widths, light and dark: no content-policy violations, no page errors, no
+  sideways scrolling.
+
+Decisions to confirm:
+
+- The plans: names, prices, trials and conversation sizes (none is built in).
+- The terms of service and privacy policy, before opening sign-up
+  (`PLATFORM_TERMS_URL`, `PLATFORM_PRIVACY_URL`).
+- The platform's own Paystack account for invoices, and how to pay by hand
+  (`BILLING_PAYMENT_INSTRUCTIONS`).
+- The grace period before an unpaid business pauses (7 days).
+- Invoices are the platform's billing records, not tax invoices: VAT and KRA
+  eTIMS stay with the accountant for now.
+- A business that went live before plans were offered isn't asked to pay
+  until it chooses a plan.
 
 ## Running it locally
 
@@ -355,7 +409,14 @@ Phase 5, optional: `PLATFORM_GOOGLE_CLIENT_ID` and
 `PLATFORM_GOOGLE_CLIENT_SECRET` (the platform's Google sign-in, for Google
 Calendar; both, and `PUBLIC_BASE_URL`, or Google Calendar is off; see
 DEPLOY.md) and `CALENDAR_SYNC_INTERVAL_MS` (600000: how often calendars are
-kept in step).
+kept in step). `PLATFORM_SIGNUP` (`closed`; `open` lets businesses sign up,
+and needs `RESEND_API_KEY`, `ALERT_FROM_EMAIL` and `PUBLIC_BASE_URL`),
+`PLATFORM_TERMS_URL` and `PLATFORM_PRIVACY_URL` (https pages the sign-up form
+links to). Billing: `PLATFORM_PAYSTACK_SECRET_KEY` (also how invoices are
+paid online), `BILLING_GRACE_DAYS` (7, 0 to 60: how long a live business
+keeps answering after an invoice is due) and `BILLING_PAYMENT_INSTRUCTIONS`
+(how to pay by hand, shown with every invoice). Tests only:
+`BILLING_SWEEP_INTERVAL_MS` (300000: how often plans move on).
 
 Optional: `PLATFORM_APP_DATABASE_URL` (see below), `PLATFORM_DATABASE_CA`
 (the CA certificate that signs the database server's, so it is checked),
@@ -491,18 +552,33 @@ Public: `GET /pay/:token` (the booking's payment page), `POST /pay/:token/paysta
 `GET /pay/:token/done`, `POST /pay/:token/mpesa`, `POST /pay/:token/mpesa-code`,
 `GET /pay/:token/status`. Providers: `POST /v1/payments/paystack/:businessId`
 (a business's own Paystack account), `POST /v1/payments/paystack` (the
-platform's), `POST /v1/payments/mpesa/:token` (Safaricom's callback).
+platform's: subaccounts' bookings, and invoices), `POST /v1/payments/mpesa/:token`
+(Safaricom's callback).
+
+Phase 5, signing up, setting up and billing:
+
+| Route | Who |
+|---|---|
+| `GET /v1/signup/config` (open or not, the kinds of business, the terms and privacy pages), `POST /v1/signup` (`{ name, email, password, business_name, business_type, time_zone?, website?, accept_terms }`: always 202), `GET /v1/signup/confirm?token=` (the email's link), `POST /v1/signup/resend` (`{ email }`) | anyone |
+| `GET onboarding` (the steps, done or not, and whether it can go live) | viewer |
+| `POST preview` (a test chat's token, for `POST /v1/chat` from the console) | manager |
+| `POST go-live` | owner |
+| `GET billing` (the plan, invoices, the plans offered, how to pay) | viewer |
+| `POST billing/plan` (`{ plan_id }`), `POST billing/cancel`, `POST billing/keep`, `POST billing/invoices/:invoiceId/pay` (Paystack's page: `{ authorization_url }`) | owner |
+| `GET /v1/billing/paystack/return` (back from Paystack's page) | none |
+| `PATCH /v1/platform/businesses/:id` (`{ status: active \| paused }`), `GET`, `POST /v1/platform/plans`, `PATCH /v1/platform/plans/:planId`, `GET /v1/platform/billing`, `POST /v1/platform/invoices/:id/mark-paid` (`{ receipt }` or `{ waive: true }`), `POST /v1/platform/invoices/:id/void` | platform admins |
 
 ## Tests
 
 ```
-npm test            # unit tests (no database): 168
-npm run test:db     # database checks, including separation between businesses: 54
+npm test            # unit tests (no database): 174
+npm run test:db     # database checks, including separation between businesses: 59
                     # PLATFORM_TEST_DATABASE_URL, a local database ending in _test (wiped)
 npm run test:e2e    # the whole service with a scripted model, TBM and a second business,
-                    # the Phase 3 channels (WhatsApp, alerts, console, widget), and the
-                    # Phase 4 pilot (three places to stay, their payments), and a
-                    # salon and a restaurant booking time, and the calendar connector (Phase 5): 78
+                    # the Phase 3 channels (WhatsApp, alerts, console, widget), the
+                    # Phase 4 pilot (three places to stay, their payments), and Phase 5:
+                    # a salon and a restaurant booking time, the calendar connector,
+                    # businesses signing up and going live, and billing: 89
                     # also TBM_TEST_DATABASE_URL, a local copy of TBM's schema ending in _test
 npm run check       # type check (the service, and the widget and console)
 

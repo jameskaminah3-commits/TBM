@@ -18,6 +18,7 @@ import {
   createPlan,
   keepPlan,
   markInvoicePaid,
+  platformBilling,
   recordPaymentStart,
   settleInvoicePayment,
   sweepBilling,
@@ -177,6 +178,11 @@ test("Paystack: a payment settles once, one for another amount doesn't count, an
   assert.match(rows.find((row) => row.reference === second.reference).note, /refund this payment in Paystack/);
   assert.match(rows.find((row) => row.reference === wrong.reference).note, /not the amount asked/);
   assert.equal((await invoicesOf("studio")).filter((invoice) => invoice.status === "paid").length, 2);
+  // A declined try isn't money: the platform team looks only at money that didn't pay an invoice.
+  const declined = await recordPaymentStart(renewal, { reference: reference(), payerEmail: "studio-owner@example.com" });
+  assert.equal(await settleInvoicePayment(declined, { status: "failed", amountMinor: 250_000, currency: "KES", transactionId: null, message: "Declined" }, now), "failed");
+  const attention = (await platformBilling(now)).attention.map((payment) => payment.reference).sort();
+  assert.deepEqual(attention, [second.reference, wrong.reference].sort());
 
   // A business the platform team paused stays paused when it pays.
   await sweepBilling(new Date("2026-12-19T07:00:00.000Z"));
