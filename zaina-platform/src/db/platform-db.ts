@@ -27,6 +27,7 @@ export { APP_ROLE };
 export type PlatformDb = NodePgDatabase<typeof schema>;
 
 let app: pg.Pool | null = null;
+let appMax = 10;
 let owner: pg.Pool | null = null;
 let ownerConnection: DatabaseConnection | null = null;
 
@@ -61,6 +62,7 @@ export function initPlatformDb(
   }
 
   ownerConnection = ownerSide;
+  appMax = appSide.config.max ?? 10;
   app = new pg.Pool(appSide.config);
   // Every connection switches to the restricted role before it is used.
   // (inBusiness() sets the role again per transaction; assertAppRole() checks it at start.)
@@ -77,6 +79,11 @@ export function initPlatformDb(
 export function appPool(): pg.Pool {
   if (!app) throw new Error("The platform database is not open (call initPlatformDb first)");
   return app;
+}
+
+/** The most connections the app pool opens. */
+export function appPoolMax(): number {
+  return appMax;
 }
 
 /** The app role outside any business: for the business directory and rate-limit counters only. */

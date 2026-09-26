@@ -571,6 +571,12 @@ test("the widget script loads on any website; the console is served with a stric
   assert.doesNotMatch(policy, /unsafe-inline|unsafe-eval/);
   assert.equal(page.headers.get("x-frame-options"), "DENY");
   assert.match(await page.text(), /<div id="root">/);
+  // Reached over https (the proxy in front says so), browsers are told to use nothing else for a year; not over plain http.
+  assert.equal(page.headers.get("strict-transport-security"), null);
+  for (const path of ["/console/", "/widget.js", "/v1/health"]) {
+    const secure = await fetch(`${platform.base}${path}`, { headers: { "x-forwarded-proto": "https" } });
+    assert.equal(secure.headers.get("strict-transport-security"), "max-age=31536000; includeSubDomains", path);
+  }
   assert.equal((await fetch(`${platform.base}/console/sw.js`)).headers.get("service-worker-allowed"), "/console/");
 
   // A business's website may call the chat from the browser; another website may not.

@@ -103,6 +103,12 @@ export function createApp(config: PlatformConfig, engine: EngineOptions, whatsap
   const app = express();
   app.disable("x-powered-by");
   app.set("trust proxy", config.trustProxy);
+  // Once a browser has reached the service over https, it never uses plain http for it again (HSTS, a year).
+  // Behind Railway's proxy, req.secure comes from X-Forwarded-Proto.
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.secure) res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    next();
+  });
   // Knowledge routes parse their own, bigger bodies (documents); the WhatsApp
   // and Paystack webhooks need the raw body to check their signatures.
   const json = express.json({ limit: "32kb" });

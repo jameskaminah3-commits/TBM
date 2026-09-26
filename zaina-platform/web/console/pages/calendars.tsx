@@ -94,7 +94,11 @@ function Google(props: { businessId: string; role: Role; view: CalendarsView; on
             </Field>
           </div>
           <div className="actions start">
-            <Button busy={action.busy} onClick={() => void action.run(async () => { await api("POST", businessPath(props.businessId, "/calendars/sync")); props.onChanged(); }, "In step.")}>Sync now</Button>
+            <Button busy={action.busy} onClick={() => void action.run(async () => {
+              const { summary } = await api<{ summary: { busy?: boolean } }>("POST", businessPath(props.businessId, "/calendars/sync"));
+              props.onChanged();
+              action.setMessage({ kind: "success", text: summary.busy ? "A sync was already running: it will be in step in a moment." : "In step." });
+            })}>Sync now</Button>
             {owner && google.status === "error" ? <Button kind="primary" busy={action.busy} onClick={() => void action.run(async () => { location.assign((await api<{ url: string }>("POST", businessPath(props.businessId, "/calendars/google/start"))).url); })}>Connect again</Button> : null}
             {owner ? <Button kind="danger" busy={action.busy} onClick={() => void action.run(async () => { await api("DELETE", businessPath(props.businessId, "/calendars/google")); props.onChanged(); }, "Disconnected.")}>Disconnect</Button> : null}
           </div>

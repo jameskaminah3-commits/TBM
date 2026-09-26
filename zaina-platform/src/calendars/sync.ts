@@ -17,12 +17,15 @@
 //                   confirmed) has its event removed. The platform's own
 //                   events are marked, so reading busy times skips them.
 //
-// One sync per business at a time (in this process).
+// One sync per business at a time, across every copy of the service (a
+// Postgres advisory lock), and a source's busy times are replaced under a
+// lock of their own.
 
 import { and, eq, gte } from "drizzle-orm";
 import { everyBusiness } from "../businesses/registry.ts";
 import { getSecret } from "../businesses/secrets.ts";
 import { bookings, calendarConnections, calendarEvents, calendarSources, offeringBlocks, offerings, resourceBlocks, resources, takesBookings, type Booking, type Business, type CalendarConnection, type CalendarSource } from "../db/schema.ts";
+import { appPool, appPoolMax } from "../db/platform-db.ts";
 import { inBusiness } from "../db/tenant.ts";
 import { businessDay } from "../gateway/spend-cap.ts";
 import { localParts, zonedInstant } from "../booking/local-time.ts";
@@ -46,12 +49,66 @@ export function configureCalendarSync(next: { publicBaseUrl: string | null }) {
   consoleBase = next.publicBaseUrl;
 }
 
-type Busy = { uid: string; days: { from: string; to: string } | null; start: Date; end: Date };
+export type Busy = { uid: string; days: { from: string; to: string } | null; start: Date; end: Date };
 
 export type SourceResult = { sourceId: string; ok: boolean; busy: number; error?: string };
-export type SyncSummary = { sources: SourceResult[]; events: { written: number; removed: number; errors: number }; connection: "none" | "connected" | "error" };
+export type SyncSummary = {
+  sources: SourceResult[];
+  events: { written: number; removed: number; errors: number };
+  connection: "none" | "connected" | "error";
+  /** Another copy of the service (or another request) was syncing this business: nothing was done. */
+  busy?: boolean;
+};
 
 const running = new Set<string>();
+
+/**
+ * How many businesses sync at once in one copy of the service (up to three):
+ * each sync holds a connection for its lock and uses another for its work,
+ * so an unbounded number could take every connection and wait on each other.
+ * Half the pool, less one for everything else.
+ */
+const syncSlots = () => Math.max(1, Math.min(3, Math.floor((appPoolMax() - 2) / 2)));
+let syncing = 0;
+const waiting: Array<() => void> = [];
+
+async function inSyncSlot<T>(work: () => Promise<T>): Promise<T> {
+  if (syncing < syncSlots()) syncing += 1;
+  else await new Promise<void>((resolve) => waiting.push(resolve));
+  try {
+    return await work();
+  } finally {
+    // The slot passes straight to the next in line, or is given back.
+    const next = waiting.shift();
+    if (next) next();
+    else syncing -= 1;
+  }
+}
+
+/**
+ * Runs `work` holding one business's calendar lock, across every copy of the
+ * service: a Postgres advisory lock held on a connection of its own for the
+ * whole sync, so two copies (a deploy's overlap, or more than one running)
+ * never read a calendar or write Google events for the same business at
+ * once. Null, and nothing done, when another holds it.
+ */
+async function withCalendarLock<T>(businessId: string, work: () => Promise<T>): Promise<T | null> {
+  const key = `calendars:${businessId}`;
+  const client = await appPool().connect();
+  let broken = false;
+  try {
+    const { rows: [row] } = await client.query<{ locked: boolean }>("select pg_try_advisory_lock(hashtextextended($1, 0)) as locked", [key]);
+    if (!row?.locked) return null;
+    try {
+      return await work();
+    } finally {
+      // A connection that couldn't let go of its lock is closed, which lets go of it.
+      await client.query("select pg_advisory_unlock(hashtextextended($1, 0))", [key]).catch(() => { broken = true; });
+    }
+  } finally {
+    client.release(broken);
+  }
+}
 
 export async function getConnection(businessId: string): Promise<CalendarConnection | undefined> {
   const [row] = await inBusiness((db) => db.select().from(calendarConnections).where(eq(calendarConnections.businessId, businessId)).limit(1), businessId);
@@ -111,10 +168,15 @@ async function readSource(business: Business, source: CalendarSource, token: str
   return readBusy(await fetchIcs(link), { timeZone: business.timeZone, from, to, limit: MAX_BUSY });
 }
 
-/** Replaces a source's closures with its busy times now. */
-async function writeBusy(business: Business, source: CalendarSource, busy: Busy[], now: Date): Promise<number> {
+/**
+ * Replaces a source's closures with its busy times now. The source is locked
+ * while its rows are replaced, so two replacements at once (a new source read
+ * while the sweep reads it too) can't both add theirs.
+ */
+export async function writeBusy(business: Business, source: CalendarSource, busy: Busy[], now: Date): Promise<number> {
   const reason = `Busy in ${source.label}`.slice(0, 200);
-  return inBusiness(async (db) => {
+  return inBusiness(async (db, client) => {
+    await client.query("select pg_advisory_xact_lock(hashtextextended($1, 0))", [`calendar-source:${source.id}`]);
     let count = 0;
     if (source.offeringId) {
       await db.delete(offeringBlocks).where(and(eq(offeringBlocks.businessId, business.id), eq(offeringBlocks.calendarSourceId, source.id)));
@@ -226,33 +288,42 @@ async function writeBookings(business: Business, connection: CalendarConnection,
   return result;
 }
 
-/** Syncs one business's calendars: busy times in, bookings out. */
+/**
+ * Syncs one business's calendars: busy times in, bookings out. When another
+ * sync of the business is running (here or in another copy), nothing is done
+ * and the summary says busy.
+ */
 export async function syncBusiness(business: Business, now = new Date()): Promise<SyncSummary> {
   const summary: SyncSummary = { sources: [], events: { written: 0, removed: 0, errors: 0 }, connection: "none" };
-  if (running.has(business.id)) return summary;
+  if (running.has(business.id)) return { ...summary, busy: true };
   running.add(business.id);
   try {
-    const [connection, sources] = await Promise.all([getConnection(business.id), listSources(business.id)]);
-    for (const source of sources) summary.sources.push(await syncSource(business, source, now));
-    if (connection) {
-      const token = await googleTokenFor(business.id);
-      if (!token) {
-        summary.connection = "error";
-      } else {
-        summary.connection = "connected";
-        try {
-          if (connection.writeCalendarId) summary.events = await writeBookings(business, connection, token, now);
-          await markConnection(business.id, { status: "connected", lastError: summary.events.errors ? `${summary.events.errors} booking${summary.events.errors === 1 ? "" : "s"} couldn't be written; trying again next time.` : null, lastSyncAt: now });
-        } catch (error) {
-          summary.connection = "error";
-          await markConnection(business.id, { status: error instanceof GoogleAuthError ? "error" : "connected", lastError: (error as Error).message.slice(0, 500), lastSyncAt: now });
-        }
-      }
-    }
-    return summary;
+    const done = await inSyncSlot(() => withCalendarLock(business.id, () => syncLocked(business, summary, now)));
+    return done ?? { ...summary, busy: true };
   } finally {
     running.delete(business.id);
   }
+}
+
+async function syncLocked(business: Business, summary: SyncSummary, now: Date): Promise<SyncSummary> {
+  const [connection, sources] = await Promise.all([getConnection(business.id), listSources(business.id)]);
+  for (const source of sources) summary.sources.push(await syncSource(business, source, now));
+  if (connection) {
+    const token = await googleTokenFor(business.id);
+    if (!token) {
+      summary.connection = "error";
+    } else {
+      summary.connection = "connected";
+      try {
+        if (connection.writeCalendarId) summary.events = await writeBookings(business, connection, token, now);
+        await markConnection(business.id, { status: "connected", lastError: summary.events.errors ? `${summary.events.errors} booking${summary.events.errors === 1 ? "" : "s"} couldn't be written; trying again next time.` : null, lastSyncAt: now });
+      } catch (error) {
+        summary.connection = "error";
+        await markConnection(business.id, { status: error instanceof GoogleAuthError ? "error" : "connected", lastError: (error as Error).message.slice(0, 500), lastSyncAt: now });
+      }
+    }
+  }
+  return summary;
 }
 
 /** Every business with calendars to keep in step. */
