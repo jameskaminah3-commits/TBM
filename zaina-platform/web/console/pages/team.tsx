@@ -91,14 +91,17 @@ function AddPerson(props: { businessId: string; owner: boolean; onClose: () => v
         onSubmit={async (event) => {
           event.preventDefault();
           await action.run(async () => {
-            await api("POST", businessPath(props.businessId, "/members"), form);
-            props.onAdded(`${form.name || form.email} was added as ${form.role}. If they're new, give them the starting password to change after signing in.`);
+            const { invited } = await api<{ invited: boolean }>("POST", businessPath(props.businessId, "/members"), { ...form, password: form.password || undefined });
+            const who = form.name || form.email;
+            props.onAdded(invited
+              ? `${who} was added as ${form.role}, and emailed a link to choose their password.`
+              : form.password ? `${who} was added as ${form.role}. Give them the starting password to change after signing in.` : `${who} was added as ${form.role}.`);
           });
         }}
       >
         <Field label="Email"><input type="email" required value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></Field>
         <Field label="Name" hint="Only needed for someone who doesn't have a Zaina account yet."><input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></Field>
-        <Field label="Starting password" hint="Only for a new account: 10+ characters, letters with numbers or symbols. They change it after signing in.">
+        <Field label="Starting password (optional)" hint="Only for a new account. Leave it empty and they're emailed a link to choose their own; or give 10+ characters, letters with numbers or symbols, for them to change after signing in.">
           <input type="password" autoComplete="new-password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
         </Field>
         <Field label="Role">

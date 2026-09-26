@@ -29,6 +29,15 @@ let businessId = "";
 
 const staff = (method: string, route: string, body?: unknown) => api(method, `/v1/staff/businesses/${businessId}${route}`, body, token);
 const emails = () => platform.log("emails") as Array<{ subject: string; text: string }>;
+/** An email by its subject: they're sent in the background, after the answer. */
+async function emailWith(subject: string) {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const found = emails().find((email) => email.subject === subject);
+    if (found) return found;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return assert.fail(`no email "${subject}"`);
+}
 const linkIn = (text: string) => /(http:\/\/127\.0\.0\.1:\d+\/v1\/signup\/confirm\?token=\S+)/.exec(text)?.[1] ?? assert.fail(`no link in: ${text}`);
 const raw64 = (tool: string, args: Record<string, unknown>) => `TEST:raw64 ${tool} ${Buffer.from(JSON.stringify(args)).toString("base64")}`;
 
@@ -73,8 +82,7 @@ test("a business signs up; the owner confirms their email before signing in", as
   assert.equal((await api("POST", "/v1/signup", { ...form, business_type: "travel_concierge" })).status, 400, "a concierge needs the platform team");
   const signed = await api("POST", "/v1/signup", form);
   assert.equal(signed.status, 202, JSON.stringify(signed.body));
-  const confirm = emails().find((email) => email.subject === "Confirm your email for Zaina");
-  assert.ok(confirm);
+  const confirm = await emailWith("Confirm your email for Zaina");
   assert.match(confirm.text, /Thanks for signing up Studio Nywele on Zaina/);
 
   const early = await api("POST", "/v1/staff/login", { email: OWNER.email, password: OWNER.password });
@@ -86,7 +94,7 @@ test("a business signs up; the owner confirms their email before signing in", as
   const again = await api("POST", "/v1/signup", { ...form, business_name: "Studio Two" });
   assert.equal(again.status, 202);
   assert.deepEqual(again.body, signed.body);
-  assert.ok(emails().some((email) => email.subject === "You already have a Zaina account"));
+  await emailWith("You already have a Zaina account");
   assert.equal((await platform.db.query("select count(*)::int as n from businesses where source = 'self_serve'")).rows[0].n, 1);
 
   const forged = await fetch(`${BASE}/v1/signup/confirm?token=ev1.e30.bad`, { redirect: "manual" });

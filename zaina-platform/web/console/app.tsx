@@ -5,7 +5,8 @@
 // waiting count in the tab title, "I'm here" for chat routing).
 //
 // Pages are chosen by the address's hash: #/b/<business>/<page>/<id>, or
-// #/platform for the platform's own admins.
+// #/platform for the platform's own admins. An emailed link to choose a
+// password opens #/reset/<token> (or #/welcome/<token>), signed in or not.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, ApiError, businessPath } from "./api.ts";
@@ -18,6 +19,7 @@ import { RoomsPage } from "./pages/rooms.tsx";
 import { ServicesPage } from "./pages/services.tsx";
 import { SettingsPage } from "./pages/settings.tsx";
 import { TeamPage } from "./pages/team.tsx";
+import { ChoosePassword, ForgotPassword } from "./pages/password.tsx";
 import { ResendLink, SignUp, type SignupConfig } from "./pages/signup.tsx";
 import { SetupPage } from "./pages/setup.tsx";
 import { alertsSupported, currentSubscription, turnAlertsOff, turnAlertsOn } from "./push.ts";
@@ -29,6 +31,7 @@ type Route = { businessId: string | null; page: string; id: string | null };
 function readRoute(): Route {
   const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean).map(decodeURIComponent);
   if (parts[0] === "platform") return { businessId: null, page: "platform", id: null };
+  if (parts[0] === "reset" || parts[0] === "welcome") return { businessId: null, page: parts[0], id: parts[1] ?? null };
   if (parts[0] === "b" && parts[1]) return { businessId: parts[1], page: parts[2] ?? "inbox", id: parts[3] ?? null };
   return { businessId: null, page: "inbox", id: null };
 }
@@ -51,6 +54,7 @@ function useRoute(): Route {
 
 export function App() {
   const [me, setMe] = useState<Me | null | undefined>(undefined);
+  const [notice, setNotice] = useState<{ email: string; text: string } | null>(null);
   const route = useRoute();
 
   const loadMe = useCallback(async () => {
@@ -68,8 +72,22 @@ export function App() {
     return () => window.removeEventListener("zaina:signed-out", signedOut);
   }, [loadMe]);
 
+  if ((route.page === "reset" || route.page === "welcome") && route.id) {
+    return (
+      <ChoosePassword
+        token={route.id}
+        welcome={route.page === "welcome"}
+        onDone={(email, message) => {
+          setNotice(email && message ? { email, text: message } : null);
+          location.hash = "";
+          // A new password signed this account out everywhere, this browser too.
+          void loadMe();
+        }}
+      />
+    );
+  }
   if (me === undefined) return <div className="splash" aria-busy="true">Loading…</div>;
-  if (me === null) return <SignIn onSignedIn={loadMe} />;
+  if (me === null) return <SignIn onSignedIn={loadMe} notice={notice} />;
   return <Console me={me} route={route} reloadMe={loadMe} />;
 }
 
@@ -78,15 +96,18 @@ const CONFIRMED: Record<string, { kind: "success" | "error"; text: string }> = {
   expired: { kind: "error", text: "That link has expired or was already replaced. Sign in to ask for a new one." },
 };
 
-function SignIn(props: { onSignedIn: () => void }) {
-  const [email, setEmail] = useState("");
+function SignIn(props: { onSignedIn: () => void; notice: { email: string; text: string } | null }) {
+  const [email, setEmail] = useState(props.notice?.email ?? "");
   const [password, setPassword] = useState("");
   const [unconfirmed, setUnconfirmed] = useState(false);
   const [signingUp, setSigningUp] = useState(false);
-  const signup = useLoad(() => api<SignupConfig>("GET", "/v1/signup/config").catch(() => ({ open: false, business_types: [] })), []);
+  const [forgot, setForgot] = useState(false);
+  const signup = useLoad(() => api<SignupConfig>("GET", "/v1/signup/config").catch((): SignupConfig => ({ open: false, business_types: [] })), []);
   const confirmed = CONFIRMED[new URLSearchParams(location.search).get("confirmed") ?? ""] ?? null;
+  const notice = props.notice ? { kind: "success" as const, text: props.notice.text } : confirmed;
   const action = useAction();
   if (signingUp && signup.data?.open) return <SignUp config={signup.data} onBack={() => setSigningUp(false)} />;
+  if (forgot) return <ForgotPassword email={email} onBack={() => setForgot(false)} />;
   return (
     <main className="signin">
       <form
@@ -107,7 +128,7 @@ function SignIn(props: { onSignedIn: () => void }) {
         <div className="brand-mark" aria-hidden="true">Z</div>
         <h1>Sign in to Zaina</h1>
         <p className="muted">Your business's chats, knowledge and reports.</p>
-        {confirmed && !action.message ? <Message message={confirmed} /> : null}
+        {notice && !action.message ? <Message message={notice} /> : null}
         <Field label="Email">
           <input type="email" autoComplete="username" required value={email} onChange={(event) => setEmail(event.target.value)} />
         </Field>
@@ -117,6 +138,7 @@ function SignIn(props: { onSignedIn: () => void }) {
         <Message message={action.message} />
         {unconfirmed ? <ResendLink email={email} /> : null}
         <Button kind="primary" type="submit" busy={action.busy}>Sign in</Button>
+        {signup.data?.password_reset ? <p className="muted small"><button type="button" className="link" onClick={() => setForgot(true)}>Forgot your password?</button></p> : null}
         {signup.data?.open ? <p className="muted small">New here? <button type="button" className="link" onClick={() => setSigningUp(true)}>Sign up your business</button></p> : null}
       </form>
     </main>

@@ -114,14 +114,16 @@ function AddBusiness(props: { onClose: () => void; onAdded: (message: string) =>
         onSubmit={async (event) => {
           event.preventDefault();
           await action.run(async () => {
-            const created = await api<{ business: { id: string; public_key: string } }>("POST", "/v1/platform/businesses", {
+            const created = await api<{ business: { id: string; public_key: string }; owner: { invited: boolean } }>("POST", "/v1/platform/businesses", {
               id: form.id,
               name: form.name,
               business_type: form.type,
               allowed_origins: form.origin.trim() ? [form.origin.trim()] : [],
               owner: { email: form.ownerEmail, name: form.ownerName, password: form.ownerPassword || undefined },
             });
-            props.onAdded(`Added ${form.name}. Its owner can sign in now; its widget key is ${created.business.public_key}.`);
+            props.onAdded(created.owner.invited
+              ? `Added ${form.name}. Its owner was emailed a link to choose their password; its widget key is ${created.business.public_key}.`
+              : `Added ${form.name}. Its owner can sign in now; its widget key is ${created.business.public_key}.`);
           });
         }}
       >
@@ -145,7 +147,7 @@ function AddBusiness(props: { onClose: () => void; onAdded: (message: string) =>
           <Field label="Email"><input type="email" required value={form.ownerEmail} onChange={(event) => setForm({ ...form, ownerEmail: event.target.value })} /></Field>
           <Field label="Name"><input value={form.ownerName} onChange={(event) => setForm({ ...form, ownerName: event.target.value })} /></Field>
         </div>
-        <Field label="Starting password" hint="Only for a new account; they change it after signing in."><input type="password" autoComplete="new-password" value={form.ownerPassword} onChange={(event) => setForm({ ...form, ownerPassword: event.target.value })} /></Field>
+        <Field label="Starting password (optional)" hint="Only for a new account. Leave it empty and the owner is emailed a link to choose their own."><input type="password" autoComplete="new-password" value={form.ownerPassword} onChange={(event) => setForm({ ...form, ownerPassword: event.target.value })} /></Field>
         <Message message={action.message} />
         <div className="actions"><Button onClick={props.onClose}>Cancel</Button><Button kind="primary" type="submit" busy={action.busy}>Add business</Button></div>
       </form>

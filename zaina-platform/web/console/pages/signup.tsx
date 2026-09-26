@@ -8,7 +8,7 @@ import { useState } from "react";
 import { api } from "../api.ts";
 import { Button, Field, Message, useAction } from "../ui.tsx";
 
-export type SignupConfig = { open: boolean; business_types: Array<{ type: string; label: string }>; terms_url?: string | null; privacy_url?: string | null };
+export type SignupConfig = { open: boolean; business_types: Array<{ type: string; label: string }>; terms_url?: string | null; privacy_url?: string | null; password_reset?: boolean };
 
 export function SignUp(props: { config: SignupConfig; onBack: () => void }) {
   const [form, setForm] = useState({ name: "", email: "", password: "", business_name: "", business_type: "", website: "", accept_terms: false });

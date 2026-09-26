@@ -3,7 +3,7 @@
 // A business signs up by itself (Phase 5), when the platform team has opened
 // sign-up (PLATFORM_SIGNUP=open):
 //
-//   GET  /v1/signup/config   whether sign-up is open, and the kinds of business that can join
+//   GET  /v1/signup/config   whether sign-up is open, the kinds of business that can join, and whether "Forgot your password?" works
 //   POST /v1/signup          { name, email, password, business_name, business_type, time_zone?, website?, accept_terms }
 //   GET  /v1/signup/confirm  the link in the email: confirms the address, then on to the console
 //   POST /v1/signup/resend   { email }: the link again, for an account not confirmed yet
@@ -26,6 +26,7 @@ import { visitorKey } from "../gateway/visitor.ts";
 import { sendEmail } from "../platform/mailer.ts";
 import { DEFAULT_DAILY_TOKEN_CAP, DEFAULT_RETENTION_DAYS } from "../platform/routes.ts";
 import { hashPassword, passwordProblem } from "../staff/passwords.ts";
+import { canEmailLinks } from "../staff/password-links.ts";
 
 /** The kinds of business that can sign up (a travel concierge needs its own connector, set up by the platform team). */
 export const SIGNUP_TYPES: Array<{ type: BusinessType; label: string }> = [
@@ -101,7 +102,14 @@ export function registerSignupRoutes(app: Express, config: PlatformConfig): void
   }
 
   app.get("/v1/signup/config", (_req: Request, res: Response) => {
-    res.json({ open: config.signupOpen, business_types: config.signupOpen ? SIGNUP_TYPES : [], terms_url: config.termsUrl, privacy_url: config.privacyUrl });
+    res.json({
+      open: config.signupOpen,
+      business_types: config.signupOpen ? SIGNUP_TYPES : [],
+      terms_url: config.termsUrl,
+      privacy_url: config.privacyUrl,
+      // "Forgot your password?" works (it needs email).
+      password_reset: canEmailLinks(config),
+    });
   });
 
   app.post("/v1/signup", async (req: Request, res: Response, next: NextFunction) => {

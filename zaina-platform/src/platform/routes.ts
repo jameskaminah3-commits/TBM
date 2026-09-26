@@ -7,8 +7,9 @@
 //   GET   /v1/platform/overview        every business's day: model use against its budget, chats,
 //                                      waiting handoffs, failed turns, WhatsApp; and what the platform has switched on
 //   POST  /v1/platform/businesses      { id, name, allowed_origins, business_type?, time_zone?, daily_token_cap?,
-//                                        retention_days?, owner: { email, name, password } }
-//                                      → the business, its settings and its first owner
+//                                        retention_days?, owner: { email, name, password? } }
+//                                      → the business, its settings and its first owner (a new owner without
+//                                        a password is emailed a link to choose one)
 //
 // Plans, subscriptions and invoices: billing/routes.ts.
 //
@@ -25,7 +26,9 @@ import { createBusinessWithOwner, findStaffByEmail, setBusinessStatus } from "..
 import { businessTypes, type BusinessType } from "../db/schema.ts";
 import { TYPES_WITH_OWN_CONNECTOR } from "../engine/tool-sets.ts";
 import { normalizeOrigin } from "../gateway/origin.ts";
+import { sendEmail } from "./mailer.ts";
 import { requirePlatformAdmin, requireStaff } from "../staff/auth.ts";
+import { addedEmail, canEmailLinks, inviteEmail, passwordLink, passwordLinkToken, unknownPassword } from "../staff/password-links.ts";
 import { hashPassword, passwordProblem } from "../staff/passwords.ts";
 
 export const DEFAULT_DAILY_TOKEN_CAP = 5_000_000;
@@ -184,12 +187,18 @@ export function registerPlatformRoutes(app: Express, config: PlatformConfig): vo
       const ownerEmail = typeof owner.email === "string" ? owner.email.trim().toLowerCase() : "";
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(ownerEmail)) return res.status(400).json({ error: "owner_email_required" });
 
-      // An existing account becomes the owner as it is; a new one needs a name and a good password.
+      // An existing account becomes the owner as it is. A new one needs a
+      // name, and either a good starting password or (left out) an emailed
+      // link to choose their own.
       const existing = await findStaffByEmail(ownerEmail);
+      const invite = !existing && (owner.password === undefined || owner.password === null || owner.password === "");
       if (!existing) {
-        const problem = passwordProblem(owner.password);
-        if (problem) return res.status(400).json({ error: "weak_password", message: problem });
         if (typeof owner.name !== "string" || !owner.name.trim()) return res.status(400).json({ error: "owner_name_required" });
+        if (invite && !canEmailLinks(config)) {
+          return res.status(400).json({ error: "password_required", message: "Emails aren't set up on the platform yet: give the owner a starting password." });
+        }
+        const problem = invite ? null : passwordProblem(owner.password);
+        if (problem) return res.status(400).json({ error: "weak_password", message: problem });
       }
 
       const publicKey = `pk_${id.replace(/-/g, "_")}_${randomBytes(6).toString("hex")}`;
@@ -197,7 +206,7 @@ export function registerPlatformRoutes(app: Express, config: PlatformConfig): vo
       try {
         ownerUser = await createBusinessWithOwner({
           business: { id, name, publicKey, allowedOrigins: origins as string[], timeZone, dailyTokenCap, retentionDays, businessType },
-          owner: { email: ownerEmail, name: String(owner.name ?? ""), passwordHash: existing ? null : await hashPassword(owner.password) },
+          owner: { email: ownerEmail, name: String(owner.name ?? ""), passwordHash: existing ? null : invite ? await unknownPassword() : await hashPassword(owner.password) },
         });
       } catch (error) {
         const database = ((error as { cause?: unknown }).cause ?? error) as { code?: string; constraint?: string };
@@ -205,12 +214,18 @@ export function registerPlatformRoutes(app: Express, config: PlatformConfig): vo
         throw error;
       }
       clearBusinessCache();
+      if (invite) {
+        const link = passwordLink(config.publicBaseUrl!, passwordLinkToken(config.sessionTokenSecret, ownerUser, "invite"), "invite");
+        void sendEmail({ to: ownerUser.email, ...inviteEmail(ownerUser, name, "owner", link, null) });
+      } else if (existing && canEmailLinks(config)) {
+        void sendEmail({ to: ownerUser.email, ...addedEmail(ownerUser, name, "owner", `${config.publicBaseUrl}/console/`, null) });
+      }
       res.status(201).json({
         business: {
           id, name, business_type: businessType, public_key: publicKey, allowed_origins: origins, time_zone: timeZone,
           daily_token_cap: dailyTokenCap, retention_days: retentionDays,
         },
-        owner: { id: ownerUser.id, email: ownerUser.email },
+        owner: { id: ownerUser.id, email: ownerUser.email, invited: invite },
       });
     } catch (error) {
       next(error);

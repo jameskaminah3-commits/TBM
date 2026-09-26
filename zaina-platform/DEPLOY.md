@@ -158,6 +158,11 @@ says what to check:
      to the home screen first. iPhones need iOS 16.4 or later.
 - **Email:** set `RESEND_API_KEY` and `ALERT_FROM_EMAIL` (an address on a
   domain verified in Resend). You can reference the TBM service's Resend key.
+  Email also turns on "Forgot your password?" on the sign-in page and
+  invitations (a new team member chooses their own password from an emailed
+  link), both with `PUBLIC_BASE_URL` set. Without email, a new person needs a
+  starting password and a forgotten one is changed by the platform team
+  (`npm run staff:create` can't change an existing account's password).
 
 ## 4. WhatsApp (for a pilot business)
 

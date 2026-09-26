@@ -5,7 +5,7 @@
 // of a person's businesses, and creating businesses. Nothing here reads a
 // business's conversations or data.
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { ownerDb } from "./platform-db.ts";
 import {
   businessSettings,
@@ -51,6 +51,31 @@ export async function setStaffPassword(userId: string, passwordHash: string): Pr
     .update(staffUsers)
     .set({ passwordHash, tokenVersion: sql`${staffUsers.tokenVersion} + 1`, updatedAt: new Date() })
     .where(eq(staffUsers.id, userId));
+}
+
+/**
+ * A new password from an emailed link, only while the link is current: the
+ * account's token version and email are still the link's (so a link works
+ * once, even with two uses at the same moment). It signs the person out
+ * everywhere, and confirms the email the link reached.
+ */
+export async function resetStaffPassword(input: { userId: string; tokenVersion: number; email: string; passwordHash: string }): Promise<StaffUser | undefined> {
+  if (!/^[0-9a-f-]{36}$/i.test(input.userId)) return undefined;
+  const [row] = await ownerDb().update(staffUsers)
+    .set({
+      passwordHash: input.passwordHash,
+      tokenVersion: sql`${staffUsers.tokenVersion} + 1`,
+      emailVerifiedAt: sql`coalesce(${staffUsers.emailVerifiedAt}, now())`,
+      updatedAt: new Date(),
+    })
+    .where(and(
+      eq(staffUsers.id, input.userId),
+      eq(staffUsers.tokenVersion, input.tokenVersion),
+      eq(staffUsers.email, input.email),
+      isNull(staffUsers.disabledAt),
+    ))
+    .returning();
+  return row;
 }
 
 /** The businesses a person works for, as what, whether each is live yet, and why one is paused. */

@@ -6,9 +6,15 @@
 //   GET    /v1/staff/me                        the account and its businesses
 //   POST   /v1/staff/me/password               { current, next } → signs out everywhere, new token
 //
+//   A forgotten password (an emailed link, password-links.ts):
+//   POST   /v1/staff/password/forgot           { email } → the same answer whether or not it has an account
+//   POST   /v1/staff/password/check            { token } → whose link it is, while it still works
+//   POST   /v1/staff/password/reset            { token, password } → signs out everywhere; sign in again
+//
 //   Per business (/v1/staff/businesses/:businessId/…), by role:
 //   GET    settings                  viewer    PATCH settings                manager
 //   GET    members                   manager   POST members                  manager (managers and owners: owner)
+//                                             a new person without a starting password is emailed a link to choose one
 //   DELETE members/:userId           manager (managers and owners: owner; never the last owner)
 //   GET    secrets (names only)      manager   PUT / DELETE secrets/:name    owner
 //   GET    leads                     agent
@@ -27,7 +33,7 @@ import { clearBusinessCache, reloadBusiness } from "../businesses/registry.ts";
 import { deleteSecret, listSecrets, putSecret, SECRET_NAME_PATTERN } from "../businesses/secrets.ts";
 import { getBusinessSettings, updateBusinessSettings, validateSettingsPatch } from "../businesses/settings.ts";
 import { deleteConversation, eraseCustomer } from "../conversations/retention.ts";
-import { createStaffUser, findStaffByEmail, getStaffUser, membershipsOf, setStaffPassword, updateBusinessDirectory, type DirectoryPatch } from "../db/platform-scope.ts";
+import { createStaffUser, findStaffByEmail, getStaffUser, membershipsOf, resetStaffPassword, setStaffPassword, updateBusinessDirectory, type DirectoryPatch } from "../db/platform-scope.ts";
 import { leads, staffMemberships, staffRoles, staffUsers, type StaffRole, type StaffUser } from "../db/schema.ts";
 import { inBusiness } from "../db/tenant.ts";
 import { summarizeTurns } from "../engine/telemetry.ts";
@@ -35,9 +41,13 @@ import { businessReport } from "../reports/business-report.ts";
 import { normalizeOrigin } from "../gateway/origin.ts";
 import { consumeLimits } from "../gateway/rate-limit.ts";
 import { visitorKey } from "../gateway/visitor.ts";
+import { sendEmail } from "../platform/mailer.ts";
 import { requireBusinessRole, requireStaff, ROLE_RANK, setConsoleCookie, staffOf } from "./auth.ts";
+import { addedEmail, canEmailLinks, inviteEmail, passwordChangedEmail, passwordLink, passwordLinkToken, readPasswordLinkToken, resetEmail, unknownPassword } from "./password-links.ts";
 import { hashPassword, passwordProblem, verifyAgainstNothing, verifyPassword } from "./passwords.ts";
 import { issueStaffToken } from "./tokens.ts";
+
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 const publicUser = (user: { id: string; email: string; name: string; isPlatformAdmin: boolean }) => ({
   id: user.id,
@@ -125,6 +135,7 @@ export function registerStaffAccountRoutes(app: Express, config: PlatformConfig)
   const secret = config.sessionTokenSecret;
   const staff = requireStaff(secret);
   const base = "/v1/staff/businesses/:businessId";
+  const consoleUrl = `${config.publicBaseUrl ?? ""}/console/`;
 
   app.post("/v1/staff/login", async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -162,6 +173,7 @@ export function registerStaffAccountRoutes(app: Express, config: PlatformConfig)
       if (problem) return res.status(400).json({ error: "weak_password", message: problem });
       await setStaffPassword(user.id, await hashPassword(req.body.next));
       const updated = await getStaffUser(user.id);
+      if (canEmailLinks(config)) void sendEmail({ to: user.email, ...passwordChangedEmail(user, consoleUrl) });
       const token = issueStaffToken(secret, updated!);
       // The console keeps its sign-in in a cookie: renew it there.
       if (staffOf(req).via === "cookie") {
@@ -169,6 +181,73 @@ export function registerStaffAccountRoutes(app: Express, config: PlatformConfig)
         return res.json({ ok: true });
       }
       res.json({ token });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // ── A forgotten password ─────────────────────────────────────────────
+  const expiredLink = { error: "invalid_link", message: "That link has expired or was already used. Ask for a new one with \"Forgot your password?\"." };
+
+  /** The account a link is for, while the link still works. */
+  async function linkAccount(token: unknown) {
+    const claims = readPasswordLinkToken(secret, token);
+    const user = claims ? await getStaffUser(claims.userId) : undefined;
+    if (!claims || !user || user.disabledAt || user.tokenVersion !== claims.tokenVersion || user.email !== claims.email) return null;
+    return { claims, user };
+  }
+
+  app.post("/v1/staff/password/forgot", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+      if (!EMAIL.test(email) || email.length > 200) return res.status(400).json({ error: "invalid_email", message: "The email you sign in with, please." });
+      if (!canEmailLinks(config)) return res.status(503).json({ error: "unavailable", message: "Password emails aren't set up yet. Please ask the Zaina team." });
+      const verdict = await consumeLimits([
+        { key: `password-forgot:visitor:${visitorKey(secret, req.ip)}`, limit: 5, windowSeconds: 3600 },
+        { key: `password-forgot:email:${visitorKey(secret, email)}`, limit: 3, windowSeconds: 3600 },
+        { key: "password-forgot:all", limit: 1000, windowSeconds: 86_400 },
+      ]);
+      if (!verdict.allowed) {
+        res.setHeader("Retry-After", String(verdict.retryAfterSeconds));
+        return res.status(429).json({ error: "rate_limited", message: "Too many requests just now. Please try again later." });
+      }
+      // The same answer whether or not the email has an account.
+      const user = await findStaffByEmail(email);
+      if (user && !user.disabledAt) {
+        const link = passwordLink(config.publicBaseUrl!, passwordLinkToken(secret, user, "reset"), "reset");
+        void sendEmail({ to: user.email, ...resetEmail(user, link) });
+      }
+      res.status(202).json({ ok: true, message: "If that email has a Zaina account, a link to choose a new password is on its way. It works for an hour." });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/v1/staff/password/check", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const verdict = await consumeLimits([{ key: `password-link:visitor:${visitorKey(secret, req.ip)}`, limit: 30, windowSeconds: 3600 }]);
+      if (!verdict.allowed) return res.status(429).json({ error: "rate_limited", message: "Too many requests just now. Please try again later." });
+      const found = await linkAccount(req.body?.token);
+      if (!found) return res.status(400).json(expiredLink);
+      res.json({ email: found.user.email, name: found.user.name, purpose: found.claims.purpose });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/v1/staff/password/reset", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const verdict = await consumeLimits([{ key: `password-link:visitor:${visitorKey(secret, req.ip)}`, limit: 30, windowSeconds: 3600 }]);
+      if (!verdict.allowed) return res.status(429).json({ error: "rate_limited", message: "Too many requests just now. Please try again later." });
+      const found = await linkAccount(req.body?.token);
+      if (!found) return res.status(400).json(expiredLink);
+      const problem = passwordProblem(req.body?.password);
+      if (problem) return res.status(400).json({ error: "weak_password", message: problem });
+      // Only while the link is still current: two uses at once can't both change it.
+      const user = await resetStaffPassword({ ...found.claims, passwordHash: await hashPassword(req.body.password) });
+      if (!user) return res.status(400).json(expiredLink);
+      if (found.claims.purpose === "reset") void sendEmail({ to: user.email, ...passwordChangedEmail(user, consoleUrl) });
+      res.json({ ok: true, email: user.email, message: "Your new password is set. Sign in with it now." });
     } catch (error) {
       next(error);
     }
@@ -218,23 +297,44 @@ export function registerStaffAccountRoutes(app: Express, config: PlatformConfig)
         return res.status(403).json({ error: "forbidden", message: "Only an owner can add managers and owners." });
       }
       const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return res.status(400).json({ error: "invalid_email" });
+      if (!EMAIL.test(email)) return res.status(400).json({ error: "invalid_email" });
 
       let user = await findStaffByEmail(email);
+      let invited = false;
       if (!user) {
-        // A new account: the person gets a starting password to change.
+        // A new account: the person chooses their password from an emailed
+        // link, or (no email set up, or the manager prefers) gets a starting one to change.
         const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
         if (!name) return res.status(400).json({ error: "name_required", message: "A new account needs a name." });
-        const problem = passwordProblem(req.body?.password);
-        if (problem) return res.status(400).json({ error: "weak_password", message: problem });
-        user = await createStaffUser({ email, name, passwordHash: await hashPassword(req.body.password) });
+        const password = req.body?.password;
+        if (password === undefined || password === null || password === "") {
+          if (!canEmailLinks(config)) return res.status(400).json({ error: "password_required", message: "Emails aren't set up on the platform yet: give them a starting password." });
+          user = await createStaffUser({ email, name, passwordHash: await unknownPassword() });
+          invited = true;
+        } else {
+          const problem = passwordProblem(password);
+          if (problem) return res.status(400).json({ error: "weak_password", message: problem });
+          user = await createStaffUser({ email, name, passwordHash: await hashPassword(password) });
+        }
       }
       const userId = user.id;
-      await inBusiness((db) => db
-        .insert(staffMemberships)
-        .values({ businessId: business!.id, userId, role })
-        .onConflictDoUpdate({ target: [staffMemberships.businessId, staffMemberships.userId], set: { role } }));
-      res.status(201).json({ member: { userId, email: user.email, name: user.name, role } });
+      const added = await inBusiness(async (db) => {
+        const [before] = await db.select({ role: staffMemberships.role }).from(staffMemberships)
+          .where(and(eq(staffMemberships.businessId, business!.id), eq(staffMemberships.userId, userId))).limit(1);
+        await db
+          .insert(staffMemberships)
+          .values({ businessId: business!.id, userId, role })
+          .onConflictDoUpdate({ target: [staffMemberships.businessId, staffMemberships.userId], set: { role } });
+        return !before;
+      });
+      const by = staffOf(req).user.name || null;
+      if (invited) {
+        const link = passwordLink(config.publicBaseUrl!, passwordLinkToken(secret, user, "invite"), "invite");
+        void sendEmail({ to: user.email, ...inviteEmail(user, business!.name, role, link, by) });
+      } else if (added && canEmailLinks(config)) {
+        void sendEmail({ to: user.email, ...addedEmail(user, business!.name, role, consoleUrl, by) });
+      }
+      res.status(201).json({ member: { userId, email: user.email, name: user.name, role }, invited });
     } catch (error) {
       next(error);
     }

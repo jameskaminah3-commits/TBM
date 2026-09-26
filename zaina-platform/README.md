@@ -115,7 +115,7 @@ application remembering to filter:
 | Directory and passwords | The service can read the business directory but not change it (a business can't lift its own model budget); it never reads password hashes, and sees only the staff of the business in scope |
 | Settings | Each business's name, assistant name, description, contact details and the links and numbers Zaina may pass on. TBM's are today's values. Checked before saving |
 | Secrets | Payment keys, messaging tokens and a business's own model key, encrypted with AES-256-GCM under a key kept outside the database; each secret is bound to its business and name; keys can be rotated; values are never shown again |
-| Staff accounts | Email and password (scrypt); at most 10 sign-in tries per account every 15 minutes; 12-hour tokens; a new password signs out everywhere |
+| Staff accounts | Email and password (scrypt); at most 10 sign-in tries per account every 15 minutes; 12-hour tokens; a new password signs out everywhere. A forgotten password is replaced from an emailed link (one use, one hour; the same answer whether or not the email has an account). A new team member, or a business's first owner added by the platform team, is emailed a link to choose their own password (three days), so nobody passes one on. Every change of password is confirmed by email |
 | Roles | Per business: viewer (reads chats), agent (answers them), manager (settings, people, reports, deletion requests), owner (secrets, managers and owners). A business always keeps an owner. Platform admins act as owner anywhere, for support |
 | New businesses | A platform admin adds a business, its settings and its first owner in one step. It starts with a daily model budget (5 million tokens) and 90-day retention |
 
@@ -395,7 +395,8 @@ snippet, the webhook, links in alerts), `WHATSAPP_APP_SECRET` and
 `WHATSAPP_VERIFY_TOKEN` (the platform's Meta app; both, or WhatsApp is off),
 `WHATSAPP_GRAPH_VERSION` (`v23.0`), `WEB_PUSH_PUBLIC_KEY`,
 `WEB_PUSH_PRIVATE_KEY` and `WEB_PUSH_SUBJECT` (alerts on phones),
-`RESEND_API_KEY` and `ALERT_FROM_EMAIL` (alert emails), `ROUTE_ESCALATE_MINUTES`
+`RESEND_API_KEY` and `ALERT_FROM_EMAIL` (alert emails; with `PUBLIC_BASE_URL`,
+also "Forgot your password?" and invitations), `ROUTE_ESCALATE_MINUTES`
 (3) and `AVAILABILITY_HOURS` (2).
 
 Phase 4, optional: `PLATFORM_PAYSTACK_SECRET_KEY` (the platform's own
@@ -470,6 +471,15 @@ token as `Authorization: Bearer …`. `GET /v1/staff/me` lists their businesses
 and roles; `POST /v1/staff/me/password` (`{ current, next }`) changes the
 password.
 
+A forgotten password (needs email: `RESEND_API_KEY`, `ALERT_FROM_EMAIL` and
+`PUBLIC_BASE_URL`): `POST /v1/staff/password/forgot` (`{ email }`: always 202,
+five an hour per visitor and three per email) emails a link to
+`/console/#/reset/<token>`; `POST /v1/staff/password/check` (`{ token }`) says
+whose it is while it works, and `POST /v1/staff/password/reset`
+(`{ token, password }`) sets the new password, once. An invitation's link
+opens `/console/#/welcome/<token>` and is used the same way. The token is in
+the address's fragment, so it never reaches a server's logs.
+
 Per business, under `/v1/staff/businesses/:businessId/` (least role needed):
 
 | Route | Role |
@@ -478,7 +488,7 @@ Per business, under `/v1/staff/businesses/:businessId/` (least role needed):
 | `POST sessions/:id/claim`, `…/messages`, `…/release`, `…/close`, `…/callback-done` | agent |
 | `GET leads` | agent |
 | `GET settings` | viewer |
-| `PATCH settings`, `GET members`, `POST members`, `DELETE members/:userId` | manager (managers and owners are added or removed by an owner) |
+| `PATCH settings`, `GET members`, `POST members` (`{ email, role, name?, password? }`: a new person without a starting password is emailed a link to choose one), `DELETE members/:userId` | manager (managers and owners are added or removed by an owner) |
 | `GET metrics?days=7`, `POST erase` (`{ email?, phone? }`), `DELETE sessions/:id` | manager |
 | `GET secrets` (names only) | manager |
 | `PUT secrets/:name` (`{ value }`), `DELETE secrets/:name` | owner |
@@ -499,8 +509,9 @@ command also reads a folder of such files or fetches a web page
 
 Platform admins: `GET /v1/platform/businesses`, and `POST /v1/platform/businesses`
 with `{ id, name, allowed_origins, business_type?, time_zone?, daily_token_cap?,
-retention_days?, owner: { email, name, password } }`, which returns the
-business's widget key. `business_type` is `general` (the default) or
+retention_days?, owner: { email, name, password? } }`, which returns the
+business's widget key (a new owner without a password is emailed a link to
+choose one). `business_type` is `general` (the default) or
 `guesthouse`; a `travel_concierge` needs its own connector first, as TBM has.
 
 Phase 3:
