@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { appendFileSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,9 +30,15 @@ export type Platform = {
   work: string;
   db: pg.Pool;
   output: () => string;
-  log: (name: "emails" | "model" | "whatsapp" | "push" | "paystack" | "mpesa") => any[];
+  log: (name: "emails" | "model" | "whatsapp" | "push" | "paystack" | "mpesa" | "google") => any[];
   /** Marks a Paystack transaction paid, as if the customer finished on Paystack's page. */
   payOnPaystack: (reference: string) => void;
+  /** The fake Google's busy events per calendar ({ "<calendar id>": [event, …] }). */
+  setGoogleEvents: (events: Record<string, unknown[]>) => void;
+  /** Makes the fake Google refuse a refresh token (as if the owner revoked access). */
+  revokeGoogle: (refreshToken: string) => void;
+  /** Publishes an iCal file at https://ical.example/<name>.ics. */
+  publishIcs: (name: string, text: string) => void;
   stop: () => Promise<void>;
   cli: (script: string, args: string[], env?: Record<string, string>) => void;
 };
@@ -54,7 +60,14 @@ export async function startPlatform(options: { port: number; env?: Record<string
     push: path.join(work, "push.log"),
     paystack: path.join(work, "paystack.log"),
     mpesa: path.join(work, "mpesa.log"),
+    google: path.join(work, "google.log"),
   };
+  const googleEvents = path.join(work, "google-events.json");
+  const googleRevoked = path.join(work, "google-revoked.txt");
+  const icsDir = path.join(work, "ics");
+  writeFileSync(googleEvents, "{}");
+  writeFileSync(googleRevoked, "");
+  mkdirSync(icsDir);
   const paystackPaid = path.join(work, "paystack-paid.txt");
   writeFileSync(paystackPaid, "");
   for (const file of Object.values(logs)) writeFileSync(file, "");
@@ -87,6 +100,10 @@ export async function startPlatform(options: { port: number; env?: Record<string
       FAKE_PAYSTACK_LOG: logs.paystack,
       FAKE_PAYSTACK_PAID: paystackPaid,
       FAKE_MPESA_LOG: logs.mpesa,
+      FAKE_GOOGLE_LOG: logs.google,
+      FAKE_GOOGLE_EVENTS: googleEvents,
+      FAKE_GOOGLE_REVOKED: googleRevoked,
+      FAKE_ICS_DIR: icsDir,
       ...options.env,
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -111,6 +128,9 @@ export async function startPlatform(options: { port: number; env?: Record<string
     output: () => output,
     log: (name) => readLog(logs[name]),
     payOnPaystack: (reference) => appendFileSync(paystackPaid, `${reference}\n`),
+    setGoogleEvents: (events) => writeFileSync(googleEvents, JSON.stringify(events)),
+    revokeGoogle: (refreshToken) => appendFileSync(googleRevoked, `${refreshToken}\n`),
+    publishIcs: (name, text) => writeFileSync(path.join(icsDir, `${name}.ics`), text),
     cli: (script, args, env = {}) => {
       const run = spawnSync(process.execPath, ["--import", "tsx", `zaina-platform/src/cli/${script}`, ...args], {
         cwd: REPO,

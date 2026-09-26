@@ -364,4 +364,4 @@ export type CalendarData = {
   rooms: Array<{ offering_id: string; name: string; units: number; status: string; nights: Array<{ night: string; booked: number; held: number; blocked: number; free: number }> }>;
 };
 
-export type Block = { id: string; offering_id: string; starts_on: string; ends_on: string; units: number; reason: string };
+export type Block = { id: string; offering_id: string; starts_on: string; ends_on: string; units: number; reason: string; source?: "staff" | "calendar" };

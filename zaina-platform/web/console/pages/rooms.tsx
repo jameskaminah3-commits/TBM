@@ -306,8 +306,8 @@ function ClosedDates(props: { businessId: string; rooms: Offering[]; manager: bo
         <ul className="plain-list">
           {loaded.data.blocks.map((block) => (
             <li key={block.id}>
-              <span><strong>{name(block.offering_id)}</strong> · {block.units} room{block.units === 1 ? "" : "s"} · {day(block.starts_on)} to {day(block.ends_on)} (open again){block.reason ? ` · ${block.reason}` : ""}</span>
-              {props.manager ? <Button small kind="ghost" onClick={() => void action.run(async () => {
+              <span><strong>{name(block.offering_id)}</strong> · {block.units} room{block.units === 1 ? "" : "s"} · {day(block.starts_on)} to {day(block.ends_on)} (open again){block.reason ? ` · ${block.reason}` : ""}{block.source === "calendar" ? <span className="muted small"> (from a calendar: it follows that calendar)</span> : null}</span>
+              {props.manager && block.source !== "calendar" ? <Button small kind="ghost" onClick={() => void action.run(async () => {
                 await api("DELETE", businessPath(props.businessId, `/blocks/${block.id}`));
                 await loaded.reload();
               })}>Reopen</Button> : null}

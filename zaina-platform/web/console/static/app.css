@@ -359,3 +359,5 @@ table.lines tr.total th, table.lines tr.total td { font-weight: 700; border-top:
 .checks { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; display: flex; flex-wrap: wrap; gap: 12px; }
 .checks legend { font-weight: 600; font-size: 14px; padding: 0 4px; }
 @media (max-width: 560px) { .week-day { grid-template-columns: 1fr; } }
+.danger-text { color: var(--danger); }
+.sources li { align-items: flex-start; }

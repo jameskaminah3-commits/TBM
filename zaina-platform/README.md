@@ -321,6 +321,7 @@ changes is what is booked and how "free" is worked out (migration 0009).
 | Holds and late payments | As for rooms: an unpaid slot is held for the deposit, a lapsed hold is renewed at payment if the time is still free, and a late payment moves to another free person or table at the same time if its own was taken; otherwise the team sorts it out |
 | Zaina's tools | `list_services` (what can be booked, hours, the business's rules), `check_times` (times free on a day, and the next days with times if it's full), `create_appointment` (with the customer's own details), `get_booking`, and leads. The server writes the payment block ("This time is held until…", "The rest is paid when you arrive") |
 | Console | Services (or Tables): opening hours, services, people and tables, closures. Bookings: the same lists, with each booking's time and who it's with; a day's schedule per person or table; booking a time for a customer who calls. Settings → Bookings & payments without check-in times and nights |
+| Calendar connector (migration 0010) | For every business that takes bookings. **Calendar links**: private iCal links to the bookings (all, or one person's or table's) for any calendar app; only a hash of each link's token is kept, a link is shown once, and cancelled bookings drop out; names and times, no phone numbers. **Busy times in**: a Google calendar, or an iCal link from Airbnb, Booking.com or a channel manager, closes a room type's nights (one room per event) or a person's, table's or the whole business's time; each sync replaces what that calendar closed, and a calendar that can't be read keeps its last busy times and says why. **Bookings out**: with Google connected and a calendar chosen, confirmed bookings become events there, are rewritten when they change and removed when cancelled; the platform's own events are marked, so reading a calendar skips them. Every 10 minutes, or "Sync now". Links from outside are fetched only from public https addresses (checked after each redirect, 3 MB and 15 seconds at most). Google's sign-in is signed, expires in 15 minutes and must come back to an owner; its refresh token is an encrypted business secret, revoked at Google on disconnecting |
 
 ## Running it locally
 
@@ -349,6 +350,12 @@ and M-Pesa callbacks need `PUBLIC_BASE_URL`. Tests only:
 `BOOKING_SWEEP_INTERVAL_MS` (60000) and `PAYMENT_CHECK_AFTER_MS` (20000 for
 the payment page, 45000 for the sweep: when a pending payment's provider is
 asked).
+
+Phase 5, optional: `PLATFORM_GOOGLE_CLIENT_ID` and
+`PLATFORM_GOOGLE_CLIENT_SECRET` (the platform's Google sign-in, for Google
+Calendar; both, and `PUBLIC_BASE_URL`, or Google Calendar is off; see
+DEPLOY.md) and `CALENDAR_SYNC_INTERVAL_MS` (600000: how often calendars are
+kept in step).
 
 Optional: `PLATFORM_APP_DATABASE_URL` (see below), `PLATFORM_DATABASE_CA`
 (the CA certificate that signs the database server's, so it is checked),
@@ -469,6 +476,11 @@ Phase 4, a place to stay (least role needed):
 | `GET schedule?date=`: each person or table's bookings and closures that day | viewer |
 | `GET closures?from=&days=` / `POST closures` (`{ resource_id?, starts_at, ends_at, reason? }`), `DELETE closures/:id` | viewer / manager |
 | `POST bookings` for a time slot: `{ offering_id, date, time, party?, resource_id?, customer_name, customer_phone or customer_email, notes?, confirm_now? }` | agent |
+| `GET calendars`: the Google connection, busy-time sources and feed links | viewer |
+| `POST calendars/feeds` (`{ resource_id?, label? }`: the link is in the reply, once) / `DELETE calendars/feeds/:id` | manager |
+| `POST calendars/sources` (`{ kind: google, calendar_id, label, offering_id? or resource_id? }` or `{ kind: ics, url, label, … }`; refused if it can't be read) / `DELETE calendars/sources/:id`, `POST calendars/sync` | manager |
+| `POST calendars/google/start` (the consent page's address), `PATCH calendars/google` (`{ write_calendar_id }`), `DELETE calendars/google`; `GET calendars/google/calendars` (manager) | owner |
+| `GET /calendar/<token>.ics` (a feed link) and `GET /v1/calendar/google/callback` (Google's return) | none |
 | `POST quote` (`{ offering_id, check_in, check_out, guests, rooms? }`), `GET calendar?from=&days=`, `GET blocks` | viewer |
 | `POST blocks` (`{ offering_id, starts_on, ends_on, units?, reason? }`), `DELETE blocks/:id` | manager |
 | `GET bookings?filter=upcoming\|requests\|unpaid\|attention\|past\|cancelled\|all`, `GET bookings/:id` | viewer |
@@ -484,13 +496,13 @@ platform's), `POST /v1/payments/mpesa/:token` (Safaricom's callback).
 ## Tests
 
 ```
-npm test            # unit tests (no database): 164
-npm run test:db     # database checks, including separation between businesses: 53
+npm test            # unit tests (no database): 168
+npm run test:db     # database checks, including separation between businesses: 54
                     # PLATFORM_TEST_DATABASE_URL, a local database ending in _test (wiped)
 npm run test:e2e    # the whole service with a scripted model, TBM and a second business,
                     # the Phase 3 channels (WhatsApp, alerts, console, widget), and the
                     # Phase 4 pilot (three places to stay, their payments), and a
-                    # salon and a restaurant booking time (Phase 5): 73
+                    # salon and a restaurant booking time, and the calendar connector (Phase 5): 78
                     # also TBM_TEST_DATABASE_URL, a local copy of TBM's schema ending in _test
 npm run check       # type check (the service, and the widget and console)
 
@@ -500,8 +512,8 @@ npm run eval -- --scripted        # the evaluation harness itself, with the scri
 ```
 
 The end-to-end run uses `test/e2e/scripted-model.mjs` in place of the model,
-email, exchange-rate, WhatsApp (Graph API), web push, Paystack and M-Pesa
-(Daraja) services, and
+email, exchange-rate, WhatsApp (Graph API), web push, Paystack, M-Pesa
+(Daraja), Google (sign-in and Calendar) and calendar-link services, and
 refuses to run against any database that isn't local and named `*_test`.
 `E2E_SERVER_LOG=<file>` keeps the server's output.
 

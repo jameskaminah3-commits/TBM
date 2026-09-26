@@ -10,11 +10,20 @@ import { WEEKDAYS } from "../format.ts";
 import type { Me, Operations, Role, Settings, WhatsappState } from "../types.ts";
 import { Button, ErrorLine, Field, Message, Tabs, Toggle, useAction, useLoad } from "../ui.tsx";
 import { BookingSettings } from "./booking-settings.tsx";
+import { Calendars } from "./calendars.tsx";
 
-type Tab = "profile" | "widget" | "whatsapp" | "hours" | "bookings";
+type Tab = "profile" | "widget" | "whatsapp" | "hours" | "bookings" | "calendars";
+const TABS: Tab[] = ["profile", "widget", "whatsapp", "hours", "bookings", "calendars"];
 
-export function SettingsPage(props: { businessId: string; role: Role; me: Me; businessType?: string | null }) {
-  const [tab, setTab] = useState<Tab>("profile");
+/** The tab in the address (#/b/<business>/settings/<tab>?google=<outcome>), and what Google said. */
+function fromAddress(value: string | null | undefined): { tab: Tab; outcome: string | null } {
+  const [name, query] = (value ?? "").split("?");
+  return { tab: TABS.includes(name as Tab) ? name as Tab : "profile", outcome: new URLSearchParams(query ?? "").get("google") };
+}
+
+export function SettingsPage(props: { businessId: string; role: Role; me: Me; businessType?: string | null; tab?: string | null }) {
+  const initial = fromAddress(props.tab);
+  const [tab, setTab] = useState<Tab>(initial.tab);
   const stays = ["guesthouse", "salon", "restaurant"].includes(props.businessType ?? "");
   return (
     <div className="page">
@@ -25,13 +34,14 @@ export function SettingsPage(props: { businessId: string; role: Role; me: Me; bu
         onChange={setTab}
         tabs={[
           { id: "profile", label: "Business" },
-          ...(stays ? [{ id: "bookings" as const, label: "Bookings & payments" }] : []),
+          ...(stays ? [{ id: "bookings" as const, label: "Bookings & payments" }, { id: "calendars" as const, label: "Calendars" }] : []),
           { id: "widget", label: "Website widget" },
           { id: "whatsapp", label: "WhatsApp" },
           { id: "hours", label: "Hours" },
         ]}
       />
       {tab === "bookings" && stays ? <BookingSettings businessId={props.businessId} role={props.role} slots={props.businessType !== "guesthouse"} /> : null}
+      {tab === "calendars" && stays ? <Calendars businessId={props.businessId} role={props.role} businessType={props.businessType ?? null} outcome={initial.tab === "calendars" ? initial.outcome : null} /> : null}
       {tab === "profile" ? <Profile businessId={props.businessId} /> : null}
       {tab === "widget" ? <Widget businessId={props.businessId} role={props.role} me={props.me} /> : null}
       {tab === "whatsapp" ? <Whatsapp businessId={props.businessId} role={props.role} /> : null}

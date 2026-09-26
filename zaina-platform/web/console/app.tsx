@@ -182,7 +182,7 @@ function Console(props: { me: Me; route: Route; reloadMe: () => Promise<void> })
   else if (page === "rooms" && businessType === "guesthouse" && atLeast(role, "manager")) content = <RoomsPage businessId={businessId} role={role} />;
   else if (page === "knowledge") content = <KnowledgePage businessId={businessId} role={role} />;
   else if (page === "reports" && atLeast(role, "manager")) content = <ReportsPage businessId={businessId} />;
-  else if (page === "settings" && atLeast(role, "manager")) content = <SettingsPage businessId={businessId} role={role} me={me} businessType={businessType} />;
+  else if (page === "settings" && atLeast(role, "manager")) content = <SettingsPage key={route.id ?? "settings"} businessId={businessId} role={role} me={me} businessType={businessType} tab={route.id} />;
   else if (page === "team" && atLeast(role, "manager")) content = <TeamPage businessId={businessId} role={role} me={me} />;
   else content = <InboxPage businessId={businessId} role={role} me={me} chatId={route.page === "inbox" ? route.id : null} counts={counts} onChanged={refreshCounts} />;
 

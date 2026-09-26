@@ -413,6 +413,9 @@ export const offeringBlocks = pgTable("offering_blocks", {
   endsOn: date("ends_on", { mode: "string" }).notNull(),
   units: integer("units").notNull(),
   reason: text("reason").notNull().default(""),
+  source: text("source").$type<"staff" | "calendar">().notNull().default("staff"),
+  calendarSourceId: uuid("calendar_source_id"),
+  externalId: text("external_id"),
   createdAt: createdAt(),
   createdBy: uuid("created_by"),
 });
@@ -454,10 +457,65 @@ export const resourceBlocks = pgTable("resource_blocks", {
   reason: text("reason").notNull().default(""),
   source: text("source").$type<"staff" | "calendar">().notNull().default("staff"),
   externalId: text("external_id"),
+  calendarSourceId: uuid("calendar_source_id"),
   createdAt: createdAt(),
   createdBy: uuid("created_by"),
 });
 export type ResourceBlock = typeof resourceBlocks.$inferSelect;
+
+// ── Calendars (Phase 5) ────────────────────────────────────────────────
+
+export const calendarFeeds = pgTable("calendar_feeds", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  businessId: text("business_id").notNull(),
+  tokenHash: text("token_hash").notNull(),
+  resourceId: uuid("resource_id"),
+  label: text("label").notNull().default(""),
+  createdAt: createdAt(),
+  createdBy: uuid("created_by"),
+  lastReadAt: at("last_read_at"),
+});
+export type CalendarFeed = typeof calendarFeeds.$inferSelect;
+
+export const calendarConnections = pgTable("calendar_connections", {
+  businessId: text("business_id").primaryKey(),
+  provider: text("provider").$type<"google">().notNull().default("google"),
+  account: text("account"),
+  writeCalendarId: text("write_calendar_id"),
+  status: text("status").$type<"connected" | "error">().notNull().default("connected"),
+  lastError: text("last_error"),
+  lastSyncAt: at("last_sync_at"),
+  connectedBy: uuid("connected_by"),
+  createdAt: createdAt(),
+  updatedAt: at("updated_at").notNull().defaultNow(),
+});
+export type CalendarConnection = typeof calendarConnections.$inferSelect;
+
+export const calendarSources = pgTable("calendar_sources", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  businessId: text("business_id").notNull(),
+  kind: text("kind").$type<"google" | "ics">().notNull(),
+  calendarId: text("calendar_id"),
+  label: text("label").notNull(),
+  offeringId: uuid("offering_id"),
+  resourceId: uuid("resource_id"),
+  status: text("status").$type<"ok" | "error">().notNull().default("ok"),
+  lastError: text("last_error"),
+  lastSyncAt: at("last_sync_at"),
+  busyCount: integer("busy_count").notNull().default(0),
+  createdAt: createdAt(),
+  createdBy: uuid("created_by"),
+});
+export type CalendarSource = typeof calendarSources.$inferSelect;
+
+export const calendarEvents = pgTable("calendar_events", {
+  businessId: text("business_id").notNull(),
+  bookingId: uuid("booking_id").notNull(),
+  calendarId: text("calendar_id").notNull(),
+  eventId: text("event_id").notNull(),
+  syncedVersion: at("synced_version").notNull(),
+  syncedAt: at("synced_at").notNull().defaultNow(),
+});
 
 export const bookingStatuses = ["held", "requested", "awaiting_payment", "confirmed", "conflict", "declined", "cancelled", "expired"] as const;
 export type BookingStatus = (typeof bookingStatuses)[number];

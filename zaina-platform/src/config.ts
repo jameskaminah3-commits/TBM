@@ -74,6 +74,8 @@ export type PlatformConfig = {
   modelPriceUsdPerMillion: { input: number; output: number } | null;
   /** The platform's own Paystack account, for businesses paid through its subaccounts; null when there is none. */
   platformPaystackKey: string | null;
+  /** The platform's Google OAuth app, for businesses connecting Google Calendar; null when there is none. */
+  google: { clientId: string; clientSecret: string } | null;
 };
 
 function required(env: NodeJS.ProcessEnv, name: string): string {
@@ -164,6 +166,17 @@ function platformPaystackKey(env: NodeJS.ProcessEnv): string | null {
   return key;
 }
 
+/** PLATFORM_GOOGLE_CLIENT_ID and PLATFORM_GOOGLE_CLIENT_SECRET: both or neither, and Google sends people back to PUBLIC_BASE_URL. */
+function googleConfig(env: NodeJS.ProcessEnv): { clientId: string; clientSecret: string } | null {
+  const clientId = env.PLATFORM_GOOGLE_CLIENT_ID?.trim();
+  const clientSecret = env.PLATFORM_GOOGLE_CLIENT_SECRET?.trim();
+  if (!clientId && !clientSecret) return null;
+  if (!clientId || !clientSecret) throw new Error("Set both PLATFORM_GOOGLE_CLIENT_ID and PLATFORM_GOOGLE_CLIENT_SECRET, or neither");
+  if (!/^[\w.-]+\.apps\.googleusercontent\.com$/.test(clientId)) throw new Error("PLATFORM_GOOGLE_CLIENT_ID looks like 1234-abc.apps.googleusercontent.com");
+  if (!env.PUBLIC_BASE_URL?.trim()) throw new Error("PUBLIC_BASE_URL is needed for Google sign-in (Google sends people back to it)");
+  return { clientId, clientSecret };
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): PlatformConfig {
   const sessionTokenSecret = required(env, "SESSION_TOKEN_SECRET");
   if (sessionTokenSecret.length < 32) throw new Error("SESSION_TOKEN_SECRET must be at least 32 characters");
@@ -202,5 +215,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): PlatformConfig
       ? { input: inputPrice, output: outputPrice }
       : null,
     platformPaystackKey: platformPaystackKey(env),
+    google: googleConfig(env),
   };
 }

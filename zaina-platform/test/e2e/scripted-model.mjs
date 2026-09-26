@@ -16,7 +16,8 @@
 // number, its own payment steps) so the server-side reply policy is tested.
 // Token counts are estimated at four characters each, so telemetry has
 // numbers to add up.
-import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import dns from "node:dns";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 
@@ -369,10 +370,138 @@ async function fakeDaraja(url, init) {
   return answer(404, { errorCode: "404.001.01", errorMessage: `Unsupported ${pathname}` });
 }
 
+// ── A stand-in for Google (sign-in and the Calendar API) ──
+// Client id 123-zaina.apps.googleusercontent.com, secret google-test-secret.
+// The code "consent-ok" signs in as owner@example.com. The account has the
+// calendars "primary" and "amina-calendar" (both writable) and "holidays"
+// (read only). Busy events come from the JSON file FAKE_GOOGLE_EVENTS
+// ({ "<calendar id>": [{ id, start, end, status?, transparency? }] }); events
+// the platform writes are kept here, and listed back like Google does. A
+// refresh token listed in FAKE_GOOGLE_REVOKED is refused (invalid_grant).
+// Every call goes to FAKE_GOOGLE_LOG.
+const googleWritten = new Map();
+let googleCounter = 0;
+function logGoogle(entry) {
+  if (process.env.FAKE_GOOGLE_LOG) appendFileSync(process.env.FAKE_GOOGLE_LOG, JSON.stringify({ at: new Date().toISOString(), ...entry }) + "\n");
+}
+function googleSeeded() {
+  try {
+    return JSON.parse(readFileSync(process.env.FAKE_GOOGLE_EVENTS ?? "", "utf8"));
+  } catch {
+    return {};
+  }
+}
+function googleRevoked() {
+  try {
+    return new Set(readFileSync(process.env.FAKE_GOOGLE_REVOKED ?? "", "utf8").split("\n").map((line) => line.trim()).filter(Boolean));
+  } catch {
+    return new Set();
+  }
+}
+const GOOGLE_CALENDARS = [
+  { id: "primary", summary: "owner@example.com", primary: true, accessRole: "owner" },
+  { id: "amina-calendar", summary: "Amina", accessRole: "writer" },
+  { id: "holidays", summary: "Holidays in Kenya", accessRole: "reader" },
+];
+async function fakeGoogle(url, init) {
+  const target = new URL(url);
+  const method = (init?.method ?? "GET").toUpperCase();
+  const answer = (status, body) => new Response(body === null ? null : JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+  if (target.hostname === "oauth2.googleapis.com" && target.pathname === "/token") {
+    const body = new URLSearchParams(String(init?.body ?? ""));
+    if (body.get("client_id") !== "123-zaina.apps.googleusercontent.com" || body.get("client_secret") !== "google-test-secret") return answer(401, { error: "invalid_client" });
+    if (body.get("grant_type") === "authorization_code") {
+      logGoogle({ kind: "exchange", code: body.get("code"), redirect_uri: body.get("redirect_uri") });
+      if (body.get("code") !== "consent-ok") return answer(400, { error: "invalid_grant" });
+      googleCounter += 1;
+      const idToken = `e30.${Buffer.from(JSON.stringify({ email: "owner@example.com", sub: "1234" })).toString("base64url")}.sig`;
+      return answer(200, { access_token: `ya29.first-${googleCounter}`, refresh_token: `1//refresh-${googleCounter}`, expires_in: 3599, id_token: idToken, token_type: "Bearer" });
+    }
+    if (body.get("grant_type") === "refresh_token") {
+      const refresh = body.get("refresh_token");
+      if (googleRevoked().has(refresh)) {
+        logGoogle({ kind: "refresh_refused", refresh });
+        return answer(400, { error: "invalid_grant", error_description: "Token has been expired or revoked." });
+      }
+      logGoogle({ kind: "refresh", refresh });
+      return answer(200, { access_token: `ya29.${refresh}`, expires_in: 3599, token_type: "Bearer" });
+    }
+    return answer(400, { error: "unsupported_grant_type" });
+  }
+  if (target.hostname === "oauth2.googleapis.com" && target.pathname === "/revoke") {
+    logGoogle({ kind: "revoke", token: new URLSearchParams(String(init?.body ?? "")).get("token") });
+    return new Response("", { status: 200 });
+  }
+  const authorization = init?.headers?.authorization ?? init?.headers?.Authorization ?? "";
+  if (!/^Bearer ya29\./.test(authorization) || googleRevoked().has(authorization.replace(/^Bearer ya29\./, ""))) return answer(401, { error: { code: 401, message: "Invalid Credentials" } });
+  const path = target.pathname.replace(/^\/calendar\/v3/, "");
+  if (method === "GET" && path === "/users/me/calendarList") return answer(200, { items: GOOGLE_CALENDARS });
+  const match = /^\/calendars\/([^/]+)\/events(?:\/([^/]+))?$/.exec(path);
+  if (!match) return answer(404, { error: { code: 404, message: "Not Found" } });
+  const calendarId = decodeURIComponent(match[1]);
+  const eventId = match[2] ? decodeURIComponent(match[2]) : null;
+  if (!GOOGLE_CALENDARS.some((calendar) => calendar.id === calendarId)) return answer(404, { error: { code: 404, message: "Not Found" } });
+  const written = googleWritten.get(calendarId) ?? new Map();
+  googleWritten.set(calendarId, written);
+  const at = (point) => new Date(point?.dateTime ?? `${point?.date}T00:00:00Z`).getTime();
+  if (method === "GET" && !eventId) {
+    const from = new Date(target.searchParams.get("timeMin") ?? 0).getTime();
+    const to = new Date(target.searchParams.get("timeMax") ?? "2100-01-01").getTime();
+    const items = [...(googleSeeded()[calendarId] ?? []), ...written.values()].filter((item) => at(item.start) < to && at(item.end) > from);
+    logGoogle({ kind: "list", calendarId, count: items.length });
+    return answer(200, { items });
+  }
+  if (method === "POST" && !eventId) {
+    const body = JSON.parse(String(init?.body ?? "{}"));
+    const id = `evt${(googleCounter += 1)}`;
+    written.set(id, { ...body, id, status: body.status ?? "confirmed" });
+    logGoogle({ kind: "insert", calendarId, id, summary: body.summary, start: body.start, end: body.end, booking: body.extendedProperties?.private?.zaina_booking ?? null });
+    return answer(200, { ...body, id });
+  }
+  if (method === "PUT" && eventId) {
+    if (!written.has(eventId)) return answer(404, { error: { code: 404, message: "Not Found" } });
+    const body = JSON.parse(String(init?.body ?? "{}"));
+    written.set(eventId, { ...body, id: eventId });
+    logGoogle({ kind: "update", calendarId, id: eventId, summary: body.summary });
+    return answer(200, { ...body, id: eventId });
+  }
+  if (method === "DELETE" && eventId) {
+    const existed = written.delete(eventId);
+    logGoogle({ kind: "delete", calendarId, id: eventId, existed });
+    return existed ? new Response(null, { status: 204 }) : answer(410, { error: { code: 410, message: "Resource has been deleted" } });
+  }
+  return answer(400, { error: { code: 400, message: `Unsupported request ${method} ${path}` } });
+}
+
+// ── Calendar links (iCal) at https://ical.example/<name>.ics ──
+// Each is the file <name>.ics in FAKE_ICS_DIR. /moved.ics redirects to a
+// private address, which the platform must refuse to follow.
+async function fakeIcal(url) {
+  const target = new URL(url);
+  if (target.pathname === "/moved.ics") return new Response(null, { status: 302, headers: { location: "https://10.0.0.5/secret.ics" } });
+  const name = /^\/([a-z0-9-]+)\.ics$/.exec(target.pathname)?.[1];
+  const file = name && process.env.FAKE_ICS_DIR ? path.join(process.env.FAKE_ICS_DIR, `${name}.ics`) : null;
+  if (!file || !existsSync(file)) return new Response("Not found", { status: 404 });
+  return new Response(readFileSync(file, "utf8"), { status: 200, headers: { "content-type": "text/calendar" } });
+}
+
+// Names under .example resolve to a public address (as real calendar hosts
+// would), except private.example, which points into a private network.
+const realLookup = dns.promises.lookup.bind(dns.promises);
+dns.promises.lookup = async (hostname, options) => {
+  if (typeof hostname === "string" && hostname.endsWith(".example")) {
+    const address = hostname === "private.example" ? "10.0.0.5" : "93.184.216.34";
+    return options?.all ? [{ address, family: 4 }] : { address, family: 4 };
+  }
+  return realLookup(hostname, options);
+};
+
 globalThis.fetch = async (input, init) => {
   const url = typeof input === "string" ? input : input?.url ?? String(input);
   if (url.startsWith("https://graph.facebook.com/") || url.startsWith("https://lookaside.fbsbx.com/")) return fakeGraph(url, init);
   if (url.startsWith("https://api.paystack.co/")) return fakePaystack(url, init);
+  if (url.startsWith("https://oauth2.googleapis.com/") || url.startsWith("https://www.googleapis.com/calendar/")) return fakeGoogle(url, init);
+  if (url.startsWith("https://ical.example/")) return fakeIcal(url);
   if (url.startsWith("https://sandbox.safaricom.co.ke/") || url.startsWith("https://api.safaricom.co.ke/")) return fakeDaraja(url, init);
   if (url.startsWith("https://push.example/")) {
     // A stand-in push service: an endpoint with "gone" in it has been dropped by the browser.

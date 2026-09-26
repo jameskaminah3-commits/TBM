@@ -235,6 +235,56 @@ A business added as a place to stay (type `guesthouse`) gets **Bookings** and
 Deposits go straight to the business's account. Refunds are made there
 (Paystack's dashboard, or M-Pesa), not from the console.
 
+## 6. A salon or restaurant: time slots
+
+A business added as a salon (`salon`) or restaurant (`restaurant`) gets
+**Bookings** and **Services** (or **Tables**) in the console. Its owner sets
+up, in order:
+
+1. **Services → Opening hours.** Each day's hours (a closing time before the
+   opening one runs past midnight), and how often a booking can start.
+2. **People and chairs** (or **Tables**, with their seats). Someone who works
+   different hours gets their own.
+3. **Services** (or **Table bookings**): length, the time after each booking
+   before the next, party sizes, price, and who can do it.
+4. **Settings → Bookings & payments**, as for a place to stay: the deposit
+   (the business's choice, none by default), ways to pay and limits.
+
+## 7. Calendars (optional)
+
+Every business that takes bookings has **Settings → Calendars**:
+
+- **Calendar links** work with no setup: a private iCal link to the
+  bookings, for Google Calendar, Apple Calendar or Outlook.
+- **iCal links** from Airbnb, Booking.com or a channel manager work with no
+  setup either: their bookings close the room type's nights (or a person's
+  or table's time). They're read every 10 minutes
+  (`CALENDAR_SYNC_INTERVAL_MS`). Only public `https://` (or `webcal://`)
+  addresses are fetched.
+- **Google Calendar** needs the platform's own Google sign-in, once:
+  1. In the [Google Cloud console](https://console.cloud.google.com/),
+     create a project (or use one) and enable the **Google Calendar API**
+     (APIs & Services → Library).
+  2. **OAuth consent screen**: External; the app's name (Zaina), a support
+     email, and the scopes `openid`, `email`,
+     `https://www.googleapis.com/auth/calendar.readonly` and
+     `https://www.googleapis.com/auth/calendar.events`. While the app is in
+     *Testing*, add each owner's Google address as a test user; before
+     many businesses use it, submit it for Google's verification (the
+     calendar scopes are sensitive).
+  3. **Credentials → Create credentials → OAuth client ID**: Web
+     application, with the authorised redirect URI
+     `https://<domain>/v1/calendar/google/callback` (the service's
+     `PUBLIC_BASE_URL`).
+  4. On the platform service in Railway, set `PLATFORM_GOOGLE_CLIENT_ID`
+     (it ends in `.apps.googleusercontent.com`) and
+     `PLATFORM_GOOGLE_CLIENT_SECRET`, both in Railway's Variables, never in
+     a chat or the code.
+
+  An owner then connects under Settings → Calendars. The refresh token Google
+  returns is kept encrypted as the business's secret; disconnecting revokes
+  it at Google.
+
 ## Backups
 
 On the Pro plan, Supabase keeps daily backups (Database → Backups);

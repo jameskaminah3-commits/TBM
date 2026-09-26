@@ -34,6 +34,9 @@ import { configureBookingNotices } from "./booking/notices.ts";
 import { registerSlotRoutes } from "./booking/slot-routes.ts";
 import { registerBookingRoutes } from "./booking/staff-routes.ts";
 import { configurePayments, sweepPendingPayments } from "./payments/checkout.ts";
+import { configureGoogle } from "./calendars/google.ts";
+import { registerCalendarRoutes } from "./calendars/routes.ts";
+import { configureCalendarSync, syncAllCalendars } from "./calendars/sync.ts";
 import { PAYMENT_WEBHOOK_PATH, registerPaymentRoutes } from "./payments/routes.ts";
 
 /** Browsers may call the API from any website a business allows. */
@@ -74,6 +77,10 @@ export function createApp(config: PlatformConfig, engine: EngineOptions, whatsap
   configureHandoffs(config);
   configureBookingNotices({ publicBaseUrl: config.publicBaseUrl, alertEmail: config.alertEmail });
   configurePayments({ publicBaseUrl: config.publicBaseUrl, platformPaystackKey: config.platformPaystackKey });
+  configureGoogle(config.google && config.publicBaseUrl
+    ? { ...config.google, redirectUri: `${config.publicBaseUrl}/v1/calendar/google/callback`, stateSecret: config.sessionTokenSecret }
+    : null);
+  configureCalendarSync({ publicBaseUrl: config.publicBaseUrl });
   setWhatsappRuntime(whatsapp);
 
   const app = express();
@@ -96,6 +103,7 @@ export function createApp(config: PlatformConfig, engine: EngineOptions, whatsap
   registerBookingRoutes(app, config);
   registerSlotRoutes(app, config);
   registerPaymentRoutes(app, config);
+  registerCalendarRoutes(app, config);
   registerConsoleRoutes(app, config);
 
   app.use((_req: Request, res: Response) => {
@@ -190,6 +198,8 @@ export async function startServer(config: PlatformConfig): Promise<{ server: Ser
       await sweepPendingPayments();
     }),
     ...(whatsapp ? [every("whatsapp", Number(process.env.WHATSAPP_SWEEP_INTERVAL_MS ?? "") || 5_000, () => sweepWhatsapp(whatsapp))] : []),
+    // Busy times from connected calendars and iCal links in; confirmed bookings out to Google Calendar.
+    every("calendars", Number(process.env.CALENDAR_SYNC_INTERVAL_MS ?? "") || 10 * 60_000, () => syncAllCalendars()),
   ];
 
   const stop = async () => {

@@ -376,7 +376,7 @@ export function registerBookingRoutes(app: Express, config: PlatformConfig): voi
     const rows = await inBusiness((db) => db.select().from(offeringBlocks)
       .where(and(eq(offeringBlocks.businessId, business.id), sql`${offeringBlocks.startsOn} < ${until}::date and ${offeringBlocks.endsOn} > ${from}::date`))
       .orderBy(asc(offeringBlocks.startsOn)), business.id);
-    res.json({ blocks: rows.map((row) => ({ id: row.id, offering_id: row.offeringId, starts_on: row.startsOn, ends_on: row.endsOn, units: row.units, reason: row.reason })) });
+    res.json({ blocks: rows.map((row) => ({ id: row.id, offering_id: row.offeringId, starts_on: row.startsOn, ends_on: row.endsOn, units: row.units, reason: row.reason, source: row.source })) });
   }));
 
   app.post(`${base}/blocks`, ...role("manager"), handle(async (req, res, { business, userId }) => {
@@ -393,13 +393,14 @@ export function registerBookingRoutes(app: Express, config: PlatformConfig): voi
     }
     if (!Number.isInteger(units) || units < 1 || units > offering.units) return res.status(400).json({ error: "invalid_units", message: `units is 1 to ${offering.units}.` });
     const [row] = await inBusiness((db) => db.insert(offeringBlocks).values({ businessId: business.id, offeringId: offering.id, startsOn, endsOn, units, reason, createdBy: userId }).returning(), business.id);
-    res.status(201).json({ block: { id: row.id, offering_id: row.offeringId, starts_on: row.startsOn, ends_on: row.endsOn, units: row.units, reason: row.reason } });
+    res.status(201).json({ block: { id: row.id, offering_id: row.offeringId, starts_on: row.startsOn, ends_on: row.endsOn, units: row.units, reason: row.reason, source: row.source } });
   }));
 
   app.delete(`${base}/blocks/:blockId`, ...role("manager"), handle(async (req, res, { business }) => {
     const id = String(req.params.blockId);
     if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(404).json({ error: "not_found" });
-    const rows = await inBusiness((db) => db.delete(offeringBlocks).where(and(eq(offeringBlocks.businessId, business.id), eq(offeringBlocks.id, id))).returning({ id: offeringBlocks.id }), business.id);
+    // Busy times from a calendar come and go with that calendar (Settings → Calendars).
+    const rows = await inBusiness((db) => db.delete(offeringBlocks).where(and(eq(offeringBlocks.businessId, business.id), eq(offeringBlocks.id, id), eq(offeringBlocks.source, "staff"))).returning({ id: offeringBlocks.id }), business.id);
     res.status(rows.length ? 200 : 404).json({ deleted: rows.length > 0 });
   }));
 

@@ -161,6 +161,19 @@ test("migrations run once, in order, and a changed one is refused", async () => 
   assert.equal(rows[0]?.name, "Tembea Bila Matata");
 });
 
+test("every table that holds a business's rows keeps them to that business (row-level security and its policy)", async () => {
+  const { rows } = await ownerPool().query<{ table: string; secured: boolean; policies: number }>(`
+    select c.relname as table, c.relrowsecurity as secured,
+      (select count(*)::int from pg_policy p where p.polrelid = c.oid) as policies
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
+    where c.relkind = 'r' and exists (select 1 from pg_attribute a where a.attrelid = c.oid and a.attname = 'business_id' and not a.attisdropped)
+    order by 1`);
+  assert.ok(rows.length >= 25, `found ${rows.length} tables with business_id`);
+  const open = rows.filter((row) => !row.secured || row.policies === 0).map((row) => row.table);
+  assert.deepEqual(open, [], "tables with a business's rows but no row-level security");
+});
+
 test("on Supabase, its Data API roles can't reach the platform's tables, sequences or functions", async () => {
   assert.deepEqual(await reachableByApiRoles(), []);
   // What later migrations create isn't given to them either, and functions
