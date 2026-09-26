@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, ApiError, businessPath } from "./api.ts";
 import { BookingsPage } from "./pages/bookings.tsx";
 import { InboxPage } from "./pages/inbox.tsx";
+import { LeadsPage } from "./pages/leads.tsx";
 import { KnowledgePage } from "./pages/knowledge.tsx";
 import { PlatformPage } from "./pages/platform.tsx";
 import { PricesPage } from "./pages/prices.tsx";
@@ -146,10 +147,16 @@ function SignIn(props: { onSignedIn: () => void; notice: { email: string; text: 
   );
 }
 
+// The business's sections, most used first: on a phone, the first four sit in
+// the bar at the bottom and the rest are under "More". Conversations and
+// handoffs are the Inbox (waiting, mine, with the team, callbacks, all);
+// offerings are Rooms or Services, and Prices.
 const PAGES: Array<{ id: string; label: string; icon: string; minimum: Role; only?: string[]; status?: string }> = [
   // A business that signed up by itself, until it goes live (Phase 5).
   { id: "setup", label: "Set up", icon: "check", minimum: "viewer", status: "onboarding" },
   { id: "inbox", label: "Inbox", icon: "inbox", minimum: "viewer" },
+  // People who want the team to get back to them (not for TBM, which keeps its own).
+  { id: "leads", label: "Leads", icon: "user", minimum: "agent", only: ["general", "guesthouse", "salon", "restaurant"] },
   // Bookings: a place to stay's rooms (Phase 4), a salon's services and a restaurant's tables (Phase 5).
   { id: "bookings", label: "Bookings", icon: "calendar", minimum: "viewer", only: ["guesthouse", "salon", "restaurant"] },
   { id: "rooms", label: "Rooms", icon: "bed", minimum: "manager", only: ["guesthouse"] },
@@ -162,11 +169,17 @@ const PAGES: Array<{ id: string; label: string; icon: string; minimum: Role; onl
   { id: "team", label: "Team", icon: "team", minimum: "manager" },
 ];
 
+/** On a phone, how many sections sit in the bar at the bottom (the rest are under "More"). */
+const BAR_ITEMS = 4;
+
 function Console(props: { me: Me; route: Route; reloadMe: () => Promise<void> }) {
   const { me, route } = props;
   const admin = me.user.is_platform_admin;
-  const [counts, setCounts] = useState({ pending: 0, mine: 0, callbacks: 0 });
+  const [counts, setCounts] = useState({ pending: 0, mine: 0, callbacks: 0, leads: 0 });
   const [menuOpen, setMenuOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  // Choosing a section closes the phone's "More" list.
+  useEffect(() => setMoreOpen(false), [route.page, route.businessId]);
   const [dialog, setDialog] = useState<"password" | "alerts" | null>(null);
 
   // Which business: the one in the address, or the first the person works for.
@@ -226,6 +239,19 @@ function Console(props: { me: Me; route: Route; reloadMe: () => Promise<void> })
   }
 
   const visiblePages = role ? PAGES.filter((item) => atLeast(role, item.minimum) && (!item.only || item.only.includes(businessType ?? "")) && (!item.status || item.status === businessStatus)) : [];
+  const navItems = [
+    ...visiblePages.map((item) => ({
+      id: item.id,
+      href: `#/b/${encodeURIComponent(businessId ?? "")}/${item.id}`,
+      icon: item.icon,
+      label: item.id === "services" && businessType === "restaurant" ? "Tables" : item.label,
+      count: item.id === "inbox" ? counts.pending : item.id === "leads" ? counts.leads : 0,
+      countLabel: item.id === "inbox" ? "waiting" : "new",
+    })),
+    ...(admin ? [{ id: "platform", href: "#/platform", icon: "shield", label: "Platform", count: 0, countLabel: "" }] : []),
+  ];
+  const moreActive = navItems.slice(BAR_ITEMS).some((item) => item.id === page);
+  const moreCount = navItems.slice(BAR_ITEMS).reduce((sum, item) => sum + item.count, 0);
   let content: JSX.Element;
   if (page === "platform" && admin) content = <PlatformPage />;
   else if (!businessId || !role) content = <div className="page"><p className="message error">You don't work for this business.</p></div>;
@@ -233,6 +259,7 @@ function Console(props: { me: Me; route: Route; reloadMe: () => Promise<void> })
   else if (page === "bookings" && ["guesthouse", "salon", "restaurant"].includes(businessType ?? "")) content = <BookingsPage businessId={businessId} role={role} bookingId={route.id} businessType={businessType} />;
   else if (page === "services" && (businessType === "salon" || businessType === "restaurant") && atLeast(role, "manager")) content = <ServicesPage businessId={businessId} role={role} businessType={businessType} />;
   else if (page === "rooms" && businessType === "guesthouse" && atLeast(role, "manager")) content = <RoomsPage businessId={businessId} role={role} />;
+  else if (page === "leads" && businessType !== "travel_concierge" && atLeast(role, "agent")) content = <LeadsPage businessId={businessId} role={role} onChanged={() => void refreshCounts()} />;
   else if (page === "prices" && businessType !== "travel_concierge") content = <PricesPage businessId={businessId} role={role} businessType={businessType} />;
   else if (page === "knowledge") content = <KnowledgePage businessId={businessId} role={role} />;
   else if (page === "reports" && atLeast(role, "manager")) content = <ReportsPage businessId={businessId} />;
@@ -272,20 +299,40 @@ function Console(props: { me: Me; route: Route; reloadMe: () => Promise<void> })
         </div>
       </header>
       <nav className="sidenav" aria-label="Sections">
-        {visiblePages.map((item) => (
-          <a key={item.id} href={`#/b/${encodeURIComponent(businessId ?? "")}/${item.id}`} className={page === item.id ? "active" : ""} aria-current={page === item.id ? "page" : undefined}>
+        {navItems.map((item, index) => (
+          <a
+            key={item.id}
+            href={item.href}
+            className={[page === item.id ? "active" : "", index >= BAR_ITEMS ? "nav-extra" : ""].filter(Boolean).join(" ")}
+            aria-current={page === item.id ? "page" : undefined}
+          >
             <Icon name={item.icon} />
-            <span>{item.id === "services" && businessType === "restaurant" ? "Tables" : item.label}</span>
-            {item.id === "inbox" && counts.pending > 0 ? <span className="count" aria-label={`${counts.pending} waiting`}>{counts.pending}</span> : null}
+            <span>{item.label}</span>
+            {item.count ? <span className="count" aria-label={`${item.count} ${item.countLabel}`}>{item.count}</span> : null}
           </a>
         ))}
-        {admin ? (
-          <a href="#/platform" className={page === "platform" ? "active" : ""} aria-current={page === "platform" ? "page" : undefined}>
-            <Icon name="shield" />
-            <span>Platform</span>
-          </a>
+        {navItems.length > BAR_ITEMS ? (
+          <button type="button" className={`nav-more${moreActive ? " active" : ""}`} aria-expanded={moreOpen} aria-controls="more-sections" onClick={() => setMoreOpen(!moreOpen)}>
+            <Icon name="more" />
+            <span>More</span>
+            {moreCount ? <span className="count" aria-label={`${moreCount} to look at`}>{moreCount}</span> : null}
+          </button>
         ) : null}
       </nav>
+      {moreOpen ? (
+        <>
+          <div className="more-backdrop" onClick={() => setMoreOpen(false)} />
+          <nav id="more-sections" className="more-sheet" aria-label="More sections">
+            {navItems.slice(BAR_ITEMS).map((item) => (
+              <a key={item.id} href={item.href} className={page === item.id ? "active" : ""} aria-current={page === item.id ? "page" : undefined}>
+                <Icon name={item.icon} />
+                <span>{item.label}</span>
+                {item.count ? <span className="count">{item.count}</span> : null}
+              </a>
+            ))}
+          </nav>
+        </>
+      ) : null}
       <main className="main">
         {membership?.businessStatus === "paused" && page !== "platform" ? <PausedBanner businessId={businessId!} reason={membership.pauseReason ?? "platform"} canPay={atLeast(role ?? "viewer", "manager")} /> : null}
         {content}

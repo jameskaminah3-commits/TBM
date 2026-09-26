@@ -17,7 +17,8 @@
 //                                             a new person without a starting password is emailed a link to choose one
 //   DELETE members/:userId           manager (managers and owners: owner; never the last owner)
 //   GET    secrets (names only)      manager   PUT / DELETE secrets/:name    owner
-//   GET    leads                     agent
+//   GET    leads?status=new|contacted|won|lost|open|all   agent   with how many are at each status
+//   PATCH  leads/:leadId { status?, team_note? }           agent   following one up
 //   GET    metrics?days=7            manager   GET    reports?days=30             manager
 //   POST   erase { email?, phone? }  manager   DELETE sessions/:id           manager
 //   GET    members/me                viewer    my role and alert emails here
@@ -27,14 +28,14 @@
 //                                             allowed_origins: owner
 
 import type { Express, NextFunction, Request, Response } from "express";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { PlatformConfig } from "../config.ts";
 import { clearBusinessCache, reloadBusiness } from "../businesses/registry.ts";
 import { deleteSecret, listSecrets, putSecret, SECRET_NAME_PATTERN } from "../businesses/secrets.ts";
 import { getBusinessSettings, updateBusinessSettings, validateSettingsPatch } from "../businesses/settings.ts";
 import { deleteConversation, eraseCustomer } from "../conversations/retention.ts";
 import { createStaffUser, findStaffByEmail, getStaffUser, membershipsOf, resetStaffPassword, setStaffPassword, updateBusinessDirectory, type DirectoryPatch } from "../db/platform-scope.ts";
-import { leads, staffMemberships, staffRoles, staffUsers, type StaffRole, type StaffUser } from "../db/schema.ts";
+import { chatSessions, leads, leadStatuses, staffMemberships, staffRoles, staffUsers, type Lead, type LeadStatus, type StaffRole, type StaffUser } from "../db/schema.ts";
 import { inBusiness } from "../db/tenant.ts";
 import { summarizeTurns } from "../engine/telemetry.ts";
 import { businessReport } from "../reports/business-report.ts";
@@ -399,7 +400,46 @@ export function registerStaffAccountRoutes(app: Express, config: PlatformConfig)
   app.get(`${base}/leads`, staff, requireBusinessRole("agent"), async (req: Request, res: Response, next: NextFunction) => {
     try {
       const businessId = staffOf(req).business!.id;
-      res.json({ leads: await inBusiness((db) => db.select().from(leads).where(eq(leads.businessId, businessId)).orderBy(desc(leads.createdAt)).limit(200)) });
+      const wanted = String(req.query.status ?? "all");
+      const filter: LeadStatus[] | null = wanted === "open" ? ["new", "contacted"] : leadStatuses.includes(wanted as LeadStatus) ? [wanted as LeadStatus] : null;
+      const { rows, counts } = await inBusiness(async (db, client) => ({
+        rows: await db.select({ lead: leads, channel: chatSessions.channel }).from(leads)
+          .leftJoin(chatSessions, and(eq(chatSessions.businessId, leads.businessId), eq(chatSessions.id, leads.sessionId)))
+          .where(filter ? and(eq(leads.businessId, businessId), inArray(leads.status, filter)) : eq(leads.businessId, businessId))
+          .orderBy(desc(leads.createdAt))
+          .limit(200),
+        counts: (await client.query<{ status: LeadStatus; n: number }>("select status, count(*)::int as n from leads where business_id = $1 group by status", [businessId])).rows,
+      }));
+      res.json({
+        leads: rows.map(({ lead, channel }) => ({ ...lead, channel: channel ?? null })),
+        counts: Object.fromEntries(leadStatuses.map((status) => [status, counts.find((row) => row.status === status)?.n ?? 0])),
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch(`${base}/leads/:leadId`, staff, requireBusinessRole("agent"), async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { business, user } = staffOf(req);
+      const id = Number(req.params.leadId);
+      if (!Number.isSafeInteger(id) || id <= 0) return res.status(404).json({ error: "not_found" });
+      const body = req.body ?? {};
+      const patch: Partial<Pick<Lead, "status" | "teamNote">> = {};
+      if ("status" in body) {
+        if (!leadStatuses.includes(body.status)) return res.status(400).json({ error: "invalid_status", message: `status is one of ${leadStatuses.join(", ")}.` });
+        patch.status = body.status;
+      }
+      if ("team_note" in body) {
+        const note = body.team_note === null ? "" : typeof body.team_note === "string" ? body.team_note.trim() : null;
+        if (note === null || note.length > 1000) return res.status(400).json({ error: "invalid_note", message: "A note is up to 1,000 characters." });
+        patch.teamNote = note || null;
+      }
+      if (!Object.keys(patch).length) return res.status(400).json({ error: "nothing_to_change" });
+      const [row] = await inBusiness((db) => db.update(leads).set({ ...patch, handledBy: user.id, updatedAt: new Date() })
+        .where(and(eq(leads.businessId, business!.id), eq(leads.id, id))).returning());
+      if (!row) return res.status(404).json({ error: "not_found" });
+      res.json({ lead: row });
     } catch (error) {
       next(error);
     }

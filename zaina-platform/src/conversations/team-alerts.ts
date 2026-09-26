@@ -17,6 +17,8 @@
 //       a new confirmed booking people who answer chats
 //       a paid booking without  managers and owners
 //       its rooms
+//       a new lead              people who answer chats (someone wants
+//                               the team to get back to them)
 //
 // Alerts are best-effort: a failure is logged, never shown to the customer,
 // and never holds up a reply.
@@ -37,7 +39,9 @@ export type AlertEvent =
   /** The customer wrote in a chat a person is handling. */
   | { kind: "customer-replied"; sessionId: string; preview: string }
   /** Something about a booking needs the team, or is worth knowing. */
-  | { kind: "booking"; what: "request" | "confirmed" | "conflict" | "code"; bookingId: string; sessionId: string | null; summary: string };
+  | { kind: "booking"; what: "request" | "confirmed" | "conflict" | "code"; bookingId: string; sessionId: string | null; summary: string }
+  /** Someone left their details for the team to get back to them. */
+  | { kind: "lead"; leadId: number; sessionId: string | null; summary: string };
 
 type Settings = { webPush: WebPushConfig | null; alertEmail: AlertEmailConfig | null; publicBaseUrl: string | null };
 let settings: Settings = { webPush: null, alertEmail: null, publicBaseUrl: null };
@@ -51,7 +55,7 @@ export function pushPublicKey(): string | null {
 }
 
 type Person = { id: string; name: string; email: string; role: string; alertEmail: boolean };
-type Alert = { title: string; body: string; sessionId: string | null; urgent: boolean; bookingId?: string };
+type Alert = { title: string; body: string; sessionId: string | null; urgent: boolean; bookingId?: string; leadId?: number };
 
 /** Everyone who works for the business, with their role. */
 async function peopleOf(businessId: string): Promise<Person[]> {
@@ -79,9 +83,9 @@ async function sessionHandler(businessId: string, sessionId: string): Promise<st
   }, businessId);
 }
 
-function consoleLink(businessId: string, alert: Pick<Alert, "sessionId" | "bookingId">): string {
+function consoleLink(businessId: string, alert: Pick<Alert, "sessionId" | "bookingId" | "leadId">): string {
   const base = settings.publicBaseUrl ?? "";
-  const page = alert.bookingId ? `bookings/${alert.bookingId}` : `inbox${alert.sessionId ? `/${alert.sessionId}` : ""}`;
+  const page = alert.bookingId ? `bookings/${alert.bookingId}` : alert.leadId ? "leads" : `inbox${alert.sessionId ? `/${alert.sessionId}` : ""}`;
   return `${base}/console/#/b/${encodeURIComponent(businessId)}/${page}`;
 }
 
@@ -140,6 +144,12 @@ async function plan(business: Business, event: AlertEvent): Promise<{ people: Pe
         alert: { ...BOOKING_ALERTS[event.what], body: event.summary, sessionId: event.sessionId, bookingId: event.bookingId },
         email: true,
       };
+    case "lead":
+      return {
+        people: people.filter(answersChats),
+        alert: { title: "A customer wants you to get back to them", body: event.summary, sessionId: event.sessionId, leadId: event.leadId, urgent: false },
+        email: true,
+      };
     case "spend-cap":
       return {
         people: people.filter(runsTheBusiness),
@@ -176,7 +186,7 @@ async function sendPushes(businessId: string, people: Person[], alert: Alert, bu
     title: `${alert.title} · ${businessName}`,
     body: alert.body.slice(0, 180),
     url: consoleLink(businessId, alert),
-    tag: alert.bookingId ? `booking-${alert.bookingId}` : alert.sessionId ?? `business-${businessId}`,
+    tag: alert.bookingId ? `booking-${alert.bookingId}` : alert.leadId ? `lead-${alert.leadId}` : alert.sessionId ?? `business-${businessId}`,
   });
   let sent = 0;
   await Promise.all(subscriptions.map(async (subscription) => {
@@ -228,8 +238,8 @@ async function sendEmails(businessId: string, people: Person[], alert: Alert, bu
             alert.body,
             "",
             settings.publicBaseUrl
-              ? `${alert.bookingId ? "Open the booking" : "Open the chat"}: ${consoleLink(businessId, alert)}`
-              : `Open the Zaina console to see the ${alert.bookingId ? "booking" : "chat"}.`,
+              ? `${alert.bookingId ? "Open the booking" : alert.leadId ? "Open your leads" : "Open the chat"}: ${consoleLink(businessId, alert)}`
+              : `Open the Zaina console to see the ${alert.bookingId ? "booking" : alert.leadId ? "lead" : "chat"}.`,
             "",
             "You get these emails because you work on this business's chats. You can turn them off in the console (menu → Alerts).",
           ].join("\n"),
@@ -247,7 +257,7 @@ async function sendEmails(businessId: string, people: Person[], alert: Alert, bu
 
 /** Alerts the business's people (and its connector) about an event. Never throws. */
 export async function alertTeam(business: Business, event: AlertEvent): Promise<void> {
-  const connectorEvent = event.kind !== "handoff-unclaimed" && event.kind !== "customer-replied" && event.kind !== "booking";
+  const connectorEvent = event.kind !== "handoff-unclaimed" && event.kind !== "customer-replied" && event.kind !== "booking" && event.kind !== "lead";
   await Promise.all([
     connectorEvent
       ? connectorFor(business)

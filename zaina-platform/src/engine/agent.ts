@@ -406,6 +406,12 @@ async function runLockedTurn(input: TurnInput, connector: BusinessConnector, rec
           sawFailedWrite = true;
         }
         if (call.name === ESCALATE_TO_HUMAN && toolResponseData?.status === "escalated") escalated = true;
+        // A new lead: the business's people hear of it (TBM's connector tells its own team).
+        if (call.name === "create_lead" && toolResponseData?.ok === true && Number.isInteger(toolResponseData.lead_id) && !TYPES_WITH_OWN_CONNECTOR.has(business.businessType)) {
+          const who = textArg(call.args?.name) || "A customer";
+          const what = textArg(call.args?.interest);
+          alert(business, "lead alert", { kind: "lead", leadId: toolResponseData.lead_id, sessionId, summary: `${who}${what ? ` wants: ${what}` : " left their details"}.`.slice(0, 300) });
+        }
 
         // A tool's fixed reply ("what's your email?") ends the turn as is.
         // In Swahili, a connector's English fixed reply goes back to the model

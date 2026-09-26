@@ -248,7 +248,15 @@ export const leads = pgTable("leads", {
   interest: text("interest"),
   notes: text("notes"),
   createdAt: createdAt(),
+  // Migration 0015: following it up.
+  status: text("status").$type<LeadStatus>().notNull().default("new"),
+  teamNote: text("team_note"),
+  handledBy: uuid("handled_by"),
+  updatedAt: at("updated_at"),
 });
+export const leadStatuses = ["new", "contacted", "won", "lost"] as const;
+export type LeadStatus = (typeof leadStatuses)[number];
+export type Lead = typeof leads.$inferSelect;
 
 export const knowledgeKinds = ["page", "faq", "policy", "guide", "menu", "document"] as const;
 export type KnowledgeKind = (typeof knowledgeKinds)[number];

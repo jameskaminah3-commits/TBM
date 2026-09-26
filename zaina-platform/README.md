@@ -389,6 +389,8 @@ row-level security (Phase 1), and every table added here is too:
 | Website chat | `zaina.js` with `data-business="<id>"` on any business's website (see the Phase 3 table); a "Chat on WhatsApp instead" link when WhatsApp is connected (migration 0013) |
 | Knowledge | From the business's website (read by the platform, same site only, robots.txt respected), from PDFs and text files (read in the browser), or typed. Amounts in documents are hidden from Zaina |
 | Price list (migration 0014) | What the business charges for things that aren't booked here: a general business's services and products, a place to stay's extras (transfers, meals, laundry), a salon's products. By section, a fixed price or a range, what it's per, KSh or US$, shown or hidden. Added one at a time, or pasted as the business has it ("Airport transfer — KSh 3,500 per car"; a line with no price starts a section) and checked before it's added; pasting again updates prices. Zaina's `get_prices` tool (every business on the platform's own connectors) returns the matching items written out, to quote exactly; a price that isn't listed is never guessed, and the question joins the unanswered questions. Prices and availability therefore always come from structured data: rooms, services and this list |
+| Leads (migration 0015) | People who want the team to get back to them: the details Zaina took in the chat (only what the customer typed), what they want, the conversation, and the team's follow-up (new, contacted, became a customer, not going ahead) with a note of its own. The team is alerted as each one comes in (push and email, to people who answer chats) |
+| Dashboard | Just enough to run it: **Inbox** (conversations and handoffs: waiting, mine, with the team, callbacks, all), **Leads**, **Bookings**, the offerings (**Rooms** or **Services**, and **Prices**), **Knowledge**, **Reports**, **Settings** and **Team**, by role. On a phone, the four most used sit in the bar at the bottom and the rest are under More |
 | Team accounts | "Forgot your password?", and new team members (or a business's first owner) choosing their own password from an emailed link |
 
 ## Running it locally
@@ -501,7 +503,7 @@ Per business, under `/v1/staff/businesses/:businessId/` (least role needed):
 |---|---|
 | `GET sessions?filter=waiting\|active\|callbacks\|all`, `GET pending-count`, `GET sessions/:id` | viewer |
 | `POST sessions/:id/claim`, `…/messages`, `…/release`, `…/close`, `…/callback-done` | agent |
-| `GET leads` | agent |
+| `GET leads?status=new\|contacted\|won\|lost\|open\|all` (with how many are at each), `PATCH leads/:leadId` (`{ status?, team_note? }`) | agent |
 | `GET settings` | viewer |
 | `PATCH settings`, `GET members`, `POST members` (`{ email, role, name?, password? }`: a new person without a starting password is emailed a link to choose one), `DELETE members/:userId` | manager (managers and owners are added or removed by an owner) |
 | `GET metrics?days=7`, `POST erase` (`{ email?, phone? }`), `DELETE sessions/:id` | manager |
