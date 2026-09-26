@@ -209,7 +209,12 @@ test("WhatsApp, phone alerts and alert emails are each on only when fully config
     ALERT_FROM_EMAIL: "alerts@example.com",
     PUBLIC_BASE_URL: "https://zaina.example.com/",
   });
-  assert.deepEqual(on.whatsapp, { appSecret: "secret", verifyToken: "a-long-verify-token", graphVersion: "v23.0", batchMs: 2000 });
+  assert.deepEqual(on.whatsapp, { appSecret: "secret", verifyToken: "a-long-verify-token", graphVersion: "v23.0", batchMs: 2000, embeddedSignup: null });
+  // "Connect with Facebook" needs the app's id and its signup configuration's id, both numbers.
+  const whatsapp = { ...base, WHATSAPP_APP_SECRET: "secret", WHATSAPP_VERIFY_TOKEN: "a-long-verify-token" };
+  assert.deepEqual(loadConfig({ ...whatsapp, WHATSAPP_APP_ID: "1234567890123", WHATSAPP_CONFIG_ID: "9876543210987" }).whatsapp?.embeddedSignup, { appId: "1234567890123", configId: "9876543210987" });
+  assert.throws(() => loadConfig({ ...whatsapp, WHATSAPP_APP_ID: "1234567890123" }), /WHATSAPP_CONFIG_ID/);
+  assert.throws(() => loadConfig({ ...whatsapp, WHATSAPP_APP_ID: "my-app", WHATSAPP_CONFIG_ID: "9876543210987" }), /long numbers/);
   assert.equal(on.webPush?.subject, "mailto:alerts@example.com");
   assert.deepEqual(on.alertEmail, { resendApiKey: "re_x", from: "alerts@example.com" });
   assert.equal(on.publicBaseUrl, "https://zaina.example.com");

@@ -56,8 +56,12 @@ export async function saveConnection(businessId: string, input: ConnectionInput,
   return row;
 }
 
+/** The two-step verification PIN the platform set when it registered the number ("Connect with Facebook"). */
+export const PIN_SECRET = "whatsapp_pin";
+
 export async function disconnect(businessId: string): Promise<boolean> {
   const rows = await inBusiness((db) => db.delete(whatsappNumbers).where(eq(whatsappNumbers.businessId, businessId)).returning(), businessId);
   await deleteSecret(businessId, ACCESS_TOKEN_SECRET);
+  await deleteSecret(businessId, PIN_SECRET);
   return rows.length > 0;
 }

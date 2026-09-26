@@ -189,7 +189,7 @@ WhatsApp, and its team works from a console:
 |---|---|
 | Website widget | One script tag on any business's website: `<script src="https://<platform>/zaina.js" data-business="<business id>" async></script>` (the console's Settings → Website widget shows it; older snippets with `widget.js` and `data-key` keep working). Only the business's own websites can use it. It has the business's name, colour, corner and greeting, and, with WhatsApp connected, a "Chat on WhatsApp instead" link to its number (the business can turn it off; migration 0013). The chat resumes on the next visit, and the team's replies appear while they have the chat. Shadow DOM, keyboard and screen-reader friendly, full screen on phones, 13 KB |
 | WhatsApp | The WhatsApp Cloud API through one webhook for the platform, checked against Meta's signature. Messages are stored once (Meta retries) and answered together when they arrive together. Replies go out in order: free-form within 24 hours of the customer's last message; after that, the business's approved follow-up template and the reply waits for the customer. Delivery statuses, retries when Meta is busy, and a failed message skipped rather than blocking the chat. Photos, voice notes and documents are kept for the team, and Zaina says she reads text only. The customer's number counts as a contact they gave. Blue ticks and "typing…" |
-| Connecting a number | An owner enters the phone number ID, account ID and a permanent token. Meta checks the token before anything is saved; the token is stored encrypted and never shown again. A number can belong to one business only |
+| Connecting a number | **Connect with Facebook** (Meta's Embedded Signup, once the platform is a Tech Provider): the owner signs in with Facebook on the platform's page `/connect/whatsapp` (its own content policy, the only page that runs Meta's script), chooses the business and number and confirms it with Meta's code; the platform exchanges the sign-in's code for the business's own token, checks the number is in the account shared, registers it with a two-step PIN of its own (shown once), subscribes to its messages and saves it. **By hand**: the phone number ID, account ID and a permanent token. Either way Meta checks the token before anything is saved; the token is stored encrypted and never shown again, and a number can belong to one business only. The console then shows the number's click-to-chat link (`wa.me`) |
 | Handoff routing | A waiting chat goes first to one person who is taking chats (the one with the fewest in hand), then to everyone after 3 minutes. The unclaimed timeout, callbacks and "hand back to Zaina" work as before. People show they're taking chats in the console |
 | Alerts | Web push to staff phones and browsers (the console can be installed on the home screen) and email: a waiting chat, still waiting, a callback, a reply from the customer they're helping, and trouble for managers. Each person can turn emails off |
 | Console | Sign-in with an HttpOnly cookie and a strict content policy. Inbox (waiting, mine, with the team, callbacks, all) with claim, reply, hand back and close, WhatsApp ticks and the 24-hour window, and customers' photos. Knowledge (documents, "what would Zaina find?", unanswered questions). Reports. Settings (business, widget and embed code, WhatsApp, hours). Team and secrets. A platform view for its admins. Works on phones, light and dark |
@@ -387,6 +387,7 @@ row-level security (Phase 1), and every table added here is too:
 | Part | What it does |
 |---|---|
 | Website chat | `zaina.js` with `data-business="<id>"` on any business's website (see the Phase 3 table); a "Chat on WhatsApp instead" link when WhatsApp is connected (migration 0013) |
+| WhatsApp | **Connect with Facebook** (Meta's Embedded Signup): the owner connects the business's number in a few clicks, with nothing to copy (see the Phase 3 table and DEPLOY.md); connecting by hand still works. The number's click-to-chat link for the business's website, social pages and printed menus |
 | Knowledge | From the business's website (read by the platform, same site only, robots.txt respected), from PDFs and text files (read in the browser), or typed. Amounts in documents are hidden from Zaina |
 | Price list (migration 0014) | What the business charges for things that aren't booked here: a general business's services and products, a place to stay's extras (transfers, meals, laundry), a salon's products. By section, a fixed price or a range, what it's per, KSh or US$, shown or hidden. Added one at a time, or pasted as the business has it ("Airport transfer — KSh 3,500 per car"; a line with no price starts a section) and checked before it's added; pasting again updates prices. Zaina's `get_prices` tool (every business on the platform's own connectors) returns the matching items written out, to quote exactly; a price that isn't listed is never guessed, and the question joins the unanswered questions. Prices and availability therefore always come from structured data: rooms, services and this list |
 | Leads (migration 0015) | People who want the team to get back to them: the details Zaina took in the chat (only what the customer typed), what they want, the conversation, and the team's follow-up (new, contacted, became a customer, not going ahead) with a note of its own. The team is alerted as each one comes in (push and email, to people who answer chats) |
@@ -409,6 +410,9 @@ TBM_DATABASE_URL        TBM's database, for the TBM connector; without it TBM's 
 Phase 3, each optional: `PUBLIC_BASE_URL` (the service's address: the widget
 snippet, the webhook, links in alerts), `WHATSAPP_APP_SECRET` and
 `WHATSAPP_VERIFY_TOKEN` (the platform's Meta app; both, or WhatsApp is off),
+`WHATSAPP_APP_ID` and `WHATSAPP_CONFIG_ID` (the app's id and its Embedded
+Signup configuration: "Connect with Facebook"; both, or owners connect by
+hand),
 `WHATSAPP_GRAPH_VERSION` (`v23.0`), `WEB_PUSH_PUBLIC_KEY`,
 `WEB_PUSH_PRIVATE_KEY` and `WEB_PUSH_SUBJECT` (alerts on phones),
 `RESEND_API_KEY` and `ALERT_FROM_EMAIL` (alert emails; with `PUBLIC_BASE_URL`,
@@ -564,7 +568,9 @@ Phase 3:
 | `GET members/me`, `PATCH members/me` (`{ alert_email }`) | viewer: my role and alert emails |
 | `GET operations`, `PATCH operations` (`{ time_zone?, staffed_hours?, unclaimed_timeout_minutes?, allowed_origins? }`) | viewer / manager (websites: owner) |
 | `GET reports?days=30` | manager |
-| `GET whatsapp` / `PUT`, `DELETE whatsapp` | manager / owner |
+| `GET whatsapp` (the connection, its `chat_link`, and `embedded_signup` when "Connect with Facebook" is on) / `PUT`, `DELETE whatsapp` | manager / owner |
+| `POST whatsapp/embedded` (`{ code, phone_number_id, waba_id }`, from `/connect/whatsapp`: the business's token, number checked, registered and subscribed; answers with the PIN once) | owner |
+| `GET /connect/whatsapp?business=<id>` ("Connect with Facebook": its own content policy for Meta's SDK) | an owner signed in to the console |
 | `GET whatsapp/media/:mediaId` | viewer: a photo or document a customer sent to this business |
 | `GET /v1/platform/overview` | platform admins |
 

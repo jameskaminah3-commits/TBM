@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Connect WhatsApp · Zaina</title>
+    <meta name="theme-color" content="#0f766e" />
+    <link rel="icon" href="/console/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/console/app.css" />
+    <script src="/connect/whatsapp.js" defer></script>
+  </head>
+  <body>
+    <main class="signin">
+      <div class="signin-card" id="card">
+        <div class="brand-mark" aria-hidden="true">Z</div>
+        <h1>Connect WhatsApp</h1>
+        <p class="muted" id="intro">Sign in with Facebook, then choose your business, its WhatsApp account and the phone number customers message. Zaina answers them there, and your team replies from the console.</p>
+        <ul class="plain-list small muted">
+          <li>Use a number that isn't on the WhatsApp or WhatsApp Business phone app (or delete it from the app first).</li>
+          <li>Meta sends a code to the number by SMS or a call: keep the phone near you.</li>
+        </ul>
+        <div id="status" role="status" aria-live="polite"></div>
+        <button class="button primary" id="connect" type="button" disabled>Continue with Facebook</button>
+        <p class="muted small"><a id="back" href="/console/">Back to the console</a></p>
+      </div>
+    </main>
+    <noscript>Connecting WhatsApp needs JavaScript.</noscript>
+  </body>
+</html>

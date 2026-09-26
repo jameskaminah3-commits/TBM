@@ -46,6 +46,24 @@ const CONSOLE_CSP = [
   "object-src 'none'",
 ].join("; ");
 
+/**
+ * "Connect with Facebook" (WhatsApp's Embedded Signup) runs Meta's SDK, so it
+ * has a page and a policy of its own: Meta's script, its sign-in window and
+ * frames, and the platform's own API. The console's policy stays 'self' only.
+ */
+const CONNECT_CSP = [
+  "default-src 'none'",
+  "script-src 'self' https://connect.facebook.net",
+  "connect-src 'self' https://*.facebook.com https://*.facebook.net",
+  "frame-src https://*.facebook.com",
+  "img-src 'self' data: https://*.facebook.com https://*.fbcdn.net",
+  "style-src 'self' 'unsafe-inline'",
+  "frame-ancestors 'none'",
+  "base-uri 'none'",
+  "form-action 'self' https://*.facebook.com",
+  "object-src 'none'",
+].join("; ");
+
 const publicUser = (user: { id: string; email: string; name: string; isPlatformAdmin: boolean }) => ({
   id: user.id,
   email: user.email,
@@ -68,6 +86,25 @@ export function registerConsoleRoutes(app: Express, config: PlatformConfig): voi
     res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.sendFile(path.join(directory, "widget.js"), { headers: { "Content-Type": "application/javascript; charset=utf-8" } });
+  });
+
+  // ── Connect with Facebook (WhatsApp) ─────────────────────────────────
+  app.get("/connect/whatsapp", (_req: Request, res: Response) => {
+    if (!directory) return res.status(404).type("text/plain").send("Not built on this server.");
+    res.setHeader("Content-Security-Policy", CONNECT_CSP);
+    // Meta's sign-in window talks back to this page, so the page keeps its opener.
+    res.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
+    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Cache-Control", "no-store");
+    res.sendFile(path.join(directory, "connect", "whatsapp.html"));
+  });
+  app.get("/connect/whatsapp.js", (_req: Request, res: Response) => {
+    if (!directory) return res.status(404).type("text/plain").send("// Not built on this server.");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.sendFile(path.join(directory, "connect", "whatsapp.js"), { headers: { "Content-Type": "application/javascript; charset=utf-8" } });
   });
 
   // ── The console ────────────────────────────────────────────────────────

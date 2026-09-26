@@ -211,6 +211,8 @@ function Whatsapp(props: { businessId: string; role: Role }) {
   const [form, setForm] = useState({ phone_number_id: "", waba_id: "", access_token: "", followup_template: "", followup_template_language: "en", followup_template_parameter: "none" });
   const action = useAction();
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [byHand, setByHand] = useState(false);
+  const [copied, setCopied] = useState(false);
   useEffect(() => {
     const connection = state.data?.connection;
     if (connection) {
@@ -249,9 +251,25 @@ function Whatsapp(props: { businessId: string; role: Role }) {
         ) : (
           <p className="muted">Customers who message your WhatsApp number get Zaina's answers there, and your team replies from this console. The number can't be used in the WhatsApp Business phone app at the same time.</p>
         )}
+        {state.data.chat_link ? (
+          <div className="stack-tight">
+            <p className="small">Your click-to-chat link, for your website, Instagram, Facebook, Google profile and printed menus: <a href={state.data.chat_link} target="_blank" rel="noopener noreferrer">{state.data.chat_link}</a></p>
+            <div className="actions start"><Button small onClick={() => void navigator.clipboard.writeText(state.data!.chat_link!).then(() => setCopied(true))}>{copied ? "Copied" : "Copy the link"}</Button></div>
+          </div>
+        ) : null}
         {state.data.webhook_url ? <p className="muted small">The platform's webhook for Meta: <code>{state.data.webhook_url}</code></p> : null}
       </section>
-      {owner ? (
+      {owner && state.data.embedded_signup ? (
+        <section className="card stack-tight">
+          <h2>{connection ? "Connect a different number" : "Connect with Facebook"}</h2>
+          <p className="muted">The quickest way: sign in with Facebook, choose your business and the number customers message, and confirm it with the code Meta sends. Nothing to copy.</p>
+          <div className="actions start">
+            <a className="button primary" href={`/connect/whatsapp?business=${encodeURIComponent(props.businessId)}`}>Connect with Facebook</a>
+            {!byHand && !connection ? <Button onClick={() => setByHand(true)}>Connect by hand instead</Button> : null}
+          </div>
+        </section>
+      ) : null}
+      {owner && (!state.data.embedded_signup || byHand || connection) ? (
         <form
           className="form card"
           onSubmit={async (event) => {
@@ -268,7 +286,7 @@ function Whatsapp(props: { businessId: string; role: Role }) {
             }, "Connected. WhatsApp accepted the number and token.");
           }}
         >
-          <h2>{connection ? "Update the connection" : "Connect your number"}</h2>
+          <h2>{connection ? "Update the connection" : "Connect your number by hand"}</h2>
           <p className="muted small">From Meta's WhatsApp Manager (API setup) and Business Settings (a system user's permanent token with WhatsApp messaging and management).</p>
           <div className="form-row">
             <Field label="Phone number ID"><input required inputMode="numeric" value={form.phone_number_id} onChange={(event) => setForm({ ...form, phone_number_id: event.target.value.trim() })} /></Field>
@@ -305,7 +323,7 @@ function Whatsapp(props: { businessId: string; role: Role }) {
             <Button kind="primary" type="submit" busy={action.busy}>{connection ? "Save" : "Connect"}</Button>
           </div>
         </form>
-      ) : (
+      ) : owner ? null : (
         <p className="muted">Only an owner can connect or change WhatsApp.</p>
       )}
     </div>

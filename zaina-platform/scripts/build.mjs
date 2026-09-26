@@ -7,6 +7,8 @@
 //                                     as /zaina.js and /widget.js)
 //   dist/public/console/              the business console (a single-page app), with its PDF
 //                                     reader (pdf-reader.js and pdf.js's worker), loaded when needed
+//   dist/public/connect/              "Connect with Facebook" for WhatsApp (a page of its own,
+//                                     because it runs Meta's SDK)
 //
 //   node zaina-platform/scripts/build.mjs [--web] [--outdir <dir>]
 //   --web builds the web assets only (tests and local development).
@@ -73,6 +75,14 @@ async function buildWeb() {
     target: ["es2020", "safari14"],
   });
   cpSync(path.join(PLATFORM, "web/console/static"), path.join(publicDir, "console"), { recursive: true });
+  await build({
+    ...common,
+    entryPoints: [path.join(PLATFORM, "web/connect/whatsapp.ts")],
+    outfile: path.join(publicDir, "connect/whatsapp.js"),
+    format: "iife",
+    target: ["es2020", "safari14"],
+  });
+  cpSync(path.join(PLATFORM, "web/connect/whatsapp.html"), path.join(publicDir, "connect/whatsapp.html"));
 }
 
 if (!values.web) await buildNode();

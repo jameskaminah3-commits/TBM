@@ -7,12 +7,16 @@
 //     POST /v1/whatsapp/webhook   messages and status updates, signed with the app secret
 //
 //   Per business (/v1/staff/businesses/:businessId/…):
-//     GET    whatsapp                    manager   the connection, and the webhook address to give Meta
-//     PUT    whatsapp                    owner     connect or update: { phone_number_id, waba_id?, access_token?,
+//     GET    whatsapp                    manager   the connection, the webhook address to give Meta, the
+//                                                  number's wa.me link, and what "Connect with Facebook" needs
+//     POST   whatsapp/embedded           owner     "Connect with Facebook" (Meta's Embedded Signup), from the
+//                                                  page /connect/whatsapp: { code, phone_number_id, waba_id }
+//     PUT    whatsapp                    owner     connect or update by hand: { phone_number_id, waba_id?, access_token?,
 //                                                  followup_template?, followup_template_language?, followup_template_parameter? }
 //     DELETE whatsapp                    owner     disconnect (the token is deleted)
 //     GET    whatsapp/media/:mediaId     viewer    a photo, voice note or document a customer sent, streamed from Meta
 
+import { randomInt } from "node:crypto";
 import { Readable } from "node:stream";
 import express, { type Express, type NextFunction, type Request, type Response } from "express";
 import type { PlatformConfig } from "../../config.ts";
@@ -20,9 +24,11 @@ import { followupParameters, type FollowupParameter } from "../../db/schema.ts";
 import { inBusiness } from "../../db/tenant.ts";
 import { requireBusinessRole, requireStaff, staffOf } from "../../staff/auth.ts";
 import type { WhatsappContext } from "./context.ts";
-import { checkNumber, fetchMedia, subscribeApp } from "./graph.ts";
+import { putSecret } from "../../businesses/secrets.ts";
+import { whatsappLink } from "../../gateway/routes.ts";
+import { accountNumbers, checkNumber, exchangeCode, fetchMedia, registerNumber, subscribeApp } from "./graph.ts";
 import { acceptDelivery, scheduleAnswer } from "./inbound.ts";
-import { connectionFor, disconnect, getNumber, saveConnection } from "./numbers.ts";
+import { connectionFor, disconnect, getNumber, PIN_SECRET, saveConnection } from "./numbers.ts";
 import { requestDelivery } from "./runtime.ts";
 import { validSignature, verificationChallenge } from "./webhook.ts";
 
@@ -68,9 +74,14 @@ export function registerWhatsappRoutes(app: Express, config: PlatformConfig, ctx
   const describe = async (businessId: string) => {
     const number = await getNumber(businessId);
     const connection = number ? await connectionFor(businessId) : null;
+    const signup = ctx?.whatsapp.embeddedSignup ?? null;
     return {
       available: Boolean(ctx),
       webhook_url: config.publicBaseUrl ? `${config.publicBaseUrl}${WEBHOOK_PATH}` : null,
+      // What the "Connect with Facebook" page needs (public values), when the platform has it set up.
+      embedded_signup: signup ? { app_id: signup.appId, config_id: signup.configId, graph_version: ctx!.whatsapp.graphVersion } : null,
+      // The number's click-to-chat link, for the business's website, social pages and printed material.
+      chat_link: number?.status === "active" ? whatsappLink(number.displayPhoneNumber) : null,
       connection: number
         ? {
             phone_number_id: number.phoneNumberId,
@@ -147,6 +158,64 @@ export function registerWhatsappRoutes(app: Express, config: PlatformConfig, ctx
         throw error;
       }
       res.json({ ...(await describe(business!.id)), warnings });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // "Connect with Facebook": the business signed in with Facebook on /connect/whatsapp, chose (or
+  // created) its WhatsApp account and number, and Meta handed the page a code and the ids.
+  app.post(`${base}/embedded`, staff, requireBusinessRole("owner"), async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const signup = ctx?.whatsapp.embeddedSignup;
+      if (!ctx || !signup) return res.status(503).json({ error: "embedded_signup_off", message: "Connecting with Facebook isn't set up on this platform yet: connect with the number's ids and a token instead." });
+      const { business, user } = staffOf(req);
+      const code = typeof req.body?.code === "string" ? req.body.code.trim() : "";
+      const phoneNumberId = String(req.body?.phone_number_id ?? "").trim();
+      const wabaId = String(req.body?.waba_id ?? "").trim();
+      if (!code || code.length > 2000 || /\s/.test(code)) return res.status(400).json({ error: "code_required", message: "The Facebook sign-in didn't finish. Please try again." });
+      if (!/^\d{5,30}$/.test(phoneNumberId) || !/^\d{5,30}$/.test(wabaId)) {
+        return res.status(400).json({ error: "number_required", message: "Choose (or add) a phone number during the Facebook sign-in, then try again." });
+      }
+      const version = ctx.whatsapp.graphVersion;
+      const exchanged = await exchangeCode(version, { appId: signup.appId, appSecret: ctx.whatsapp.appSecret }, code);
+      if (!exchanged.ok) return res.status(400).json({ error: "signin_refused", message: `Facebook didn't accept the sign-in (${exchanged.title}). Please try again.` });
+      const token = exchanged.accessToken;
+      // The number must be in the account the business shared, and usable with its token.
+      const numbers = await accountNumbers(version, wabaId, token);
+      if (!numbers.ok || !numbers.numbers.some((entry) => entry.id === phoneNumberId)) {
+        return res.status(400).json({ error: "number_not_shared", message: "That number isn't in the WhatsApp account you shared. Please try again and choose it." });
+      }
+      const checked = await checkNumber(version, phoneNumberId, token);
+      if (!checked.ok) return res.status(400).json({ error: "whatsapp_check_failed", message: `WhatsApp didn't accept the number: ${checked.title}` });
+      const warnings: string[] = [];
+      const subscribed = await subscribeApp(version, wabaId, token);
+      if (!subscribed.ok) warnings.push(`Couldn't subscribe the platform to your WhatsApp account (${subscribed.title}); messages may not arrive until that's fixed.`);
+      // A new number is registered for the Cloud API with a two-step verification PIN of its own.
+      const pin = String(randomInt(0, 1_000_000)).padStart(6, "0");
+      const registered = await registerNumber(version, phoneNumberId, token, pin);
+      if (!registered.ok) warnings.push(`Meta didn't register the number for the Cloud API (${registered.title}). If it was already registered, nothing is needed; otherwise finish it in WhatsApp Manager.`);
+      const existing = await getNumber(business!.id);
+      try {
+        await saveConnection(business!.id, {
+          phoneNumberId,
+          wabaId,
+          displayPhoneNumber: checked.displayPhoneNumber,
+          verifiedName: checked.verifiedName,
+          // Keep the business's follow-up template when it reconnects the same number.
+          followupTemplate: existing?.phoneNumberId === phoneNumberId ? existing.followupTemplate : null,
+          followupTemplateLanguage: existing?.phoneNumberId === phoneNumberId ? existing.followupTemplateLanguage : "en",
+          followupTemplateParameter: existing?.phoneNumberId === phoneNumberId ? existing.followupTemplateParameter : "none",
+        }, token, user.id);
+      } catch (error) {
+        const database = ((error as { cause?: unknown }).cause ?? error) as { code?: string; constraint?: string };
+        if (database.code === "23505" && database.constraint === "whatsapp_numbers_phone_number_id_key") {
+          return res.status(409).json({ error: "number_in_use", message: "This number is already connected to another business." });
+        }
+        throw error;
+      }
+      if (registered.ok) await putSecret(business!.id, PIN_SECRET, pin, user.id);
+      res.json({ ...(await describe(business!.id)), warnings, pin: registered.ok ? pin : null });
     } catch (error) {
       next(error);
     }

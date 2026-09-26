@@ -127,6 +127,7 @@ code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
 .button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; font: inherit; font-weight: 600; border-radius: 8px; padding: 8px 14px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--text); cursor: pointer; white-space: nowrap; }
 .button.small { padding: 5px 10px; font-size: 13px; }
 .button.primary { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+a.button { text-decoration: none; }
 .button.danger { color: var(--danger); border-color: var(--danger); }
 .button.ghost { border-color: transparent; background: transparent; color: var(--text-2); }
 .button:hover:not(:disabled) { filter: brightness(0.96); }

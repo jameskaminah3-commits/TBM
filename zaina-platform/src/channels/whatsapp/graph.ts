@@ -4,7 +4,9 @@
 // text or an approved template, mark a message read, check a number and its
 // token, subscribe the platform's app to a business's account, and fetch a
 // customer's photo or document for the team. Every call names the business's
-// own number and uses the business's own token.
+// own number and uses the business's own token. For "Connect with Facebook"
+// (Embedded Signup): exchange the sign-in's code for the business's token,
+// list its account's numbers, and register a number for the Cloud API.
 
 export const GRAPH_HOST = "https://graph.facebook.com";
 
@@ -161,4 +163,40 @@ export async function fetchMedia(version: string, mediaId: string, accessToken: 
   } catch (error) {
     return { ...describeFailure(0, { error: { message: (error as Error).message } }), retryable: true };
   }
+}
+
+// ── Embedded Signup ───────────────────────────────────────────────────
+
+/**
+ * Exchanges the code from the business's Facebook sign-in (valid for about
+ * 30 seconds) for its token: a business integration system user's token,
+ * for its own WhatsApp account only. Needs the platform app's secret.
+ */
+export async function exchangeCode(version: string, app: { appId: string; appSecret: string }, code: string): Promise<GraphResult<{ accessToken: string }>> {
+  const url = `${GRAPH_HOST}/${version}/oauth/access_token?${new URLSearchParams({ client_id: app.appId, client_secret: app.appSecret, code })}`;
+  let response: Response;
+  try {
+    response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+  } catch (error) {
+    return { ...describeFailure(0, { error: { message: (error as Error).message } }), retryable: true };
+  }
+  const body = await response.json().catch(() => ({})) as { access_token?: unknown; error?: unknown };
+  if (!response.ok || body.error || typeof body.access_token !== "string") return describeFailure(response.status, body);
+  return { ok: true, accessToken: body.access_token };
+}
+
+/** The phone numbers in a WhatsApp Business Account, as the token sees them. */
+export async function accountNumbers(version: string, wabaId: string, accessToken: string): Promise<GraphResult<{ numbers: Array<{ id: string; displayPhoneNumber: string | null }> }>> {
+  const result = await call<{ data?: Array<{ id?: string; display_phone_number?: string }> }>(
+    "GET",
+    `${GRAPH_HOST}/${version}/${encodeURIComponent(wabaId)}/phone_numbers?fields=id,display_phone_number`,
+    accessToken,
+  );
+  if (!result.ok) return result;
+  return { ok: true, numbers: (result.data ?? []).filter((entry) => typeof entry.id === "string").map((entry) => ({ id: entry.id!, displayPhoneNumber: entry.display_phone_number ?? null })) };
+}
+
+/** Registers a number for the Cloud API, with its two-step verification PIN. */
+export async function registerNumber(version: string, phoneNumberId: string, accessToken: string, pin: string): Promise<GraphResult<{ success?: boolean }>> {
+  return call("POST", `${GRAPH_HOST}/${version}/${encodeURIComponent(phoneNumberId)}/register`, accessToken, { messaging_product: "whatsapp", pin });
 }

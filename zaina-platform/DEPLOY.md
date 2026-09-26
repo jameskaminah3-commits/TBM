@@ -177,7 +177,36 @@ What Meta needs, once, for the platform:
    `https://<domain>/v1/whatsapp/webhook`, verify token = your
    `WHATSAPP_VERIFY_TOKEN`. Verify, then subscribe to the **messages** field.
 
-For each business's number:
+"Connect with Facebook" (Meta's Embedded Signup), so each business connects
+its own number in a few clicks, with nothing to copy. Once, for the platform:
+
+a. **Become a Tech Provider.** In Meta Business Settings, verify the
+   platform's business (Security Center → Start verification: its
+   registration certificate, address and phone). Then in the app's dashboard,
+   complete **App Review** for `whatsapp_business_management` and
+   `whatsapp_business_messaging` (advanced access), with a screen recording
+   of a business connecting its number and receiving an answer.
+b. **Facebook Login for Business → Configurations → Create**: choose the
+   **WhatsApp Embedded Signup** login variation, access token **System-user
+   access token** that never expires, assets **WhatsApp accounts**, and the
+   two permissions above. Copy the **Configuration ID**.
+c. **App settings → Basic**: copy the **App ID**; add the platform's domain
+   under **App domains**. **Facebook Login for Business → Settings**: turn
+   on **Login with the JavaScript SDK**, and add `https://<domain>` under
+   **Allowed domains for the JavaScript SDK** and **Valid OAuth Redirect
+   URIs**.
+d. Set `WHATSAPP_APP_ID` and `WHATSAPP_CONFIG_ID` on the service (both, or
+   neither) and redeploy. Owners now see **Connect with Facebook** in
+   Settings → WhatsApp: they sign in, choose their business and number,
+   confirm it with Meta's code, and the platform exchanges the sign-in for
+   the business's own token, checks the number is in the account they
+   shared, registers it with a two-step PIN of its own (shown to the owner
+   once, kept encrypted), subscribes the app to its messages and saves the
+   connection. It runs on a page of its own (`/connect/whatsapp`), the only
+   page whose content policy allows Meta's script.
+
+Until the platform is a Tech Provider, or for a number Meta won't sign up
+that way, a business's number is connected by hand:
 
 4. In **WhatsApp Manager**, add and verify the business's number. Note its
    **Phone number ID** and **WhatsApp Business Account ID**.
@@ -194,6 +223,11 @@ For each business's number:
 
 A number connected to the Cloud API can't be used in the WhatsApp Business
 phone app at the same time. The team answers in the console instead.
+
+Once connected, Settings → WhatsApp shows the number's click-to-chat link
+(`https://wa.me/<number>`) for the business's website, social pages, Google
+profile and printed menus, and the website chat offers "Chat on WhatsApp
+instead" (the business can turn that off under Website widget).
 
 ## 5. A place to stay: rooms and deposits
 

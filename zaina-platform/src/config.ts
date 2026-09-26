@@ -25,6 +25,12 @@ export type WhatsappConfig = {
   graphVersion: string;
   /** How long to wait for more messages from the same customer before answering. */
   batchMs: number;
+  /**
+   * "Connect with Facebook" (Meta's Embedded Signup): the Meta app's id and
+   * the signup configuration's id (Facebook Login for Business). Both, or
+   * owners connect by typing their number's ids and a token.
+   */
+  embeddedSignup: { appId: string; configId: string } | null;
 };
 
 export type WebPushConfig = { publicKey: string; privateKey: string; subject: string };
@@ -135,7 +141,11 @@ function whatsappConfig(env: NodeJS.ProcessEnv): WhatsappConfig | null {
   const batchRaw = env.WHATSAPP_BATCH_MS?.trim();
   const batchMs = batchRaw === undefined || batchRaw === "" ? 2000 : Number(batchRaw);
   if (!Number.isInteger(batchMs) || batchMs < 0 || batchMs > 30_000) throw new Error("WHATSAPP_BATCH_MS is 0 to 30000");
-  return { appSecret, verifyToken, graphVersion, batchMs };
+  const appId = env.WHATSAPP_APP_ID?.trim();
+  const configId = env.WHATSAPP_CONFIG_ID?.trim();
+  if (Boolean(appId) !== Boolean(configId)) throw new Error("Set both WHATSAPP_APP_ID and WHATSAPP_CONFIG_ID (for \"Connect with Facebook\"), or neither");
+  if (appId && (!/^\d{5,30}$/.test(appId) || !/^\d{5,30}$/.test(configId!))) throw new Error("WHATSAPP_APP_ID and WHATSAPP_CONFIG_ID are long numbers from Meta's App Dashboard");
+  return { appSecret, verifyToken, graphVersion, batchMs, embeddedSignup: appId ? { appId, configId: configId! } : null };
 }
 
 function webPushConfig(env: NodeJS.ProcessEnv): WebPushConfig | null {

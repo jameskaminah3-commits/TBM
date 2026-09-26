@@ -136,6 +136,9 @@ test("an owner connects Acme's WhatsApp number; Meta checks the token before any
   assert.equal(before.body.available, true);
   assert.equal(before.body.connection, null);
   assert.equal(before.body.webhook_url, `http://127.0.0.1:${PORT}/v1/whatsapp/webhook`);
+  // Without WHATSAPP_APP_ID and WHATSAPP_CONFIG_ID, numbers are connected by hand.
+  assert.equal(before.body.embedded_signup, null);
+  assert.equal((await api("POST", "/v1/staff/businesses/acme/whatsapp/embedded", { code: "x", phone_number_id: ACME_NUMBER_ID, waba_id: ACME_WABA_ID }, ownerToken)).status, 503);
 
   const connection = { phone_number_id: ACME_NUMBER_ID, waba_id: ACME_WABA_ID, access_token: ACCESS_TOKEN };
   assert.equal((await api("PUT", "/v1/staff/businesses/acme/whatsapp", connection, agentToken)).status, 403, "an agent can't");

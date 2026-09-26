@@ -216,6 +216,15 @@ async function fakeGraph(url, init) {
     // A tiny JPEG, as Meta serves a customer's photo.
     return new Response(Buffer.from("ffd8ffe000104a46494600010100000100010000ffd9", "hex"), { status: 200, headers: { "content-type": "image/jpeg" } });
   }
+  // Embedded Signup: the sign-in's code for the business's token (the platform app's secret, no token).
+  if (pathname.endsWith("/oauth/access_token")) {
+    const query = new URL(url).searchParams;
+    const good = query.get("client_secret") === process.env.WHATSAPP_APP_SECRET && query.get("client_id") === process.env.WHATSAPP_APP_ID && query.get("code") === "good-signup-code";
+    logWhatsapp({ kind: "code-exchange", ok: good });
+    return good
+      ? graphAnswer(200, { access_token: process.env.FAKE_WHATSAPP_TOKEN || "EAAG-test-token-0000000000", token_type: "bearer" })
+      : graphAnswer(400, { error: { message: "Invalid verification code format.", type: "OAuthException", code: 100 } });
+  }
   if (token !== (process.env.FAKE_WHATSAPP_TOKEN || "EAAG-test-token-0000000000")) {
     logWhatsapp({ kind: "refused", path: pathname });
     return graphAnswer(401, { error: { message: "Invalid OAuth access token - Cannot parse access token", type: "OAuthException", code: 190 } });
@@ -227,7 +236,20 @@ async function fakeGraph(url, init) {
     return graphAnswer(200, { url: `https://lookaside.fbsbx.com/whatsapp_business/attachments/?mid=${parts[1]}`, mime_type: "image/jpeg", id: parts[1] });
   }
   if (method === "GET" && parts.length === 2) {
-    return graphAnswer(200, { display_phone_number: "+254 700 123 456", verified_name: "Acme Guesthouse", quality_rating: "GREEN", id: parts[1] });
+    // Numbers added through "Connect with Facebook" (72000…) have a number of their own.
+    const embedded = parts[1].startsWith("72000");
+    return graphAnswer(200, { display_phone_number: embedded ? "+254 711 000 111" : "+254 700 123 456", verified_name: embedded ? "Coral Cove" : "Acme Guesthouse", quality_rating: "GREEN", id: parts[1] });
+  }
+  if (method === "GET" && parts[2] === "phone_numbers") {
+    // Every account the tests share holds these two numbers.
+    return graphAnswer(200, { data: [{ id: "7200001111", display_phone_number: "+254 711 000 111" }, { id: "7200002222", display_phone_number: "+254 711 000 222" }] });
+  }
+  if (method === "POST" && parts[2] === "register") {
+    const body = JSON.parse(init?.body ?? "{}");
+    // 7200002222 is already registered with a PIN of its own.
+    if (parts[1] === "7200002222") return graphAnswer(400, { error: { message: "(#133005) Two step verification PIN Mismatch", type: "OAuthException", code: 133005 } });
+    logWhatsapp({ kind: "registered", phoneNumberId: parts[1], pin: body.pin, product: body.messaging_product });
+    return graphAnswer(200, { success: true });
   }
   if (method === "POST" && parts[2] === "subscribed_apps") {
     logWhatsapp({ kind: "subscribed", waba: parts[1] });

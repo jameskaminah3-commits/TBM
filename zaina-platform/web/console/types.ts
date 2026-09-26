@@ -147,6 +147,10 @@ export type Operations = {
 export type WhatsappState = {
   available: boolean;
   webhook_url: string | null;
+  /** "Connect with Facebook" is set up on the platform. */
+  embedded_signup: { app_id: string; config_id: string; graph_version: string } | null;
+  /** The number's wa.me link, once connected. */
+  chat_link: string | null;
   connection: null | {
     phone_number_id: string;
     waba_id: string | null;
