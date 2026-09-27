@@ -221,8 +221,10 @@ that way, a business's number is connected by hand:
    made one. The platform checks the token with Meta before saving it,
    encrypted.
 
-A number connected to the Cloud API can't be used in the WhatsApp Business
-phone app at the same time. The team answers in the console instead.
+A number connected this way can't be used in the WhatsApp Business phone app
+at the same time. The team answers in the console instead. Meta also offers
+"coexistence", which keeps the app on the same number alongside the API;
+Zaina doesn't support it yet.
 
 Once connected, Settings → WhatsApp shows the number's click-to-chat link
 (`https://wa.me/<number>`) for the business's website, social pages, Google

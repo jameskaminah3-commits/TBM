@@ -39,7 +39,7 @@ const POLL_OPEN_MS = 30_000;
   // The business: its id (data-business) or its public key (data-key).
   const business = (script?.dataset.business ?? script?.dataset.key)?.trim();
   if (!script || !business) {
-    console.warn("[zaina] The chat's script needs data-business=\"<your business id>\" (see Settings → Website chat in the Zaina console).");
+    console.warn("[zaina] The chat's script needs data-business=\"<your business id>\" (see Settings → Website widget in the Zaina console).");
     return;
   }
   window.__zainaWidgetLoaded = true;
