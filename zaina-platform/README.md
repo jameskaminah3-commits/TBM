@@ -626,14 +626,16 @@ Phase 5, signing up, setting up and billing:
 ## Tests
 
 ```
-npm test            # unit tests (no database): 174
-npm run test:db     # database checks, including separation between businesses: 59
+npm test            # unit tests (no database): 188
+npm run test:db     # database checks, including separation between businesses: 63
                     # PLATFORM_TEST_DATABASE_URL, a local database ending in _test (wiped)
 npm run test:e2e    # the whole service with a scripted model, TBM and a second business,
                     # the Phase 3 channels (WhatsApp, alerts, console, widget), the
-                    # Phase 4 pilot (three places to stay, their payments), and Phase 5:
+                    # Phase 4 pilot (three places to stay, their payments), Phase 5:
                     # a salon and a restaurant booking time, the calendar connector,
-                    # businesses signing up and going live, and billing: 89
+                    # businesses signing up and going live, and billing; and the SaaS
+                    # layer: passwords and invitations, reading a website, the price
+                    # list, leads and Connect with Facebook: 109
                     # also TBM_TEST_DATABASE_URL, a local copy of TBM's schema ending in _test
 npm run check       # type check (the service, and the widget and console)
 
@@ -645,7 +647,8 @@ npm run eval -- --scripted        # the evaluation harness itself, with the scri
 The end-to-end run uses `test/e2e/scripted-model.mjs` in place of the model,
 email, exchange-rate, WhatsApp (Graph API), web push, Paystack, M-Pesa
 (Daraja), Google (sign-in and Calendar) and calendar-link services, and
-refuses to run against any database that isn't local and named `*_test`.
+businesses' websites (`*.example`), and refuses to run against any database
+that isn't local and named `*_test`.
 `E2E_SERVER_LOG=<file>` keeps the server's output.
 
 The evaluation (`test/eval/`) runs 110 conversations through the whole
