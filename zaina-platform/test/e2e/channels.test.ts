@@ -269,6 +269,10 @@ test("a customer who asks for a person reaches the available agent first, and th
   const chat = await chatOf(customer);
   const wanjiku = (await platform.db.query("select id from staff_users where email = 'wanjiku@example.com'")).rows[0].id;
   assert.equal(chat.routed_to, wanjiku, "offered to the available agent");
+  // Zaina's own reply about the handover finishes going out first: a team
+  // reply sent while it's still being delivered waits for the next sweep.
+  await eventually(async () => repliesTo(customer).length === 1
+    && (await platform.db.query("select delivery_lock_until from chat_sessions where id = $1", [chat.id])).rows[0]?.delivery_lock_until === null, "Zaina's reply was delivered");
 
   const pushes = await eventually(() => {
     const sent = platform.log("push").slice(pushesBefore);
