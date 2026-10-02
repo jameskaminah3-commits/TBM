@@ -23,10 +23,11 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { BookingThread } from "@/components/booking-thread";
 import { BookingServiceDetails } from "@/components/booking-service-details";
 import { RequestBriefAccordion } from "@/components/request-brief-accordion";
-import { calculateBookingDepositAmount, getBookingAmountPaid, getBookingCheckoutAmount, getBookingOutstandingAmount, hasLockedInBookingDeposit, isFullPaymentOnlyBooking, supportsBookingDeposit } from "@shared/booking-payments";
+import { calculateBookingDepositAmount, getBookingAmountPaid, getBookingCheckoutAmount, getBookingOutstandingAmount, hasActiveAdminLock, hasLockedInBookingDeposit, isBookingFullyPaid, isFullPaymentOnlyBooking, supportsBookingDeposit } from "@shared/booking-payments";
+import { BookingCommitmentControl, BookingDateLockControl } from "@/components/admin-booking-controls";
 import type { Booking, Stay, Car as CarType, Cook, Errand, Experience } from "@shared/schema";
 import { bookingStatus } from "@shared/schema";
-import { formatCalendarDate, isCalendarDate } from "@shared/calendar-dates";
+import { formatCalendarDate, formatKenyaDateTime, isCalendarDate } from "@shared/calendar-dates";
 
 type BookingStatus = typeof bookingStatus.options[number];
 
@@ -603,27 +604,10 @@ export default function AdminBookings() {
     },
   });
 
-  const requireDepositMutation = useMutation({
-    mutationFn: async ({ id }: { id: string }) => {
-      const response = await apiRequest("PATCH", `/api/admin/bookings/${id}/require-deposit`);
-      return await response.json() as Booking;
-    },
-    onSuccess: (updatedBooking) => {
-      queryClient.setQueryData<Booking[]>(["/api/admin/bookings"], (current) => mergeUpdatedBooking(current, updatedBooking));
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/bookings"] });
-      toast({
-        title: "Deposit required",
-        description: "The client can now pay the 50% deposit from My Bookings to lock the dates.",
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Could not require a deposit",
-        description: error.message.replace(/^\d+:\s*/, ""),
-        variant: "destructive",
-      });
-    },
-  });
+  const handleBookingUpdated = (updatedBooking: Booking) => {
+    queryClient.setQueryData<Booking[]>(["/api/admin/bookings"], (current) => mergeUpdatedBooking(current, updatedBooking));
+    queryClient.invalidateQueries({ queryKey: ["/api/admin/bookings"] });
+  };
 
   const paymentActionMutation = useMutation({
     mutationFn: async ({ id, payload }: { id: string; payload: { action: "payment-received-cash" | "payment-received-mpesa" | "send-reminder" | "cancel-booking"; note?: string } }) => {
@@ -1117,7 +1101,20 @@ export default function AdminBookings() {
               const hasConfiguredDepositRule = supportsBookingDeposit(booking) && typeof booking.paymentDepositAmount === "number"
                 && booking.paymentDepositAmount > 0
                 && booking.paymentDepositAmount < booking.totalPrice;
-              const isFiftyPercentDepositRule = hasConfiguredDepositRule && booking.paymentDepositAmount === requiredDepositAmount;
+              // Stays, cars and chefs reserve dates; the team can lock them by
+              // hand until a payment does (an unaccepted custom menu reserves nothing).
+              const reservesDates = !!booking.accommodationId || booking.selectedServices.some((serviceId) => {
+                const item = getSelectedItem(serviceId);
+                return item?.type === "car" || item?.type === "cook";
+              });
+              const datesLockedByPayment = isBookingFullyPaid(booking) || isDepositLockedBooking;
+              const canLockDatesByHand = reservesDates
+                && !datesLockedByPayment
+                && booking.status !== "cancelled"
+                && booking.status !== "completed"
+                && !(booking.serviceMode === "cook-custom-menu" && booking.customMenuClientDecision !== "accepted")
+                && !(booking.serviceMode === "experience-custom-offer" && booking.experienceCustomOfferClientDecision === "accepted");
+              const datesLockedByTeam = hasActiveAdminLock(booking) && !datesLockedByPayment && booking.status !== "cancelled";
               const isDepositCashCollection = amountPaid === 0 && cashCollectionAmount > 0 && cashCollectionAmount < outstandingAmount;
               const isTemporaryMpesaReview = booking.paymentProvider === "mpesa-manual" && booking.paymentStatus === "processing";
               const cashActionLabel = isDepositCashCollection
@@ -1149,6 +1146,11 @@ export default function AdminBookings() {
                         <div className="flex flex-wrap items-center gap-2 md:justify-end">
                           {getStatusBadge(booking.status)}
                           {getProviderRequestBadge(booking.providerStatusRequest)}
+                          {datesLockedByTeam ? (
+                            <Badge variant="outline" className="border-sky-300 bg-sky-50 text-sky-800">
+                              Locked until {formatKenyaDateTime(booking.adminLockUntil!, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                            </Badge>
+                          ) : null}
                         </div>
                       </div>
                     </AccordionTrigger>
@@ -1670,8 +1672,8 @@ export default function AdminBookings() {
                                     : isDepositCashCollection
                                       ? `Record the ${formatAmount(cashCollectionAmount)} deposit in cash to lock these dates.`
                                       : hasConfiguredDepositRule
-                                        ? `A ${isFiftyPercentDepositRule ? "50%" : ""} deposit of ${formatAmount(cashCollectionAmount)} is required before these dates lock.`
-                                        : `This booking is saved with ${formatAmount(outstandingAmount)} still outstanding. Require a 50% deposit first, or collect ${formatAmount(cashCollectionAmount)} in cash to settle it.`}
+                                        ? `A commitment (deposit) of ${formatAmount(cashCollectionAmount)} is required before these dates lock.`
+                                        : `This booking is saved with ${formatAmount(outstandingAmount)} still outstanding. Set a commitment below, or collect ${formatAmount(cashCollectionAmount)} in cash to settle it.`}
                                 </div>
                               </div>
                               <Badge className="bg-amber-600">
@@ -1707,7 +1709,7 @@ export default function AdminBookings() {
                               <div className="rounded-md bg-white/80 p-3 text-sm text-muted-foreground">
                                 {fullPaymentOnlyBooking
                                   ? "This booking stays full-pay only. Collect the full amount in cash or send a reminder instead."
-                                  : "Dates are not locked yet. Requiring a 50% deposit lets the client lock them without paying the full amount upfront."}
+                                  : "Dates are not locked yet. A commitment (usually 50%) lets the client lock them without paying the full amount upfront."}
                               </div>
                             ) : null}
                             {hasConfiguredDepositRule && !isDepositLockedBooking ? (
@@ -1725,6 +1727,22 @@ export default function AdminBookings() {
                                 Remaining balance: <span className="font-medium text-foreground">{formatAmount(outstandingAmount)}</span>
                               </div>
                             ) : null}
+                            {!fullPaymentOnlyBooking && !isDepositLockedBooking && booking.status !== "cancelled" && booking.status !== "completed" ? (
+                              <BookingCommitmentControl
+                                key={`${booking.id}-${booking.paymentDepositAmount ?? "none"}`}
+                                booking={booking}
+                                formatAmount={formatAmount}
+                                onUpdated={handleBookingUpdated}
+                              />
+                            ) : null}
+                            {canLockDatesByHand ? (
+                              <BookingDateLockControl
+                                key={`${booking.id}-${booking.adminLockUntil ?? "open"}`}
+                                booking={booking}
+                                formatAmount={formatAmount}
+                                onUpdated={handleBookingUpdated}
+                              />
+                            ) : null}
                             <Textarea
                               rows={3}
                               placeholder="Add a note for a cash update, reminder, or cancellation update. Reminder notes are sent to the customer."
@@ -1732,20 +1750,10 @@ export default function AdminBookings() {
                               onChange={(e) => setPaymentActionNotes((current) => ({ ...current, [booking.id]: e.target.value }))}
                             />
                             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-                              {!fullPaymentOnlyBooking && !hasConfiguredDepositRule && amountPaid === 0 ? (
-                                <Button
-                                  variant="secondary"
-                                  className="w-full sm:w-auto"
-                                  disabled={requireDepositMutation.isPending}
-                                  onClick={() => requireDepositMutation.mutate({ id: booking.id })}
-                                >
-                                  Require 50% Deposit
-                                </Button>
-                              ) : null}
                               <Button
                                 variant="outline"
                                 className="w-full sm:w-auto"
-                                disabled={paymentActionMutation.isPending || requireDepositMutation.isPending}
+                                disabled={paymentActionMutation.isPending}
                                 onClick={() => paymentActionMutation.mutate({
                                   id: booking.id,
                                   payload: {
@@ -1760,7 +1768,7 @@ export default function AdminBookings() {
                                 <Button
                                   variant="outline"
                                   className="w-full sm:w-auto"
-                                  disabled={paymentActionMutation.isPending || requireDepositMutation.isPending}
+                                  disabled={paymentActionMutation.isPending}
                                   onClick={() => paymentActionMutation.mutate({
                                     id: booking.id,
                                     payload: {
@@ -1775,7 +1783,7 @@ export default function AdminBookings() {
                               <Button
                                 variant="secondary"
                                 className="w-full sm:w-auto"
-                                disabled={paymentActionMutation.isPending || requireDepositMutation.isPending}
+                                disabled={paymentActionMutation.isPending}
                                 onClick={() => paymentActionMutation.mutate({
                                   id: booking.id,
                                   payload: {
@@ -1789,7 +1797,7 @@ export default function AdminBookings() {
                               <Button
                                 variant="destructive"
                                 className="w-full sm:w-auto"
-                                disabled={paymentActionMutation.isPending || requireDepositMutation.isPending}
+                                disabled={paymentActionMutation.isPending}
                                 onClick={() => paymentActionMutation.mutate({
                                   id: booking.id,
                                   payload: {

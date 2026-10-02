@@ -33,6 +33,7 @@ import {
 import {
   calculateBookingDepositAmount,
   getBookingAmountPaid,
+  hasActiveAdminLock,
   hasLockedInBookingDeposit,
 } from "@shared/booking-payments";
 import { sendWebPushNotification } from "../push";
@@ -145,18 +146,20 @@ type AvailabilityBooking = {
   paymentDepositAmount: number | null;
   paymentHoldExpiresAt: string | null;
   serviceMode: string | null;
+  adminLockUntil: string | null;
 };
 
 /**
  * Pending drafts do not block inventory. A verified payment, locked deposit,
- * or active checkout hold does. This is the same rule used by the main
- * booking routes and prevents abandoned Zaina drafts from making inventory
- * appear permanently unavailable.
+ * active checkout hold, or dates the team has locked by hand do. This is the
+ * same rule used by the main booking routes and prevents abandoned Zaina
+ * drafts from making inventory appear permanently unavailable.
  */
 export function bookingBlocksAvailability(booking: AvailabilityBooking): boolean {
   if (booking.status === "cancelled" || booking.status === "completed") return false;
   if (getBookingAmountPaid(booking) >= Math.max(0, booking.totalPrice)) return true;
   if (hasLockedInBookingDeposit(booking)) return true;
+  if (hasActiveAdminLock(booking)) return true;
 
   if (!["pending", "processing"].includes(booking.paymentStatus ?? "paid")) return false;
   if (!booking.paymentHoldExpiresAt) return false;
@@ -185,6 +188,7 @@ const bookingInventoryColumns = {
   paymentDepositAmount: bookings.paymentDepositAmount,
   paymentHoldExpiresAt: bookings.paymentHoldExpiresAt,
   serviceMode: bookings.serviceMode,
+  adminLockUntil: bookings.adminLockUntil,
 };
 
 async function hasStayInventoryConflict(
@@ -848,6 +852,7 @@ export async function checkStayAvailability(
       paymentDepositAmount: bookings.paymentDepositAmount,
       paymentHoldExpiresAt: bookings.paymentHoldExpiresAt,
       serviceMode: bookings.serviceMode,
+      adminLockUntil: bookings.adminLockUntil,
     })
     .from(bookings)
     .where(and(
@@ -934,6 +939,7 @@ export async function checkServiceAvailability(
       paymentDepositAmount: bookings.paymentDepositAmount,
       paymentHoldExpiresAt: bookings.paymentHoldExpiresAt,
       serviceMode: bookings.serviceMode,
+      adminLockUntil: bookings.adminLockUntil,
     })
     .from(bookings)
     .where(and(
@@ -1466,6 +1472,7 @@ export async function createDraftBooking(
       paymentDepositAmount: bookings.paymentDepositAmount,
       paymentHoldExpiresAt: bookings.paymentHoldExpiresAt,
       serviceMode: bookings.serviceMode,
+      adminLockUntil: bookings.adminLockUntil,
     })
     .from(bookings)
     .where(and(
@@ -1888,6 +1895,7 @@ export async function createServiceBooking(
       paymentDepositAmount: bookings.paymentDepositAmount,
       paymentHoldExpiresAt: bookings.paymentHoldExpiresAt,
       serviceMode: bookings.serviceMode,
+      adminLockUntil: bookings.adminLockUntil,
     })
     .from(bookings)
     .where(and(

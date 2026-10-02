@@ -1,6 +1,8 @@
 export const bookingPaymentPlanOptions = ["full", "deposit"] as const;
 export type BookingPaymentPlan = typeof bookingPaymentPlanOptions[number];
 
+// The commitment (deposit) that locks a booking's dates: 50% of the total,
+// unless the team agrees another amount with the guest.
 export const bookingDepositPercent = 50;
 
 // Dates are reserved only once a payment is made. While a guest is paying
@@ -10,6 +12,24 @@ export const bookingPaymentHoldMinutes = 15;
 // A manual M-Pesa payment the guest has already sent keeps the dates while
 // the team checks the transaction code.
 export const manualMpesaReviewHoldHours = 24;
+
+/**
+ * The team can also lock a booking's dates by hand, paid or not — a guest
+ * paying by bank transfer, or on arrival, as agreed — until a moment it
+ * chooses. The lock ends on its own then; a payment that comes in first
+ * locks the dates as usual.
+ */
+export function hasActiveAdminLock(
+  booking: { adminLockUntil?: string | null },
+  now: number = Date.now(),
+) {
+  if (!booking.adminLockUntil) {
+    return false;
+  }
+
+  const until = new Date(booking.adminLockUntil).getTime();
+  return Number.isFinite(until) && until > now;
+}
 
 type BookingPaymentSnapshot = {
   totalPrice?: number | null;
@@ -27,7 +47,10 @@ function normalizeMoney(value: number | null | undefined) {
   return Math.max(0, Math.round(value));
 }
 
-export function calculateBookingDepositAmount(totalPrice: number | null | undefined) {
+export function calculateBookingDepositAmount(
+  totalPrice: number | null | undefined,
+  percent: number = bookingDepositPercent,
+) {
   const normalizedTotal = normalizeMoney(totalPrice);
   if (normalizedTotal <= 0) {
     return 0;
@@ -35,8 +58,43 @@ export function calculateBookingDepositAmount(totalPrice: number | null | undefi
 
   return Math.min(
     normalizedTotal,
-    Math.max(1, Math.ceil((normalizedTotal * bookingDepositPercent) / 100)),
+    Math.max(1, Math.ceil((normalizedTotal * percent) / 100)),
   );
+}
+
+/**
+ * The commitment the team agreed with a guest, as a percentage of the total
+ * or as an amount in the booking's currency: at least 1, and less than the
+ * total (paying everything is a full payment, not a commitment).
+ */
+export function resolveAgreedCommitment(
+  totalPrice: number | null | undefined,
+  agreed: { percent?: number | null; amount?: number | null },
+): { amount: number } | { error: string } {
+  const normalizedTotal = normalizeMoney(totalPrice);
+  if (normalizedTotal <= 1) {
+    return { error: "This booking's total is too small for a commitment." };
+  }
+
+  const hasPercent = typeof agreed.percent === "number";
+  const hasAmount = typeof agreed.amount === "number";
+  if (hasPercent === hasAmount) {
+    return { error: "Give the commitment as a percentage or as an amount." };
+  }
+
+  if (hasPercent) {
+    const percent = agreed.percent as number;
+    if (!Number.isFinite(percent) || percent < 1 || percent > 99) {
+      return { error: "The commitment is between 1% and 99% of the total." };
+    }
+    return { amount: Math.min(normalizedTotal - 1, calculateBookingDepositAmount(normalizedTotal, percent)) };
+  }
+
+  const amount = agreed.amount as number;
+  if (!Number.isFinite(amount) || !Number.isInteger(amount) || amount < 1 || amount >= normalizedTotal) {
+    return { error: `The commitment is a whole amount from 1 to ${normalizedTotal - 1}: less than the total of ${normalizedTotal}.` };
+  }
+  return { amount };
 }
 
 export function isFullPaymentOnlyBooking(booking: Pick<BookingPaymentSnapshot, "serviceMode">) {

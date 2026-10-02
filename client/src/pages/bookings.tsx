@@ -29,12 +29,13 @@ import {
   getBookingOutstandingAmount,
   getRequestFeeKes,
   getRequestFeeKesDue,
+  hasActiveAdminLock,
   hasLockedInBookingDeposit,
   isFullPaymentOnlyBooking,
   isBookingFullyPaid,
   supportsBookingDeposit,
 } from "@shared/booking-payments";
-import { formatCalendarDate, formatCalendarDateRange, formatKenyaClockTime, isOnKenyaTime } from "@shared/calendar-dates";
+import { formatCalendarDate, formatCalendarDateRange, formatKenyaClockTime, formatKenyaDateTime, isOnKenyaTime } from "@shared/calendar-dates";
 import { customServiceRequestFeeUsd } from "@shared/custom-service";
 import type { Booking, BookingWithMarketing, Stay, Car as CarType, Cook, Errand, Experience, Review, CustomerPaymentMethod, ListingVerificationTask } from "@shared/schema";
 import { CONTACT_PHONE, CONTACT_PHONE_DISPLAY, WHATSAPP_URL } from "@/lib/contact-info";
@@ -938,8 +939,13 @@ export default function Bookings() {
         || booking.selectedServices.some((serviceId) => cars?.some((car) => car.id === serviceId) || cooks?.some((cook) => cook.id === serviceId)))
       && !(booking.serviceMode === "cook-custom-menu" && booking.customMenuClientDecision !== "accepted");
     const paymentHoldUntil = reservesDatesOnPayment ? getPaymentHoldUntil(booking) : null;
+    // Dates our team has locked for the guest, as agreed with them.
+    const lockedByTeamUntil = reservesDatesOnPayment && hasActiveAdminLock(booking) ? booking.adminLockUntil : null;
     const paymentHoldNote = !reservesDatesOnPayment
       ? null
+      : lockedByTeamUntil
+        ? `Your dates are held for you until ${formatKenyaDateTime(lockedByTeamUntil)}${isOnKenyaTime() ? "" : " (Kenya time)"}. `
+          + `Pay ${hasDepositRule ? "the deposit" : "for your booking"} before then to confirm it.`
       : manualMpesaPending && paymentHoldUntil
         ? "Your dates are held for you while we confirm your M-Pesa payment."
         : paymentHoldUntil

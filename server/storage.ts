@@ -1322,7 +1322,7 @@ export interface IStorage {
   ensureBookingWriteTables(): Promise<void>;
   updateBooking(
     id: string,
-    booking: Partial<InsertBooking> & Partial<Pick<Booking, "paymentStatus" | "paymentProvider" | "paymentReference" | "paymentSessionId" | "paymentCurrency" | "paymentAmount" | "paymentCheckoutAmount" | "paymentDepositAmount" | "paymentAmountPaid" | "paymentHoldExpiresAt" | "paidAt" | "paymentFailedAt">>,
+    booking: Partial<InsertBooking> & Partial<Pick<Booking, "paymentStatus" | "paymentProvider" | "paymentReference" | "paymentSessionId" | "paymentCurrency" | "paymentAmount" | "paymentCheckoutAmount" | "paymentDepositAmount" | "paymentAmountPaid" | "paymentHoldExpiresAt" | "paidAt" | "paymentFailedAt" | "adminLockUntil" | "adminLockNote" | "adminLockedBy" | "adminLockedAt">>,
   ): Promise<Booking | undefined>;
   updateBookingPaymentState(
     id: string,
@@ -2123,7 +2123,11 @@ export class DatabaseStorage implements IStorage {
       ADD COLUMN IF NOT EXISTS payment_amount_paid integer NOT NULL DEFAULT 0,
       ADD COLUMN IF NOT EXISTS payment_hold_expires_at text,
       ADD COLUMN IF NOT EXISTS paid_at text,
-      ADD COLUMN IF NOT EXISTS payment_failed_at text;
+      ADD COLUMN IF NOT EXISTS payment_failed_at text,
+      ADD COLUMN IF NOT EXISTS admin_lock_until text,
+      ADD COLUMN IF NOT EXISTS admin_lock_note text,
+      ADD COLUMN IF NOT EXISTS admin_locked_by varchar,
+      ADD COLUMN IF NOT EXISTS admin_locked_at text;
     `);
 
     this.tableColumnsCache.delete("booking_payouts");
@@ -2474,6 +2478,16 @@ export class DatabaseStorage implements IStorage {
     if (!columns.has("payment_failed_at")) {
       delete filtered.paymentFailedAt;
     }
+    for (const [column, field] of [
+      ["admin_lock_until", "adminLockUntil"],
+      ["admin_lock_note", "adminLockNote"],
+      ["admin_locked_by", "adminLockedBy"],
+      ["admin_locked_at", "adminLockedAt"],
+    ] as const) {
+      if (!columns.has(column)) {
+        delete (filtered as Record<string, unknown>)[field];
+      }
+    }
 
     return filtered as T;
   }
@@ -2546,6 +2560,10 @@ export class DatabaseStorage implements IStorage {
         ${columns.has("payment_hold_expires_at") ? 'payment_hold_expires_at as "paymentHoldExpiresAt",' : 'NULL::text as "paymentHoldExpiresAt",'}
         ${columns.has("paid_at") ? 'paid_at as "paidAt",' : 'NULL::text as "paidAt",'}
         ${columns.has("payment_failed_at") ? 'payment_failed_at as "paymentFailedAt",' : 'NULL::text as "paymentFailedAt",'}
+        ${columns.has("admin_lock_until") ? 'admin_lock_until as "adminLockUntil",' : 'NULL::text as "adminLockUntil",'}
+        ${columns.has("admin_lock_note") ? 'admin_lock_note as "adminLockNote",' : 'NULL::text as "adminLockNote",'}
+        ${columns.has("admin_locked_by") ? 'admin_locked_by as "adminLockedBy",' : 'NULL::text as "adminLockedBy",'}
+        ${columns.has("admin_locked_at") ? 'admin_locked_at as "adminLockedAt",' : 'NULL::text as "adminLockedAt",'}
         total_price as "totalPrice",
         status,
         created_at as "createdAt",
@@ -2618,6 +2636,10 @@ export class DatabaseStorage implements IStorage {
       paymentHoldExpiresAt: row.paymentHoldExpiresAt ?? null,
       paidAt: row.paidAt ?? null,
       paymentFailedAt: row.paymentFailedAt ?? null,
+      adminLockUntil: row.adminLockUntil ?? null,
+      adminLockNote: row.adminLockNote ?? null,
+      adminLockedBy: row.adminLockedBy ?? null,
+      adminLockedAt: row.adminLockedAt ?? null,
       totalPrice: Number(row.totalPrice ?? 0),
       status: row.status,
       createdAt: row.createdAt,
@@ -2899,7 +2921,7 @@ export class DatabaseStorage implements IStorage {
 
   async updateBooking(
     id: string,
-    data: Partial<InsertBooking> & Partial<Pick<Booking, "paymentStatus" | "paymentProvider" | "paymentReference" | "paymentSessionId" | "paymentCurrency" | "paymentAmount" | "paymentCheckoutAmount" | "paymentDepositAmount" | "paymentAmountPaid" | "paymentHoldExpiresAt" | "paidAt" | "paymentFailedAt">>,
+    data: Partial<InsertBooking> & Partial<Pick<Booking, "paymentStatus" | "paymentProvider" | "paymentReference" | "paymentSessionId" | "paymentCurrency" | "paymentAmount" | "paymentCheckoutAmount" | "paymentDepositAmount" | "paymentAmountPaid" | "paymentHoldExpiresAt" | "paidAt" | "paymentFailedAt" | "adminLockUntil" | "adminLockNote" | "adminLockedBy" | "adminLockedAt">>,
   ): Promise<Booking | undefined> {
     await this.ensurePaymentsTables();
     const columns = await this.getTableColumns("bookings");
