@@ -72,11 +72,65 @@ type FormData = z.infer<typeof formSchema>;
 // Alias to avoid conflict with lucide-react Car icon
 type CarType = Car;
 
+type CarAvailability = {
+  blockedRanges: Array<{
+    id: string;
+    source: "booking" | "manual";
+    startDate: string;
+    endDate: string;
+    status: string;
+    guestName: string;
+    serviceMode?: string;
+  }>;
+  availableFrom: string;
+};
+
 export default function AdminCarsEdit() {
   const params = useParams();
   const carId = params.id;
+  const [blockStartDate, setBlockStartDate] = useState("");
+  const [blockEndDate, setBlockEndDate] = useState("");
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+
+  // Dates the car isn't available (hired elsewhere, in service), like a chef's or a stay's.
+  const { data: availability } = useQuery<CarAvailability>({
+    queryKey: ["/api/admin/cars", carId, "availability"],
+    enabled: !!carId,
+    queryFn: async () => {
+      const response = await fetch(`/api/admin/cars/${carId}/availability`, { credentials: "include" });
+      if (!response.ok) {
+        throw new Error("Failed to load car availability");
+      }
+      return response.json();
+    },
+  });
+
+  const createBlockMutation = useMutation({
+    mutationFn: async () => apiRequest("POST", `/api/admin/cars/${carId}/availability/blocks`, { startDate: blockStartDate, endDate: blockEndDate }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/cars", carId, "availability"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/cars", carId, "availability"] });
+      setBlockStartDate("");
+      setBlockEndDate("");
+      toast({ title: "Dates blocked", description: "Car availability updated successfully." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Could not block dates", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteBlockMutation = useMutation({
+    mutationFn: async (blockId: string) => apiRequest("DELETE", `/api/admin/cars/${carId}/availability/blocks/${blockId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/cars", carId, "availability"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/cars", carId, "availability"] });
+      toast({ title: "Block removed", description: "Car availability updated successfully." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Could not remove block", description: error.message, variant: "destructive" });
+    },
+  });
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
   const [chauffeurZones, setChauffeurZones] = useState<CarZoneRate[]>([]);
   const { data: providers = [] } = useQuery<ProviderAccountSummary[]>({
@@ -527,6 +581,46 @@ export default function AdminCarsEdit() {
                 </div>
               </form>
             </Form>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Availability</CardTitle>
+            <CardDescription>
+              Next available date: {availability?.availableFrom ?? "Loading..."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-3">
+              <Input type="date" aria-label="Unavailable from" value={blockStartDate} onChange={(e) => setBlockStartDate(e.target.value)} />
+              <Input type="date" aria-label="Available again on" value={blockEndDate} onChange={(e) => setBlockEndDate(e.target.value)} />
+              <Button onClick={() => createBlockMutation.mutate()} disabled={createBlockMutation.isPending || !blockStartDate || !blockEndDate}>
+                {createBlockMutation.isPending ? "Blocking..." : "Mark Unavailable"}
+              </Button>
+            </div>
+
+            <div className="space-y-3">
+              {availability?.blockedRanges?.length ? availability.blockedRanges.map((range) => (
+                <div key={range.id} className="flex items-center justify-between gap-3 rounded-lg border p-4">
+                  <div>
+                    <div className="font-medium">{range.startDate} to {range.endDate}</div>
+                    <div className="text-sm text-muted-foreground">
+                      {range.source === "manual"
+                        ? "Manual unavailable block"
+                        : `${range.guestName}${range.serviceMode ? ` • ${range.serviceMode}` : ""}`}
+                    </div>
+                  </div>
+                  {range.source === "manual" ? (
+                    <Button variant="outline" size="sm" onClick={() => deleteBlockMutation.mutate(range.id)} disabled={deleteBlockMutation.isPending}>
+                      Remove
+                    </Button>
+                  ) : (
+                    <div className="text-sm text-muted-foreground capitalize">{range.status}</div>
+                  )}
+                </div>
+              )) : <p className="text-sm text-muted-foreground">No blocked dates yet.</p>}
+            </div>
           </CardContent>
         </Card>
       </div>

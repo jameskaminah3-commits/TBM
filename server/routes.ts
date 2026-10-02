@@ -92,9 +92,11 @@ import {
   getBookingCheckoutAmount,
   getBookingOutstandingAmount,
   getRequestFeeKesDue,
+  hasActiveAdminLock,
   hasLockedInBookingDeposit,
   isBookingFullyPaid,
   manualMpesaReviewHoldHours,
+  resolveAgreedCommitment,
   supportsBookingDeposit,
 } from "@shared/booking-payments";
 import { SUPPORT_PHONE_DISPLAY } from "@shared/support-contact";
@@ -103,7 +105,7 @@ import { sanitizeUserRecord } from "./user-sanitizer";
 import { registerZainaRoutes } from "./zaina/routes";
 import { registerZainaAgentRoutes } from "./zaina/agent-routes";
 import { getUsdToKesRate } from "./currency";
-import { kenyaClockMinutes, kenyaDateTimeToIso } from "@shared/calendar-dates";
+import { formatKenyaDateTime, kenyaClockMinutes, kenyaDateTimeToIso } from "@shared/calendar-dates";
 
 function normalizeDateOnly(value: string) {
   const date = new Date(`${value}T00:00:00.000Z`);
@@ -512,6 +514,26 @@ const adminBookingPaymentActionSchema = z.object({
   }
 });
 
+// The team locks a booking's dates by hand until a moment it chooses, or
+// unlocks them (`until: null`). The note is for the team; the guest can be
+// told in the booking's messages.
+const adminBookingLockSchema = z.object({
+  until: z.string().datetime({ offset: true }).nullable(),
+  note: z.preprocess(
+    (value) => typeof value === "string" ? value.trim() : "",
+    z.string().max(500),
+  ).optional().default(""),
+  notifyGuest: z.boolean().optional().default(false),
+});
+
+// The commitment agreed with the guest, as a percentage of the total or an
+// amount (whole US dollars). Neither: the usual 50%.
+const adminBookingCommitmentSchema = z.object({
+  percent: z.number().optional(),
+  amount: z.number().optional(),
+  notifyGuest: z.boolean().optional().default(false),
+});
+
 const manualMpesaPaymentSchema = z.object({
   transactionCode: z.preprocess(
     (value) => typeof value === "string" ? value.trim().toUpperCase() : "",
@@ -729,6 +751,21 @@ function buildDatesTakenMessage(item: BookingInventoryItem, claim: DatesClaim) {
     + "and we'll help you find an alternative.";
 }
 
+/** Why the team can't lock a booking's dates: who or what already holds them. */
+async function describeTakenDatesForTeam(taken: TakenDates) {
+  if (!taken.claim.bookingId) {
+    return `${taken.item.label} is blocked on its calendar for these dates.`;
+  }
+  const other = await storage.getBooking(taken.claim.bookingId);
+  const who = other
+    ? `${other.guestName}'s booking (${other.checkIn} to ${other.checkOut})`
+    : "another booking";
+  return taken.claim.stillPaying
+    ? `${taken.item.label} is held for ${who}: that guest is paying right now. `
+      + `If their payment doesn't go through, the dates are free again within ${bookingPaymentHoldMinutes} minutes.`
+    : `${taken.item.label} is already taken on these dates by ${who}.`;
+}
+
 /** The stay, cars, and chefs whose dates this payment would reserve. */
 async function getItemsReservedByPayment(booking: import("@shared/schema").Booking) {
   return paymentReservesDates(booking) ? await getBookingInventoryItems(booking) : [];
@@ -738,15 +775,17 @@ type TakenDates = { item: BookingInventoryItem; claim: DatesClaim };
 
 /**
  * Checks the dates of `items` against other bookings that `counts` accepts
- * and, if they're free, applies `updates` (which set the hold). Guests who
- * start paying at the same moment are handled one at a time.
+ * and, if they're free, applies `updates` (which set the hold, the team's
+ * lock, or a commitment already paid). Guests who start paying at the same
+ * moment, and the team, are handled one at a time.
  */
 async function holdDatesForPayment(
   booking: import("@shared/schema").Booking,
   items: BookingInventoryItem[],
   counts: (other: import("@shared/schema").Booking) => boolean,
   updates: Partial<Pick<import("@shared/schema").Booking,
-    "paymentStatus" | "paymentProvider" | "paymentReference" | "paymentSessionId" | "paymentCheckoutAmount" | "paymentHoldExpiresAt" | "paymentFailedAt">>,
+    "paymentStatus" | "paymentProvider" | "paymentReference" | "paymentSessionId" | "paymentCheckoutAmount" | "paymentHoldExpiresAt" | "paymentFailedAt"
+    | "paymentDepositAmount" | "adminLockUntil" | "adminLockNote" | "adminLockedBy" | "adminLockedAt">>,
 ): Promise<TakenDates | null> {
   // Payment-table setup runs once, on its own connection: do it before
   // taking the locks (see Zaina's createBookingWithInventoryLock).
@@ -797,13 +836,15 @@ async function releaseDatesHeldForPayment(booking: import("@shared/schema").Book
 
 // A guest who is still in checkout hasn't paid: their hold stops other guests
 // from starting to pay, but a payment that completes first keeps the dates.
-// A manual M-Pesa payment awaiting the team's check has been sent, so it counts.
+// A manual M-Pesa payment awaiting the team's check has been sent, so it
+// counts, and so do dates the team has locked by hand.
 function holdsDatesWithPayment(booking: import("@shared/schema").Booking) {
   if (!shouldBookingBlockAvailability(booking)) {
     return false;
   }
   const manualPaymentUnderReview = booking.paymentProvider === "mpesa-manual" && booking.paymentStatus === "processing";
-  return getBookingAmountPaid(booking) > 0 || hasAcceptedQuotedBooking(booking) || manualPaymentUnderReview;
+  return getBookingAmountPaid(booking) > 0 || hasAcceptedQuotedBooking(booking) || manualPaymentUnderReview
+    || hasActiveAdminLock(booking);
 }
 
 /**
@@ -2126,6 +2167,7 @@ function shouldBookingBlockAvailability(booking: any) {
     && !hasAcceptedQuotedBooking(booking)
     && !hasActivePaymentHold(booking)
     && !hasLockedInBookingDeposit(booking)
+    && !hasActiveAdminLock(booking)
   ) {
     return false;
   }
@@ -5505,14 +5547,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      const { adminLockUntil: _lockUntil, adminLockNote: _lockNote, adminLockedBy: _lockedBy, adminLockedAt: _lockedAt, ...changes } = req.body ?? {};
+      if (Object.keys(changes).length === 0) {
+        return res.json(existingBooking);
+      }
       const booking = await storage.updateBooking(
         req.params.id,
         typeof requestedStatus === "string"
           ? {
-              ...req.body,
+              ...changes,
               ...clearProviderStatusRequestFields(req.user?.claims?.sub ?? null),
             }
-          : req.body,
+          : changes,
       );
       res.json(booking);
     } catch (error) {
@@ -5520,6 +5566,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // The commitment that locks the dates: 50% unless the team agreed another
+  // percentage or amount with the guest. A commitment the guest has already
+  // paid locks the dates at once, if they're still free.
   app.patch("/api/admin/bookings/:id/require-deposit", requireAdmin, async (req: any, res) => {
     try {
       const booking = await storage.getBooking(req.params.id);
@@ -5543,26 +5592,176 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "This booking must be paid in full and cannot use deposits." });
       }
 
-      const requiredDepositAmount = calculateBookingDepositAmount(booking.totalPrice);
-      const updated = await storage.updateBooking(req.params.id, {
-        paymentDepositAmount: requiredDepositAmount,
-        paymentStatus: getBookingAmountPaid(booking) >= Math.max(0, booking.totalPrice) ? "paid" : "pending",
+      if (hasLockedInBookingDeposit(booking)) {
+        return res.status(400).json({ error: "The commitment is already paid, so the dates are locked. Only the balance is left." });
+      }
+
+      const agreed = adminBookingCommitmentSchema.parse(req.body ?? {});
+      const resolved = agreed.percent === undefined && agreed.amount === undefined
+        ? { amount: calculateBookingDepositAmount(booking.totalPrice) }
+        : resolveAgreedCommitment(booking.totalPrice, agreed);
+      if ("error" in resolved) {
+        return res.status(400).json({ error: resolved.error });
+      }
+
+      const amountPaid = getBookingAmountPaid(booking);
+      const updates = {
+        paymentDepositAmount: resolved.amount,
+        paymentStatus: amountPaid >= Math.max(0, booking.totalPrice) ? "paid" : "pending",
         paymentCheckoutAmount: null,
         paymentHoldExpiresAt: null,
         paymentSessionId: null,
         paymentFailedAt: null,
-      });
+      };
+
+      let updated: import("@shared/schema").Booking | undefined;
+      if (amountPaid > 0 && amountPaid >= resolved.amount) {
+        // What's been paid already covers it: the dates lock now.
+        const taken = await holdDatesForPayment(booking, await getBookingInventoryItems(booking), shouldBookingBlockAvailability, updates);
+        if (taken) {
+          return res.status(409).json({ error: await describeTakenDatesForTeam(taken) });
+        }
+        // As any booking update does.
+        await storage.syncBookingServiceAssignments({ bookingIds: [booking.id] });
+        await storage.syncBookingPayouts({ bookingIds: [booking.id], skipAssignmentSync: true });
+        updated = await storage.getBooking(booking.id);
+      } else {
+        updated = await storage.updateBooking(req.params.id, updates);
+      }
 
       if (!updated) {
         return res.status(404).json({ error: "Booking not found" });
       }
 
+      if (agreed.notifyGuest) {
+        const due = getBookingCheckoutAmount(updated);
+        await storage.createBookingMessage({
+          bookingId: updated.id,
+          message: hasLockedInBookingDeposit(updated)
+            ? `Good news: the ${formatBookingUsdAmount(resolved.amount)} you've paid is the commitment for this booking, so your dates are locked. `
+              + `The balance of ${formatBookingUsdAmount(getBookingOutstandingAmount(updated))} is still to pay.`
+            : `The commitment for this booking is ${formatBookingUsdAmount(resolved.amount)} of ${formatBookingUsdAmount(updated.totalPrice)}. `
+              + `Pay ${formatBookingUsdAmount(due)} from My Bookings to lock your dates.`,
+          userId: req.user?.claims?.sub ?? "admin",
+          senderRole: "admin",
+        });
+      }
+
       return res.json(decorateBookingWithOperationalStatus(updated));
     } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: "Give the commitment as a percentage or an amount." });
+      }
       if (error instanceof Error) {
         return res.status(400).json({ error: error.message });
       }
       return res.status(500).json({ error: "Failed to require a deposit for this booking" });
+    }
+  });
+
+  // The team locks a booking's dates by hand — a guest paying by bank
+  // transfer, or on arrival, as agreed — until a moment it chooses, or
+  // unlocks them. Dates are checked the same way as when a guest pays: they
+  // must still be free.
+  app.patch("/api/admin/bookings/:id/lock", requireAdmin, async (req: any, res) => {
+    try {
+      const booking = await storage.getBooking(req.params.id);
+      if (!booking) {
+        return res.status(404).json({ error: "Booking not found" });
+      }
+
+      const { until, note, notifyGuest } = adminBookingLockSchema.parse(req.body ?? {});
+      const teamMemberId = req.user?.claims?.sub ?? null;
+      const now = new Date();
+
+      if (until === null) {
+        const unlocked = await storage.updateBooking(booking.id, {
+          adminLockUntil: null,
+          adminLockNote: null,
+          adminLockedBy: teamMemberId,
+          adminLockedAt: now.toISOString(),
+        });
+        if (!unlocked) {
+          return res.status(404).json({ error: "Booking not found" });
+        }
+        if (notifyGuest && hasActiveAdminLock(booking) && !shouldBookingBlockAvailability(unlocked)) {
+          await storage.createBookingMessage({
+            bookingId: unlocked.id,
+            message: "Your dates are no longer held for you. They're yours again once you pay from My Bookings, if they're still free.",
+            userId: teamMemberId ?? "admin",
+            senderRole: "admin",
+          });
+        }
+        return res.json(decorateBookingWithOperationalStatus(unlocked));
+      }
+
+      const operationalStatus = getBookingOperationalStatus(booking);
+      if (operationalStatus === "cancelled" || operationalStatus === "completed") {
+        return res.status(400).json({ error: "Cancelled and completed bookings can't be locked." });
+      }
+
+      if (isBookingFullyPaid(booking) || hasLockedInBookingDeposit(booking) || hasAcceptedQuotedBooking(booking)) {
+        return res.status(400).json({ error: "The guest's payment already locks these dates." });
+      }
+
+      if (booking.serviceMode === "cook-custom-menu" && booking.customMenuClientDecision !== "accepted") {
+        return res.status(400).json({ error: "A custom menu reserves the chef once the guest accepts it." });
+      }
+
+      const items = await getBookingInventoryItems(booking);
+      if (items.length === 0) {
+        return res.status(400).json({ error: "This booking doesn't reserve dates: only stays, cars and chefs do." });
+      }
+
+      const untilTime = Date.parse(until);
+      if (untilTime <= now.getTime() + 60_000) {
+        return res.status(400).json({ error: "Lock the dates until a time in the future." });
+      }
+      const latest = Date.parse(kenyaDateTimeToIso(booking.checkOut, "23:59"));
+      if (untilTime > latest) {
+        return res.status(400).json({ error: "Lock the dates until the end of the booking (its last day) at the latest." });
+      }
+
+      const lockUntil = new Date(untilTime).toISOString();
+      const taken = await holdDatesForPayment(booking, items, shouldBookingBlockAvailability, {
+        adminLockUntil: lockUntil,
+        adminLockNote: note || null,
+        adminLockedBy: teamMemberId,
+        adminLockedAt: now.toISOString(),
+      });
+      if (taken) {
+        return res.status(409).json({ error: await describeTakenDatesForTeam(taken) });
+      }
+
+      const locked = await storage.getBooking(booking.id);
+      if (!locked) {
+        return res.status(404).json({ error: "Booking not found" });
+      }
+
+      if (notifyGuest) {
+        const due = getBookingCheckoutAmount(locked);
+        await storage.createBookingMessage({
+          bookingId: locked.id,
+          message: [
+            `Your dates are held for you until ${formatKenyaDateTime(lockUntil)} (Kenya time).`,
+            due > 0
+              ? `Please pay ${formatBookingUsdAmount(due)} from My Bookings before then to confirm your booking.`
+              : "",
+          ].filter(Boolean).join(" "),
+          userId: teamMemberId ?? "admin",
+          senderRole: "admin",
+        });
+      }
+
+      return res.json(decorateBookingWithOperationalStatus(locked));
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: "Choose until when the dates are locked." });
+      }
+      if (error instanceof Error) {
+        return res.status(400).json({ error: error.message });
+      }
+      return res.status(500).json({ error: "Failed to lock this booking's dates" });
     }
   });
 

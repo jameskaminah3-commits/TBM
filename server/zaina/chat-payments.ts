@@ -23,6 +23,7 @@ import {
   getBookingAmountPaid,
   getBookingCheckoutAmount,
   getRequestFeeKesDue,
+  hasActiveAdminLock,
   hasLockedInBookingDeposit,
   manualMpesaReviewHoldHours,
 } from "@shared/booking-payments";
@@ -76,11 +77,12 @@ async function reservedItems(booking: Booking): Promise<ReservedItem[]> {
   return items;
 }
 
-/** Another booking on the same dates that already holds them with money. */
+/** Another booking on the same dates that already holds them with money, or locked by the team. */
 function holdsDatesWithPayment(other: Booking): boolean {
   if (!bookingBlocksAvailability(other)) return false;
   const manualPaymentUnderReview = other.paymentProvider === "mpesa-manual" && other.paymentStatus === "processing";
-  return getBookingAmountPaid(other) > 0 || hasLockedInBookingDeposit(other) || manualPaymentUnderReview;
+  return getBookingAmountPaid(other) > 0 || hasLockedInBookingDeposit(other) || manualPaymentUnderReview
+    || hasActiveAdminLock(other);
 }
 
 async function takenMeanwhile(executor: any, booking: Booking, item: ReservedItem): Promise<boolean> {
