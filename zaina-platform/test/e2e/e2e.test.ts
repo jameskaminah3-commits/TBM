@@ -10,7 +10,7 @@
 
 import assert from "node:assert/strict";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -117,6 +117,9 @@ async function tokenFor(email: string, password = PASSWORD): Promise<string> {
 }
 
 const base64 = (text: string) => Buffer.from(text, "utf8").toString("base64");
+const raw64 = (tool: string, args: Record<string, unknown>) => `TEST:raw64 ${tool} ${base64(JSON.stringify(args))}`;
+/** The date this many days from today, as YYYY-MM-DD. */
+const daysFromNow = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
 const emails = () => readFileSync(EMAIL_LOG, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
 const modelCalls = () => readFileSync(MODEL_LOG, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
 const session = (id: string) => one(platform, "select * from chat_sessions where id = $1", [id]);
@@ -319,6 +322,90 @@ test("a phone number or an email is not mistaken for a payment code", async () =
   await say(chat, "TEST:book_car");
   const reply = await say(chat, "I sent the details, my number is 0712345678 and email john123456@example.com");
   assert.doesNotMatch(reply, /M-Pesa code/);
+});
+
+test("a hotel is booked by room and meal plan at its own rates, and only free rooms are sold", async (t) => {
+  // A hotel as TBM's team lists it: rooms of two types, priced per room per
+  // night on each meal plan (its price, guests and rooms follow from them).
+  await tbm.query(
+    `insert into stays (id, title, location, description, price, max_occupancy, bedrooms, bathrooms, features, is_public, manager_user_id, property_type, star_rating, created_at, updated_at)
+     values ('stay-bahari-hotel', 'Bahari Beach Hotel', 'Nyali Beach, Mombasa', 'A beachfront hotel.', 120, 10, 4, 4, '{Pool}', true, 'provider-1', 'hotel', 4, now()::text, now()::text)`,
+  );
+  await tbm.query(
+    `insert into stay_room_types (id, stay_id, name, max_guests, room_count, rates, sort_order, created_at, updated_at)
+     values ('rt-bahari-deluxe', 'stay-bahari-hotel', 'Deluxe Double', 2, 3, $1, 0, now()::text, now()::text),
+            ('rt-bahari-family', 'stay-bahari-hotel', 'Family Room', 4, 1, $2, 1, now()::text, now()::text)`,
+    [
+      JSON.stringify([{ mealPlan: "BB", price: 120 }, { mealPlan: "HB", price: 150, singlePrice: 110 }]),
+      JSON.stringify([{ mealPlan: "FB", price: 260 }]),
+    ],
+  );
+  t.after(async () => {
+    await tbm.query("delete from bookings where accommodation_id = 'stay-bahari-hotel'");
+    await tbm.query("delete from stay_room_types where stay_id = 'stay-bahari-hotel'");
+    await tbm.query("delete from stays where id = 'stay-bahari-hotel'");
+  });
+  const stay = {
+    stay_id: "stay-bahari-hotel",
+    check_in: daysFromNow(30),
+    check_out: daysFromNow(32),
+    customer_name: "Jane Wanjiru",
+    customer_email: "jane@example.com",
+    customer_phone: "0712345678",
+  };
+
+  // Search shows it as a hotel, with each room's rates in the customer's currency.
+  const found = await say(await openChat(), raw64("search_stays", { keyword: "Bahari" }));
+  assert.match(found, /Bahari Beach Hotel/);
+  assert.match(found, /Hotel, rooms from KSh 15,509\/night: Deluxe Double \(BB KSh 15,509, HB KSh 19,386\); Family Room \(FB KSh 33,602\)/);
+
+  const chat = await openChat();
+  await say(chat, "I'm Jane Wanjiru, jane@example.com, 0712345678");
+  assert.equal(
+    await say(chat, raw64("create_draft_booking", { ...stay, guests: 3, idempotency_key: randomUUID() })),
+    "Bahari Beach Hotel is a hotel, so let's choose your room first. Which room and meal plan would you like?",
+  );
+  assert.equal(
+    await say(chat, raw64("create_draft_booking", { ...stay, guests: 3, room_type_id: "rt-bahari-deluxe", meal_plan: "FB", rooms: 2, idempotency_key: randomUUID() })),
+    "Deluxe Double isn't offered on full board (FB). Please choose another meal plan.",
+  );
+
+  // Three guests in two Deluxe Doubles on half board: one room has two guests
+  // (150), the other one guest at the single price (110), for two nights.
+  const booked = await say(chat, raw64("create_draft_booking", { ...stay, guests: 3, room_type_id: "rt-bahari-deluxe", meal_plan: "hb", rooms: 2, idempotency_key: randomUUID() }));
+  assert.match(booked, /Total: KSh 67,205/, "520 USD at 129.24");
+  const link = /https:\/\/tembeabilamatata\.com\/bookings\?bookingId=([0-9a-f-]{36})/.exec(booked);
+  assert.ok(link, booked);
+  const booking = await one(tbm, "select * from bookings where id = $1", [link![1]]);
+  assert.equal(booking.accommodation_id, "stay-bahari-hotel");
+  assert.equal(booking.room_type_id, "rt-bahari-deluxe");
+  assert.equal(booking.room_count, 2);
+  assert.equal(booking.meal_plan, "HB");
+  assert.equal(booking.total_price, 520);
+  assert.deepEqual(booking.hotel_stay, {
+    roomTypeId: "rt-bahari-deluxe",
+    roomTypeName: "Deluxe Double",
+    mealPlan: "HB",
+    rooms: 2,
+    guestsPerRoom: [2, 1],
+    nightlyRoomPrices: [150, 110],
+    nights: 2,
+    accommodationTotal: 520,
+  });
+
+  // Once it's paid, its two rooms are taken: one Deluxe Double is left.
+  await tbm.query("update bookings set payment_status = 'paid', payment_amount_paid = total_price where id = $1", [link![1]]);
+  const other = await openChat();
+  await say(other, "Jane Wanjiru, jane@example.com, 0712345678");
+  assert.equal(
+    await say(other, raw64("create_draft_booking", { ...stay, guests: 4, room_type_id: "rt-bahari-deluxe", meal_plan: "BB", rooms: 2, idempotency_key: randomUUID() })),
+    "Only 1 Deluxe Double room is left for those dates. Let me check the other rooms for you.",
+  );
+  assert.match(
+    await say(other, raw64("create_draft_booking", { ...stay, guests: 2, room_type_id: "rt-bahari-deluxe", meal_plan: "BB", rooms: 1, idempotency_key: randomUUID() })),
+    /bookingId=/,
+    "the last Deluxe Double can still be booked",
+  );
 });
 
 test("two messages at once: the second is told Zaina is still working (I3)", async () => {

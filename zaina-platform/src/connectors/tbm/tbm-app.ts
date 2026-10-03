@@ -29,6 +29,9 @@ export {
   errands,
   experiences,
   stays,
+  stayReservations,
+  stayRoomTypes,
   userPushDevices,
   users,
+  type StayRoomType,
 } from "../../../../shared/schema";

@@ -1,6 +1,6 @@
 -- Throwaway seed for local Zaina workflow tests. Never run against production.
 DELETE FROM bookings; DELETE FROM custom_offers; DELETE FROM zaina_audit_logs; DELETE FROM chat_sessions; DELETE FROM ai_leads;
-DELETE FROM stays; DELETE FROM cars; DELETE FROM errands; DELETE FROM cooks; DELETE FROM experiences;
+DELETE FROM stay_room_types; DELETE FROM stays; DELETE FROM cars; DELETE FROM errands; DELETE FROM cooks; DELETE FROM experiences;
 
 INSERT INTO stays (id, title, location, description, price, max_occupancy, bedrooms, bathrooms, features, is_public, manager_user_id, created_at, updated_at)
 VALUES

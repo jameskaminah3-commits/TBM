@@ -128,7 +128,9 @@ function messyReplyFor(name, result) {
     const s = (r.stays || [])[0] || {};
     return [
       `**${s.title}**`,
-      `${s.price_per_night_display}/night`,
+      s.property_type === "hotel"
+        ? `Hotel, rooms from ${s.price_from_per_room_per_night_display}/night: ${(s.rooms || []).map((room) => `${room.name} (${room.rates.map((rate) => `${rate.meal_plan} ${rate.price_per_room_per_night_display}`).join(", ")})`).join("; ")}`
+        : `${s.price_per_night_display}/night`,
       `[View full listing →](${s.public_url})`,
       "![photo](https://abc.supabase.co/storage/v1/object/public/media/a.jpg)",
       "Also see [this deal](javascript:alert(1)) or https://evil.example/pay — or pay M-Pesa to 0799111222.",

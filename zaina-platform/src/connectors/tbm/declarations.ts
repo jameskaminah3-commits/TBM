@@ -19,7 +19,7 @@ export const tbmToolDeclarations: { functionDeclarations: FunctionDeclaration[] 
     functionDeclarations: [
       {
         name: "search_stays",
-        description: "Find stays (villas, apartments, studios, beach houses) by region, guests and a title keyword. Returns each listing's public_url.",
+        description: "Find stays (villas, apartments, studios, beach houses, hotels) by region, guests and a title keyword. property_type is entire_place (booked whole) or hotel (rooms on meal plans). Returns each listing's public_url.",
         parameters: {
           type: Type.OBJECT,
           properties: {
@@ -78,7 +78,7 @@ export const tbmToolDeclarations: { functionDeclarations: FunctionDeclaration[] 
       },
       {
         name: "check_stay_availability",
-        description: "Whether a stay is free for the dates. Call it before confirming a booking.",
+        description: "Whether a stay is free for the dates (a hotel: rooms_left per room). Call it before confirming a booking.",
         parameters: {
           type: Type.OBJECT,
           properties: {
@@ -164,6 +164,9 @@ export const tbmToolDeclarations: { functionDeclarations: FunctionDeclaration[] 
             check_in: isoDate,
             check_out: isoDate,
             stay_id: { type: Type.STRING },
+            room_type_id: { type: Type.STRING, description: "Hotels: the customer's room." },
+            meal_plan: { type: Type.STRING, enum: ["RO", "BB", "HB", "FB", "AI"], description: "Hotels: the customer's plan." },
+            rooms: { type: Type.NUMBER, description: "Hotels only." },
             service_ids: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Add-on service ids." },
           },
           // Contact details are checked by the server against what the
