@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState } from "react";
-import type { Car, Cook, Errand, Experience, Stay } from "@shared/schema";
+import type { Car, Cook, Errand, Experience, Stay, StayRoomType } from "@shared/schema";
+import { isHotelStay, mealPlans } from "@shared/hotel-rooms";
 
 export type ConciergeSection = "stays" | "drive" | "dine" | "relax" | "experience";
 
@@ -238,28 +239,41 @@ function matchesStayFreeText(fields: Array<string | number | null | undefined>, 
   return tokens.every((token) => getTokenVariants(token).some((variant) => haystack.includes(variant)));
 }
 
-export function filterStays(stays: Stay[], query: string) {
+export function filterStays<T extends Stay & { roomTypes?: StayRoomType[] }>(stays: T[], query: string): T[] {
   const normalizedQuery = normalizeConciergeQuery(query);
   const guestCount = extractGuestCount(query);
   const bedroomIntent = parseStayCountIntent(normalizedQuery, "bed(?:room)?");
   const bathroomIntent = parseStayCountIntent(normalizedQuery, "bath(?:room)?");
 
   return stays.filter((stay) => {
-    const structuredTerms = [
-      `${stay.bedrooms} bedroom`,
-      `${stay.bedrooms} bedrooms`,
-      `${stay.bathrooms} bathroom`,
-      `${stay.bathrooms} bathrooms`,
-      `${stay.maxOccupancy} guests`,
-      `${stay.maxOccupancy} people`,
-    ];
+    // A hotel is found by "hotel", its rooms and its meal plans ("half board").
+    const hotel = isHotelStay(stay);
+    const structuredTerms = hotel
+      ? [
+        "hotel",
+        stay.starRating ? `${stay.starRating} star` : "",
+        ...(stay.roomTypes ?? []).flatMap((roomType) => [
+          roomType.name,
+          ...roomType.rates.flatMap((rate) => [rate.mealPlan, mealPlans[rate.mealPlan]?.name ?? ""]),
+        ]),
+      ]
+      : [
+        "entire place",
+        `${stay.bedrooms} bedroom`,
+        `${stay.bedrooms} bedrooms`,
+        `${stay.bathrooms} bathroom`,
+        `${stay.bathrooms} bathrooms`,
+        `${stay.maxOccupancy} guests`,
+        `${stay.maxOccupancy} people`,
+      ];
     const matchesText = matchesStayFreeText(
       [stay.title, stay.location, stay.description, ...stay.features, ...structuredTerms],
       query,
     );
     const matchesGuests = guestCount === null || stay.maxOccupancy >= guestCount;
-    const matchesBedrooms = matchesStayCount(stay.bedrooms, bedroomIntent);
-    const matchesBathrooms = matchesStayCount(stay.bathrooms, bathroomIntent);
+    // Bedrooms and bathrooms describe a home: a hotel's are its rooms.
+    const matchesBedrooms = hotel ? bedroomIntent === null : matchesStayCount(stay.bedrooms, bedroomIntent);
+    const matchesBathrooms = hotel ? bathroomIntent === null : matchesStayCount(stay.bathrooms, bathroomIntent);
 
     return matchesGuests && matchesBedrooms && matchesBathrooms && matchesText;
   });

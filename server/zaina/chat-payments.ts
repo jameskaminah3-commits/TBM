@@ -18,7 +18,8 @@ import { db } from "../db";
 import { queueNotificationTask, sendBookingPaymentNotificationEmails, sendOpsAlertEmail } from "../notifications";
 import { storage } from "../storage";
 import { getUsdToKesRate } from "../currency";
-import { bookings, cars, cooks, zainaAuditLogs } from "@shared/schema";
+import { bookings, cars, cooks, stayReservations, stayRoomTypes, zainaAuditLogs } from "@shared/schema";
+import { countRoomsLeft, getBlockRoomClaim, getBookingRoomClaim, getOccupiedNights } from "@shared/hotel-rooms";
 import {
   getBookingAmountPaid,
   getBookingCheckoutAmount,
@@ -99,6 +100,21 @@ async function takenMeanwhile(executor: any, booking: Booking, item: ReservedIte
       item.kind === "stay" ? sql`${bookings.checkIn} < ${booking.checkOut}` : lte(bookings.checkIn, booking.checkOut),
       item.kind === "stay" ? sql`${bookings.checkOut} > ${booking.checkIn}` : gte(bookings.checkOut, booking.checkIn),
     ));
+
+  // At a hotel the booking holds rooms of one type: taken only if too few are
+  // left once other guests' payments and the hotel's calendar are counted.
+  if (item.kind === "stay" && booking.roomTypeId) {
+    const [roomType] = await executor.select().from(stayRoomTypes).where(eq(stayRoomTypes.id, booking.roomTypeId)).limit(1);
+    if (roomType) {
+      const blocks = await executor
+        .select()
+        .from(stayReservations)
+        .where(and(eq(stayReservations.stayId, item.id), eq(stayReservations.status, "blocked")));
+      const claims = [...others.filter(holdsDatesWithPayment).map(getBookingRoomClaim), ...blocks.map(getBlockRoomClaim)];
+      const { firstNight, lastNight } = getOccupiedNights(booking.checkIn, booking.checkOut);
+      return countRoomsLeft(roomType, claims, firstNight, lastNight) < Math.max(1, booking.roomCount ?? 1);
+    }
+  }
   return others.some(holdsDatesWithPayment);
 }
 

@@ -57,7 +57,7 @@ import {
   normalizeHelpMamaPricing,
 } from "@shared/errand-pricing";
 import type {
-  Stay,
+  StayWithRooms,
   Car as CarType,
   Cook as CookType,
   Errand as ErrandType,
@@ -81,11 +81,21 @@ import {
   isPendingBookingPathMatch,
 } from "@/lib/pending-booking";
 import { readStaySearchState, toSearchSuffix } from "@/lib/stay-search";
+import { HotelRoomPicker } from "@/components/hotel-room-picker";
+import { StayKindBadge } from "@/components/stay-kind";
+import {
+  describeHotelStay,
+  getRoomsNeeded,
+  isBookableRoomType,
+  isHotelStay,
+  quoteHotelRooms,
+  sortRoomRates,
+} from "@shared/hotel-rooms";
 
 type StayAvailability = {
   blockedRanges: Array<{
     id: string;
-    source: "booking" | "manual";
+    source: "booking" | "manual" | "sold-out";
     startDate: string;
     endDate: string;
     checkoutDate: string;
@@ -285,7 +295,7 @@ export default function Booking() {
   const staySearch = useMemo(() => readStaySearchState(search), [search]);
   const bookingPath = `/book/${id}${toSearchSuffix(search)}`;
 
-  const { data: accommodation } = useQuery<Stay>({
+  const { data: accommodation } = useQuery<StayWithRooms>({
     queryKey: ["/api/stays", id],
     queryFn: async () => {
       const response = await fetch(`/api/stays/${id}`);
@@ -348,6 +358,10 @@ export default function Booking() {
       selectedServices: [],
       totalPrice: 0,
       status: "upcoming",
+      // A hotel room and meal plan chosen on the hotel's page.
+      roomTypeId: new URLSearchParams(search).get("room") || null,
+      mealPlan: (new URLSearchParams(search).get("plan") || null) as BookingFormValues["mealPlan"],
+      roomCount: null,
     },
   });
   const watchedBookingDraft = useWatch({ control: form.control });
@@ -604,9 +618,12 @@ export default function Booking() {
     () => new Set(conciergeAvailability?.unavailableServiceIds || []),
     [conciergeAvailability],
   );
+  const offersHomeServices = !isHotelStay(accommodation);
   const availableConciergeServices = useMemo(
-    () => conciergeServices.filter((service) => !unavailableConciergeServiceIds.has(service.id)),
-    [conciergeServices, unavailableConciergeServiceIds],
+    () => conciergeServices.filter((service) => !unavailableConciergeServiceIds.has(service.id)
+      // Chefs and home errands are for entire places: at a hotel, meals come with its meal plan.
+      && (offersHomeServices || service.category === "cars" || service.category === "experiences")),
+    [conciergeServices, offersHomeServices, unavailableConciergeServiceIds],
   );
   const addonServices = useMemo(
     () => availableConciergeServices.filter((service): service is AddonService => service.category !== "experiences"),
@@ -648,7 +665,76 @@ export default function Booking() {
   });
 
   const nights = useMemo(() => calculateNights(checkInValue || "", checkOutValue || ""), [checkInValue, checkOutValue]);
-  const accommodationTotal = useMemo(() => (accommodation?.price || 0) * nights, [accommodation?.price, nights]);
+
+  // A hotel: the room, meal plan and number of rooms, priced as the server prices them.
+  const isHotel = isHotelStay(accommodation);
+  const hotelRoomTypes = useMemo(
+    () => (accommodation?.roomTypes ?? []).filter(isBookableRoomType).map((roomType) => ({ ...roomType, rates: sortRoomRates(roomType.rates) })),
+    [accommodation?.roomTypes],
+  );
+  const roomTypeIdValue = useWatch({ control: form.control, name: "roomTypeId" });
+  const mealPlanValue = useWatch({ control: form.control, name: "mealPlan" });
+  const roomCountValue = useWatch({ control: form.control, name: "roomCount" });
+  const selectedRoomType = useMemo(
+    () => hotelRoomTypes.find((roomType) => roomType.id === roomTypeIdValue) ?? null,
+    [hotelRoomTypes, roomTypeIdValue],
+  );
+  const { data: roomAvailability } = useQuery<{ rooms: Array<{ roomTypeId: string; roomsLeft: number }> }>({
+    queryKey: ["/api/stays", id, "rooms", checkInValue, checkOutValue],
+    enabled: Boolean(id && isHotel && checkInValue && checkOutValue && checkOutValue >= checkInValue),
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    queryFn: async () => {
+      const params = new URLSearchParams({ checkIn: checkInValue, checkOut: checkOutValue });
+      const response = await fetch(`/api/stays/${id}/rooms?${params.toString()}`);
+      if (!response.ok) throw new Error("Failed to fetch room availability");
+      return response.json();
+    },
+  });
+  const hotelRoomsLeft = useMemo(
+    () => (roomAvailability ? new Map(roomAvailability.rooms.map((room) => [room.roomTypeId, room.roomsLeft])) : undefined),
+    [roomAvailability],
+  );
+  const hotelQuote = useMemo(() => {
+    if (!isHotel || !selectedRoomType) return null;
+    return quoteHotelRooms({
+      roomType: selectedRoomType,
+      mealPlan: mealPlanValue,
+      rooms: roomCountValue ?? 1,
+      guests: Number(guestsValue) || 0,
+      nights: Math.max(1, nights),
+    });
+  }, [guestsValue, isHotel, mealPlanValue, nights, roomCountValue, selectedRoomType]);
+
+  // Start on the room chosen on the hotel's page (or its first room and plan),
+  // with enough rooms for the guests.
+  useEffect(() => {
+    if (!isHotel || hotelRoomTypes.length === 0) return;
+    const roomType = selectedRoomType ?? hotelRoomTypes[0];
+    if (!selectedRoomType) {
+      form.setValue("roomTypeId", roomType.id);
+    }
+    if (!roomType.rates.some((rate) => rate.mealPlan === form.getValues("mealPlan"))) {
+      form.setValue("mealPlan", roomType.rates[0]?.mealPlan ?? null);
+    }
+  }, [form, hotelRoomTypes, isHotel, selectedRoomType]);
+
+  useEffect(() => {
+    if (!isHotel || !selectedRoomType) return;
+    const guests = Math.max(1, Number(guestsValue) || 1);
+    const current = form.getValues("roomCount") ?? 0;
+    const next = Math.max(1, Math.min(Math.max(current, getRoomsNeeded(guests, selectedRoomType.maxGuests)), guests, selectedRoomType.roomCount));
+    if (next !== current) {
+      form.setValue("roomCount", next);
+    }
+  }, [form, guestsValue, isHotel, selectedRoomType]);
+
+  const accommodationTotal = useMemo(
+    () => (isHotel
+      ? (hotelQuote?.ok && nights > 0 ? hotelQuote.snapshot.accommodationTotal : 0)
+      : (accommodation?.price || 0) * nights),
+    [accommodation?.price, hotelQuote, isHotel, nights],
+  );
   const servicesTotal = useMemo(() => {
     return conciergeServices
       .filter((service) => selectedServices.includes(service.id))
@@ -835,11 +921,11 @@ export default function Booking() {
       .sort((left, right) => right.score - left.score);
   }, [accommodation, addonServices, guestsValue, nights]);
   const rankedAddonServiceSections = useMemo(
-    () => addonServiceSections.map((section) => ({
+    () => addonServiceSections.filter((section) => offersHomeServices || section.key === "cars").map((section) => ({
       ...section,
       items: rankedAddonServices.filter(({ service }) => service.category === section.key),
     })),
-    [rankedAddonServices],
+    [offersHomeServices, rankedAddonServices],
   );
 
   const conciergeRecommendations = useMemo<ConciergeRecommendation[]>(() => {
@@ -1080,6 +1166,28 @@ export default function Booking() {
   };
 
   const canProceedToCheckout = (data: BookingFormValues) => {
+    if (isHotel) {
+      if (!hotelQuote || !hotelQuote.ok) {
+        toast({
+          title: "Choose your room",
+          description: hotelQuote && !hotelQuote.ok ? hotelQuote.error : "Choose a room and a meal plan for your stay.",
+          variant: "destructive",
+        });
+        return false;
+      }
+      const left = data.roomTypeId ? hotelRoomsLeft?.get(data.roomTypeId) : undefined;
+      if (left !== undefined && left < hotelQuote.snapshot.rooms) {
+        toast({
+          title: "Not enough rooms",
+          description: left === 0
+            ? `${hotelQuote.snapshot.roomTypeName} is fully booked for those dates. Please choose another room or other dates.`
+            : `Only ${left} ${hotelQuote.snapshot.roomTypeName} room${left === 1 ? " is" : "s are"} left for those dates.`,
+          variant: "destructive",
+        });
+        return false;
+      }
+    }
+
     if (hasBookingOverlap(data)) {
       toast({
         title: "Stay unavailable",
@@ -1152,6 +1260,9 @@ export default function Booking() {
       checkIn: typeof payload.checkIn === "string" ? payload.checkIn : form.getValues("checkIn"),
       checkOut: typeof payload.checkOut === "string" ? payload.checkOut : form.getValues("checkOut"),
       guests: typeof payload.guests === "number" ? payload.guests : form.getValues("guests"),
+      roomTypeId: typeof payload.roomTypeId === "string" ? payload.roomTypeId : form.getValues("roomTypeId"),
+      mealPlan: typeof payload.mealPlan === "string" ? payload.mealPlan : form.getValues("mealPlan"),
+      roomCount: typeof payload.roomCount === "number" ? payload.roomCount : form.getValues("roomCount"),
       selectedServices: restoredSelectedServices,
       totalPrice: typeof payload.totalPrice === "number" ? payload.totalPrice : 0,
       status: "upcoming",
@@ -1195,9 +1306,12 @@ export default function Booking() {
               </div>
 
               <div className="space-y-5 p-5 sm:p-6 lg:p-7">
-                <Badge variant="outline" className="surface-badge w-fit rounded-full border text-muted-foreground">
-                  Stay Booking
-                </Badge>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="outline" className="surface-badge w-fit rounded-full border text-muted-foreground">
+                    {isHotel ? "Hotel Booking" : "Stay Booking"}
+                  </Badge>
+                  <StayKindBadge stay={accommodation} />
+                </div>
 
                 <div className="space-y-2">
                   <h1 className="font-serif text-3xl font-semibold leading-tight text-foreground sm:text-4xl">
@@ -1215,14 +1329,23 @@ export default function Booking() {
                       <MapPin className="h-4 w-4" />
                       {accommodation.location}
                     </span>
-                    <span className="inline-flex items-center gap-2">
-                      <BedDouble className="h-4 w-4" />
-                      {accommodation.bedrooms} bedroom{accommodation.bedrooms === 1 ? "" : "s"}
-                    </span>
-                    <span className="inline-flex items-center gap-2">
-                      <Users className="h-4 w-4" />
-                      Up to {accommodation.maxOccupancy} guests
-                    </span>
+                    {isHotel ? (
+                      <span className="inline-flex items-center gap-2">
+                        <BedDouble className="h-4 w-4" />
+                        {hotelRoomTypes.length} room type{hotelRoomTypes.length === 1 ? "" : "s"}
+                      </span>
+                    ) : (
+                      <>
+                        <span className="inline-flex items-center gap-2">
+                          <BedDouble className="h-4 w-4" />
+                          {accommodation.bedrooms} bedroom{accommodation.bedrooms === 1 ? "" : "s"}
+                        </span>
+                        <span className="inline-flex items-center gap-2">
+                          <Users className="h-4 w-4" />
+                          Up to {accommodation.maxOccupancy} guests
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -1231,7 +1354,7 @@ export default function Booking() {
                     <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">From</div>
                     <div className="mt-2 flex items-baseline gap-1 text-lg font-semibold text-foreground">
                       <CurrencyAmount amountUsd={accommodation.price} />
-                      <span className="text-sm font-normal text-muted-foreground">/ night</span>
+                      <span className="text-sm font-normal text-muted-foreground">{isHotel ? "/ room / night" : "/ night"}</span>
                     </div>
                   </div>
 
@@ -1324,9 +1447,11 @@ export default function Booking() {
                 <Card className="surface-soft-card min-w-0 overflow-hidden border">
                   <div className="border-b border-border/60 px-5 py-5 sm:px-6">
                     <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Step 2</div>
-                    <h2 className="mt-2 text-xl font-semibold text-foreground sm:text-2xl">Stay details</h2>
+                    <h2 className="mt-2 text-xl font-semibold text-foreground sm:text-2xl">{isHotel ? "Dates, room and meal plan" : "Stay details"}</h2>
                     <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                      Pick your dates and group size so we can price the stay and tailor the right extras.
+                      {isHotel
+                        ? "Pick your dates and guests, then your room and its meal plan. Prices are per room, per night."
+                        : "Pick your dates and group size so we can price the stay and tailor the right extras."}
                     </p>
                   </div>
                   <div className="grid gap-4 px-5 py-5 sm:grid-cols-2 sm:px-6 sm:py-6 xl:grid-cols-3">
@@ -1402,6 +1527,28 @@ export default function Booking() {
                       )}
                     />
                   </div>
+                  {isHotel ? (
+                    <div className="border-t border-border/60 px-5 py-5 sm:px-6 sm:py-6">
+                      {hotelRoomTypes.length > 0 ? (
+                        <HotelRoomPicker
+                          roomTypes={hotelRoomTypes}
+                          roomsLeft={hotelRoomsLeft}
+                          roomTypeId={roomTypeIdValue}
+                          mealPlan={mealPlanValue}
+                          roomCount={roomCountValue ?? 1}
+                          quote={hotelQuote}
+                          nights={nights}
+                          onChange={(next) => {
+                            if (next.roomTypeId !== undefined) form.setValue("roomTypeId", next.roomTypeId, { shouldDirty: true });
+                            if (next.mealPlan !== undefined) form.setValue("mealPlan", next.mealPlan as BookingFormValues["mealPlan"], { shouldDirty: true });
+                            if (next.roomCount !== undefined) form.setValue("roomCount", next.roomCount, { shouldDirty: true });
+                          }}
+                        />
+                      ) : (
+                        <p className="text-sm text-muted-foreground">This hotel has no rooms to book right now.</p>
+                      )}
+                    </div>
+                  ) : null}
                 </Card>
 
                 <Card className="min-w-0 overflow-hidden border-none bg-[linear-gradient(135deg,rgba(15,23,42,0.99),rgba(20,34,56,0.97),rgba(15,74,87,0.9))] text-white shadow-[0_22px_65px_rgba(15,23,42,0.42)]">
@@ -1759,7 +1906,7 @@ export default function Booking() {
                         <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">From</div>
                         <div className="mt-2 flex items-baseline gap-1 font-semibold text-foreground">
                           <CurrencyAmount amountUsd={accommodation.price} />
-                          <span className="text-xs font-normal text-muted-foreground">/ night</span>
+                          <span className="text-xs font-normal text-muted-foreground">{isHotel ? "/ room / night" : "/ night"}</span>
                         </div>
                       </div>
 
@@ -1784,6 +1931,12 @@ export default function Booking() {
                     <span className="text-muted-foreground">Guests</span>
                     <span className="font-medium text-foreground">{guestsValue}</span>
                   </div>
+                  {isHotel && hotelQuote?.ok ? (
+                    <div className="mt-2 flex justify-between gap-3" data-testid="summary-room">
+                      <span className="text-muted-foreground">Room</span>
+                      <span className="text-right font-medium text-foreground">{describeHotelStay(hotelQuote.snapshot)}</span>
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="surface-subtle rounded-2xl border p-4">
@@ -1839,8 +1992,10 @@ export default function Booking() {
                 <div className="mb-3 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Price breakdown</div>
                 <div className="space-y-3 text-sm">
                   <div className="flex justify-between gap-3">
-                    <span className="text-muted-foreground">Accommodation</span>
-                    <CurrencyAmount amountUsd={accommodationTotal} />
+                    <span className="break-words text-muted-foreground">
+                      {isHotel && hotelQuote?.ok ? describeHotelStay(hotelQuote.snapshot) : "Accommodation"}
+                    </span>
+                    <span className="shrink-0"><CurrencyAmount amountUsd={accommodationTotal} /></span>
                   </div>
 
                   {selectedSummaryServices.length > 0 ? selectedSummaryServices.map((service) => (
@@ -1915,7 +2070,8 @@ export default function Booking() {
         </div>
       </div>
       </div>
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border/70 bg-background/92 px-4 py-3 shadow-[0_-18px_40px_rgba(15,23,42,0.16)] backdrop-blur lg:hidden">
+      {/* Above the site's tab bar (4rem tall below xl), which would otherwise cover the Book button. */}
+      <div className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-40 border-t border-border/70 bg-background/92 px-4 py-3 shadow-[0_-18px_40px_rgba(15,23,42,0.16)] backdrop-blur lg:hidden">
         <div className="mx-auto flex w-full max-w-7xl items-center gap-3">
           <div className="min-w-0 flex-1">
             <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">

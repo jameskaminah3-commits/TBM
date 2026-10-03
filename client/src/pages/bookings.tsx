@@ -37,6 +37,7 @@ import {
 } from "@shared/booking-payments";
 import { formatCalendarDate, formatCalendarDateRange, formatKenyaClockTime, formatKenyaDateTime, isOnKenyaTime } from "@shared/calendar-dates";
 import { customServiceRequestFeeUsd } from "@shared/custom-service";
+import { describeHotelStay, formatMealPlan, mealPlans } from "@shared/hotel-rooms";
 import type { Booking, BookingWithMarketing, Stay, Car as CarType, Cook, Errand, Experience, Review, CustomerPaymentMethod, ListingVerificationTask } from "@shared/schema";
 import { CONTACT_PHONE, CONTACT_PHONE_DISPLAY, WHATSAPP_URL } from "@/lib/contact-info";
 
@@ -905,7 +906,9 @@ export default function Bookings() {
     const primaryService = booking.selectedServices[0] ? getServiceItem(booking.selectedServices[0]) : null;
     const serviceTitle = !primaryService ? "Service Booking" : "model" in primaryService ? primaryService.model : "title" in primaryService ? primaryService.title : primaryService.serviceName;
     const bookingTitle = booking.serviceMode === "listing-verification" ? "External listing verification" : stay?.title ?? serviceTitle;
-    const bookingType = stay ? "Stay" : "Service";
+    // A hotel booking is its rooms on its meal plan.
+    const hotelRooms = booking.hotelStay ? describeHotelStay(booking.hotelStay) : null;
+    const bookingType = stay ? (hotelRooms ? "Hotel" : "Stay") : "Service";
     const bookingLocation = stay?.location ?? booking.serviceLocation ?? booking.servicePickupLocation ?? booking.serviceReturnLocation ?? null;
     const bookingDates = formatTimelineDateRange(booking.checkIn, booking.checkOut);
     const checkoutAmountDue = getBookingCheckoutAmount(booking);
@@ -929,7 +932,7 @@ export default function Bookings() {
     const summaryLine = serviceLabels.length > 0
       ? `${serviceLabels.slice(0, 2).join(" / ")}${serviceLabels.length > 2 ? ` / +${serviceLabels.length - 2} more` : ""}`
       : stay
-        ? "Accommodation only"
+        ? (hotelRooms ?? "Accommodation only")
         : "Direct service booking";
     const manualMpesaPending = booking.paymentProvider === "mpesa-manual" && booking.paymentStatus === "processing";
     // Stays, cars, and chefs are reserved for their dates once paid for; a
@@ -1007,7 +1010,10 @@ export default function Bookings() {
                   {bookingLocation ? <span className="flex items-center gap-1"><MapPin className="h-4 w-4" />{bookingLocation}</span> : null}
                   <span className="flex items-center gap-1"><Users className="h-4 w-4" />{booking.guests} guest{booking.guests === 1 ? "" : "s"}</span>
                 </div>
-                <div className="mt-3 text-sm text-muted-foreground">{summaryLine}</div>
+                {hotelRooms && serviceLabels.length > 0 ? (
+                  <div className="mt-3 text-sm font-medium text-foreground">{hotelRooms}</div>
+                ) : null}
+                <div className={cn(hotelRooms && serviceLabels.length > 0 ? "mt-1" : "mt-3", "text-sm text-muted-foreground")}>{summaryLine}</div>
               </div>
             </div>
             <div className="flex w-full shrink-0 flex-col gap-3 rounded-[20px] border border-white/70 bg-white/75 px-4 py-3 text-left shadow-[0_16px_30px_-24px_rgba(15,23,42,0.34)] sm:rounded-[22px] lg:min-w-[190px] lg:w-auto lg:items-end lg:text-right">
@@ -1300,6 +1306,15 @@ export default function Bookings() {
                   <div className="flex flex-col gap-1 rounded-2xl bg-white/80 px-4 py-3 min-[360px]:flex-row min-[360px]:items-center min-[360px]:justify-between">
                     <span className="text-stone-500">Still outstanding</span>
                     <span className="font-medium text-stone-900">{formatAmount(outstandingAmount)}</span>
+                  </div>
+                ) : null}
+                {booking.hotelStay ? (
+                  <div className="flex flex-col gap-1 rounded-2xl bg-white/80 px-4 py-3 min-[360px]:flex-row min-[360px]:items-center min-[360px]:justify-between">
+                    <span className="text-stone-500">Room</span>
+                    <span className="font-medium text-stone-900 min-[360px]:text-right">
+                      {booking.hotelStay.rooms > 1 ? `${booking.hotelStay.rooms} × ` : ""}{booking.hotelStay.roomTypeName}
+                      <span className="block text-xs font-normal text-stone-500">{formatMealPlan(booking.hotelStay.mealPlan)} · {mealPlans[booking.hotelStay.mealPlan]?.includes}</span>
+                    </span>
                   </div>
                 ) : null}
                 <div className="flex flex-col gap-1 rounded-2xl bg-white/80 px-4 py-3 min-[360px]:flex-row min-[360px]:items-center min-[360px]:justify-between">

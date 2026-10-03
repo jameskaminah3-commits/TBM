@@ -38,6 +38,7 @@ import { getShortShareUrl, type ShareServiceType } from "@/lib/share-links";
 import { getCookExtraGuestInclusivePrice, getCookExtraGuestServiceFee, getCookMinimumGuests } from "@shared/cook-pricing";
 import { HOUSE_CLEANING_BASE_ROOM_LABEL, getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
 import { formatCalendarDate, isCalendarDate } from "@shared/calendar-dates";
+import { isHotelStay } from "@shared/hotel-rooms";
 
 type ProviderAssignments = {
   stays: Stay[];
@@ -1564,7 +1565,9 @@ export default function ProviderDashboard() {
                 <div className="rounded-2xl border border-stone-200 bg-white/80 px-4 py-3">
                   <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Management</div>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <Badge variant="secondary" className="rounded-full">{formatAmount(stay.price)}/night</Badge>
+                    <Badge variant="secondary" className="rounded-full">
+                      {isHotelStay(stay) ? `Hotel · from ${formatAmount(stay.price)}/room/night` : `${formatAmount(stay.price)}/night`}
+                    </Badge>
                     <Button asChild variant="outline" size="sm" className="rounded-full bg-white/80">
                       <a href={`/provider/stays/${stay.id}/availability#availability`}>Lock days</a>
                     </Button>

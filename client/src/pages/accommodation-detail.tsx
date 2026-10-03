@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useParams, useLocation, useSearch, Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { Star, MapPin, Users, Bed, Bath, Car, ChefHat, ShoppingBag, CheckCircle2, CalendarDays } from "lucide-react";
+import { Star, MapPin, Users, Bed, Bath, Car, ChefHat, ShoppingBag, CheckCircle2, CalendarDays, Clock, Compass, DoorOpen } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -17,8 +17,11 @@ import {
   readStaySearchState,
   toSearchSuffix,
 } from "@/lib/stay-search";
-import type { Stay } from "@shared/schema";
+import type { StayWithRooms } from "@shared/schema";
 import { SeoHead } from "@/components/seo-head";
+import { MealPlanChips, StayKindBadge, describeStayKind } from "@/components/stay-kind";
+import { HotelRoomsSection } from "@/components/hotel-rooms-section";
+import { isHotelStay, summarizeHotelRooms } from "@shared/hotel-rooms";
 import { buildCanonicalUrl } from "@/lib/canonical-url";
 import {
   buildListingSeoDescription,
@@ -27,12 +30,13 @@ import {
   getPublicListingPath,
 } from "@/lib/public-listing";
 import { eachDayOfInterval, format, parseISO, startOfDay } from "date-fns";
-import { parseCalendarDate, todayInKenya } from "@shared/calendar-dates";
+import { formatKenyaClockTime, parseCalendarDate, todayInKenya } from "@shared/calendar-dates";
 
 type StayAvailability = {
+  propertyType?: "hotel" | "entire_place";
   blockedRanges: Array<{
     id: string;
-    source: "booking" | "manual";
+    source: "booking" | "manual" | "sold-out";
     startDate: string;
     endDate: string;
     checkoutDate: string;
@@ -54,7 +58,7 @@ export default function AccommodationDetail() {
   const hasTripFilters = hasStructuredStayFilters(staySearch);
   const stayNights = getStaySearchNights(staySearch.checkIn, staySearch.checkOut);
   
-  const { data: accommodation, isLoading } = useQuery<Stay>({
+  const { data: accommodation, isLoading } = useQuery<StayWithRooms>({
     queryKey: ["/api/stays", id],
     queryFn: async () => {
       const response = await fetch(`/api/stays/${id}`);
@@ -74,6 +78,31 @@ export default function AccommodationDetail() {
       return response.json();
     },
   });
+
+  const isHotel = isHotelStay(accommodation);
+  const hasStayDates = Boolean(staySearch.checkIn && staySearch.checkOut && staySearch.checkOut >= staySearch.checkIn);
+  const { data: roomAvailability } = useQuery<{ rooms: Array<{ roomTypeId: string; roomsLeft: number }> }>({
+    queryKey: ["/api/stays", id, "rooms", staySearch.checkIn, staySearch.checkOut],
+    enabled: Boolean(id && isHotel && hasStayDates),
+    queryFn: async () => {
+      const params = new URLSearchParams({ checkIn: staySearch.checkIn, checkOut: staySearch.checkOut });
+      const response = await fetch(`/api/stays/${id}/rooms?${params.toString()}`);
+      if (!response.ok) throw new Error("Failed to fetch room availability");
+      return response.json();
+    },
+  });
+  const roomsLeft = useMemo(
+    () => (roomAvailability ? new Map(roomAvailability.rooms.map((room) => [room.roomTypeId, room.roomsLeft])) : undefined),
+    [roomAvailability],
+  );
+
+  // Booking a hotel room carries the room and meal plan, with the trip's dates and guests.
+  const bookRoom = (roomTypeId: string, mealPlan: string) => {
+    const params = new URLSearchParams(staySearchSuffix.replace(/^\?/, ""));
+    params.set("room", roomTypeId);
+    params.set("plan", mealPlan);
+    setLocation(`/book/${id}?${params.toString()}`);
+  };
 
   const blockedDates = useMemo(() => {
     if (!availability) return [];
@@ -121,8 +150,38 @@ export default function AccommodationDetail() {
 
   const canonicalUrl = buildCanonicalUrl(getPublicListingPath("stay", accommodation.id, accommodation.title));
   const location = formatSeoLocation(accommodation.location);
-  const semanticSummary = `${accommodation.bedrooms}-bedroom accommodation in ${location}, with ${accommodation.bathrooms} bathrooms and space for up to ${accommodation.maxOccupancy} guests. Available from ${accommodation.price} USD per night.`;
-  const structuredData = {
+  const roomTypes = accommodation.roomTypes ?? [];
+  const hotelSummary = summarizeHotelRooms(roomTypes);
+  const semanticSummary = isHotel
+    ? `${accommodation.starRating ? `${accommodation.starRating}-star hotel` : "Hotel"} in ${location} with ${hotelSummary.roomTypeCount} room type${hotelSummary.roomTypeCount === 1 ? "" : "s"}${hotelSummary.mealPlans.length ? ` on ${hotelSummary.mealPlans.length === 1 ? "one meal plan" : `${hotelSummary.mealPlans.length} meal plans`}` : ""}. Rooms from ${accommodation.price} USD per room per night.`
+    : `${accommodation.bedrooms}-bedroom accommodation in ${location}, with ${accommodation.bathrooms} bathrooms and space for up to ${accommodation.maxOccupancy} guests. Available from ${accommodation.price} USD per night.`;
+  const structuredData = isHotel ? {
+    "@context": "https://schema.org",
+    "@type": "Hotel",
+    name: accommodation.title,
+    description: accommodation.description,
+    image: accommodation.imageUrl ? [accommodation.imageUrl] : undefined,
+    url: canonicalUrl,
+    numberOfRooms: hotelSummary.totalRooms,
+    starRating: accommodation.starRating ? { "@type": "Rating", ratingValue: accommodation.starRating } : undefined,
+    checkinTime: accommodation.checkInTime ?? undefined,
+    checkoutTime: accommodation.checkOutTime ?? undefined,
+    address: { "@type": "PostalAddress", addressLocality: location, addressCountry: "KE" },
+    aggregateRating: accommodation.reviewCount > 0 ? {
+      "@type": "AggregateRating",
+      ratingValue: accommodation.rating,
+      reviewCount: accommodation.reviewCount,
+    } : undefined,
+    offers: { "@type": "AggregateOffer", priceCurrency: "USD", lowPrice: accommodation.price, url: canonicalUrl },
+    breadcrumb: {
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: "Home", item: buildCanonicalUrl("/") },
+        { "@type": "ListItem", position: 2, name: "Accommodation in Mombasa and Nyali", item: buildCanonicalUrl("/accommodations") },
+        { "@type": "ListItem", position: 3, name: accommodation.title, item: canonicalUrl },
+      ],
+    },
+  } : {
     "@context": "https://schema.org",
     "@type": "LodgingBusiness",
     name: accommodation.title,
@@ -185,6 +244,10 @@ export default function AccommodationDetail() {
             <div>
               <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
+                  <div className="mb-3 flex flex-wrap items-center gap-2">
+                    <StayKindBadge stay={accommodation} />
+                    <span className="text-sm text-muted-foreground">{describeStayKind(accommodation)}</span>
+                  </div>
                   <h1 className="mb-2 font-serif text-3xl font-medium md:text-4xl">
                     {accommodation.title}
                   </h1>
@@ -206,6 +269,34 @@ export default function AccommodationDetail() {
 
               <Separator className="my-6" />
 
+              {isHotel ? (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <Card className="p-4">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Bed className="h-4 w-4 shrink-0 text-primary" />
+                      <span>{hotelSummary.roomTypeCount} room type{hotelSummary.roomTypeCount === 1 ? "" : "s"}</span>
+                    </div>
+                  </Card>
+                  <Card className="p-4">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <DoorOpen className="h-4 w-4 shrink-0 text-primary" />
+                      <span>Check-in {accommodation.checkInTime ? `from ${formatKenyaClockTime(accommodation.checkInTime)}` : "as agreed"}</span>
+                    </div>
+                  </Card>
+                  <Card className="p-4">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Clock className="h-4 w-4 shrink-0 text-primary" />
+                      <span>Check-out {accommodation.checkOutTime ? `by ${formatKenyaClockTime(accommodation.checkOutTime)}` : "as agreed"}</span>
+                    </div>
+                  </Card>
+                  <Card className="p-4">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <CalendarDays className="h-4 w-4 shrink-0 text-primary" />
+                      <span>Available from {availability?.availableFrom ?? "today"}</span>
+                    </div>
+                  </Card>
+                </div>
+              ) : (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <Card className="p-4">
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -232,17 +323,22 @@ export default function AccommodationDetail() {
                   </div>
                 </Card>
               </div>
+              )}
 
-              <div>
-                <h2 className="mb-3 font-serif text-2xl font-medium">About this place</h2>
+              <div className="mt-6">
+                <h2 className="mb-3 font-serif text-2xl font-medium">{isHotel ? "About this hotel" : "About this place"}</h2>
                 <p className="text-muted-foreground leading-relaxed">
                   {accommodation.description}
                 </p>
               </div>
             </div>
 
+            {isHotel ? (
+              <HotelRoomsSection roomTypes={roomTypes} roomsLeft={roomsLeft} onBook={bookRoom} />
+            ) : null}
+
             <div>
-              <h2 className="mb-4 font-serif text-2xl font-medium">Features</h2>
+              <h2 className="mb-4 font-serif text-2xl font-medium">{isHotel ? "Hotel facilities" : "Features"}</h2>
               <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
                 {accommodation.features.map((feature, index) => (
                   <div key={index} className="flex items-center gap-2">
@@ -256,8 +352,36 @@ export default function AccommodationDetail() {
             <div>
               <h2 className="mb-4 font-serif text-2xl font-medium">Available Services</h2>
               <p className="text-muted-foreground mb-4">
-                Enhance your stay with our curated local services. Select add-ons during booking.
+                {isHotel
+                  ? "Meals come with your room's meal plan. Add transport and experiences to your hotel stay during booking."
+                  : "Enhance your stay with our curated local services. Select add-ons during booking."}
               </p>
+              {isHotel ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Card className="p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-md bg-primary/10 flex items-center justify-center flex-shrink-0">
+                        <Car className="h-5 w-5 text-primary" />
+                      </div>
+                      <div>
+                        <div className="font-medium mb-1">Car Rental &amp; transfers</div>
+                        <div className="text-sm text-muted-foreground">With or without driver</div>
+                      </div>
+                    </div>
+                  </Card>
+                  <Card className="p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-md bg-primary/10 flex items-center justify-center flex-shrink-0">
+                        <Compass className="h-5 w-5 text-primary" />
+                      </div>
+                      <div>
+                        <div className="font-medium mb-1">Experiences</div>
+                        <div className="text-sm text-muted-foreground">Tours and activities on the coast</div>
+                      </div>
+                    </div>
+                  </Card>
+                </div>
+              ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Card className="p-4">
                   <div className="flex items-start gap-3">
@@ -315,6 +439,7 @@ export default function AccommodationDetail() {
                   </div>
                 </Card>
               </div>
+              )}
             </div>
 
             <PublicReviewPreview targetType="stay" targetId={accommodation.id} variant="full" maxItems={4} />
@@ -362,19 +487,28 @@ export default function AccommodationDetail() {
               ) : null}
 
               <div className="mb-6">
+                {isHotel ? <div className="text-sm text-muted-foreground">Rooms from</div> : null}
                 <CurrencyAmount
                   amountUsd={accommodation.price}
                   primaryClassName="text-3xl font-semibold"
                   className="mb-1"
                 />
-                <div className="text-sm text-muted-foreground">per day</div>
+                <div className="text-sm text-muted-foreground">{isHotel ? "per room / night" : "per day"}</div>
+                {isHotel ? <MealPlanChips plans={hotelSummary.mealPlans} className="mt-3" /> : null}
               </div>
 
               <div className="space-y-3 mb-6 rounded-xl border bg-muted/30 p-4 text-sm">
+                {isHotel ? (
+                  <div className="flex flex-col gap-1 min-[360px]:flex-row min-[360px]:items-center min-[360px]:justify-between">
+                    <span className="font-medium">Rooms</span>
+                    <span className="text-muted-foreground">Up to {hotelSummary.largestRoom} guests each</span>
+                  </div>
+                ) : (
                 <div className="flex flex-col gap-1 min-[360px]:flex-row min-[360px]:items-center min-[360px]:justify-between">
                   <span className="font-medium">Guest limit</span>
                   <span className="text-muted-foreground">Up to {accommodation.maxOccupancy}</span>
                 </div>
+                )}
                 <div className="flex flex-col gap-1 min-[360px]:flex-row min-[360px]:items-center min-[360px]:justify-between">
                   <span className="font-medium">Next available</span>
                   <span className="text-muted-foreground">{availability?.availableFrom ?? "Today"}</span>
@@ -382,7 +516,7 @@ export default function AccommodationDetail() {
                 <div className="rounded-xl border bg-background p-2">
                   <div className="mb-2 flex items-center justify-between px-1">
                     <span className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                      Booked days
+                      {isHotel ? "Fully booked days" : "Booked days"}
                     </span>
                     <span className="text-[11px] text-muted-foreground">
                       {format(calendarMonth, "MMM yyyy")}
@@ -416,11 +550,21 @@ export default function AccommodationDetail() {
                   />
                   <div className="mt-2 flex items-center gap-2 px-1 text-[11px] text-muted-foreground">
                     <span className="h-2.5 w-2.5 rounded-sm bg-red-100" />
-                    <span>Booked days</span>
+                    <span>{isHotel ? "No rooms left" : "Booked days"}</span>
                   </div>
                 </div>
               </div>
 
+              {isHotel ? (
+                <Button
+                  className="w-full"
+                  size="lg"
+                  onClick={() => document.getElementById("rooms")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                  data-testid="button-choose-room"
+                >
+                  Choose your room
+                </Button>
+              ) : (
               <Button
                 className="w-full"
                 size="lg"
@@ -429,6 +573,7 @@ export default function AccommodationDetail() {
               >
                 Book Now
               </Button>
+              )}
 
               <Separator className="my-6" />
 

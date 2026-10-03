@@ -30,6 +30,8 @@ import {
   type InsertListing,
   type Stay,
   type InsertStay,
+  type StayRoomType,
+  type InsertStayRoomType,
   type Car,
   type InsertCar,
   type Cook,
@@ -105,6 +107,7 @@ import {
   marketingPromos,
   listings,
   stays,
+  stayRoomTypes,
   cars,
   cooks,
   errands,
@@ -122,6 +125,7 @@ import {
   users,
 } from "@shared/schema";
 import { hasLockedInBookingDeposit } from "@shared/booking-payments";
+import { describeHotelStay, isHotelStay, summarizeHotelRooms } from "@shared/hotel-rooms";
 import { kenyaClockMinutes, todayInKenya } from "@shared/calendar-dates";
 import { calculateCookInclusiveTotal, calculateCookServiceTotal } from "@shared/cook-pricing";
 import { calculateHelpMamaPackagePrice, calculateHouseCleaningPackagePrice } from "@shared/errand-pricing";
@@ -1078,11 +1082,14 @@ function getDesiredBookingAssignmentDrafts(booking: Booking, catalog: DashboardL
     const stay = booking.accommodationId ? catalog.staysById.get(booking.accommodationId) : undefined;
 
     if (booking.accommodationId) {
+      // A hotel booking is its rooms on its meal plan, priced when it was made.
+      const hotelRooms = booking.hotelStay ? describeHotelStay(booking.hotelStay) : "";
+      const stayTitle = stay?.title || "Stay booking";
       assignments.push({
         providerCategory: "stays",
         providerUserId: normalizeOptionalUserId(stay?.managerUserId),
         serviceId: booking.accommodationId,
-        serviceName: stay?.title || "Stay booking",
+        serviceName: hotelRooms ? `${stayTitle} · ${hotelRooms}` : stayTitle,
         serviceConfig: {
           serviceId: booking.accommodationId,
           category: "stays",
@@ -1103,7 +1110,9 @@ function getDesiredBookingAssignmentDrafts(booking: Booking, catalog: DashboardL
           serviceDepartureId: null,
           serviceRequestDetails: null,
         },
-        revenue: stay ? calculateChargeableDays(booking.checkIn, booking.checkOut) * stay.price : 0,
+        revenue: booking.hotelStay
+          ? booking.hotelStay.accommodationTotal
+          : stay ? calculateChargeableDays(booking.checkIn, booking.checkOut) * stay.price : 0,
         grossAmount: 0,
       });
     }
@@ -1437,6 +1446,13 @@ export interface IStorage {
   createStay(stay: InsertStay): Promise<Stay>;
   updateStay(id: string, stay: Partial<InsertStay>): Promise<Stay | undefined>;
   deleteStay(id: string): Promise<boolean>;
+  getStayRoomTypes(stayId: string): Promise<StayRoomType[]>;
+  getRoomTypesForStays(stayIds: string[]): Promise<StayRoomType[]>;
+  getStayRoomType(id: string): Promise<StayRoomType | undefined>;
+  createStayRoomType(stayId: string, roomType: InsertStayRoomType): Promise<StayRoomType>;
+  updateStayRoomType(id: string, roomType: Partial<InsertStayRoomType>): Promise<StayRoomType | undefined>;
+  deleteStayRoomType(id: string): Promise<boolean>;
+  refreshHotelFromRooms(stayId: string): Promise<Stay | undefined>;
 
   // Cars
   getCars(): Promise<Car[]>;
@@ -1514,6 +1530,7 @@ export class DatabaseStorage implements IStorage {
   private inboxTablesEnsured = false;
   private pushTablesEnsured = false;
   private listingVerificationTablesEnsured = false;
+  private hotelTablesEnsured = false;
   private tableColumnsCache = new Map<string, Set<string>>();
 
   private async getTableColumns(tableName: string): Promise<Set<string>> {
@@ -1564,7 +1581,56 @@ export class DatabaseStorage implements IStorage {
     return result.rows;
   }
 
+  // Hotels: the stay's kind and hotel details, the room types table, and room
+  // blocks. The deploy's schema push adds these; this covers a database that
+  // missed it, as ensurePaymentsTables does for bookings.
+  private async ensureHotelTables() {
+    if (this.hotelTablesEnsured) {
+      return;
+    }
+    this.hotelTablesEnsured = true;
+    try {
+      await pool.query(`
+        ALTER TABLE stays
+        ADD COLUMN IF NOT EXISTS property_type text NOT NULL DEFAULT 'entire_place',
+        ADD COLUMN IF NOT EXISTS star_rating integer,
+        ADD COLUMN IF NOT EXISTS check_in_time text,
+        ADD COLUMN IF NOT EXISTS check_out_time text;
+      `);
+      await pool.query(`
+        ALTER TABLE stay_reservations
+        ADD COLUMN IF NOT EXISTS room_type_id varchar,
+        ADD COLUMN IF NOT EXISTS room_count integer;
+      `);
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS stay_room_types (
+          id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+          stay_id varchar NOT NULL,
+          name text NOT NULL,
+          description text NOT NULL DEFAULT '',
+          bed_type text NOT NULL DEFAULT '',
+          size_sqm integer,
+          max_guests integer NOT NULL,
+          room_count integer NOT NULL,
+          image_url text,
+          amenities text[] NOT NULL DEFAULT '{}'::text[],
+          rates jsonb NOT NULL DEFAULT '[]'::jsonb,
+          sort_order integer NOT NULL DEFAULT 0,
+          is_active boolean NOT NULL DEFAULT true,
+          created_at text NOT NULL,
+          updated_at text NOT NULL
+        );
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_stay_room_types_stay ON stay_room_types (stay_id);`);
+    } catch (error) {
+      console.error("[storage] Could not prepare the hotel tables:", error);
+    }
+    this.tableColumnsCache.delete("stays");
+    this.tableColumnsCache.delete("stay_reservations");
+  }
+
   private async selectCompatibleStays(whereClause?: string, params: unknown[] = []): Promise<Stay[]> {
+    await this.ensureHotelTables();
     const columns = await this.getTableColumns("stays");
     const selectParts = [
       "id",
@@ -1583,6 +1649,10 @@ export class DatabaseStorage implements IStorage {
       columns.has("is_public") ? 'is_public AS "isPublic"' : 'false AS "isPublic"',
       columns.has("manager_user_id") ? 'manager_user_id AS "managerUserId"' : 'NULL::varchar AS "managerUserId"',
       columns.has("features") ? "features" : '\'{}\'::text[] AS features',
+      columns.has("property_type") ? 'property_type AS "propertyType"' : '\'entire_place\'::text AS "propertyType"',
+      columns.has("star_rating") ? 'star_rating AS "starRating"' : 'NULL::integer AS "starRating"',
+      columns.has("check_in_time") ? 'check_in_time AS "checkInTime"' : 'NULL::text AS "checkInTime"',
+      columns.has("check_out_time") ? 'check_out_time AS "checkOutTime"' : 'NULL::text AS "checkOutTime"',
       columns.has("created_at") ? 'created_at AS "createdAt"' : 'NULL::text AS "createdAt"',
       columns.has("updated_at") ? 'updated_at AS "updatedAt"' : 'NULL::text AS "updatedAt"',
     ];
@@ -2127,7 +2197,11 @@ export class DatabaseStorage implements IStorage {
       ADD COLUMN IF NOT EXISTS admin_lock_until text,
       ADD COLUMN IF NOT EXISTS admin_lock_note text,
       ADD COLUMN IF NOT EXISTS admin_locked_by varchar,
-      ADD COLUMN IF NOT EXISTS admin_locked_at text;
+      ADD COLUMN IF NOT EXISTS admin_locked_at text,
+      ADD COLUMN IF NOT EXISTS room_type_id varchar,
+      ADD COLUMN IF NOT EXISTS room_count integer,
+      ADD COLUMN IF NOT EXISTS meal_plan text,
+      ADD COLUMN IF NOT EXISTS hotel_stay jsonb;
     `);
 
     this.tableColumnsCache.delete("booking_payouts");
@@ -2483,6 +2557,10 @@ export class DatabaseStorage implements IStorage {
       ["admin_lock_note", "adminLockNote"],
       ["admin_locked_by", "adminLockedBy"],
       ["admin_locked_at", "adminLockedAt"],
+      ["room_type_id", "roomTypeId"],
+      ["room_count", "roomCount"],
+      ["meal_plan", "mealPlan"],
+      ["hotel_stay", "hotelStay"],
     ] as const) {
       if (!columns.has(column)) {
         delete (filtered as Record<string, unknown>)[field];
@@ -2564,6 +2642,10 @@ export class DatabaseStorage implements IStorage {
         ${columns.has("admin_lock_note") ? 'admin_lock_note as "adminLockNote",' : 'NULL::text as "adminLockNote",'}
         ${columns.has("admin_locked_by") ? 'admin_locked_by as "adminLockedBy",' : 'NULL::text as "adminLockedBy",'}
         ${columns.has("admin_locked_at") ? 'admin_locked_at as "adminLockedAt",' : 'NULL::text as "adminLockedAt",'}
+        ${columns.has("room_type_id") ? 'room_type_id as "roomTypeId",' : 'NULL::text as "roomTypeId",'}
+        ${columns.has("room_count") ? 'room_count as "roomCount",' : 'NULL::integer as "roomCount",'}
+        ${columns.has("meal_plan") ? 'meal_plan as "mealPlan",' : 'NULL::text as "mealPlan",'}
+        ${columns.has("hotel_stay") ? 'hotel_stay as "hotelStay",' : 'NULL::jsonb as "hotelStay",'}
         total_price as "totalPrice",
         status,
         created_at as "createdAt",
@@ -2640,6 +2722,10 @@ export class DatabaseStorage implements IStorage {
       adminLockNote: row.adminLockNote ?? null,
       adminLockedBy: row.adminLockedBy ?? null,
       adminLockedAt: row.adminLockedAt ?? null,
+      roomTypeId: row.roomTypeId ?? null,
+      roomCount: row.roomCount == null ? null : Number(row.roomCount),
+      mealPlan: row.mealPlan ?? null,
+      hotelStay: row.hotelStay ?? null,
       totalPrice: Number(row.totalPrice ?? 0),
       status: row.status,
       createdAt: row.createdAt,
@@ -2892,7 +2978,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createBooking(
-    data: ServerBooking & Partial<Pick<Booking, "paymentStatus" | "paymentProvider" | "paymentReference" | "paymentSessionId" | "paymentCurrency" | "paymentAmount" | "paymentCheckoutAmount" | "paymentDepositAmount" | "paymentAmountPaid" | "paymentHoldExpiresAt" | "paidAt" | "paymentFailedAt">>,
+    data: ServerBooking & Partial<Pick<Booking, "paymentStatus" | "paymentProvider" | "paymentReference" | "paymentSessionId" | "paymentCurrency" | "paymentAmount" | "paymentCheckoutAmount" | "paymentDepositAmount" | "paymentAmountPaid" | "paymentHoldExpiresAt" | "paidAt" | "paymentFailedAt" | "hotelStay">>,
     executor: any = db,
   ): Promise<Booking> {
     await this.ensurePaymentsTables();
@@ -4256,10 +4342,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getStaysByManagerUserId(managerUserId: string): Promise<Stay[]> {
+    await this.ensureHotelTables();
     return await db.select().from(stays).where(eq(stays.managerUserId, managerUserId));
   }
 
   async createStay(data: InsertStay): Promise<Stay> {
+    await this.ensureHotelTables();
     const now = new Date().toISOString();
     const [stay] = await db.insert(stays).values({
       ...normalizeManagerScopedWriteData(data),
@@ -4270,6 +4358,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateStay(id: string, data: Partial<InsertStay>): Promise<Stay | undefined> {
+    await this.ensureHotelTables();
     const [stay] = await db.update(stays).set({
       ...normalizeManagerScopedWriteData(data),
       updatedAt: new Date().toISOString(),
@@ -4279,7 +4368,91 @@ export class DatabaseStorage implements IStorage {
 
   async deleteStay(id: string): Promise<boolean> {
     const result = await db.delete(stays).where(eq(stays.id, id));
+    if (result.rowCount) {
+      await this.ensureHotelTables();
+      await db.delete(stayRoomTypes).where(eq(stayRoomTypes.stayId, id));
+    }
     return result.rowCount ? result.rowCount > 0 : false;
+  }
+
+  // Hotel room types
+  async getStayRoomTypes(stayId: string): Promise<StayRoomType[]> {
+    return await this.getRoomTypesForStays([stayId]);
+  }
+
+  async getRoomTypesForStays(stayIds: string[]): Promise<StayRoomType[]> {
+    if (stayIds.length === 0) {
+      return [];
+    }
+    await this.ensureHotelTables();
+    return await db
+      .select()
+      .from(stayRoomTypes)
+      .where(inArray(stayRoomTypes.stayId, Array.from(new Set(stayIds))))
+      .orderBy(asc(stayRoomTypes.sortOrder), asc(stayRoomTypes.createdAt));
+  }
+
+  async getStayRoomType(id: string): Promise<StayRoomType | undefined> {
+    await this.ensureHotelTables();
+    const [roomType] = await db.select().from(stayRoomTypes).where(eq(stayRoomTypes.id, id)).limit(1);
+    return roomType;
+  }
+
+  async createStayRoomType(stayId: string, data: InsertStayRoomType): Promise<StayRoomType> {
+    await this.ensureHotelTables();
+    const now = new Date().toISOString();
+    const [roomType] = await db.insert(stayRoomTypes).values({
+      ...data,
+      stayId,
+      createdAt: now,
+      updatedAt: now,
+    }).returning();
+    await this.refreshHotelFromRooms(stayId);
+    return roomType;
+  }
+
+  async updateStayRoomType(id: string, data: Partial<InsertStayRoomType>): Promise<StayRoomType | undefined> {
+    await this.ensureHotelTables();
+    const [roomType] = await db.update(stayRoomTypes).set({
+      ...data,
+      updatedAt: new Date().toISOString(),
+    }).where(eq(stayRoomTypes.id, id)).returning();
+    if (roomType) {
+      await this.refreshHotelFromRooms(roomType.stayId);
+    }
+    return roomType;
+  }
+
+  async deleteStayRoomType(id: string): Promise<boolean> {
+    await this.ensureHotelTables();
+    const [deleted] = await db.delete(stayRoomTypes).where(eq(stayRoomTypes.id, id)).returning({ stayId: stayRoomTypes.stayId });
+    if (deleted) {
+      // Its calendar blocks go with it.
+      await db.delete(stayReservations).where(eq(stayReservations.roomTypeId, id));
+      await this.refreshHotelFromRooms(deleted.stayId);
+    }
+    return Boolean(deleted);
+  }
+
+  /**
+   * A hotel's price, guests, bedrooms and bathrooms follow from its rooms:
+   * the lowest room rate ("from"), the guests its rooms sleep, and its rooms.
+   * Search, sorting, Zaina and link previews read these as for any stay.
+   */
+  async refreshHotelFromRooms(stayId: string): Promise<Stay | undefined> {
+    const stay = await this.getStay(stayId);
+    if (!stay || !isHotelStay(stay)) {
+      return stay;
+    }
+    const summary = summarizeHotelRooms(await this.getStayRoomTypes(stayId));
+    const [updated] = await db.update(stays).set({
+      price: summary.fromPrice ?? 0,
+      maxOccupancy: summary.guestCapacity,
+      bedrooms: summary.totalRooms,
+      bathrooms: summary.totalRooms,
+      updatedAt: new Date().toISOString(),
+    }).where(eq(stays.id, stayId)).returning();
+    return updated ? normalizeManagerScopedRecord(updated) : undefined;
   }
 
   // Cars
@@ -4482,10 +4655,12 @@ export class DatabaseStorage implements IStorage {
 
   // Stay Reservations
   async getStayReservations(stayId: string): Promise<StayReservation[]> {
+    await this.ensureHotelTables();
     return await db.select().from(stayReservations).where(eq(stayReservations.stayId, stayId));
   }
 
   async createStayReservation(data: InsertStayReservation): Promise<StayReservation> {
+    await this.ensureHotelTables();
     const now = new Date().toISOString();
     const [reservation] = await db.insert(stayReservations).values({ ...data, createdAt: now }).returning();
     return reservation;

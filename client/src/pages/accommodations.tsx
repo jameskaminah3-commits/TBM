@@ -21,8 +21,17 @@ import {
   readStaySearchState,
   type StaySearchSort,
 } from "@/lib/stay-search";
-import type { Stay } from "@shared/schema";
+import type { Stay, StayWithRooms } from "@shared/schema";
 import { getPublicListingPath } from "@/lib/public-listing";
+import { MealPlanChips, StayKindBadge } from "@/components/stay-kind";
+import { isHotelStay, summarizeHotelRooms } from "@shared/hotel-rooms";
+import type { StaySearchType } from "@/lib/stay-search";
+
+const stayTypeOptions: Array<{ value: StaySearchType; label: string }> = [
+  { value: "all", label: "All stays" },
+  { value: "hotel", label: "Hotels" },
+  { value: "entire_place", label: "Entire places" },
+];
 
 const featureSuggestions = [
   "Pool",
@@ -64,7 +73,7 @@ function scoreStayRelevance(stay: Stay, query: string) {
   }, 0);
 }
 
-function sortStays(stays: Stay[], sort: StaySearchSort, query: string) {
+function sortStays<T extends Stay>(stays: T[], sort: StaySearchSort, query: string): T[] {
   return [...stays].sort((left, right) => {
     if (sort === "price-low") return left.price - right.price;
     if (sort === "price-high") return right.price - left.price;
@@ -88,7 +97,7 @@ export default function Accommodations() {
   const hasTripFilters = hasStructuredStayFilters(staySearch);
   const stayNights = getStaySearchNights(staySearch.checkIn, staySearch.checkOut);
   
-  const { data: accommodations, isLoading } = useQuery<Stay[]>({
+  const { data: accommodations, isLoading } = useQuery<StayWithRooms[]>({
     queryKey: ["/api/stays"],
     staleTime: 5 * 60_000,
     gcTime: 30 * 60_000,
@@ -104,21 +113,30 @@ export default function Accommodations() {
   const filteredAccommodations = useMemo(
     () => {
       const nextStays = textMatchedAccommodations.filter((stay) => {
+      const hotel = isHotelStay(stay);
+      const matchesType = staySearch.stayType === "all" || (staySearch.stayType === "hotel") === hotel;
       const matchesDestination = !staySearch.destination || matchesStayDestination(stay.location, staySearch.destination);
       const matchesGuests = staySearch.guests === null || stay.maxOccupancy >= staySearch.guests;
-      const matchesBedrooms = staySearch.bedrooms === null || stay.bedrooms >= staySearch.bedrooms;
-      const matchesBathrooms = staySearch.bathrooms === null || stay.bathrooms >= staySearch.bathrooms;
+      // Bedrooms and bathrooms describe a home's layout: a hotel's are its rooms.
+      const matchesBedrooms = staySearch.bedrooms === null || (!hotel && stay.bedrooms >= staySearch.bedrooms);
+      const matchesBathrooms = staySearch.bathrooms === null || (!hotel && stay.bathrooms >= staySearch.bathrooms);
       const matchesPrice = staySearch.maxPrice === null || stay.price <= staySearch.maxPrice;
       const matchesRating = staySearch.minRating === null || stay.rating >= staySearch.minRating;
       const matchesFeatures = staySearch.features.every((feature) => matchesStayFeature(stay, feature));
 
-      return matchesDestination && matchesGuests && matchesBedrooms && matchesBathrooms && matchesPrice && matchesRating && matchesFeatures;
+      return matchesType && matchesDestination && matchesGuests && matchesBedrooms && matchesBathrooms && matchesPrice && matchesRating && matchesFeatures;
     });
 
       return sortStays(nextStays, staySearch.sort, activeQuery);
     },
-    [activeQuery, staySearch.bathrooms, staySearch.bedrooms, staySearch.destination, staySearch.features, staySearch.guests, staySearch.maxPrice, staySearch.minRating, staySearch.sort, textMatchedAccommodations],
+    [activeQuery, staySearch.bathrooms, staySearch.bedrooms, staySearch.destination, staySearch.features, staySearch.guests, staySearch.maxPrice, staySearch.minRating, staySearch.sort, staySearch.stayType, textMatchedAccommodations],
   );
+
+  // The Hotels / Entire places switch shows once there are hotels to tell apart.
+  const stayTypeCounts = useMemo(() => {
+    const hotels = (accommodations || []).filter((stay) => isHotelStay(stay)).length;
+    return { all: (accommodations || []).length, hotel: hotels, entire_place: (accommodations || []).length - hotels };
+  }, [accommodations]);
 
   const availableFeatureSuggestions = useMemo(() => {
     const matchedSuggestions = featureSuggestions.filter((feature) => {
@@ -183,10 +201,14 @@ export default function Accommodations() {
       chips.push(`${staySearch.minRating}+ rating`);
     }
 
+    if (staySearch.stayType !== "all") {
+      chips.push(staySearch.stayType === "hotel" ? "Hotels" : "Entire places");
+    }
+
     staySearch.features.forEach((feature) => chips.push(feature));
 
     return chips;
-  }, [stayNights, staySearch.bathrooms, staySearch.bedrooms, staySearch.checkIn, staySearch.checkOut, staySearch.destination, staySearch.features, staySearch.guests, staySearch.maxPrice, staySearch.minRating]);
+  }, [stayNights, staySearch.bathrooms, staySearch.bedrooms, staySearch.checkIn, staySearch.checkOut, staySearch.destination, staySearch.features, staySearch.guests, staySearch.maxPrice, staySearch.minRating, staySearch.stayType]);
 
   const clearAllFilters = () => {
     setLocation("/accommodations");
@@ -225,11 +247,39 @@ export default function Accommodations() {
             Accommodation in Mombasa and Nyali
           </h1>
           <p className="max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">
-            Browse furnished apartments, holiday homes and short-stay accommodation in Mombasa, Nyali and the wider Kenyan Coast, with practical concierge support when you need it.
+            Browse {stayTypeCounts.hotel > 0 ? "hotels, " : ""}furnished apartments, holiday homes and short-stay accommodation in Mombasa, Nyali and the wider Kenyan Coast, with practical concierge support when you need it.
           </p>
         </div>
 
-        {activeQuery || hasTripFilters ? (
+        {stayTypeCounts.hotel > 0 ? (
+          <div
+            role="radiogroup"
+            aria-label="Kind of stay"
+            className="mb-5 inline-flex max-w-full flex-wrap gap-1 rounded-full border border-border/60 bg-muted/30 p-1"
+          >
+            {stayTypeOptions.map((option) => {
+              const active = staySearch.stayType === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => updateStaySearch({ stayType: option.value })}
+                  className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                    active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                  data-testid={`button-stay-type-${option.value}`}
+                >
+                  {option.label}
+                  <span className="ml-1.5 text-xs text-muted-foreground">{stayTypeCounts[option.value]}</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+
+        {activeQuery || hasTripFilters || staySearch.stayType !== "all" ? (
           <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-border/60 bg-muted/30 px-4 py-3 md:flex-row md:items-center md:justify-between">
             <div className="space-y-2">
               <p className="text-sm text-muted-foreground">
@@ -411,14 +461,17 @@ export default function Accommodations() {
               className="group overflow-hidden border-border/60 bg-gradient-to-b from-background via-background to-muted/20 shadow-[0_18px_50px_-30px_rgba(15,23,42,0.5)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_70px_-32px_rgba(15,23,42,0.65)]"
               data-testid={`card-accommodation-${accommodation.id}`}
             >
-              <StayMediaCarousel
-                stay={accommodation}
-                aspectClassName="aspect-[16/10]"
-                containerClassName="relative overflow-hidden bg-muted"
-                imageClassName="transition-transform duration-500 group-hover:scale-[1.03]"
-                eagerFirstImage={index < 4}
-                showArrows={false}
-              />
+              <div className="relative">
+                <StayMediaCarousel
+                  stay={accommodation}
+                  aspectClassName="aspect-[16/10]"
+                  containerClassName="relative overflow-hidden bg-muted"
+                  imageClassName="transition-transform duration-500 group-hover:scale-[1.03]"
+                  eagerFirstImage={index < 4}
+                  showArrows={false}
+                />
+                <StayKindBadge stay={accommodation} overlay className="pointer-events-none absolute left-3 top-3 z-10" />
+              </div>
               
               <div className="p-5">
                 <div className="flex items-start justify-between gap-2 mb-2">
@@ -438,11 +491,24 @@ export default function Accommodations() {
                     <span>Rated {accommodation.rating.toFixed(1)}/5</span>
                   </div>
                   <span>•</span>
-                  <div className="flex items-center gap-1">
-                    <Users className="h-4 w-4" />
-                    <span>Up to {accommodation.maxOccupancy}</span>
-                  </div>
+                  {isHotelStay(accommodation) ? (
+                    <div className="flex items-center gap-1">
+                      <BedDouble className="h-4 w-4" />
+                      <span>
+                        {(accommodation.roomTypes?.length ?? 0)} room type{accommodation.roomTypes?.length === 1 ? "" : "s"}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1">
+                      <Users className="h-4 w-4" />
+                      <span>Up to {accommodation.maxOccupancy} · {accommodation.bedrooms} bedroom{accommodation.bedrooms === 1 ? "" : "s"}</span>
+                    </div>
+                  )}
                 </div>
+
+                {isHotelStay(accommodation) ? (
+                  <MealPlanChips plans={summarizeHotelRooms(accommodation.roomTypes ?? []).mealPlans} className="mb-3" />
+                ) : null}
 
                 <div className="flex flex-wrap gap-2 mb-3">
                   {accommodation.features.slice(0, 3).map((feature, idx) => (
@@ -466,18 +532,19 @@ export default function Accommodations() {
                   </div>
                   <div className="flex flex-col gap-3 min-[460px]:items-end">
                     <div className="text-right">
+                      {isHotelStay(accommodation) ? <div className="text-xs text-muted-foreground">from</div> : null}
                       <CurrencyAmount
                         amountUsd={accommodation.price}
                         primaryClassName="text-lg font-semibold tracking-tight"
                       />
-                      <div className="text-xs text-muted-foreground">per day</div>
+                      <div className="text-xs text-muted-foreground">{isHotelStay(accommodation) ? "per room / night" : "per day"}</div>
                     </div>
                     <Button
                       className="w-full rounded-full px-5 min-[460px]:w-auto"
                       onClick={() => setLocation(`${getPublicListingPath("stay", accommodation.id, accommodation.title)}${staySearchSuffix}`)}
                       data-testid={`button-view-stay-${accommodation.id}`}
                     >
-                      View Stay
+                      {isHotelStay(accommodation) ? "See rooms" : "View Stay"}
                     </Button>
                   </div>
                 </div>

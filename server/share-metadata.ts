@@ -1,6 +1,7 @@
 import type { Request } from "express";
 import type { BlogPost, Car, Cook, Errand, Experience, Stay } from "@shared/schema";
 import { getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
+import { isHotelStay } from "@shared/hotel-rooms";
 import {
   buildListingSeoDescription,
   formatSeoLocation,
@@ -126,12 +127,21 @@ function joinDetails(parts: Array<string | null | undefined>) {
 
 function buildStayMetadata(stay: Stay, baseUrl: string, canonicalUrl: string, currency: ShareCurrency): ShareMetadata {
   const location = formatSeoLocation(stay.location);
-  const details = joinDetails([
-    location,
-    `${stay.bedrooms}-bedroom accommodation with ${stay.bathrooms} bathrooms`,
-    formatShareAmount(stay.price, " per night", currency),
-    `up to ${stay.maxOccupancy} guest${stay.maxOccupancy === 1 ? "" : "s"}`,
-  ]);
+  // A hotel's price is its lowest room rate, and its bedrooms are its rooms.
+  const fromPrice = formatShareAmount(stay.price, " per room per night", currency);
+  const details = isHotelStay(stay)
+    ? joinDetails([
+      location,
+      stay.starRating ? `${stay.starRating}-star hotel` : "Hotel",
+      stay.bedrooms > 0 ? `${stay.bedrooms} room${stay.bedrooms === 1 ? "" : "s"}` : null,
+      fromPrice ? `from ${fromPrice}` : null,
+    ])
+    : joinDetails([
+      location,
+      `${stay.bedrooms}-bedroom accommodation with ${stay.bathrooms} bathrooms`,
+      formatShareAmount(stay.price, " per night", currency),
+      `up to ${stay.maxOccupancy} guest${stay.maxOccupancy === 1 ? "" : "s"}`,
+    ]);
 
   return {
     title: getListingSeoTitle("stay", stay.title, stay.location),
@@ -243,7 +253,9 @@ function getListingStructuredData(
   const location = formatSeoLocation("experienceLocation" in listing
     ? listing.experienceLocation || listing.location
     : listing.location);
-  const type = kind === "stay" ? "LodgingBusiness" : kind === "car" ? "Car" : kind === "experience" ? "TouristAttraction" : "Service";
+  const type = kind === "stay"
+    ? (isHotelStay(listing as Stay) ? "Hotel" : "LodgingBusiness")
+    : kind === "car" ? "Car" : kind === "experience" ? "TouristAttraction" : "Service";
   const structuredData: Record<string, unknown> = {
     "@context": "https://schema.org",
     "@type": type,
@@ -273,7 +285,16 @@ function getListingStructuredData(
     };
   }
 
-  if (kind === "stay") {
+  if (kind === "stay" && isHotelStay(listing as Stay)) {
+    const hotel = listing as Stay;
+    structuredData.numberOfRooms = hotel.bedrooms;
+    if (hotel.starRating) structuredData.starRating = { "@type": "Rating", ratingValue: hotel.starRating };
+    if (hotel.checkInTime) structuredData.checkinTime = hotel.checkInTime;
+    if (hotel.checkOutTime) structuredData.checkoutTime = hotel.checkOutTime;
+    if (hotel.price > 0) {
+      structuredData.offers = { "@type": "AggregateOffer", priceCurrency: "USD", lowPrice: hotel.price, url: canonicalUrl };
+    }
+  } else if (kind === "stay") {
     const stay = listing as Stay;
     structuredData.numberOfRooms = stay.bedrooms;
     structuredData.occupancy = { "@type": "QuantitativeValue", maxValue: stay.maxOccupancy };

@@ -50,7 +50,9 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { getShortShareUrl, type ShareServiceType } from "@/lib/share-links";
 import { getCookCustomMenuRequestFee, getCookExtraGuestInclusivePrice, getCookExtraGuestServiceFee, getCookInclusivePrice, getCookMinimumGuests, getCookServiceFee } from "@shared/cook-pricing";
 import { HOUSE_CLEANING_BASE_ROOM_LABEL, getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
-import type { Stay, Car as CarType, Cook as CookType, Errand as ErrandType, Experience as ExperienceType } from "@shared/schema";
+import type { Stay, StayWithRooms, Car as CarType, Cook as CookType, Errand as ErrandType, Experience as ExperienceType } from "@shared/schema";
+import { isHotelStay } from "@shared/hotel-rooms";
+import { StayKindBadge } from "@/components/stay-kind";
 
 type ServiceCategory = "stays" | "cars" | "cooks" | "errands" | "experiences";
 type VisibilityFilter = "all" | "public" | "private";
@@ -641,6 +643,7 @@ export default function AdminListings() {
                         <CardContent className="space-y-4 p-5">
                           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                             <div className="space-y-1">
+                              <StayKindBadge stay={stay} className="mb-1" />
                               <div className="text-lg font-semibold tracking-tight text-foreground">{stay.title}</div>
                               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                                 <MapPin className="h-4 w-4 shrink-0" />
@@ -654,8 +657,8 @@ export default function AdminListings() {
 
                           <div className="grid gap-3 sm:grid-cols-3">
                             <div className="rounded-2xl border border-stone-200 bg-white p-4">
-                              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Price / night</div>
-                              <div className="mt-2 text-lg font-semibold text-foreground">{formatAmount(stay.price)}</div>
+                              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">{isHotelStay(stay) ? "From / room / night" : "Price / night"}</div>
+                              <div className="mt-2 text-lg font-semibold text-foreground">{isHotelStay(stay) && stay.price <= 0 ? "No rooms yet" : formatAmount(stay.price)}</div>
                             </div>
                             <div className="rounded-2xl border border-stone-200 bg-white p-4">
                               <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Occupancy</div>
@@ -663,7 +666,11 @@ export default function AdminListings() {
                             </div>
                             <div className="rounded-2xl border border-stone-200 bg-white p-4">
                               <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Rooms</div>
-                              <div className="mt-2 text-lg font-semibold text-foreground">{stay.bedrooms} bd | {stay.bathrooms} ba</div>
+                              <div className="mt-2 text-lg font-semibold text-foreground">
+                                {isHotelStay(stay)
+                                  ? `${(stay as StayWithRooms).roomTypes?.length ?? 0} type${(stay as StayWithRooms).roomTypes?.length === 1 ? "" : "s"} | ${stay.bedrooms} rooms`
+                                  : `${stay.bedrooms} bd | ${stay.bathrooms} ba`}
+                              </div>
                             </div>
                           </div>
 

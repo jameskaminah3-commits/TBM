@@ -23,6 +23,7 @@ import {
   updateMarketingPromoSchema,
   insertListingSchema,
   insertStaySchema,
+  insertStayRoomTypeSchema,
   insertStayReservationSchema,
   insertCarReservationSchema,
   insertCarSchema,
@@ -54,7 +55,23 @@ import {
   type BookingServiceAssignment,
   type BookingServiceAssignmentStatus,
   type ProviderBookingAssignmentView,
+  type Stay,
+  type StayReservation,
+  type StayRoomType,
 } from "@shared/schema";
+import {
+  countRoomsLeft,
+  findSoldOutNights,
+  getBlockRoomClaim,
+  getBookingRoomClaim,
+  getOccupiedNights,
+  isBookableRoomType,
+  isHotelStay,
+  quoteHotelRooms,
+  sortRoomRates,
+  type HotelStaySnapshot,
+  type RoomClaim,
+} from "@shared/hotel-rooms";
 import { listUploads, saveBase64Upload } from "./media";
 import { db } from "./db";
 import { bookings, users, stays, cars, cooks, errands, experiences, listings, blogPosts, customOffers, stayReservations, carReservations, cookReservations } from "@shared/schema";
@@ -105,7 +122,7 @@ import { sanitizeUserRecord } from "./user-sanitizer";
 import { registerZainaRoutes } from "./zaina/routes";
 import { registerZainaAgentRoutes } from "./zaina/agent-routes";
 import { getUsdToKesRate } from "./currency";
-import { formatKenyaDateTime, kenyaClockMinutes, kenyaDateTimeToIso } from "@shared/calendar-dates";
+import { addCalendarDays, formatKenyaDateTime, isCalendarDate, kenyaClockMinutes, kenyaDateTimeToIso } from "@shared/calendar-dates";
 
 function normalizeDateOnly(value: string) {
   const date = new Date(`${value}T00:00:00.000Z`);
@@ -644,19 +661,40 @@ type BookingInventoryItem = {
   label: string;
   /** Advisory-lock key, the same one Zaina's booking tools use. */
   lockKey: string;
+  /** At a hotel, a booking holds some rooms of one type, not the whole stay. */
+  hotelRooms?: { roomType: StayRoomType; rooms: number; hotelTitle: string };
 };
 
-/** Who else holds the dates: another booking (still paying, or paid), or a calendar block. */
-type DatesClaim = { bookingId: string | null; stillPaying: boolean };
+/**
+ * Who else holds the dates: another booking (still paying, or paid), or a
+ * calendar block. At a hotel, `roomsLeft` is how many rooms of the type are
+ * still free for these dates.
+ */
+type DatesClaim = { bookingId: string | null; stillPaying: boolean; roomsLeft?: number };
 
 /** The stay, cars, and chefs a booking reserves (a stay's add-ons included). */
 async function getBookingInventoryItems(
-  booking: Pick<import("@shared/schema").Booking, "accommodationId" | "selectedServices">,
+  booking: Pick<import("@shared/schema").Booking, "accommodationId" | "selectedServices" | "roomTypeId" | "roomCount">,
 ): Promise<BookingInventoryItem[]> {
   const items: BookingInventoryItem[] = [];
   if (booking.accommodationId) {
     const stay = await storage.getStay(booking.accommodationId);
-    items.push({ kind: "stay", id: booking.accommodationId, label: stay?.title ?? "This stay", lockKey: `stay:${booking.accommodationId}` });
+    const roomType = stay && isHotelStay(stay) && booking.roomTypeId
+      ? await storage.getStayRoomType(booking.roomTypeId)
+      : undefined;
+    // The same lock for every room in a hotel, and the same as Zaina's.
+    const lockKey = `stay:${booking.accommodationId}`;
+    if (stay && roomType && roomType.stayId === stay.id) {
+      items.push({
+        kind: "stay",
+        id: booking.accommodationId,
+        label: `${roomType.name} at ${stay.title}`,
+        lockKey,
+        hotelRooms: { roomType, rooms: Math.max(1, booking.roomCount ?? 1), hotelTitle: stay.title },
+      });
+    } else {
+      items.push({ kind: "stay", id: booking.accommodationId, label: stay?.title ?? "This stay", lockKey });
+    }
   }
   for (const serviceId of Array.from(new Set(booking.selectedServices ?? []))) {
     const car = await storage.getCar(serviceId);
@@ -707,6 +745,11 @@ async function findOtherClaimOnDates(
       lte(bookings.checkIn, booking.checkOut),
       gte(bookings.checkOut, booking.checkIn),
     ));
+
+  if (item.hotelRooms) {
+    return await findRoomsClaimOnDates(executor, booking, item.hotelRooms, candidates, counts);
+  }
+
   const other = candidates.find((candidate) => {
     const theirs = getOccupiedDates(candidate, item.kind);
     return counts(candidate) && datesOverlapDateRange(mine.start, mine.end, theirs.start, theirs.end);
@@ -728,6 +771,38 @@ async function findOtherClaimOnDates(
   return blocked ? { bookingId: null, stillPaying: false } : null;
 }
 
+/**
+ * At a hotel: whether enough rooms of the booking's type are free on every
+ * night, counting the other bookings `counts` accepts and the calendar's
+ * blocks. If not, but they would be once guests who are still paying are
+ * counted out, those guests hold the last rooms only for now.
+ */
+async function findRoomsClaimOnDates(
+  executor: any,
+  booking: import("@shared/schema").Booking,
+  hotelRooms: NonNullable<BookingInventoryItem["hotelRooms"]>,
+  candidates: import("@shared/schema").Booking[],
+  counts: (other: import("@shared/schema").Booking) => boolean,
+): Promise<DatesClaim | null> {
+  const blocks: StayReservation[] = await executor.select().from(stayReservations)
+    .where(and(eq(stayReservations.stayId, hotelRooms.roomType.stayId), eq(stayReservations.status, "blocked")));
+  const { firstNight, lastNight } = getOccupiedNights(booking.checkIn, booking.checkOut);
+  const counted = candidates.filter(counts);
+  const roomsLeft = countRoomsLeft(hotelRooms.roomType, getHotelRoomClaims(counted, blocks, () => true), firstNight, lastNight);
+  if (roomsLeft >= hotelRooms.rooms) {
+    return null;
+  }
+
+  const paid = counted.filter(holdsDatesWithPayment);
+  const roomsLeftOncePaid = countRoomsLeft(hotelRooms.roomType, getHotelRoomClaims(paid, blocks, () => true), firstNight, lastNight);
+  const holder = counted.find((other) => !other.roomTypeId || other.roomTypeId === hotelRooms.roomType.id);
+  return {
+    bookingId: holder?.id ?? null,
+    stillPaying: roomsLeftOncePaid >= hotelRooms.rooms,
+    roomsLeft,
+  };
+}
+
 // A booking that already holds its dates (a deposit or payment is in) is
 // paying its balance, and a chef's custom-menu request fee reserves nothing.
 function paymentReservesDates(booking: import("@shared/schema").Booking) {
@@ -739,6 +814,20 @@ function paymentReservesDates(booking: import("@shared/schema").Booking) {
 
 function buildDatesTakenMessage(item: BookingInventoryItem, claim: DatesClaim) {
   const support = `contact our support team on WhatsApp or call ${SUPPORT_PHONE_DISPLAY}`;
+  if (item.hotelRooms) {
+    const { roomType, rooms, hotelTitle } = item.hotelRooms;
+    if (claim.stillPaying) {
+      return `Sorry — other guests are paying for the last ${roomType.name} rooms at ${hotelTitle} on these dates right now, so you haven't been charged. `
+        + `If their payments don't go through, the rooms are free again within ${bookingPaymentHoldMinutes} minutes. `
+        + `You can also choose other dates or another room, or ${support}.`;
+    }
+    const left = claim.roomsLeft ?? 0;
+    const what = left > 0
+      ? `only ${left} ${roomType.name} room${left === 1 ? " is" : "s are"} left at ${hotelTitle} for these dates, and your booking needs ${rooms}`
+      : `${roomType.name} at ${hotelTitle} is now fully booked for these dates`;
+    return `Sorry — ${what}, so you haven't been charged. Please choose other dates or another room, or ${support} `
+      + "and we'll help you find an alternative.";
+  }
   if (claim.stillPaying) {
     return `Sorry — another guest is paying for ${item.label} on these dates right now, so you haven't been charged. `
       + `If their payment doesn't go through, the dates are free again within ${bookingPaymentHoldMinutes} minutes. `
@@ -753,6 +842,16 @@ function buildDatesTakenMessage(item: BookingInventoryItem, claim: DatesClaim) {
 
 /** Why the team can't lock a booking's dates: who or what already holds them. */
 async function describeTakenDatesForTeam(taken: TakenDates) {
+  if (taken.item.hotelRooms) {
+    const { roomType, rooms, hotelTitle } = taken.item.hotelRooms;
+    const left = taken.claim.roomsLeft ?? 0;
+    const free = left === 0
+      ? `No ${roomType.name} rooms are free at ${hotelTitle} on these dates`
+      : `Only ${left} ${roomType.name} room${left === 1 ? " is" : "s are"} free at ${hotelTitle} on these dates, and this booking needs ${rooms}`;
+    return taken.claim.stillPaying
+      ? `${free}: other guests are paying for them right now. If their payments don't go through, the rooms are free again within ${bookingPaymentHoldMinutes} minutes.`
+      : `${free}: the others are booked, or blocked on the hotel's calendar.`;
+  }
   if (!taken.claim.bookingId) {
     return `${taken.item.label} is blocked on its calendar for these dates.`;
   }
@@ -2179,7 +2278,17 @@ function shouldBookingBlockAvailability(booking: any) {
   return true;
 }
 
-async function getStayAvailabilitySummary(stayId: string) {
+/**
+ * A stay's booked and blocked dates. Guests ("public") see when it's taken,
+ * never who by; the team sees each booking and block. A hotel is taken on
+ * a night only when every room is.
+ */
+async function getStayAvailabilitySummary(stayId: string, audience: "public" | "team" = "team") {
+  const stay = await storage.getStay(stayId);
+  if (stay && isHotelStay(stay)) {
+    return await getHotelAvailabilitySummary(stay, audience);
+  }
+
   const stayBookings = await storage.getBookingsByAccommodationId(stayId);
   const manualReservations = await storage.getStayReservations(stayId);
   const activeBookings = stayBookings
@@ -2194,7 +2303,7 @@ async function getStayAvailabilitySummary(stayId: string) {
       endDate: toIsoDate(getOccupiedEndDate(booking.checkIn, booking.checkOut)),
       checkoutDate: booking.checkOut,
       status: booking.status,
-      guestName: booking.guestName,
+      guestName: audience === "public" ? "Booked" : booking.guestName,
     }))
     .filter(isAvailabilityRangeCurrentOrFuture);
 
@@ -2258,9 +2367,211 @@ async function getStayAvailabilitySummary(stayId: string) {
   }
 
   return {
+    propertyType: "entire_place" as const,
     blockedRanges,
     availableFrom,
   };
+}
+
+// ─── Hotels ─────────────────────────────────────────────────────────────
+// A hotel sells rooms by type and meal plan (shared/hotel-rooms.ts). Its
+// bookings and calendar blocks hold rooms, so whether it's free is a count of
+// the rooms left night by night, not a yes or no for the whole stay.
+
+/** The rooms held at a hotel: by bookings that `counts` accepts, and by calendar blocks. */
+function getHotelRoomClaims(
+  stayBookings: import("@shared/schema").Booking[],
+  blocks: Array<Pick<StayReservation, "status" | "startDate" | "endDate" | "roomTypeId" | "roomCount">>,
+  counts: (booking: import("@shared/schema").Booking) => boolean = shouldBookingBlockAvailability,
+): RoomClaim[] {
+  return [
+    ...stayBookings.filter((booking) => booking.status !== "cancelled" && counts(booking)).map(getBookingRoomClaim),
+    ...blocks.filter((block) => block.status === "blocked").map(getBlockRoomClaim),
+  ];
+}
+
+/** A hotel's room types as guests see them: on sale, with their rates in meal-plan order. */
+function toPublicRoomTypes(roomTypes: StayRoomType[]): StayRoomType[] {
+  return roomTypes
+    .filter(isBookableRoomType)
+    .map((roomType) => ({ ...roomType, rates: sortRoomRates(roomType.rates.filter((rate) => rate.price > 0)) }));
+}
+
+/**
+ * Stays with each hotel's room types. Guests ("public") see a hotel only once
+ * it has a room to sell, and only the rooms on sale; the team sees them all.
+ */
+async function withHotelRooms<T extends Stay>(stayList: T[], audience: "public" | "team"): Promise<Array<T & { roomTypes?: StayRoomType[] }>> {
+  const hotelIds = stayList.filter((stay) => isHotelStay(stay)).map((stay) => stay.id);
+  const roomTypesByStay = new Map<string, StayRoomType[]>();
+  for (const roomType of await storage.getRoomTypesForStays(hotelIds)) {
+    roomTypesByStay.set(roomType.stayId, [...(roomTypesByStay.get(roomType.stayId) ?? []), roomType]);
+  }
+  return stayList.flatMap((stay) => {
+    if (!isHotelStay(stay)) {
+      return [stay];
+    }
+    const roomTypes = roomTypesByStay.get(stay.id) ?? [];
+    if (audience === "team") {
+      return [{ ...stay, roomTypes: roomTypes.map((roomType) => ({ ...roomType, rates: sortRoomRates(roomType.rates) })) }];
+    }
+    const onSale = toPublicRoomTypes(roomTypes);
+    return onSale.length > 0 ? [{ ...stay, roomTypes: onSale }] : [];
+  });
+}
+
+/** Rooms of each type free on every night from check-in to check-out. */
+async function getHotelRoomsLeft(stayId: string, checkIn: string, checkOut: string) {
+  const [roomTypes, stayBookings, blocks] = await Promise.all([
+    storage.getStayRoomTypes(stayId),
+    storage.getBookingsByAccommodationId(stayId),
+    storage.getStayReservations(stayId),
+  ]);
+  const claims = getHotelRoomClaims(stayBookings, blocks);
+  const { firstNight, lastNight } = getOccupiedNights(checkIn, checkOut);
+  return {
+    roomTypes,
+    roomsLeft: new Map(roomTypes.map((roomType) => [roomType.id, countRoomsLeft(roomType, claims, firstNight, lastNight)])),
+  };
+}
+
+async function getHotelAvailabilitySummary(stay: Stay, audience: "public" | "team") {
+  const [roomTypes, stayBookings, blocks] = await Promise.all([
+    storage.getStayRoomTypes(stay.id),
+    storage.getBookingsByAccommodationId(stay.id),
+    storage.getStayReservations(stay.id),
+  ]);
+  const claims = getHotelRoomClaims(stayBookings, blocks);
+  const today = getTodayIsoDate();
+  const lastNightHeld = claims.reduce((latest, claim) => (claim.lastNight > latest ? claim.lastNight : latest), today);
+  const soldOut = findSoldOutNights(roomTypes, claims, today, lastNightHeld);
+
+  let availableFrom = today;
+  for (const range of soldOut) {
+    if (range.startDate <= availableFrom && availableFrom <= range.endDate) {
+      availableFrom = addCalendarDays(range.endDate, 1);
+    }
+  }
+
+  const soldOutRanges = soldOut.map((range) => ({
+    id: `sold-out-${range.startDate}`,
+    source: "sold-out" as const,
+    startDate: range.startDate,
+    endDate: range.endDate,
+    checkoutDate: addCalendarDays(range.endDate, 1),
+    status: "sold-out",
+    guestName: "Fully booked",
+  }));
+
+  if (audience === "public") {
+    return { propertyType: "hotel" as const, blockedRanges: soldOutRanges, availableFrom };
+  }
+
+  const roomTypeNames = new Map(roomTypes.map((roomType) => [roomType.id, roomType.name]));
+  const describeRooms = (roomTypeId: string | null | undefined, rooms: number | null | undefined) => ({
+    roomTypeId: roomTypeId ?? null,
+    roomTypeName: roomTypeId ? roomTypeNames.get(roomTypeId) ?? "A removed room type" : null,
+    rooms: roomTypeId ? rooms ?? null : null,
+  });
+  const bookingRanges = stayBookings
+    .filter((booking) => shouldBookingBlockAvailability(booking))
+    .map((booking) => ({
+      id: booking.id,
+      source: "booking" as const,
+      startDate: booking.checkIn,
+      endDate: toIsoDate(getOccupiedEndDate(booking.checkIn, booking.checkOut)),
+      checkoutDate: booking.checkOut,
+      status: booking.status,
+      guestName: booking.guestName,
+      ...describeRooms(booking.roomTypeId, booking.roomCount ?? 1),
+    }))
+    .filter(isAvailabilityRangeCurrentOrFuture);
+  const manualRanges = blocks
+    .filter((block) => block.status === "blocked")
+    .map((block) => ({
+      id: block.id,
+      source: "manual" as const,
+      startDate: block.startDate,
+      endDate: toIsoDate(getOccupiedEndDate(block.startDate, block.endDate)),
+      checkoutDate: block.endDate,
+      status: block.status,
+      guestName: "Manual block",
+      ...describeRooms(block.roomTypeId, block.roomCount),
+    }))
+    .filter(isAvailabilityRangeCurrentOrFuture);
+
+  return {
+    propertyType: "hotel" as const,
+    blockedRanges: [...bookingRanges, ...manualRanges].sort((a, b) => a.startDate.localeCompare(b.startDate)),
+    soldOutRanges,
+    availableFrom,
+  };
+}
+
+/**
+ * Whether the team can block these dates on a stay's calendar. An entire
+ * place can't be blocked over a guest's booking. A hotel can stop selling a
+ * night altogether (its booked rooms stay booked), or close some free rooms
+ * of one type.
+ */
+async function checkStayBlock(
+  stay: Stay,
+  block: { startDate: string; endDate: string; roomTypeId?: string | null; roomCount?: number | null },
+): Promise<{ status: number; error: string } | null> {
+  if (normalizeDateOnly(block.endDate).getTime() < normalizeDateOnly(block.startDate).getTime()) {
+    return { status: 400, error: "End date cannot be before start date" };
+  }
+
+  const existingBlocks = (await storage.getStayReservations(stay.id)).filter((reservation) => reservation.status === "blocked");
+
+  if (isHotelStay(stay)) {
+    const { firstNight, lastNight } = getOccupiedNights(block.startDate, block.endDate);
+    if (!block.roomTypeId) {
+      const overlapsHotelBlock = existingBlocks.some((existing) => {
+        const claim = getBlockRoomClaim(existing);
+        return claim.roomTypeId === null && claim.firstNight <= lastNight && claim.lastNight >= firstNight;
+      });
+      return overlapsHotelBlock ? { status: 409, error: "The whole hotel is already blocked on some of those dates." } : null;
+    }
+
+    const roomType = (await storage.getStayRoomTypes(stay.id)).find((entry) => entry.id === block.roomTypeId);
+    if (!roomType) {
+      return { status: 400, error: "Choose one of this hotel's room types, or block the whole hotel." };
+    }
+    if (block.roomCount && block.roomCount > roomType.roomCount) {
+      return { status: 400, error: `${roomType.name} has ${roomType.roomCount} room${roomType.roomCount === 1 ? "" : "s"}.` };
+    }
+    const claims = getHotelRoomClaims(await storage.getBookingsByAccommodationId(stay.id), existingBlocks);
+    const roomsLeft = countRoomsLeft(roomType, claims, firstNight, lastNight);
+    if (roomsLeft === 0) {
+      return { status: 409, error: `No ${roomType.name} rooms are free on some of those dates: they're booked or already blocked.` };
+    }
+    if (block.roomCount && block.roomCount > roomsLeft) {
+      return {
+        status: 409,
+        error: `Only ${roomsLeft} ${roomType.name} room${roomsLeft === 1 ? " is" : "s are"} free on some of those dates; the others are booked or already blocked.`,
+      };
+    }
+    return null;
+  }
+
+  const activeBookings = await storage.getBookingsByAccommodationId(stay.id);
+  const bookingConflict = activeBookings.some((booking) =>
+    shouldBookingBlockAvailability(booking) &&
+    datesOverlapDateRange(
+      block.startDate,
+      block.endDate,
+      booking.checkIn,
+      toIsoDate(getOccupiedEndDate(booking.checkIn, booking.checkOut)),
+    ),
+  );
+  if (bookingConflict) {
+    return { status: 409, error: "That date range already has a customer booking." };
+  }
+
+  const blockConflict = existingBlocks.some((reservation) =>
+    datesOverlapDateRange(block.startDate, block.endDate, reservation.startDate, reservation.endDate));
+  return blockConflict ? { status: 409, error: "That date range is already blocked." } : null;
 }
 
 async function getCarAvailabilitySummary(carId: string) {
@@ -3513,6 +3824,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const publicBookingData = publicBookingRequestSchema.parse(req.body ?? {});
       const validatedData = buildServerManagedBookingInput(publicBookingData, userId, guestEmail);
+      // A hotel booking's room, meal plan and prices, as the server priced them.
+      let hotelStay: HotelStaySnapshot | null = null;
+      if (validatedData.bookingType === "service" || !validatedData.accommodationId) {
+        validatedData.roomTypeId = null;
+        validatedData.roomCount = null;
+        validatedData.mealPlan = null;
+      }
       const parsedAttribution = marketingAttributionPayloadSchema.safeParse(req.body?.marketingAttribution);
       const marketingAttribution = parsedAttribution.success ? parsedAttribution.data : null;
       const requestedPromoCode = typeof req.body?.promoCode === "string" ? req.body.promoCode : null;
@@ -3548,14 +3866,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(409).json({ error: getUnavailableBookingMessage(stay.title) });
         }
 
-        if (validatedData.guests > stay.maxOccupancy) {
-          return res.status(400).json({
-            error: `This stay allows a maximum of ${stay.maxOccupancy} guest${stay.maxOccupancy === 1 ? "" : "s"}.`,
+        const occupiedDays = calculateChargeableDays(validatedData.checkIn, validatedData.checkOut);
+        let accommodationTotal = occupiedDays * stay.price;
+
+        if (isHotelStay(stay)) {
+          // A hotel: rooms of one type on one meal plan, priced from its rates,
+          // if enough of them are free on every night.
+          const { roomTypes, roomsLeft } = await getHotelRoomsLeft(stay.id, validatedData.checkIn, validatedData.checkOut);
+          const roomType = roomTypes.find((entry) => entry.id === validatedData.roomTypeId);
+          if (!roomType) {
+            return res.status(400).json({ error: "Choose a room for your stay." });
+          }
+          const quote = quoteHotelRooms({
+            roomType,
+            mealPlan: validatedData.mealPlan,
+            rooms: validatedData.roomCount ?? 1,
+            guests: validatedData.guests,
+            nights: occupiedDays,
           });
+          if (!quote.ok) {
+            return res.status(400).json({ error: quote.error });
+          }
+          const left = roomsLeft.get(roomType.id) ?? 0;
+          if (left < quote.snapshot.rooms) {
+            return res.status(409).json({
+              error: left === 0
+                ? `${roomType.name} is fully booked for those dates. Please choose another room or other dates.`
+                : `Only ${left} ${roomType.name} room${left === 1 ? " is" : "s are"} left for those dates. Please choose fewer rooms, another room, or other dates.`,
+            });
+          }
+          validatedData.roomTypeId = roomType.id;
+          validatedData.roomCount = quote.snapshot.rooms;
+          validatedData.mealPlan = quote.snapshot.mealPlan;
+          hotelStay = quote.snapshot;
+          accommodationTotal = quote.snapshot.accommodationTotal;
+        } else {
+          // An entire place is booked whole.
+          validatedData.roomTypeId = null;
+          validatedData.roomCount = null;
+          validatedData.mealPlan = null;
+
+          if (validatedData.guests > stay.maxOccupancy) {
+            return res.status(400).json({
+              error: `This stay allows a maximum of ${stay.maxOccupancy} guest${stay.maxOccupancy === 1 ? "" : "s"}.`,
+            });
+          }
         }
 
-        const activeBookings = await storage.getBookingsByAccommodationId(validatedData.accommodationId);
-        const manualReservations = await storage.getStayReservations(validatedData.accommodationId);
+        const activeBookings = isHotelStay(stay) ? [] : await storage.getBookingsByAccommodationId(validatedData.accommodationId);
+        const manualReservations = isHotelStay(stay) ? [] : await storage.getStayReservations(validatedData.accommodationId);
         const bookingEndDate = toIsoDate(getOccupiedEndDate(validatedData.checkIn, validatedData.checkOut));
 
         const bookingOverlapRanges = activeBookings
@@ -3618,8 +3977,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
 
-        const occupiedDays = calculateChargeableDays(validatedData.checkIn, validatedData.checkOut);
-        const accommodationTotal = occupiedDays * stay.price;
         const addonSelection = await validateAccommodationAddonSelections({
           selectedServiceIds: validatedData.selectedServices || [],
           stayServiceSelections: validatedData.stayServiceSelections || [],
@@ -3627,6 +3984,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           checkIn: validatedData.checkIn,
           checkOut: validatedData.checkOut,
         });
+
+        if (isHotelStay(stay) && addonSelection.stayServiceSelections.some((selection) => selection.category === "cooks" || selection.category === "errands")) {
+          return res.status(400).json({
+            error: "Private chefs and home services are for entire places. At a hotel, meals come with your room's meal plan.",
+          });
+        }
 
         validatedData.selectedServices = addonSelection.selectedServices;
         validatedData.stayServiceSelections = addonSelection.stayServiceSelections;
@@ -4107,6 +4470,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const booking = await storage.createBooking({
         ...validatedData,
+        hotelStay,
         paymentStatus: validatedData.totalPrice > 0 ? "pending" : "paid",
         paymentCurrency: "USD",
         paymentCheckoutAmount: null,
@@ -6262,7 +6626,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/admin/stays", requireAdmin, async (_req, res) => {
     try {
       const stays = await storage.getStays();
-      res.json(stays);
+      res.json(await withHotelRooms(stays, "team"));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch stays" });
     }
@@ -6274,7 +6638,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!stay) {
         return res.status(404).json({ error: "Stay not found" });
       }
-      res.json(stay);
+      const [withRooms] = await withHotelRooms([stay], "team");
+      res.json(withRooms);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch stay" });
     }
@@ -6282,8 +6647,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/admin/stays", requireAdmin, async (req: any, res) => {
     try {
+      // A hotel's price, guests and rooms come from the room types added next.
+      const body = req.body?.propertyType === "hotel"
+        ? { ...req.body, price: 0, maxOccupancy: 0, bedrooms: 0, bathrooms: 0 }
+        : req.body;
       const validatedData = ensurePublicListingHasManager(
-        insertStaySchema.parse(req.body),
+        insertStaySchema.parse(body),
         req.user?.claims?.sub,
       );
       const stay = await storage.createStay(validatedData);
@@ -6311,7 +6680,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         existingStay.managerUserId,
         req.user?.claims?.sub,
       );
-      const stay = await storage.updateStay(req.params.id, validatedData);
+
+      const nextType = validatedData.propertyType ?? existingStay.propertyType;
+      if (validatedData.propertyType && validatedData.propertyType !== existingStay.propertyType) {
+        // Bookings already made hold the whole place, or rooms: switching
+        // would change what they hold.
+        const today = getTodayIsoDate();
+        const upcoming = (await storage.getBookingsByAccommodationId(existingStay.id))
+          .filter((booking) => booking.status !== "cancelled" && booking.checkOut >= today);
+        if (upcoming.length > 0) {
+          return res.status(409).json({
+            error: `This stay has ${upcoming.length} upcoming booking${upcoming.length === 1 ? "" : "s"}. `
+              + "Switch between hotel and entire place once they're over or cancelled, or list the other kind as a new stay.",
+          });
+        }
+      }
+      if (nextType === "hotel") {
+        // Set by its room types (refreshHotelFromRooms below).
+        delete validatedData.price;
+        delete validatedData.maxOccupancy;
+        delete validatedData.bedrooms;
+        delete validatedData.bathrooms;
+      }
+
+      let stay = await storage.updateStay(req.params.id, validatedData);
+      if (stay && nextType === "hotel") {
+        stay = await storage.refreshHotelFromRooms(stay.id) ?? stay;
+      }
       if (stay) {
         await syncRelatedServiceBookings("stays", stay.id, {
           notifyProviders: existingStay.managerUserId !== stay.managerUserId,
@@ -6350,6 +6745,101 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(await getStayAvailabilitySummary(req.params.id));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch stay availability" });
+    }
+  });
+
+  // A hotel's room types, with their rooms and their rates on each meal plan.
+  async function getHotelForRoomTypes(stayId: string, res: ExpressResponse): Promise<Stay | null> {
+    const stay = await storage.getStay(stayId);
+    if (!stay) {
+      res.status(404).json({ error: "Stay not found" });
+      return null;
+    }
+    if (!isHotelStay(stay)) {
+      res.status(409).json({ error: "Rooms and meal plans are for hotels. Set this stay's type to Hotel first." });
+      return null;
+    }
+    return stay;
+  }
+
+  function sendRoomTypeValidationError(error: unknown, res: ExpressResponse, action: string) {
+    if (error instanceof z.ZodError) {
+      const first = error.issues[0];
+      return res.status(400).json({ error: first?.message || "Check the room's details." });
+    }
+    console.error(`Failed to ${action} room type:`, error);
+    return res.status(500).json({ error: `Failed to ${action} room type` });
+  }
+
+  app.get("/api/admin/stays/:id/room-types", requireAdmin, async (req, res) => {
+    try {
+      const stay = await storage.getStay(req.params.id);
+      if (!stay) {
+        return res.status(404).json({ error: "Stay not found" });
+      }
+      const roomTypes = await storage.getStayRoomTypes(stay.id);
+      res.json(roomTypes.map((roomType) => ({ ...roomType, rates: sortRoomRates(roomType.rates) })));
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch room types" });
+    }
+  });
+
+  app.post("/api/admin/stays/:id/room-types", requireAdmin, async (req, res) => {
+    try {
+      const stay = await getHotelForRoomTypes(req.params.id, res);
+      if (!stay) {
+        return;
+      }
+      const data = insertStayRoomTypeSchema.parse(req.body ?? {});
+      const roomType = await storage.createStayRoomType(stay.id, { ...data, rates: sortRoomRates(data.rates) });
+      res.status(201).json(roomType);
+    } catch (error) {
+      sendRoomTypeValidationError(error, res, "create");
+    }
+  });
+
+  app.patch("/api/admin/stays/:id/room-types/:roomTypeId", requireAdmin, async (req, res) => {
+    try {
+      const stay = await getHotelForRoomTypes(req.params.id, res);
+      if (!stay) {
+        return;
+      }
+      const existing = await storage.getStayRoomType(req.params.roomTypeId);
+      if (!existing || existing.stayId !== stay.id) {
+        return res.status(404).json({ error: "Room type not found" });
+      }
+      const data = insertStayRoomTypeSchema.partial().parse(req.body ?? {});
+      const roomType = await storage.updateStayRoomType(existing.id, data.rates ? { ...data, rates: sortRoomRates(data.rates) } : data);
+      res.json(roomType);
+    } catch (error) {
+      sendRoomTypeValidationError(error, res, "update");
+    }
+  });
+
+  app.delete("/api/admin/stays/:id/room-types/:roomTypeId", requireAdmin, async (req, res) => {
+    try {
+      const stay = await getHotelForRoomTypes(req.params.id, res);
+      if (!stay) {
+        return;
+      }
+      const existing = await storage.getStayRoomType(req.params.roomTypeId);
+      if (!existing || existing.stayId !== stay.id) {
+        return res.status(404).json({ error: "Room type not found" });
+      }
+      // Guests' bookings keep their room: stop selling it instead.
+      const today = getTodayIsoDate();
+      const upcoming = (await storage.getBookingsByAccommodationId(stay.id))
+        .filter((booking) => booking.roomTypeId === existing.id && booking.status !== "cancelled" && booking.checkOut >= today);
+      if (upcoming.length > 0) {
+        return res.status(409).json({
+          error: `${existing.name} has ${upcoming.length} upcoming booking${upcoming.length === 1 ? "" : "s"}. `
+            + "Stop selling it instead: it stays on those bookings, and guests can't book it again.",
+        });
+      }
+      await storage.deleteStayRoomType(existing.id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete room type" });
     }
   });
 
@@ -7163,10 +7653,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "Only stay providers can create stay listings." });
       }
 
+      // Partners list entire places; the team sets up hotels, with their rooms and rates.
       const validatedData = insertStaySchema.parse({
         ...req.body,
         managerUserId: req.user.claims.sub,
         isPublic: false,
+        propertyType: "entire_place",
       });
       const stay = await storage.createStay(validatedData);
       res.status(201).json(stay);
@@ -7214,14 +7706,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         features,
       } = parsed;
 
+      // A hotel's price, guests and rooms follow from its room types.
+      const isHotel = isHotelStay(access.stay);
       const updatedStay = await storage.updateStay(req.params.id, {
         title,
         location,
         description,
-        price,
-        maxOccupancy,
-        bedrooms,
-        bathrooms,
+        price: isHotel ? undefined : price,
+        maxOccupancy: isHotel ? undefined : maxOccupancy,
+        bedrooms: isHotel ? undefined : bedrooms,
+        bathrooms: isHotel ? undefined : bathrooms,
         imageUrl,
         galleryUrls,
         mediaType,
@@ -7368,39 +7862,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         stayId: req.params.id,
         status: "blocked",
       });
-
-      if (normalizeDateOnly(validatedData.endDate).getTime() < normalizeDateOnly(validatedData.startDate).getTime()) {
-        return res.status(400).json({ error: "End date cannot be before start date" });
+      if (!isHotelStay(stay)) {
+        validatedData.roomTypeId = null;
+        validatedData.roomCount = null;
       }
 
-      const activeBookings = await storage.getBookingsByAccommodationId(req.params.id);
-      const bookingConflict = activeBookings.some((booking) =>
-        shouldBookingBlockAvailability(booking) &&
-        datesOverlapDateRange(
-          validatedData.startDate,
-          validatedData.endDate,
-          booking.checkIn,
-          toIsoDate(getOccupiedEndDate(booking.checkIn, booking.checkOut)),
-        ),
-      );
-
-      if (bookingConflict) {
-        return res.status(409).json({ error: "That date range already has a customer booking." });
-      }
-
-      const existingBlocks = await storage.getStayReservations(req.params.id);
-      const blockConflict = existingBlocks.some((reservation) =>
-        reservation.status === "blocked" &&
-        datesOverlapDateRange(
-          validatedData.startDate,
-          validatedData.endDate,
-          reservation.startDate,
-          reservation.endDate,
-        ),
-      );
-
-      if (blockConflict) {
-        return res.status(409).json({ error: "That date range is already blocked." });
+      const refusal = await checkStayBlock(stay, validatedData);
+      if (refusal) {
+        return res.status(refusal.status).json({ error: refusal.error });
       }
 
       const reservation = await storage.createStayReservation(validatedData);
@@ -7445,39 +7914,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         stayId: req.params.id,
         status: "blocked",
       });
-
-      if (normalizeDateOnly(validatedData.endDate).getTime() < normalizeDateOnly(validatedData.startDate).getTime()) {
-        return res.status(400).json({ error: "End date cannot be before start date" });
+      if (!isHotelStay(access.stay)) {
+        validatedData.roomTypeId = null;
+        validatedData.roomCount = null;
       }
 
-      const activeBookings = await storage.getBookingsByAccommodationId(req.params.id);
-      const bookingConflict = activeBookings.some((booking) =>
-        shouldBookingBlockAvailability(booking) &&
-        datesOverlapDateRange(
-          validatedData.startDate,
-          validatedData.endDate,
-          booking.checkIn,
-          toIsoDate(getOccupiedEndDate(booking.checkIn, booking.checkOut)),
-        ),
-      );
-
-      if (bookingConflict) {
-        return res.status(409).json({ error: "That date range already has a customer booking." });
-      }
-
-      const existingBlocks = await storage.getStayReservations(req.params.id);
-      const blockConflict = existingBlocks.some((reservation) =>
-        reservation.status === "blocked" &&
-        datesOverlapDateRange(
-          validatedData.startDate,
-          validatedData.endDate,
-          reservation.startDate,
-          reservation.endDate,
-        ),
-      );
-
-      if (blockConflict) {
-        return res.status(409).json({ error: "That date range is already blocked." });
+      const refusal = await checkStayBlock(access.stay, validatedData);
+      if (refusal) {
+        return res.status(refusal.status).json({ error: refusal.error });
       }
 
       const reservation = await storage.createStayReservation(validatedData);
@@ -8131,7 +8575,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const stays = await storage.getStays();
       const visibleStays = stays.filter((stay: any) => isBookablePublicListing(stay));
-      res.json(visibleStays);
+      res.json(await withHotelRooms(visibleStays, "public"));
     } catch (error) {
       sendPublicCatalogFailure("stays", res, error);
     }
@@ -8140,10 +8584,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/stays/:id", async (req, res) => {
     try {
       const stay = await storage.getStay(req.params.id);
-      if (!isBookablePublicListing(stay)) {
+      if (!stay || !isBookablePublicListing(stay)) {
         return res.status(404).json({ error: "Stay not found" });
       }
-      res.json(stay);
+      const [visible] = await withHotelRooms([stay], "public");
+      if (!visible) {
+        return res.status(404).json({ error: "Stay not found" });
+      }
+      res.json(visible);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch stay" });
     }
@@ -8156,9 +8604,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Stay not found" });
       }
 
-      res.json(await getStayAvailabilitySummary(req.params.id));
+      res.json(await getStayAvailabilitySummary(req.params.id, "public"));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch stay availability" });
+    }
+  });
+
+  // A hotel's rooms left of each type for the guest's dates.
+  app.get("/api/stays/:id/rooms", async (req, res) => {
+    try {
+      const stay = await storage.getStay(req.params.id);
+      if (!stay || !isBookablePublicListing(stay) || !isHotelStay(stay)) {
+        return res.status(404).json({ error: "Hotel not found" });
+      }
+      const checkIn = typeof req.query.checkIn === "string" ? req.query.checkIn : "";
+      const checkOut = typeof req.query.checkOut === "string" ? req.query.checkOut : "";
+      if (!isCalendarDate(checkIn) || !isCalendarDate(checkOut) || checkOut < checkIn) {
+        return res.status(400).json({ error: "Choose your check-in and check-out dates." });
+      }
+      const { roomTypes, roomsLeft } = await getHotelRoomsLeft(stay.id, checkIn, checkOut);
+      res.json({
+        checkIn,
+        checkOut,
+        rooms: toPublicRoomTypes(roomTypes).map((roomType) => ({ roomTypeId: roomType.id, roomsLeft: roomsLeft.get(roomType.id) ?? 0 })),
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch room availability" });
     }
   });
 

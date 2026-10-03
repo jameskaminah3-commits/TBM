@@ -16,6 +16,7 @@ import {
 import { getCookServiceFee } from "@shared/cook-pricing";
 import { HOUSE_CLEANING_BASE_ROOM_LABEL, getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
 import type { Car, Cook, Errand, Experience, Stay } from "@shared/schema";
+import { isHotelStay } from "@shared/hotel-rooms";
 
 type PublicListing = Stay | Car | Cook | Errand | Experience;
 
@@ -69,7 +70,8 @@ function getListingFeatures(serviceType: ShareServiceType, listing: PublicListin
 
 function getPriceInfo(serviceType: ShareServiceType, listing: PublicListing) {
   if (serviceType === "stay") {
-    return { amount: (listing as Stay).price, label: "per night" };
+    const stay = listing as Stay;
+    return { amount: stay.price, label: isHotelStay(stay) ? "per room per night, from" : "per night" };
   }
 
   if (serviceType === "car") {

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useSearch } from "wouter";
-import { Calendar, MapPin, Users, Car, ChefHat, ShoppingBag, Compass, Filter, Mail, Phone } from "lucide-react";
+import { BedDouble, Calendar, MapPin, Users, Car, ChefHat, ShoppingBag, Compass, Filter, Mail, Phone, UtensilsCrossed } from "lucide-react";
 import { AdminLayout } from "@/components/admin-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -28,6 +28,8 @@ import { BookingCommitmentControl, BookingDateLockControl } from "@/components/a
 import type { Booking, Stay, Car as CarType, Cook, Errand, Experience } from "@shared/schema";
 import { bookingStatus } from "@shared/schema";
 import { formatCalendarDate, formatKenyaDateTime, isCalendarDate } from "@shared/calendar-dates";
+import { describeHotelStay, formatMealPlan, mealPlans } from "@shared/hotel-rooms";
+import { StayKindBadge } from "@/components/stay-kind";
 
 type BookingStatus = typeof bookingStatus.options[number];
 
@@ -1138,6 +1140,12 @@ export default function AdminBookings() {
                           <CardDescription className="break-words">
                             Booking ID: {booking.id}
                           </CardDescription>
+                          {booking.hotelStay ? (
+                            <div className="flex flex-wrap items-center gap-2 text-sm">
+                              <StayKindBadge stay={{ propertyType: "hotel" }} />
+                              <span className="font-medium text-foreground">{describeHotelStay(booking.hotelStay)}</span>
+                            </div>
+                          ) : null}
                           <div className="text-sm text-muted-foreground">{bookingSummary}</div>
                           <div className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
                             Open order details
@@ -1190,6 +1198,28 @@ export default function AdminBookings() {
                             </div>
                           </div>
                         )}
+
+                        {booking.hotelStay ? (
+                          <div data-testid={`admin-booking-room-${booking.id}`}>
+                            <div className="text-sm font-medium mb-1">Hotel room</div>
+                            <div className="space-y-0.5 text-sm text-muted-foreground">
+                              <div className="flex items-start gap-2">
+                                <BedDouble className="mt-0.5 h-3 w-3 shrink-0" />
+                                <span className="break-words">
+                                  {booking.hotelStay.rooms > 1 ? `${booking.hotelStay.rooms} × ` : ""}{booking.hotelStay.roomTypeName}
+                                  {booking.hotelStay.guestsPerRoom.length > 1 ? ` (${booking.hotelStay.guestsPerRoom.join(" + ")} guests)` : ""}
+                                </span>
+                              </div>
+                              <div className="flex items-start gap-2">
+                                <UtensilsCrossed className="mt-0.5 h-3 w-3 shrink-0" />
+                                <span className="break-words">{formatMealPlan(booking.hotelStay.mealPlan)}: {mealPlans[booking.hotelStay.mealPlan]?.includes.toLowerCase()}</span>
+                              </div>
+                              <div className="pl-5 text-xs">
+                                {formatAmount(booking.hotelStay.nightlyRoomPrices.reduce((sum, price) => sum + price, 0))} a night × {booking.hotelStay.nights} night{booking.hotelStay.nights === 1 ? "" : "s"} = {formatAmount(booking.hotelStay.accommodationTotal)}
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
 
                       {/* Dates */}

@@ -21,9 +21,25 @@ import { storage } from "../storage";
 import {
   bookings, stays, cooks, cars, errands, experiences,
   aiLeads, chatSessions, customOffers, zainaAuditLogs,
-  users, userPushDevices,
+  users, userPushDevices, stayRoomTypes, stayReservations,
+  type StayRoomType,
 } from "@shared/schema";
-import { and, eq, ne, lt, gt, gte, lte, sql, isNotNull, asc, or } from "drizzle-orm";
+import {
+  countRoomsLeft,
+  formatMealPlan,
+  getBlockRoomClaim,
+  getBookingRoomClaim,
+  getOccupiedNights,
+  getRoomsNeeded,
+  isBookableRoomType,
+  isHotelStay,
+  mealPlans,
+  quoteHotelRooms,
+  sortRoomRates,
+  type HotelStaySnapshot,
+  type RoomClaim,
+} from "@shared/hotel-rooms";
+import { and, eq, ne, lt, gt, gte, lte, sql, isNotNull, asc, or, inArray } from "drizzle-orm";
 import { getUsdToKesRate } from "../currency";
 import {
   HELP_MAMA_HOURLY_MINIMUM_HOURS,
@@ -229,6 +245,102 @@ async function hasServiceInventoryConflict(
   return candidates.some(bookingBlocksAvailability);
 }
 
+// ─── Hotels ─────────────────────────────────────────────────────────────
+// A hotel sells rooms by type and meal plan (shared/hotel-rooms.ts). Its
+// bookings and calendar blocks hold rooms; what's free is a count of rooms
+// left on every night, by the same rule as the website's booking routes.
+
+/** Rooms of each type at a hotel free on every night from check-in to check-out. */
+async function countHotelRoomsLeft(
+  executor: any,
+  stayId: string,
+  checkIn: string,
+  checkOut: string,
+): Promise<{ roomTypes: StayRoomType[]; roomsLeft: Map<string, number> }> {
+  const roomTypes: StayRoomType[] = await executor
+    .select()
+    .from(stayRoomTypes)
+    .where(eq(stayRoomTypes.stayId, stayId))
+    .orderBy(asc(stayRoomTypes.sortOrder), asc(stayRoomTypes.createdAt));
+  const held = await executor
+    .select({
+      ...bookingInventoryColumns,
+      checkIn: bookings.checkIn,
+      checkOut: bookings.checkOut,
+      roomTypeId: bookings.roomTypeId,
+      roomCount: bookings.roomCount,
+    })
+    .from(bookings)
+    .where(and(
+      eq(bookings.accommodationId, stayId),
+      ne(bookings.status, "cancelled"),
+      lte(bookings.checkIn, checkOut),
+      gte(bookings.checkOut, checkIn),
+    ));
+  const blocks = await executor
+    .select()
+    .from(stayReservations)
+    .where(and(eq(stayReservations.stayId, stayId), eq(stayReservations.status, "blocked")));
+
+  const claims: RoomClaim[] = [
+    ...held.filter(bookingBlocksAvailability).map(getBookingRoomClaim),
+    ...blocks.map(getBlockRoomClaim),
+  ];
+  const { firstNight, lastNight } = getOccupiedNights(checkIn, checkOut);
+  return {
+    roomTypes,
+    roomsLeft: new Map(roomTypes.map((roomType) => [roomType.id, countRoomsLeft(roomType, claims, firstNight, lastNight)])),
+  };
+}
+
+/** A hotel's rooms and meal plans on sale, as Zaina presents them. */
+async function describeHotelRooms(
+  roomTypes: StayRoomType[],
+  sessionId: string,
+  currency?: "USD" | "KES",
+  roomsLeft?: Map<string, number>,
+) {
+  return Promise.all(roomTypes.filter(isBookableRoomType).map(async (roomType) => ({
+    room_type_id: roomType.id,
+    name: roomType.name,
+    sleeps_per_room: roomType.maxGuests,
+    beds: roomType.bedType || undefined,
+    ...(roomsLeft ? { rooms_left: roomsLeft.get(roomType.id) ?? 0 } : {}),
+    rates: await Promise.all(sortRoomRates(roomType.rates).filter((rate) => rate.price > 0).map(async (rate) => ({
+      meal_plan: rate.mealPlan,
+      meal_plan_name: mealPlans[rate.mealPlan].name,
+      includes: mealPlans[rate.mealPlan].includes,
+      price_per_room_per_night_usd: rate.price,
+      price_per_room_per_night_display: await formatPrice(rate.price, sessionId, currency),
+      ...(rate.singlePrice ? { single_guest_price_display: await formatPrice(rate.singlePrice, sessionId, currency) } : {}),
+    }))),
+  })));
+}
+
+/**
+ * The cheapest way to put `people` in one room type at a hotel on these
+ * dates, if any type has enough rooms left: for a trip package.
+ */
+function cheapestHotelRooms(
+  roomTypes: StayRoomType[],
+  roomsLeft: Map<string, number>,
+  people: number,
+  nights: number,
+): HotelStaySnapshot | null {
+  let best: HotelStaySnapshot | null = null;
+  for (const roomType of roomTypes.filter(isBookableRoomType)) {
+    const rooms = getRoomsNeeded(people, roomType.maxGuests);
+    if (rooms > (roomsLeft.get(roomType.id) ?? 0)) continue;
+    for (const rate of roomType.rates) {
+      const quote = quoteHotelRooms({ roomType, mealPlan: rate.mealPlan, rooms, guests: people, nights });
+      if (quote.ok && (!best || quote.snapshot.accommodationTotal < best.accommodationTotal)) {
+        best = quote.snapshot;
+      }
+    }
+  }
+  return best;
+}
+
 async function createBookingWithInventoryLock(
   resourceKeys: string[],
   data: any,
@@ -421,7 +533,7 @@ export async function searchStays(
     conditions.push(sql`${stays.title} ILIKE ${"%" + args.keyword + "%"}`);
   }
 
-  const rows = await db
+  const candidates = await db
     .select({
       id: stays.id,
       title: stays.title,
@@ -433,29 +545,56 @@ export async function searchStays(
       rating: stays.rating,
       reviewCount: stays.reviewCount,
       features: stays.features,
+      propertyType: stays.propertyType,
+      starRating: stays.starRating,
     })
     .from(stays)
     .where(and(...conditions))
     .orderBy(stays.title)
-    .limit(3);
+    .limit(10);
+
+  // A hotel is offered once it has a room to sell.
+  const hotelIds = candidates.filter((s) => isHotelStay(s)).map((s) => s.id);
+  const hotelRooms = hotelIds.length
+    ? await db.select().from(stayRoomTypes).where(inArray(stayRoomTypes.stayId, hotelIds))
+      .orderBy(asc(stayRoomTypes.sortOrder), asc(stayRoomTypes.createdAt))
+    : [];
+  const rows = candidates
+    .filter((s) => !isHotelStay(s) || hotelRooms.some((roomType) => roomType.stayId === s.id && isBookableRoomType(roomType)))
+    .slice(0, 3);
 
   const currency = await getSessionCurrency(sessionId);
   const results = await Promise.all(
-    rows.map(async (s, i) => ({
-      option_index: i + 1,
-      id: s.id,
-      title: s.title,
-      location: s.location,
-      price_per_night_usd: s.priceUsd,
-      price_per_night_display: await formatPrice(s.priceUsd, sessionId, currency),
-      max_occupancy: s.maxOccupancy,
-      bedrooms: s.bedrooms,
-      bathrooms: s.bathrooms,
-      rating: s.rating,
-      review_count: s.reviewCount,
-      public_url: `${appBaseUrl()}${getPublicListingPath("stay", s.id, s.title)}`,
-      features: s.features,
-    })),
+    rows.map(async (s, i) => {
+      const listing = {
+        option_index: i + 1,
+        id: s.id,
+        title: s.title,
+        location: s.location,
+        rating: s.rating,
+        review_count: s.reviewCount,
+        public_url: `${appBaseUrl()}${getPublicListingPath("stay", s.id, s.title)}`,
+        features: s.features,
+      };
+      if (isHotelStay(s)) {
+        return {
+          ...listing,
+          property_type: "hotel" as const,
+          star_rating: s.starRating ?? undefined,
+          price_from_per_room_per_night_display: await formatPrice(s.priceUsd, sessionId, currency),
+          rooms: await describeHotelRooms(hotelRooms.filter((roomType) => roomType.stayId === s.id), sessionId, currency),
+        };
+      }
+      return {
+        ...listing,
+        property_type: "entire_place" as const,
+        price_per_night_usd: s.priceUsd,
+        price_per_night_display: await formatPrice(s.priceUsd, sessionId, currency),
+        max_occupancy: s.maxOccupancy,
+        bedrooms: s.bedrooms,
+        bathrooms: s.bathrooms,
+      };
+    }),
   );
 
   return {
@@ -841,6 +980,22 @@ export async function checkStayAvailability(
 
   const requestedEnd = occupiedEndDate(args.check_in, args.check_out);
 
+  if (isHotelStay(stay)) {
+    const { roomTypes, roomsLeft } = await countHotelRoomsLeft(db, stay.id, args.check_in, args.check_out);
+    const rooms = await describeHotelRooms(roomTypes, sessionId, undefined, roomsLeft);
+    return {
+      ok: true,
+      stay_id: args.stay_id,
+      title: stay.title,
+      property_type: "hotel",
+      public_url: `${appBaseUrl()}${getPublicListingPath("stay", stay.id, stay.title)}`,
+      available: rooms.some((room) => (room.rooms_left ?? 0) > 0),
+      rooms,
+      requested: { check_in: args.check_in, check_out: args.check_out, occupied_end: requestedEnd, nights },
+      note: "A hotel sells rooms: ask which room and meal plan the customer wants, and how many rooms, before booking.",
+    };
+  }
+
   const conflicts = await db
     .select({
       checkIn: bookings.checkIn,
@@ -867,6 +1022,7 @@ export async function checkStayAvailability(
     ok: true,
     stay_id: args.stay_id,
     title: stay.title,
+    property_type: "entire_place",
     public_url: `${appBaseUrl()}${getPublicListingPath("stay", stay.id, stay.title)}`,
     available: blockingConflicts.length === 0,
     conflicting_bookings: blockingConflicts.length,
@@ -1169,7 +1325,19 @@ export async function composeTripPackage(
     .limit(15);
 
   let chosenStay: typeof stays.$inferSelect | null = null;
+  // At a hotel: the cheapest rooms of one type that fit everyone.
+  let chosenRooms: HotelStaySnapshot | null = null;
   for (const candidate of stayCandidates) {
+    if (isHotelStay(candidate)) {
+      const { roomTypes, roomsLeft } = await countHotelRoomsLeft(db, candidate.id, args.check_in, args.check_out);
+      const rooms = cheapestHotelRooms(roomTypes, roomsLeft, args.people, nights);
+      if (rooms) {
+        chosenStay = candidate;
+        chosenRooms = rooms;
+        break;
+      }
+      continue;
+    }
     const conflicts = await db
       .select({ id: bookings.id })
       .from(bookings)
@@ -1197,7 +1365,8 @@ export async function composeTripPackage(
     };
   }
 
-  const stayTotal = chosenStay.price * nights;
+  const stayTotal = chosenRooms ? chosenRooms.accommodationTotal : chosenStay.price * nights;
+  const stayNightly = chosenRooms ? chosenRooms.nightlyRoomPrices.reduce((sum, price) => sum + price, 0) : chosenStay.price;
 
   // 2. Find a chauffeur car for the trip duration
   const carCandidates = await db
@@ -1274,7 +1443,15 @@ export async function composeTripPackage(
         id: chosenStay.id,
         title: chosenStay.title,
         location: chosenStay.location,
-        price_per_night: await formatPrice(chosenStay.price, sessionId),
+        property_type: chosenRooms ? "hotel" : "entire_place",
+        ...(chosenRooms ? {
+          room_type_id: chosenRooms.roomTypeId,
+          room: chosenRooms.roomTypeName,
+          rooms: chosenRooms.rooms,
+          meal_plan: chosenRooms.mealPlan,
+          meal_plan_name: formatMealPlan(chosenRooms.mealPlan),
+        } : {}),
+        price_per_night: await formatPrice(stayNightly, sessionId),
         nights,
         subtotal: await formatPrice(stayTotal, sessionId),
         subtotal_usd: stayTotal,
@@ -1341,6 +1518,10 @@ export async function createDraftBooking(
     check_out: string;
     stay_id: string;
     service_ids?: string[];
+    /** At a hotel: the room type, meal plan (RO, BB, HB, FB or AI) and number of rooms. */
+    room_type_id?: string;
+    meal_plan?: string;
+    rooms?: number;
     idempotency_key: string;
   },
   sessionId: string,
@@ -1449,7 +1630,59 @@ export async function createDraftBooking(
   if (!stay.isPublic || !stay.managerUserId) {
     return { ok: false, error: "stay_not_bookable" };
   }
-  if (args.guests > stay.maxOccupancy) {
+
+  // 4b. A hotel: the customer's room and meal plan, priced from the hotel's
+  //     rates, if enough rooms of the type are free on every night.
+  let hotelStay: HotelStaySnapshot | null = null;
+  if (isHotelStay(stay)) {
+    const { roomTypes, roomsLeft } = await countHotelRoomsLeft(db, stay.id, args.check_in, args.check_out);
+    const roomType = roomTypes.filter(isBookableRoomType).find((entry) => entry.id === args.room_type_id);
+    if (!roomType) {
+      return {
+        ok: false,
+        error: "hotel_room_required",
+        rooms: await describeHotelRooms(roomTypes, sessionId, undefined, roomsLeft),
+        hint:
+          `"${stay.title}" is a hotel. Ask the customer which room and meal plan they want, ` +
+          "and how many rooms, then call create_draft_booking again with room_type_id, meal_plan and rooms.",
+        tell_customer: `${stay.title} is a hotel, so let's choose your room first. Which room and meal plan would you like?`,
+      };
+    }
+    const rooms = typeof args.rooms === "number" && Number.isInteger(args.rooms) && args.rooms > 0
+      ? args.rooms
+      : getRoomsNeeded(args.guests, roomType.maxGuests);
+    const quote = quoteHotelRooms({
+      roomType,
+      mealPlan: typeof args.meal_plan === "string" ? args.meal_plan.trim().toUpperCase() : null,
+      rooms,
+      guests: args.guests,
+      nights,
+    });
+    if (!quote.ok) {
+      return {
+        ok: false,
+        error: "hotel_room_not_bookable",
+        reason: quote.error,
+        room: (await describeHotelRooms([roomType], sessionId, undefined, roomsLeft))[0],
+        hint: "Tell the customer why, then offer this room's meal plans, more rooms, or another room.",
+        tell_customer: quote.error,
+      };
+    }
+    const left = roomsLeft.get(roomType.id) ?? 0;
+    if (left < quote.snapshot.rooms) {
+      return {
+        ok: false,
+        error: "hotel_rooms_not_available",
+        rooms_left: left,
+        rooms: await describeHotelRooms(roomTypes, sessionId, undefined, roomsLeft),
+        hint: "Not enough rooms of this type are free on those dates. Offer another room type at this hotel, other dates, or search_stays again.",
+        tell_customer: left === 0
+          ? `${roomType.name} is fully booked for those dates. Let me check the other rooms for you.`
+          : `Only ${left} ${roomType.name} room${left === 1 ? " is" : "s are"} left for those dates. Let me check the other rooms for you.`,
+      };
+    }
+    hotelStay = quote.snapshot;
+  } else if (args.guests > stay.maxOccupancy) {
     return {
       ok: false,
       error: "guest_count_exceeds_capacity",
@@ -1462,8 +1695,8 @@ export async function createDraftBooking(
     };
   }
 
-  // 5. Check stay availability
-  const candidateBookings = await db
+  // 5. Check stay availability (a hotel's rooms were counted above)
+  const candidateBookings = hotelStay ? [] : await db
     .select({
       status: bookings.status,
       totalPrice: bookings.totalPrice,
@@ -1492,7 +1725,7 @@ export async function createDraftBooking(
   }
 
   // 6. Server-side pricing. Never trust a price from the model.
-  let totalUsd = stay.price * nights;
+  let totalUsd = hotelStay ? hotelStay.accommodationTotal : stay.price * nights;
   const staySubtotal = totalUsd;
 
   const serviceIds = Array.from(new Set((args.service_ids || []).filter(Boolean)));
@@ -1503,6 +1736,14 @@ export async function createDraftBooking(
     if (cook) {
       if (!cook.isPublic || !cook.managerUserId) {
         return { ok: false, error: "service_not_bookable", service_id: serviceId };
+      }
+      if (hotelStay) {
+        return {
+          ok: false,
+          error: "chef_not_available_at_hotels",
+          service_id: serviceId,
+          hint: "A private chef cooks in the kitchen of an entire place. At a hotel, offer its meal plans (BB, HB, FB or AI) instead.",
+        };
       }
       const sessionRate = cook.serviceFee || cook.pricePerSession;
       if (!sessionRate || cook.pricePerPlate || cook.priceSingleMeal) {
@@ -1630,6 +1871,10 @@ export async function createDraftBooking(
     totalPrice: Math.round(totalUsd),
     status: "upcoming",
     bookingType: "accommodation",
+    roomTypeId: hotelStay?.roomTypeId ?? null,
+    roomCount: hotelStay?.rooms ?? null,
+    mealPlan: hotelStay?.mealPlan ?? null,
+    hotelStay,
     createdAt: now,
     idempotencyKey: args.idempotency_key,
   } as any;
@@ -1638,7 +1883,12 @@ export async function createDraftBooking(
     [`stay:${args.stay_id}`, ...serviceIds.map((serviceId) => `service:${serviceId}`)],
     bookingData,
     async (executor) => {
-      if (await hasStayInventoryConflict(executor, args.stay_id, args.check_in, args.check_out)) {
+      if (hotelStay) {
+        const { roomsLeft } = await countHotelRoomsLeft(executor, args.stay_id, args.check_in, args.check_out);
+        if ((roomsLeft.get(hotelStay.roomTypeId) ?? 0) < hotelStay.rooms) {
+          return "stay_not_available";
+        }
+      } else if (await hasStayInventoryConflict(executor, args.stay_id, args.check_in, args.check_out)) {
         return "stay_not_available";
       }
       for (const serviceId of serviceIds) {
@@ -1680,7 +1930,9 @@ export async function createDraftBooking(
       customerEmail: args.customer_email,
       customerPhone: args.customer_phone,
       kind: "stay",
-      summary: `${nights} night${nights === 1 ? "" : "s"} at ${stay.title} (${args.check_in} → ${args.check_out}, ${args.guests} guest${args.guests === 1 ? "" : "s"})`,
+      summary: `${nights} night${nights === 1 ? "" : "s"} at ${stay.title}`
+        + `${hotelStay ? ` — ${hotelStay.rooms > 1 ? `${hotelStay.rooms} × ` : ""}${hotelStay.roomTypeName}, ${formatMealPlan(hotelStay.mealPlan)}` : ""}`
+        + ` (${args.check_in} → ${args.check_out}, ${args.guests} guest${args.guests === 1 ? "" : "s"})`,
       totalDisplay: await formatPrice(totalUsd, sessionId),
       paymentLink,
       sessionId,
@@ -1696,6 +1948,11 @@ export async function createDraftBooking(
     stay: {
       id: stay.id,
       title: stay.title,
+      ...(hotelStay ? {
+        room: hotelStay.roomTypeName,
+        rooms: hotelStay.rooms,
+        meal_plan: formatMealPlan(hotelStay.mealPlan),
+      } : {}),
       subtotal: await formatPrice(staySubtotal, sessionId),
     },
     services: await Promise.all(

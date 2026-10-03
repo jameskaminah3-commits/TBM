@@ -29,9 +29,13 @@ import {
 import { AdminMediaField } from "@/components/admin-media-field";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { insertStaySchema, type Stay, type ProviderAccountSummary } from "@shared/schema";
+import { insertStaySchema, type StayWithRooms, type ProviderAccountSummary } from "@shared/schema";
+import { isBookableRoomType, stayPropertyTypes, summarizeHotelRooms } from "@shared/hotel-rooms";
+import { HotelDetailsFields, StayKindPicker, hotelFacilityOptions } from "@/components/admin-stay-kind-fields";
+import { AdminHotelRoomsEditor } from "@/components/admin-hotel-rooms-editor";
 
 type StayAvailability = {
+  propertyType?: "hotel" | "entire_place";
   blockedRanges: Array<{
     id: string;
     source: "booking" | "manual";
@@ -40,6 +44,10 @@ type StayAvailability = {
     checkoutDate: string;
     status: string;
     guestName: string;
+    // At a hotel: the rooms a booking or block holds (no room type: the whole hotel).
+    roomTypeId?: string | null;
+    roomTypeName?: string | null;
+    rooms?: number | null;
   }>;
   availableFrom: string;
 };
@@ -59,14 +67,26 @@ const featureOptions = [
   "Wheelchair Accessible",
 ];
 
+// A hotel's price, guests, bedrooms and bathrooms come from its rooms; an
+// entire place needs them here.
 const formSchema = insertStaySchema.extend({
-  price: z.coerce.number().min(1, "Price must be at least $1"),
+  price: z.coerce.number().min(0),
   rating: z.coerce.number().min(1, "Rating must be at least 1").max(5, "Rating cannot exceed 5"),
   reviewCount: z.coerce.number().min(0, "Review count cannot be negative"),
   managerUserId: z.string().optional(),
-  maxOccupancy: z.coerce.number().min(1, "At least 1 guest required"),
-  bedrooms: z.coerce.number().min(1, "At least 1 bedroom required"),
-  bathrooms: z.coerce.number().min(1, "At least 1 bathroom required"),
+  maxOccupancy: z.coerce.number().min(0),
+  bedrooms: z.coerce.number().min(0),
+  bathrooms: z.coerce.number().min(0),
+  propertyType: z.enum(stayPropertyTypes),
+  starRating: z.coerce.number().int().min(0).max(5),
+  checkInTime: z.string(),
+  checkOutTime: z.string(),
+}).superRefine((data, ctx) => {
+  if (data.propertyType === "hotel") return;
+  if (data.price < 1) ctx.addIssue({ code: "custom", path: ["price"], message: "Price must be at least $1" });
+  if (data.maxOccupancy < 1) ctx.addIssue({ code: "custom", path: ["maxOccupancy"], message: "At least 1 guest required" });
+  if (data.bedrooms < 1) ctx.addIssue({ code: "custom", path: ["bedrooms"], message: "At least 1 bedroom required" });
+  if (data.bathrooms < 1) ctx.addIssue({ code: "custom", path: ["bathrooms"], message: "At least 1 bathroom required" });
 });
 
 type FormData = z.infer<typeof formSchema>;
@@ -79,11 +99,14 @@ export default function AdminStaysEdit() {
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
   const [blockStartDate, setBlockStartDate] = useState("");
   const [blockEndDate, setBlockEndDate] = useState("");
+  // At a hotel, a block can close some rooms of one type ("all" closes the whole hotel).
+  const [blockRoomTypeId, setBlockRoomTypeId] = useState("all");
+  const [blockRoomCount, setBlockRoomCount] = useState("");
   const { data: providers = [] } = useQuery<ProviderAccountSummary[]>({
     queryKey: ["/api/admin/provider-accounts"],
   });
 
-  const { data: stay, isLoading } = useQuery<Stay>({
+  const { data: stay, isLoading } = useQuery<StayWithRooms>({
     queryKey: ["/api/admin/stays", stayId],
     enabled: !!stayId,
   });
@@ -120,8 +143,24 @@ export default function AdminStaysEdit() {
       isPublic: false,
       description: "",
       features: [],
+      propertyType: "entire_place",
+      starRating: 0,
+      checkInTime: "",
+      checkOutTime: "",
     },
   });
+  const propertyType = form.watch("propertyType");
+  const isHotel = propertyType === "hotel";
+  const savedAsHotel = stay?.propertyType === "hotel";
+  const hotelSummary = summarizeHotelRooms(stay?.roomTypes ?? []);
+  const hotelRoomTypes = stay?.roomTypes ?? [];
+
+  // Opened from "Create hotel, then add rooms": go to the rooms.
+  useEffect(() => {
+    if (stay && window.location.hash === "#rooms") {
+      window.setTimeout(() => document.getElementById("rooms")?.scrollIntoView({ behavior: "smooth", block: "start" }), 150);
+    }
+  }, [stay?.id]);
 
   useEffect(() => {
     if (stay) {
@@ -141,18 +180,29 @@ export default function AdminStaysEdit() {
         isPublic: stay.isPublic,
         description: stay.description,
         features: stay.features,
+        propertyType: stay.propertyType === "hotel" ? "hotel" : "entire_place",
+        starRating: stay.starRating ?? 0,
+        checkInTime: stay.checkInTime ?? "",
+        checkOutTime: stay.checkOutTime ?? "",
       });
       setSelectedFeatures(stay.features);
     }
   }, [stay, form]);
 
   const updateMutation = useMutation({
-    mutationFn: async (data: FormData) => {
-      return apiRequest("PATCH", `/api/admin/stays/${stayId}`, data);
+    mutationFn: async (data: Record<string, unknown>) => {
+      const response = await apiRequest("PATCH", `/api/admin/stays/${stayId}`, data);
+      return response.json() as Promise<{ propertyType?: string }>;
     },
-    onSuccess: () => {
+    onSuccess: (saved) => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/stays"] });
       queryClient.invalidateQueries({ queryKey: ["/api/stays"] });
+      if (saved.propertyType === "hotel" && !hotelRoomTypes.some(isBookableRoomType)) {
+        // A hotel needs a room with a price before guests can see it.
+        toast({ title: "Saved as a hotel", description: "Now add its rooms and their meal-plan prices below." });
+        window.setTimeout(() => document.getElementById("rooms")?.scrollIntoView({ behavior: "smooth", block: "start" }), 150);
+        return;
+      }
       toast({
         title: "Success",
         description: "Stay updated successfully",
@@ -173,6 +223,9 @@ export default function AdminStaysEdit() {
       return apiRequest("POST", `/api/admin/stays/${stayId}/availability/blocks`, {
         startDate: blockStartDate,
         endDate: blockEndDate,
+        ...(savedAsHotel && blockRoomTypeId !== "all"
+          ? { roomTypeId: blockRoomTypeId, roomCount: blockRoomCount ? Number(blockRoomCount) : null }
+          : {}),
       });
     },
     onSuccess: () => {
@@ -184,6 +237,7 @@ export default function AdminStaysEdit() {
       });
       setBlockStartDate("");
       setBlockEndDate("");
+      setBlockRoomCount("");
     },
     onError: (error: Error) => {
       toast({
@@ -224,10 +278,14 @@ export default function AdminStaysEdit() {
   };
 
   const onSubmit = async (data: FormData) => {
+    const hotel = data.propertyType === "hotel";
     await updateMutation.mutateAsync({
       ...data,
       managerUserId: data.managerUserId === "unassigned" ? undefined : data.managerUserId,
       features: selectedFeatures,
+      starRating: hotel && data.starRating ? data.starRating : null,
+      checkInTime: data.checkInTime || null,
+      checkOutTime: data.checkOutTime || null,
     });
   };
 
@@ -297,20 +355,48 @@ export default function AdminStaysEdit() {
                 </div>
 
                 <div className="mt-4 rounded-lg border bg-background p-4">
-                  <div className="font-medium mb-3">Block dates manually</div>
+                  <div className="font-medium mb-3">{savedAsHotel ? "Close rooms or the whole hotel" : "Block dates manually"}</div>
+                  {savedAsHotel ? (
+                    <div className="mb-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <Select value={blockRoomTypeId} onValueChange={setBlockRoomTypeId}>
+                        <SelectTrigger aria-label="Rooms to close">
+                          <SelectValue placeholder="The whole hotel" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">The whole hotel (stop selling)</SelectItem>
+                          {hotelRoomTypes.map((roomType) => (
+                            <SelectItem key={roomType.id} value={roomType.id}>{roomType.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {blockRoomTypeId !== "all" ? (
+                        <Input
+                          type="number"
+                          min="1"
+                          inputMode="numeric"
+                          placeholder="How many rooms (empty: all of them)"
+                          aria-label="How many rooms to close"
+                          value={blockRoomCount}
+                          onChange={(event) => setBlockRoomCount(event.target.value)}
+                        />
+                      ) : null}
+                    </div>
+                  ) : null}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <Input type="date" value={blockStartDate} onChange={(e) => setBlockStartDate(e.target.value)} />
-                    <Input type="date" value={blockEndDate} onChange={(e) => setBlockEndDate(e.target.value)} />
+                    <Input type="date" aria-label="Closed from" value={blockStartDate} onChange={(e) => setBlockStartDate(e.target.value)} />
+                    <Input type="date" aria-label="Open again on" value={blockEndDate} onChange={(e) => setBlockEndDate(e.target.value)} />
                     <Button
                       type="button"
                       onClick={handleCreateBlock}
                       disabled={createBlockMutation.isPending}
                     >
-                      {createBlockMutation.isPending ? "Blocking..." : "Block Dates"}
+                      {createBlockMutation.isPending ? "Blocking..." : savedAsHotel ? "Close" : "Block Dates"}
                     </Button>
                   </div>
                   <p className="mt-2 text-sm text-muted-foreground">
-                    Use this for owner stays, maintenance, or partner-held dates.
+                    {savedAsHotel
+                      ? "For rooms the hotel sold elsewhere, maintenance, or days it isn't taking bookings. The second date is the day they open again."
+                      : "Use this for owner stays, maintenance, or partner-held dates."}
                   </p>
                 </div>
 
@@ -327,6 +413,13 @@ export default function AdminStaysEdit() {
                               ? "Manual availability block"
                               : `${range.guestName}${range.checkoutDate !== range.startDate ? `, checkout ${range.checkoutDate}` : ""}`}
                           </div>
+                          {savedAsHotel ? (
+                            <div className="text-xs text-muted-foreground">
+                              {range.roomTypeName
+                                ? `${range.rooms ? `${range.rooms} × ` : "All "}${range.roomTypeName}`
+                                : "The whole hotel"}
+                            </div>
+                          ) : null}
                         </div>
                         <div className="flex items-center gap-3">
                           <div className="text-muted-foreground capitalize">
@@ -353,6 +446,24 @@ export default function AdminStaysEdit() {
 
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                <StayKindPicker
+                  value={propertyType}
+                  onChange={(value) => form.setValue("propertyType", value, { shouldDirty: true })}
+                />
+
+                {isHotel ? (
+                  <HotelDetailsFields
+                    starRating={form.watch("starRating")}
+                    checkInTime={form.watch("checkInTime")}
+                    checkOutTime={form.watch("checkOutTime")}
+                    onChange={(next) => {
+                      if (next.starRating !== undefined) form.setValue("starRating", next.starRating, { shouldDirty: true });
+                      if (next.checkInTime !== undefined) form.setValue("checkInTime", next.checkInTime, { shouldDirty: true });
+                      if (next.checkOutTime !== undefined) form.setValue("checkOutTime", next.checkOutTime, { shouldDirty: true });
+                    }}
+                  />
+                ) : null}
+
                 <FormField
                   control={form.control}
                   name="title"
@@ -397,6 +508,15 @@ export default function AdminStaysEdit() {
                   />
                 </div>
 
+                {isHotel ? (
+                  <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground" data-testid="hotel-derived-summary">
+                    {savedAsHotel && hotelSummary.fromPrice !== null
+                      ? `Rooms from US$${hotelSummary.fromPrice.toLocaleString("en-US")} per room per night · ${hotelSummary.totalRooms} room${hotelSummary.totalRooms === 1 ? "" : "s"} on sale · sleeps up to ${hotelSummary.guestCapacity} guests in all.`
+                      : "No rooms with prices yet."}
+                    {" "}A hotel's price, rooms and guests come from its room types in Rooms &amp; rates below.
+                  </div>
+                ) : (
+                <>
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <FormField
                     control={form.control}
@@ -482,6 +602,8 @@ export default function AdminStaysEdit() {
                     )}
                   />
                 </div>
+                </>
+                )}
 
                 <FormField
                   control={form.control}
@@ -554,7 +676,12 @@ export default function AdminStaysEdit() {
                     <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
                       <div className="space-y-1">
                         <FormLabel>Public Listing</FormLabel>
-                        <FormDescription>Turn this on when the stay should appear on the live site.</FormDescription>
+                        <FormDescription>
+                          Turn this on when the stay should appear on the live site.
+                          {isHotel && !hotelRoomTypes.some(isBookableRoomType)
+                            ? " A hotel appears once it has at least one room on sale with a price."
+                            : ""}
+                        </FormDescription>
                       </div>
                       <FormControl>
                         <Checkbox checked={field.value} onCheckedChange={field.onChange} />
@@ -583,9 +710,9 @@ export default function AdminStaysEdit() {
                 />
 
                 <div className="space-y-4">
-                  <FormLabel>Features & Amenities</FormLabel>
+                  <FormLabel>{isHotel ? "Hotel facilities" : "Features & Amenities"}</FormLabel>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                    {featureOptions.map((feature) => (
+                    {(isHotel ? hotelFacilityOptions : featureOptions).map((feature) => (
                       <div key={feature} className="flex items-center space-x-2">
                         <Checkbox
                           checked={selectedFeatures.includes(feature)}
@@ -619,6 +746,16 @@ export default function AdminStaysEdit() {
             </Form>
           </CardContent>
         </Card>
+
+        {savedAsHotel && stayId ? (
+          <div id="rooms" className="mt-8 scroll-mt-24">
+            <AdminHotelRoomsEditor stayId={stayId} />
+          </div>
+        ) : isHotel ? (
+          <div id="rooms" className="mt-8 rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
+            Save this stay as a hotel, then add its rooms and meal-plan prices here.
+          </div>
+        ) : null}
       </div>
     </AdminLayout>
   );

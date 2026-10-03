@@ -30,6 +30,8 @@ import { AdminMediaField } from "@/components/admin-media-field";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { insertStaySchema, type ProviderAccountSummary } from "@shared/schema";
+import { stayPropertyTypes } from "@shared/hotel-rooms";
+import { HotelDetailsFields, StayKindPicker, hotelFacilityOptions } from "@/components/admin-stay-kind-fields";
 
 const featureOptions = [
   "WiFi",
@@ -46,14 +48,26 @@ const featureOptions = [
   "Wheelchair Accessible",
 ];
 
+// A hotel's price, guests, bedrooms and bathrooms come from its rooms, added
+// after it's created; an entire place needs them here.
 const formSchema = insertStaySchema.extend({
-  price: z.coerce.number().min(1, "Price must be at least $1"),
+  price: z.coerce.number().min(0),
   rating: z.coerce.number().min(1, "Rating must be at least 1").max(5, "Rating cannot exceed 5"),
   reviewCount: z.coerce.number().min(0, "Review count cannot be negative"),
   managerUserId: z.string().optional(),
-  maxOccupancy: z.coerce.number().min(1, "At least 1 guest required"),
-  bedrooms: z.coerce.number().min(1, "At least 1 bedroom required"),
-  bathrooms: z.coerce.number().min(1, "At least 1 bathroom required"),
+  maxOccupancy: z.coerce.number().min(0),
+  bedrooms: z.coerce.number().min(0),
+  bathrooms: z.coerce.number().min(0),
+  propertyType: z.enum(stayPropertyTypes),
+  starRating: z.coerce.number().int().min(0).max(5),
+  checkInTime: z.string(),
+  checkOutTime: z.string(),
+}).superRefine((data, ctx) => {
+  if (data.propertyType === "hotel") return;
+  if (data.price < 1) ctx.addIssue({ code: "custom", path: ["price"], message: "Price must be at least $1" });
+  if (data.maxOccupancy < 1) ctx.addIssue({ code: "custom", path: ["maxOccupancy"], message: "At least 1 guest required" });
+  if (data.bedrooms < 1) ctx.addIssue({ code: "custom", path: ["bedrooms"], message: "At least 1 bedroom required" });
+  if (data.bathrooms < 1) ctx.addIssue({ code: "custom", path: ["bathrooms"], message: "At least 1 bathroom required" });
 });
 
 type FormData = z.infer<typeof formSchema>;
@@ -84,16 +98,32 @@ export default function AdminStaysNew() {
       isPublic: false,
       description: "",
       features: [],
+      propertyType: "entire_place",
+      starRating: 0,
+      checkInTime: "",
+      checkOutTime: "",
     },
   });
+  const propertyType = form.watch("propertyType");
+  const isHotel = propertyType === "hotel";
 
   const createMutation = useMutation({
-    mutationFn: async (data: FormData) => {
-      return apiRequest("POST", "/api/admin/stays", data);
+    mutationFn: async (data: Record<string, unknown>) => {
+      const response = await apiRequest("POST", "/api/admin/stays", data);
+      return response.json() as Promise<{ id: string; propertyType?: string }>;
     },
-    onSuccess: () => {
+    onSuccess: (stay) => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/stays"] });
       queryClient.invalidateQueries({ queryKey: ["/api/stays"] });
+      if (stay.propertyType === "hotel") {
+        // Next: the hotel's rooms and meal-plan rates.
+        toast({
+          title: "Hotel created",
+          description: "Now add its rooms and their meal-plan prices. Guests see the hotel once it has a room with a price.",
+        });
+        setLocation(`/admin/stays/${stay.id}/edit#rooms`);
+        return;
+      }
       toast({
         title: "Success",
         description: "Stay created successfully",
@@ -118,10 +148,14 @@ export default function AdminStaysNew() {
   };
 
   const onSubmit = async (data: FormData) => {
+    const hotel = data.propertyType === "hotel";
     await createMutation.mutateAsync({
       ...data,
       managerUserId: data.managerUserId === "unassigned" ? undefined : data.managerUserId,
       features: selectedFeatures,
+      starRating: hotel && data.starRating ? data.starRating : null,
+      checkInTime: data.checkInTime || null,
+      checkOutTime: data.checkOutTime || null,
     });
   };
 
@@ -145,6 +179,24 @@ export default function AdminStaysNew() {
           <CardContent>
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                <StayKindPicker
+                  value={propertyType}
+                  onChange={(value) => form.setValue("propertyType", value, { shouldDirty: true })}
+                />
+
+                {isHotel ? (
+                  <HotelDetailsFields
+                    starRating={form.watch("starRating")}
+                    checkInTime={form.watch("checkInTime")}
+                    checkOutTime={form.watch("checkOutTime")}
+                    onChange={(next) => {
+                      if (next.starRating !== undefined) form.setValue("starRating", next.starRating);
+                      if (next.checkInTime !== undefined) form.setValue("checkInTime", next.checkInTime);
+                      if (next.checkOutTime !== undefined) form.setValue("checkOutTime", next.checkOutTime);
+                    }}
+                  />
+                ) : null}
+
                 <FormField
                   control={form.control}
                   name="title"
@@ -189,6 +241,13 @@ export default function AdminStaysNew() {
                   />
                 </div>
 
+                {isHotel ? (
+                  <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
+                    A hotel's price, rooms and guests come from its room types and their meal-plan prices,
+                    which you add once the hotel is created.
+                  </div>
+                ) : (
+                <>
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <FormField
                     control={form.control}
@@ -274,6 +333,8 @@ export default function AdminStaysNew() {
                     )}
                   />
                 </div>
+                </>
+                )}
 
                 <FormField
                   control={form.control}
@@ -375,9 +436,9 @@ export default function AdminStaysNew() {
                 />
 
                 <div className="space-y-4">
-                  <FormLabel>Features & Amenities</FormLabel>
+                  <FormLabel>{isHotel ? "Hotel facilities" : "Features & Amenities"}</FormLabel>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                    {featureOptions.map((feature) => (
+                    {(isHotel ? hotelFacilityOptions : featureOptions).map((feature) => (
                       <div key={feature} className="flex items-center space-x-2">
                         <Checkbox
                           checked={selectedFeatures.includes(feature)}
@@ -404,7 +465,7 @@ export default function AdminStaysNew() {
                     disabled={createMutation.isPending}
                     data-testid="button-submit-stay"
                   >
-                    {createMutation.isPending ? "Creating..." : "Create Stay"}
+                    {createMutation.isPending ? "Creating..." : isHotel ? "Create hotel, then add rooms" : "Create Stay"}
                   </Button>
                 </div>
               </form>

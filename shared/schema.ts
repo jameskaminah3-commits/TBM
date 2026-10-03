@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, integer, timestamp, boolean, jsonb, index, bigserial, bigint, primaryKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import { mealPlanCodes, stayPropertyTypes, type HotelStaySnapshot, type RoomRate } from "./hotel-rooms.ts";
 
 // Replit Auth Integration: Session storage table
 // (IMPORTANT) This table is mandatory for Replit Auth, don't drop it.
@@ -400,6 +401,13 @@ export const bookings = pgTable("bookings", {
   adminLockNote: text("admin_lock_note"),
   adminLockedBy: varchar("admin_locked_by"),
   adminLockedAt: text("admin_locked_at"),
+  // A hotel booking takes rooms of one type on one meal plan (see
+  // shared/hotel-rooms.ts); an entire place's booking leaves these empty.
+  roomTypeId: varchar("room_type_id"),
+  roomCount: integer("room_count"),
+  mealPlan: text("meal_plan"),
+  // The room, meal plan and prices the booking was made at, set by the server.
+  hotelStay: jsonb("hotel_stay").$type<HotelStaySnapshot>(),
     paidAt: text("paid_at"),
   paymentFailedAt: text("payment_failed_at"),
   totalPrice: integer("total_price").notNull(),
@@ -554,8 +562,13 @@ export const insertBookingSchema = createInsertSchema(bookings).omit({
   adminLockNote: true,
   adminLockedBy: true,
   adminLockedAt: true,
+  // Priced by the server from the hotel's rates.
+  hotelStay: true,
 }).extend({
   accommodationId: z.string().nullable(),
+  roomTypeId: z.string().trim().min(1).max(100).nullable().optional(),
+  roomCount: z.number().int().min(1).max(50).nullable().optional(),
+  mealPlan: z.enum(mealPlanCodes).nullable().optional(),
   guestPhone: z.preprocess(
     (value) => (value == null ? undefined : value),
     z.string().optional(),
@@ -1265,9 +1278,21 @@ export const stays = pgTable("stays", {
   isPublic: boolean("is_public").notNull().default(false),
   managerUserId: varchar("manager_user_id"),
   features: text("features").array().notNull(),
+  // "entire_place" (booked whole, Airbnb style) or "hotel" (rooms by type and
+  // meal plan, in stay_room_types). A hotel's price, maxOccupancy, bedrooms and
+  // bathrooms follow from its rooms: the lowest room rate, the guests and the
+  // rooms they hold.
+  propertyType: text("property_type").notNull().default("entire_place"),
+  // A hotel's star rating (1–5), when it has one.
+  starRating: integer("star_rating"),
+  // Kenya times, "HH:MM".
+  checkInTime: text("check_in_time"),
+  checkOutTime: text("check_out_time"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
+
+const clockTime = z.string().trim().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use a time like 14:00");
 
 export const insertStaySchema = createInsertSchema(stays).omit({
   id: true,
@@ -1275,10 +1300,75 @@ export const insertStaySchema = createInsertSchema(stays).omit({
   updatedAt: true,
 }).extend({
   managerUserId: optionalManagerUserId,
+  propertyType: z.enum(stayPropertyTypes).optional(),
+  starRating: z.number().int().min(1).max(5).nullable().optional(),
+  checkInTime: clockTime.nullable().optional(),
+  checkOutTime: clockTime.nullable().optional(),
 });
 
 export type InsertStay = z.infer<typeof insertStaySchema>;
 export type Stay = typeof stays.$inferSelect;
+
+// A hotel's room types: how many rooms of each it sells through TBM, how many
+// guests one room sleeps, and its price per room per night on each meal plan.
+export const stayRoomTypes = pgTable(
+  "stay_room_types",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    stayId: varchar("stay_id").notNull(),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    bedType: text("bed_type").notNull().default(""),
+    sizeSqm: integer("size_sqm"),
+    maxGuests: integer("max_guests").notNull(),
+    roomCount: integer("room_count").notNull(),
+    imageUrl: text("image_url"),
+    amenities: text("amenities").array().notNull().default(sql`'{}'::text[]`),
+    rates: jsonb("rates").$type<RoomRate[]>().notNull().default(sql`'[]'::jsonb`),
+    sortOrder: integer("sort_order").notNull().default(0),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [index("idx_stay_room_types_stay").on(table.stayId)],
+);
+
+export const roomRateSchema = z.object({
+  mealPlan: z.enum(mealPlanCodes),
+  price: z.number().int("Use whole US dollars").min(1, "A rate must be at least US$1").max(100_000),
+  singlePrice: z.number().int("Use whole US dollars").min(1).max(100_000).nullable().optional(),
+}).refine((rate) => !rate.singlePrice || rate.singlePrice <= rate.price, {
+  message: "The price for one guest can't be more than the room's price.",
+  path: ["singlePrice"],
+});
+
+export const insertStayRoomTypeSchema = createInsertSchema(stayRoomTypes).omit({
+  id: true,
+  stayId: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  name: z.string().trim().min(2, "Give the room type a name").max(120),
+  description: z.string().trim().max(2000).optional(),
+  bedType: z.string().trim().max(120).optional(),
+  sizeSqm: z.number().int().min(1).max(10_000).nullable().optional(),
+  maxGuests: z.number().int().min(1, "A room sleeps at least one guest").max(20),
+  roomCount: z.number().int().min(1, "Sell at least one room of this type").max(500),
+  imageUrl: z.string().trim().max(2000).nullable().optional(),
+  amenities: z.array(z.string().trim().min(1).max(80)).max(40).optional(),
+  rates: z.array(roomRateSchema)
+    .min(1, "Add a price for at least one meal plan")
+    .refine((rates) => new Set(rates.map((rate) => rate.mealPlan)).size === rates.length, {
+      message: "Each meal plan can have only one price",
+    }),
+  sortOrder: z.number().int().min(0).max(1000).optional(),
+  isActive: z.boolean().optional(),
+});
+
+export type InsertStayRoomType = z.infer<typeof insertStayRoomTypeSchema>;
+export type StayRoomType = typeof stayRoomTypes.$inferSelect;
+/** A stay as the site shows it: a hotel comes with its room types. */
+export type StayWithRooms = Stay & { roomTypes?: StayRoomType[] };
 
 // Stay Reservations (for availability tracking)
 export const stayReservations = pgTable("stay_reservations", {
@@ -1288,12 +1378,19 @@ export const stayReservations = pgTable("stay_reservations", {
   endDate: text("end_date").notNull(), // ISO date string
   status: text("status").notNull().default("booked"), // "booked" or "blocked"
   bookingId: varchar("booking_id"), // Optional reference to booking
+  // At a hotel, a block can close some rooms of one type; with no room type it
+  // closes the whole hotel, and with no count every room of the type.
+  roomTypeId: varchar("room_type_id"),
+  roomCount: integer("room_count"),
   createdAt: text("created_at").notNull(),
 });
 
 export const insertStayReservationSchema = createInsertSchema(stayReservations).omit({
   id: true,
   createdAt: true,
+}).extend({
+  roomTypeId: z.string().trim().min(1).max(100).nullable().optional(),
+  roomCount: z.number().int().min(1).max(500).nullable().optional(),
 });
 
 export type InsertStayReservation = z.infer<typeof insertStayReservationSchema>;

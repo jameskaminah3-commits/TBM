@@ -334,6 +334,23 @@ Format:
 
 Do not embed images. The link goes to the page with the images.
 
+HOTELS AND ENTIRE PLACES
+Every stay has a property_type. An entire_place (apartment, villa, home) is
+booked whole, at one price per night. A hotel sells rooms: each room type
+has prices per room per night on the meal plans the hotel offers. Always say
+which kind each option is, so the customer can tell them apart:
+
+  Bahari Beach Hotel — Nyali (hotel, 4-star)
+  Rooms from <price_from_per_room_per_night_display>/room/night · Deluxe Double: B&B or half board
+  [View full listing →](<public_url from the tool>)
+
+Meal plans: RO room only · BB bed & breakfast · HB half board (breakfast
+and dinner) · FB full board (breakfast, lunch and dinner) · AI all inclusive.
+To book a hotel, the customer chooses the room and the meal plan — never
+choose a meal plan for them. Check rooms_left with check_stay_availability,
+then pass room_type_id, meal_plan and rooms to create_draft_booking. A
+private chef is for entire places only: at a hotel, offer its meal plans.
+
 RULE 3 — Only present units that match what the customer asked for.
 If the customer says "studios", call search_stays with keyword="studio"
 and only present what comes back. Do NOT mix in 1-bedroom, 2-bedroom, or
@@ -541,9 +558,10 @@ BOOKING TOOLS — which one to call
 You have two booking tools. Choosing correctly matters.
 
 • create_draft_booking
-    Use when the customer is booking a STAY (a villa, apartment, etc.)
-    — with or without add-on services. Requires a stay_id and a real
-    check-in/check-out range (check-out must be after check-in).
+    Use when the customer is booking a STAY (a villa, apartment, hotel
+    room, etc.) — with or without add-on services. Requires a stay_id and
+    a real check-in/check-out range (check-out must be after check-in).
+    For a hotel, also room_type_id, meal_plan and rooms.
 
 • create_service_booking
     Use when the customer is booking a ONE-OFF SERVICE without a stay:
@@ -734,10 +752,12 @@ const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
             {
         name: "search_stays",
         description:
-          "Find stays (villas, apartments, studios, beach houses) matching a region, " +
+          "Find stays (villas, apartments, studios, beach houses, hotels) matching a region, " +
           "guest count, and/or a keyword in the title. Always pass a `keyword` when " +
           "the customer names a specific type of unit (studio, villa, apartment, " +
-          "bedroom). Returns a public_url for the listing page — never an image URL.",
+          "bedroom). Each result has property_type: entire_place (booked whole, one " +
+          "price per night) or hotel (rooms, each with prices per room per night on " +
+          "meal plans). Returns a public_url for the listing page — never an image URL.",
         parameters: {
           type: Type.OBJECT,
           properties: {
@@ -812,7 +832,8 @@ const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
         name: "check_stay_availability",
         description:
           "Check whether a specific stay is available for given dates. " +
-          "Returns available: true/false. Always call before confirming a booking.",
+          "Returns available: true/false; for a hotel, also each room's rooms_left " +
+          "and meal-plan prices. Always call before confirming a booking.",
         parameters: {
           type: Type.OBJECT,
           properties: {
@@ -923,7 +944,8 @@ const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
           "Create a draft booking and return a payment link. " +
           "IMPORTANT: Do NOT pass a price — the server calculates the total from " +
           "the stay and services you specify. Required: customer name, email, phone, " +
-          "guests, dates, and a stay_id. Duplicate protection is handled by the server.",
+          "guests, dates, and a stay_id. For a hotel, also the room_type_id and " +
+          "meal_plan the customer chose, and rooms. Duplicate protection is handled by the server.",
         parameters: {
           type: Type.OBJECT,
           properties: {
@@ -934,6 +956,19 @@ const toolDeclarations: { functionDeclarations: FunctionDeclaration[] }[] = [
             check_in: { type: Type.STRING },
             check_out: { type: Type.STRING },
             stay_id: { type: Type.STRING },
+            room_type_id: {
+              type: Type.STRING,
+              description: "Hotels only: the room_type_id of the room the customer chose.",
+            },
+            meal_plan: {
+              type: Type.STRING,
+              enum: ["RO", "BB", "HB", "FB", "AI"],
+              description: "Hotels only: the meal plan the customer chose. Never choose it for them.",
+            },
+            rooms: {
+              type: Type.NUMBER,
+              description: "Hotels only: how many rooms of that type. Defaults to the fewest that fit the guests.",
+            },
             service_ids: {
               type: Type.ARRAY,
               items: { type: Type.STRING },
