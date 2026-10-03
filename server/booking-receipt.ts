@@ -1,5 +1,6 @@
 import type { Booking } from "../shared/schema.ts";
 import { formatCalendarDate, KENYA_TIME_ZONE } from "../shared/calendar-dates.ts";
+import { formatMealPlan } from "../shared/hotel-rooms.ts";
 import {
   getBookingAmountPaid,
   getBookingOutstandingAmount,
@@ -163,8 +164,13 @@ export function buildBookingReceiptPdf(booking: Booking) {
     ["Payment reference", booking.paymentReference || "Pending confirmation"],
     ["Paid at", formatReceiptTimestamp(booking.paidAt)],
   ];
+  // The receipt's fonts are plain ASCII: "2 x Deluxe Double, Half board (HB)".
+  const hotelRoom = booking.hotelStay
+    ? `${booking.hotelStay.rooms > 1 ? `${booking.hotelStay.rooms} x ` : ""}${booking.hotelStay.roomTypeName}, ${formatMealPlan(booking.hotelStay.mealPlan)}`
+    : null;
   const bookingRows = [
     ["Booking dates", bookingDates],
+    ...(hotelRoom ? [["Room", hotelRoom]] : []),
     ["Total booking value", formatReceiptAmount(booking.totalPrice)],
     ["Total paid so far", formatReceiptAmount(amountPaid)],
     ["Balance remaining", outstandingAmount > 0 ? formatReceiptAmount(outstandingAmount) : "Fully settled"],
@@ -235,7 +241,9 @@ export function buildBookingReceiptPdf(booking: Booking) {
   commands.push("0.88 0.91 0.89 RG");
   commands.push(drawLine(70, 234, 542, 234));
 
-  y = 210;
+  // A hotel booking's extra row fits above the footer with tighter rows.
+  const bookingRowGap = bookingRows.length > 4 ? 24 : 27;
+  y = bookingRows.length > 4 ? 214 : 210;
   bookingRows.forEach(([label, value]) => {
     commands.push("0.36 0.42 0.38 rg");
     commands.push(drawText(label.toUpperCase(), 86, y, 8, "F2"));
@@ -243,7 +251,7 @@ export function buildBookingReceiptPdf(booking: Booking) {
     commands.push(drawText(compactText(value, 44), 250, y, 11));
     commands.push("0.92 0.94 0.93 RG");
     commands.push(drawLine(86, y - 13, 526, y - 13));
-    y -= 27;
+    y -= bookingRowGap;
   });
 
   commands.push("[3 4] 0 d");

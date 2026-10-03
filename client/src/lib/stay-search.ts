@@ -13,9 +13,12 @@ export type StaySearchState = {
   features: string[];
   sort: StaySearchSort;
   query: string;
+  /** Hotels, entire places (Airbnb style), or both. */
+  stayType: StaySearchType;
 };
 
 export type StaySearchSort = "recommended" | "price-low" | "price-high" | "rating" | "capacity";
+export type StaySearchType = "all" | "hotel" | "entire_place";
 
 function normalizeSearch(search: string) {
   return search.startsWith("?") ? search.slice(1) : search;
@@ -71,6 +74,8 @@ export function readStaySearchState(search: string): StaySearchState {
     sort,
     query: readTrimmedParam(params, "query"),
   });
+  const typeParam = readTrimmedParam(params, "type");
+  const stayType: StaySearchType = typeParam === "hotel" || typeParam === "entire_place" ? typeParam : "all";
 
   return {
     destination,
@@ -84,6 +89,7 @@ export function readStaySearchState(search: string): StaySearchState {
     features,
     sort,
     query,
+    stayType,
   };
 }
 
@@ -140,6 +146,10 @@ export function buildStaySearchParams(state: Partial<StaySearchState>) {
 
   if (query) {
     params.set("query", query);
+  }
+
+  if (state.stayType === "hotel" || state.stayType === "entire_place") {
+    params.set("type", state.stayType);
   }
 
   return params.toString();

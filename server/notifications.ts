@@ -7,6 +7,7 @@ import {
 import type { Booking, BookingPaymentStatus, User } from "../shared/schema.ts";
 import { SUPPORT_PHONE_DISPLAY } from "../shared/support-contact.ts";
 import { formatCalendarDateRange, KENYA_TIME_ZONE } from "../shared/calendar-dates.ts";
+import { describeHotelStay } from "../shared/hotel-rooms.ts";
 import { buildVerificationEmail, type VerificationPurpose } from "./verification-email.ts";
 import { getUsdToKesRate } from "./currency.ts";
 
@@ -150,7 +151,7 @@ function getPrimaryGuestLabel(booking: Booking) {
 
 function getBookingCategoryLabel(booking: Booking) {
   if (booking.accommodationId) {
-    return "Stay booking";
+    return booking.hotelStay ? "Hotel booking" : "Stay booking";
   }
 
   if (booking.bookingType === "service" && booking.selectedServices.length === 0) {
@@ -354,6 +355,7 @@ function buildBookingSummaryLines(booking: Booking, usdToKes: number | null = nu
     `Guest email: ${booking.guestEmail}`,
     booking.guestPhone ? `Guest phone: ${booking.guestPhone}` : null,
     `Dates: ${getBookingDateLabel(booking)}`,
+    booking.hotelStay ? `Room: ${describeHotelStay(booking.hotelStay)}` : null,
     `Guests: ${booking.guests}`,
     `Total: ${kesQuote ? `${formatKes(kesQuote)} (${formatUsd(booking.totalPrice)})` : formatWithKes(booking.totalPrice, usdToKes)}`,
     `Payment status: ${booking.paymentStatus}`,

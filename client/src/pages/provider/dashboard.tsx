@@ -49,6 +49,7 @@ import { getPublicListingPath } from "@shared/seo";
 import { getCookExtraGuestInclusivePrice, getCookExtraGuestServiceFee, getCookMinimumGuests } from "@shared/cook-pricing";
 import { HOUSE_CLEANING_BASE_ROOM_LABEL, getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
 import { formatCalendarDate, formatCalendarDateRange, isCalendarDate, todayInKenya } from "@shared/calendar-dates";
+import { isHotelStay } from "@shared/hotel-rooms";
 
 type ProviderAssignments = {
   stays: Stay[];
@@ -1243,7 +1244,7 @@ export default function ProviderDashboard() {
   const listingDetails = (listing: (typeof hubListings)[number]): string[] => {
     if (listing.workspace === "stays") {
       const stay = data?.stays?.find((item) => item.id === listing.id);
-      return stay ? [`${formatAmount(stay.price)} a night`] : [];
+      return stay ? [isHotelStay(stay) ? `Hotel · from ${formatAmount(stay.price)} a room a night` : `${formatAmount(stay.price)} a night`] : [];
     }
     if (listing.workspace === "cars") {
       const car = data?.cars?.find((item) => item.id === listing.id);
