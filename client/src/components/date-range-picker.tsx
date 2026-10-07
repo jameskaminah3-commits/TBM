@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { DayPicker, type DayModifiers } from "react-day-picker";
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,9 @@ type DateRangePickerProps = {
   className?: string;
   id?: string;
   "data-testid"?: string;
+  /** Lets another control open the calendar, such as a pinned bar's "Check dates". */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 };
 
 /** "Fri 6 Nov": how guests read a date. */
@@ -81,9 +84,16 @@ export function DateRangePicker({
   className,
   id,
   "data-testid": testId,
+  open: controlledOpen,
+  onOpenChange,
 }: DateRangePickerProps) {
   const isMobile = useIsMobile();
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = (next: boolean) => {
+    setUncontrolledOpen(next);
+    onOpenChange?.(next);
+  };
   // While picking: the start chosen, waiting for an end.
   const [pendingStart, setPendingStart] = useState<string | null>(null);
   const firstDay = minDate ?? todayInKenya();
@@ -93,6 +103,13 @@ export function DateRangePicker({
   const start = pendingStart ?? checkIn;
   const end = pendingStart ? "" : checkOut;
   const [month, setMonth] = useState<Date>(() => parseCalendarDate(checkIn || firstDay) ?? new Date());
+
+  // Each time it opens, however it was opened: start fresh on the chosen month.
+  useEffect(() => {
+    if (!open) return;
+    setPendingStart(null);
+    setMonth(parseCalendarDate(checkIn || firstDay) ?? new Date());
+  }, [open]);
 
   // The latest end for a range starting on `from`: the first booked day after
   // it (a stay can end the morning the next booking begins).
@@ -150,7 +167,7 @@ export function DateRangePicker({
         modifiersClassNames={{ booked: "line-through decoration-2 text-muted-foreground/60" }}
         showOutsideDays={false}
         classNames={{
-          months: cn("flex gap-6", isMobile ? "flex-col" : "flex-row"),
+          months: cn("flex gap-6", isMobile ? "flex-col items-center" : "flex-row"),
           month: "space-y-3",
           caption: "relative flex items-center justify-center pt-1",
           caption_label: "text-sm font-semibold",
@@ -212,11 +229,7 @@ export function DateRangePicker({
         "flex min-h-11 w-full items-center gap-3 rounded-lg border border-input bg-background px-3 py-2 text-left text-sm shadow-sm transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         className,
       )}
-      onClick={() => {
-        setPendingStart(null);
-        setMonth(parseCalendarDate(checkIn || firstDay) ?? new Date());
-        setOpen(true);
-      }}
+      onClick={() => setOpen(true)}
       data-testid={testId}
     >
       <CalendarDays className="h-4 w-4 shrink-0 text-muted-foreground" />

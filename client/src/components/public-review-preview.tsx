@@ -21,6 +21,15 @@ function formatGuestName(value?: string | null) {
   return value?.trim() || "Verified Guest";
 }
 
+/** "Amina", for a review shown in public: the first name only. */
+function firstName(value?: string | null) {
+  return value?.trim().split(/\s+/)[0] || "A guest";
+}
+
+function formatReviewMonth(value: string) {
+  return new Date(value).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+}
+
 export function PublicReviewPreview({
   targetType,
   targetId,
@@ -29,10 +38,12 @@ export function PublicReviewPreview({
 }: {
   targetType: ReviewTargetType;
   targetId: string;
-  variant?: "compact" | "full";
+  /** "open": every review shown, for a listing's own page. */
+  variant?: "compact" | "full" | "open";
   maxItems?: number;
 }) {
   const [open, setOpen] = useState(false);
+  const [showAll, setShowAll] = useState(false);
   const { data: reviews = [] } = useQuery<PublicReview[]>({
     queryKey: ["/api/reviews", targetType, targetId],
     queryFn: async () => {
@@ -52,6 +63,42 @@ export function PublicReviewPreview({
 
   if (visibleReviews.length === 0) {
     return null;
+  }
+
+  if (variant === "open") {
+    const shown = showAll ? commentReviews : visibleReviews;
+    return (
+      <section id="reviews" aria-labelledby="reviews-heading" className="scroll-mt-24 space-y-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <h2 id="reviews-heading" className="flex items-center gap-2 font-serif text-2xl font-medium">
+            <Star className="h-5 w-5 fill-amber-400 text-amber-400" />
+            {averageRating} · {reviews.length} review{reviews.length === 1 ? "" : "s"}
+          </h2>
+          <span className="text-sm text-muted-foreground">From guests who booked with us</span>
+        </div>
+        <ul className="grid gap-3 md:grid-cols-2">
+          {shown.map((review) => (
+            <li key={review.id} className="rounded-2xl border border-border/60 bg-card/70 p-4">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="font-medium text-foreground">{firstName(review.guestName)}</span>
+                <span className="text-xs text-muted-foreground">{formatReviewMonth(review.createdAt)}</span>
+              </div>
+              <div className="mt-1 flex items-center gap-0.5" aria-label={`${review.rating} out of 5`}>
+                {Array.from({ length: 5 }).map((_, index) => (
+                  <Star key={index} className={`h-3.5 w-3.5 ${index < review.rating ? "fill-amber-400 text-amber-400" : "text-muted-foreground/35"}`} />
+                ))}
+              </div>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">{review.comment?.trim()}</p>
+            </li>
+          ))}
+        </ul>
+        {commentReviews.length > maxItems ? (
+          <Button variant="outline" className="rounded-full" onClick={() => setShowAll((value) => !value)}>
+            {showAll ? "Show fewer reviews" : `Show all ${commentReviews.length} reviews`}
+          </Button>
+        ) : null}
+      </section>
+    );
   }
 
   if (variant === "full") {

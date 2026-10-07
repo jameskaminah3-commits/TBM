@@ -792,4 +792,19 @@
       bottom: 6.25rem;
     }
   }
+
+  /* A listing's page pins a booking bar (4.5rem) above the tab bar below
+     1024px; Zaina's button and her panel move up to sit above it. On phones
+     her panel is full screen, so it stays put. */
+  @media (max-width: 1023px) {
+    .bottom-above-tab.zaina-lifted {
+      bottom: calc(4rem + env(safe-area-inset-bottom) + 0.875rem + 4.5rem);
+    }
+  }
+
+  @media (min-width: 640px) and (max-width: 1023px) {
+    .zaina-above-launcher.zaina-lifted {
+      bottom: calc(4rem + env(safe-area-inset-bottom) + 0.875rem + 4.75rem + 4.5rem);
+    }
+  }
 }

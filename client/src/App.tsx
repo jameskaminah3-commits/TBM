@@ -12,6 +12,7 @@ import { SiteFooter } from "@/components/site-footer";
 import { TembeaLoader } from "@/components/tembea-loader";
 import { CurrencyProvider } from "@/lib/currency";
 import { ConciergeSearchProvider, getSectionFromPath } from "@/lib/concierge-search";
+import { isListingDetailPath } from "@/lib/public-listing";
 import { ZainaWidget } from "@/components/ZainaWidget";
 import { AdminZainaBubble } from "@/components/admin-zaina-bubble";
 import { RouteSeo } from "@/components/route-seo";
@@ -203,7 +204,12 @@ function AppShell() {
       <div className="min-h-screen flex flex-col">
         <RouteSeo pathname={location} />
         {shouldShowHeader ? <Header /> : null}
-        {shouldShowSiteChrome && currentSection ? <ConciergeSearchBar currentSection={currentSection} /> : null}
+        {shouldShowSiteChrome && currentSection ? (
+          // On a listing's own page, phones go straight to the listing.
+          <div className={isListingDetailPath(location) ? "max-md:hidden" : undefined}>
+            <ConciergeSearchBar currentSection={currentSection} />
+          </div>
+        ) : null}
         <main className="relative flex-1">
           <div ref={routeContainerRef}>
             <Router />

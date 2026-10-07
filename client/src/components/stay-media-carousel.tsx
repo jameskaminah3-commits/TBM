@@ -18,6 +18,7 @@ type StayMediaCarouselProps = {
   thumbnailPlacement?: "overlay" | "below";
   eagerFirstImage?: boolean;
   showArrows?: boolean;
+  layout?: "carousel" | "mosaic";
 };
 
 export function StayMediaCarousel({
@@ -29,6 +30,7 @@ export function StayMediaCarousel({
   thumbnailPlacement = "overlay",
   eagerFirstImage = true,
   showArrows,
+  layout,
 }: StayMediaCarouselProps) {
   const item = React.useMemo(() => {
     const hasGalleryMedia = Boolean(stay.imageUrl || (stay.galleryUrls && stay.galleryUrls.length > 0));
@@ -50,8 +52,8 @@ export function StayMediaCarousel({
       imageClassName={imageClassName}
       thumbnailPlacement={thumbnailPlacement}
       eagerFirstImage={eagerFirstImage}
-      zoomLabel="Tap to zoom"
       showArrows={showArrows}
+      layout={layout}
     />
   );
 }

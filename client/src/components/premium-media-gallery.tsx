@@ -23,7 +23,11 @@ type PremiumMediaGalleryProps = {
   eagerFirstImage?: boolean;
   zoomLabel?: string;
   showArrows?: boolean;
+  /** "mosaic": on a laptop, one large photo and four smaller ones; a swipeable carousel on phones. */
+  layout?: "carousel" | "mosaic";
 };
+
+const MOSAIC_ROWS: Record<number, string> = { 1: "grid-rows-1", 2: "grid-rows-2", 3: "grid-rows-3" };
 
 function getGalleryImages(item: GallerySource) {
   return [item.imageUrl, ...(item.galleryUrls ?? [])].filter(
@@ -40,8 +44,9 @@ export function PremiumMediaGallery({
   imageClassName,
   thumbnailPlacement = "overlay",
   eagerFirstImage = true,
-  zoomLabel = "Tap to zoom",
+  zoomLabel = "View photos",
   showArrows = true,
+  layout = "carousel",
 }: PremiumMediaGalleryProps) {
   const galleryImages = React.useMemo(() => getGalleryImages(item), [item]);
   const [carouselApi, setCarouselApi] = React.useState<CarouselApi>();
@@ -124,8 +129,46 @@ export function PremiumMediaGallery({
     lastTapRef.current = now;
   };
 
+  const mosaic = layout === "mosaic" && galleryImages.length >= 3;
+  const mosaicRest = galleryImages.slice(1, 5);
+
   return (
     <div className={cn("space-y-4", className)}>
+      {mosaic ? (
+        <div className="relative hidden h-[26rem] grid-cols-2 grid-rows-1 gap-2 overflow-hidden rounded-[1.6rem] md:grid lg:h-[30rem]" data-testid="gallery-mosaic">
+          <button type="button" className="group relative overflow-hidden bg-muted" onClick={() => openLightbox(0)}>
+            <ListingMedia
+              src={galleryImages[0]}
+              alt={`${title} photo 1`}
+              mediaType={item.mediaType}
+              className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+              loading={eagerFirstImage ? "eager" : "lazy"}
+            />
+          </button>
+          <div className={cn("grid min-h-0 gap-2", mosaicRest.length >= 4 ? "grid-cols-2 grid-rows-2" : MOSAIC_ROWS[mosaicRest.length])}>
+            {mosaicRest.map((imageUrl, offset) => (
+              <button key={`${item.id}-mosaic-${offset}`} type="button" className="group relative overflow-hidden bg-muted" onClick={() => openLightbox(offset + 1)}>
+                <ListingMedia
+                  src={imageUrl}
+                  alt={`${title} photo ${offset + 2}`}
+                  mediaType={item.mediaType}
+                  className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                  loading="lazy"
+                />
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="absolute bottom-4 right-4 inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/95 px-4 py-2 text-sm font-medium text-slate-900 shadow-lg transition hover:bg-white"
+            onClick={() => openLightbox(0)}
+          >
+            <Maximize2 className="h-4 w-4" />
+            Show all {galleryImages.length} photos
+          </button>
+        </div>
+      ) : null}
+      <div className={cn(mosaic && "md:hidden")}>
       <div className={containerClassName ?? "relative overflow-hidden rounded-[1.6rem] bg-muted"}>
         {galleryImages.length > 0 ? (
           <Carousel className="overflow-hidden" opts={{ loop: galleryImages.length > 1 }} setApi={setCarouselApi}>
@@ -136,7 +179,6 @@ export function PremiumMediaGallery({
                     type="button"
                     className={cn("group relative block w-full overflow-hidden bg-muted text-left", aspectClassName)}
                     onClick={() => openLightbox(index)}
-                    aria-label={`${zoomLabel} ${index + 1} for ${title}`}
                   >
                     <ListingMedia
                       src={imageUrl}
@@ -272,6 +314,7 @@ export function PremiumMediaGallery({
           </div>
         </div>
       ) : null}
+      </div>
 
       <DialogPrimitive.Root
         open={lightboxOpen}

@@ -23,6 +23,7 @@ import { ZainaAvatar } from "./ZainaAvatar";
 import { WHATSAPP_URL } from "@/lib/contact-info";
 import { ZAINA_OPEN_EVENT, setZainaAvailable, whatsAppUrlWithText, type OpenZainaDetail } from "@/lib/zaina";
 import { useCurrency } from "@/lib/currency";
+import { isListingDetailPath } from "@/lib/public-listing";
 
 type Msg = { role: "user" | "assistant"; content: string };
 type Chip = { emoji: string; label: string };
@@ -290,6 +291,8 @@ export function ZainaWidget() {
   currencyRef.current = selectedCurrency;
   // Checkout pages pin their own Book bar to the bottom of small screens.
   const onCheckoutPage = location.startsWith("/book/");
+  // A listing's page pins a booking bar too; Zaina's button sits above it.
+  const onListingPage = isListingDetailPath(location);
 
   // ─── Feature flag ─────────────────────────────────────────────
   useEffect(() => {
@@ -700,8 +703,10 @@ export function ZainaWidget() {
       {/* Floating tooltip — once per session */}
       {showTooltip && !open && !formFieldFocused && !overlayOpen && !onCheckoutPage && (
  <div
-          className="zaina-tooltip-enter zaina-above-launcher fixed right-4 xl:right-6 z-[9999] max-w-[240px]
-                     rounded-2xl rounded-br-sm bg-white px-4 py-3 text-sm text-gray-800 shadow-xl"
+          className={
+            "zaina-tooltip-enter zaina-above-launcher fixed right-4 xl:right-6 z-[9999] max-w-[240px] rounded-2xl rounded-br-sm bg-white px-4 py-3 text-sm text-gray-800 shadow-xl" +
+            (onListingPage ? " max-lg:hidden" : "")
+          }
         >
           {TOOLTIP_COPY}
           <button
@@ -727,7 +732,8 @@ export function ZainaWidget() {
           (open ? " max-sm:hidden" : "") +
           (formFieldFocused ? " max-sm:hidden" : "") +
           (overlayOpen && !open ? " hidden" : "") +
-          (onCheckoutPage ? " max-lg:hidden" : "")
+          (onCheckoutPage ? " max-lg:hidden" : "") +
+          (onListingPage ? " zaina-lifted" : "")
         }
       >
         {open ? (
@@ -746,9 +752,9 @@ export function ZainaWidget() {
           data-zaina-panel
           role="dialog"
           aria-label="Chat with Zaina"
-          className="zaina-panel-enter zaina-above-launcher fixed z-[9998] flex flex-col overflow-hidden rounded-2xl bg-white shadow-2xl
+          className={`zaina-panel-enter zaina-above-launcher fixed z-[9998] flex flex-col overflow-hidden rounded-2xl bg-white shadow-2xl
                      right-4 xl:right-6 h-[580px] max-h-[calc(100dvh-12rem)] w-[380px] max-w-[calc(100vw-2rem)]
-                     max-sm:inset-0 max-sm:h-[100dvh] max-sm:max-h-none max-sm:w-full max-sm:max-w-none max-sm:rounded-none"
+                     max-sm:inset-0 max-sm:h-[100dvh] max-sm:max-h-none max-sm:w-full max-sm:max-w-none max-sm:rounded-none${onListingPage ? " zaina-lifted" : ""}`}
         >
           {/* Header with avatar breaking the baseline */}
           <div className="relative bg-emerald-700 px-4 pb-5 pt-4 text-white max-sm:pt-[calc(env(safe-area-inset-top)+1rem)]">
