@@ -1,136 +1,31 @@
 import { useQuery } from "@tanstack/react-query";
-import { useLocation } from "wouter";
-import { Card } from "@/components/ui/card";
+import { useLocation, useSearch } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { CurrencyAmount } from "@/components/currency-amount";
-import { Car, MapPin, Star } from "lucide-react";
 import { filterCars, useConciergeSearch } from "@/lib/concierge-search";
 import { CustomServiceCta } from "@/components/custom-service-cta";
-import { PublicReviewPreview } from "@/components/public-review-preview";
-import { PremiumMediaGallery } from "@/components/premium-media-gallery";
+import { ListingCard, ListingPrice } from "@/components/listing-card";
 import type { Car as CarType } from "@shared/schema";
-import { getPublicListingPath } from "@/lib/public-listing";
+import { getPublicListingPath, getShortSeoLocation } from "@/lib/public-listing";
 
-function getLeadPrice(car: CarType) {
-  const options = [
-    car.priceWithDriverHourly ? { amount: car.priceWithDriverHourly, label: "hour chauffeur" } : null,
-    car.pricePerDay ? { amount: car.pricePerDay, label: "day self-drive" } : null,
-    { amount: car.priceWithDriver, label: "day chauffeur" },
-  ].filter((value): value is { amount: number; label: string } => value !== null);
+type DriveMode = "driver" | "self" | "hourly";
 
-  return options.reduce((lowest, current) => (current.amount < lowest.amount ? current : lowest));
+// How a guest wants the car; each card then shows that one price.
+// bookingMode is how the car's page and checkout name it (?mode=).
+const driveModes: Array<{ value: DriveMode; label: string; unit: string; bookingMode: string }> = [
+  { value: "driver", label: "With a driver", unit: "a day with a driver", bookingMode: "car-chauffeur-day" },
+  { value: "self", label: "Self-drive", unit: "a day, self-drive", bookingMode: "car-self-drive-day" },
+  { value: "hourly", label: "By the hour", unit: "an hour with a driver", bookingMode: "car-chauffeur-hourly" },
+];
+
+function priceForMode(car: CarType, mode: DriveMode) {
+  const price = mode === "driver" ? car.priceWithDriver : mode === "self" ? car.pricePerDay : car.priceWithDriverHourly;
+  return price && price > 0 ? price : null;
 }
 
-const detailChipClassName =
-  "surface-subtle rounded-full border px-2.5 py-1 text-[11px] font-medium text-foreground/78 shadow-none";
-
-function CarShowcaseCard({
-  car,
-  onOpen,
-}: {
-  car: CarType;
-  onOpen: () => void;
-}) {
-  const leadPrice = getLeadPrice(car);
-
-  return (
-    <Card
-      className="surface-card group relative overflow-hidden border shadow-[0_14px_36px_-24px_rgba(15,23,42,0.45)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_22px_48px_-28px_rgba(15,23,42,0.52)]"
-      data-testid={`card-service-${car.id}`}
-    >
-      <div className="absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-primary/55 to-transparent opacity-80" />
-
-      <div className="relative">
-        <PremiumMediaGallery
-          item={car}
-          title={car.model}
-          aspectClassName="aspect-[16/10]"
-          zoomLabel="View car photo"
-        />
-      </div>
-
-      <div className="space-y-3 p-4">
-        <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary/10 ring-1 ring-primary/10">
-            <Car className="h-5 w-5 text-primary" strokeWidth={1.5} />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="mb-1 flex items-start justify-between gap-3">
-              <h3 className="font-serif text-xl font-medium tracking-tight text-foreground">{car.model}</h3>
-            </div>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
-              <span>Rated {car.rating.toFixed(1)}/5 by verified guests</span>
-            </div>
-            <div className="mt-1.5 flex items-center gap-2 text-sm text-muted-foreground">
-              <MapPin className="h-4 w-4" />
-              <span className="line-clamp-1">{car.location}</span>
-            </div>
-          </div>
-        </div>
-
-        <p className="line-clamp-2 text-sm leading-5 text-muted-foreground">
-          {car.description}
-        </p>
-
-        <PublicReviewPreview targetType="car" targetId={car.id} />
-
-        <div className="flex flex-wrap gap-2">
-          <Badge variant="secondary" className={detailChipClassName}>
-            {car.transmission}
-          </Badge>
-          <Badge variant="secondary" className={detailChipClassName}>
-            {car.seats} seats
-          </Badge>
-          {car.features.slice(0, 2).map((feature, idx) => (
-            <Badge key={idx} variant="secondary" className={detailChipClassName}>
-              {feature}
-            </Badge>
-          ))}
-        </div>
-
-        <div className="flex items-end justify-between border-t border-border/60 pt-3">
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-              From {leadPrice.label}
-            </p>
-            <CurrencyAmount
-              amountUsd={leadPrice.amount}
-              primaryClassName="mt-1 text-lg font-semibold tracking-tight text-foreground"
-            />
-            <p className="mt-1 text-xs text-muted-foreground">
-              <CurrencyAmount amountUsd={car.priceWithDriver} /> chauffeur per day
-            </p>
-            <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-              {car.chauffeurZones.length > 0 ? <span>Zone pricing</span> : null}
-            </div>
-            {(car.pricePerDay || car.selfDriveMileageLimitKm) ? (
-              <p className="mt-1 text-xs text-muted-foreground">
-                {car.pricePerDay ? (
-                  <>
-                    <CurrencyAmount amountUsd={car.pricePerDay} /> self-drive
-                  </>
-                ) : null}
-                {car.pricePerDay && car.selfDriveMileageLimitKm ? " | " : null}
-                {car.selfDriveMileageLimitKm ? `${car.selfDriveMileageLimitKm} km/day included` : null}
-              </p>
-            ) : null}
-          </div>
-          <Button
-            className="rounded-full px-5"
-            onClick={(event) => {
-              event.stopPropagation();
-              onOpen();
-            }}
-            data-testid={`button-book-${car.id}`}
-          >
-            View Vehicle
-          </Button>
-        </div>
-      </div>
-    </Card>
-  );
+function readDriveMode(search: string): DriveMode {
+  const mode = new URLSearchParams(search).get("mode");
+  return mode === "self" || mode === "hourly" ? mode : "driver";
 }
 
 export default function DrivePage() {
@@ -140,7 +35,22 @@ export default function DrivePage() {
     queryKey: ["/api/cars"],
   });
 
-  const carListings = query ? filterCars(cars || [], query) : cars || [];
+  const search = useSearch();
+  const mode = readDriveMode(search);
+  const matchedCars = query ? filterCars(cars || [], query) : cars || [];
+  const carListings = matchedCars.filter((car) => priceForMode(car, mode) !== null);
+  const modeCounts = Object.fromEntries(
+    driveModes.map((option) => [option.value, matchedCars.filter((car) => priceForMode(car, option.value) !== null).length]),
+  ) as Record<DriveMode, number>;
+  const modeOption = driveModes.find((option) => option.value === mode) ?? driveModes[0];
+  const modeUnit = modeOption.unit;
+  const setMode = (next: DriveMode) => {
+    const params = new URLSearchParams(search);
+    if (next === "driver") params.delete("mode");
+    else params.set("mode", next);
+    const nextSearch = params.toString();
+    setLocation(`/services/drive${nextSearch ? `?${nextSearch}` : ""}`, { replace: true });
+  };
 
   if (isLoading) {
     return (
@@ -173,42 +83,87 @@ export default function DrivePage() {
   }
 
   return (
-    <div className="app-shell min-h-screen py-12">
+    <div className="app-shell min-h-screen pb-12 pt-6 md:pt-10">
       <div className="container mx-auto px-4 md:px-8">
-        <div className="mb-12">
-          <h1 className="mb-4 font-serif text-3xl font-medium leading-tight sm:text-4xl md:text-5xl">
+        <header className="mb-6">
+          <h1 className="font-serif text-2xl font-medium leading-tight sm:text-3xl md:text-4xl">
             Car Hire and Chauffeur Service in Mombasa
           </h1>
-          <p className="max-w-3xl text-base leading-7 text-muted-foreground sm:text-lg">
-            Compare self-drive car hire, chauffeur-driven vehicles, airport transfers and coastal transport for Mombasa, Nyali and nearby destinations.
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground sm:text-base sm:leading-7">
+            A driver for the day, a car to drive yourself, or a ride by the hour: airport and SGR pickups, days out and getting around Mombasa, Nyali, Diani and beyond.
           </p>
+        </header>
+
+        <div
+          role="radiogroup"
+          aria-label="How you want the car"
+          className="mb-4 grid w-full grid-cols-3 gap-1 rounded-full border border-border/60 bg-muted/30 p-1 sm:inline-flex sm:w-auto"
+        >
+          {driveModes.map((option) => {
+            const active = mode === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                onClick={() => setMode(option.value)}
+                className={`min-h-11 whitespace-nowrap rounded-full px-2 py-1.5 text-sm font-medium transition-colors sm:px-4 ${
+                  active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                }`}
+                data-testid={`button-drive-mode-${option.value}`}
+              >
+                {option.label}
+                <span className="ml-1.5 hidden text-xs text-muted-foreground sm:inline">{modeCounts[option.value]}</span>
+              </button>
+            );
+          })}
         </div>
 
         {query ? (
-          <div className="surface-panel mb-6 flex flex-col gap-3 rounded-2xl border px-4 py-3 md:flex-row md:items-center md:justify-between">
-            <p className="text-sm text-muted-foreground">
-              Showing <span className="font-medium text-foreground">{carListings.length}</span> drive matches for "{query}"
-            </p>
-            <Button variant="ghost" className="h-9 self-start rounded-full px-4 md:self-auto" onClick={clearQuery}>
+          <div className="mb-4 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            <span>
+              <span className="font-medium text-foreground">{carListings.length}</span> car{carListings.length === 1 ? "" : "s"} for "{query}"
+            </span>
+            <button type="button" onClick={clearQuery} className="min-h-9 px-1 font-medium text-primary underline-offset-4 hover:underline">
               Clear search
-            </Button>
+            </button>
           </div>
         ) : null}
 
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
-          {carListings.map((car) => (
-            <CarShowcaseCard
-              key={car.id}
-              car={car}
-              onOpen={() => setLocation(getPublicListingPath("car", car.id, `${car.make ? `${car.make} ` : ""}${car.model}`))}
-            />
-          ))}
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {carListings.map((car, index) => {
+            const title = `${car.make ? `${car.make} ` : ""}${car.model}`;
+            const price = priceForMode(car, mode) ?? 0;
+            return (
+              <ListingCard
+                key={car.id}
+                href={`${getPublicListingPath("car", car.id, title)}?mode=${modeOption.bookingMode}`}
+                title={title}
+                media={car}
+                subtitle={[`${car.seats} seats`, car.transmission, car.fuelType].filter(Boolean).join(" · ")}
+                details={`Based in ${getShortSeoLocation(car.location)}`}
+                rating={car.rating}
+                reviewCount={car.reviewCount}
+                eagerImage={index < 3}
+                price={(
+                  <>
+                    <ListingPrice><CurrencyAmount amountUsd={price} /></ListingPrice> {modeUnit}
+                    {mode === "self" && car.selfDriveMileageLimitKm ? ` · ${car.selfDriveMileageLimitKm} km a day included` : ""}
+                  </>
+                )}
+                data-testid={`card-service-${car.id}`}
+              />
+            );
+          })}
         </div>
 
         {carListings.length === 0 && (
           <div className="py-12 text-center">
             <p className="text-lg text-muted-foreground">
-              {query ? `No drive services matched "${query}" yet.` : "No drive services available at the moment."}
+              {query
+                ? `No cars matched "${query}" ${mode === "driver" ? "with a driver" : mode === "self" ? "for self-drive" : "by the hour"} yet.`
+                : `No cars are listed ${mode === "driver" ? "with a driver" : mode === "self" ? "for self-drive" : "by the hour"} right now.`}
             </p>
             <CustomServiceCta source="drive-no-results" className="mx-auto mt-6 max-w-xl text-left" />
           </div>

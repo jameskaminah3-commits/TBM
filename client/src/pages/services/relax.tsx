@@ -1,23 +1,23 @@
 import { useQuery } from "@tanstack/react-query";
-import { useLocation } from "wouter";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { CurrencyAmount } from "@/components/currency-amount";
 import { CustomServiceCta } from "@/components/custom-service-cta";
-import { PublicReviewPreview } from "@/components/public-review-preview";
-import { MapPin, ShoppingBag, Star } from "lucide-react";
+import { ListingCard, ListingPrice } from "@/components/listing-card";
 import { filterErrands, useConciergeSearch } from "@/lib/concierge-search";
 import { HELP_MAMA_HOURLY_MINIMUM_HOURS, HOUSE_CLEANING_BASE_ROOM_LABEL, getHelpMamaRateOptions, getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
-import { PremiumMediaGallery } from "@/components/premium-media-gallery";
 import type { Errand } from "@shared/schema";
-import { getPublicListingPath } from "@/lib/public-listing";
+import { getPublicListingPath, getShortSeoLocation } from "@/lib/public-listing";
 
-const helpMamaPublicSummary =
-  "Certified in-villa childcare and family support for travelling families on the Kenyan Coast, with daytime, evening, and overnight care options.";
+/** What an errand is, in one word for its card: the first thing it does. */
+function errandKind(errand: Errand) {
+  if (hasHelpMamaPricing(errand)) return "Childcare";
+  if (errand.shoppingEnabled) return "Shopping";
+  if (errand.laundryEnabled) return "Laundry";
+  if (errand.houseCleaningEnabled) return "Cleaning";
+  return null;
+}
 
 export default function RelaxPage() {
-  const [, setLocation] = useLocation();
   const { query, clearQuery } = useConciergeSearch();
   const { data: errands, isLoading, isError, error, refetch } = useQuery<Errand[]>({
     queryKey: ["/api/errands"],
@@ -56,30 +56,30 @@ export default function RelaxPage() {
   }
 
   return (
-    <div className="app-shell min-h-screen py-12">
+    <div className="app-shell min-h-screen pb-12 pt-6 md:pt-10">
       <div className="container mx-auto px-4 md:px-8">
-        <div className="mb-12">
-          <h1 className="mb-4 font-serif text-3xl font-medium leading-tight sm:text-4xl md:text-5xl">
+        <header className="mb-6">
+          <h1 className="font-serif text-2xl font-medium leading-tight sm:text-3xl md:text-4xl">
             Concierge and Errand Services in Mombasa
           </h1>
-          <p className="max-w-3xl text-base leading-7 text-muted-foreground sm:text-lg">
-            Arrange holiday errands, shopping, fridge stocking, laundry, housekeeping and in-villa family support in Mombasa, Nyali and the Kenyan Coast.
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground sm:text-base sm:leading-7">
+            Groceries waiting when you arrive, laundry, cleaning, and a nanny for the children, in Mombasa, Nyali and along the Kenyan Coast.
           </p>
-        </div>
+        </header>
 
         {query ? (
-          <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-border/60 bg-muted/30 px-4 py-3 md:flex-row md:items-center md:justify-between">
-            <p className="text-sm text-muted-foreground">
-              Showing <span className="font-medium text-foreground">{errandListings.length}</span> concierge matches for "{query}"
-            </p>
-            <Button variant="ghost" className="h-9 self-start rounded-full px-4 md:self-auto" onClick={clearQuery}>
+          <div className="mb-4 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            <span>
+              <span className="font-medium text-foreground">{errandListings.length}</span> service{errandListings.length === 1 ? "" : "s"} for "{query}"
+            </span>
+            <button type="button" onClick={clearQuery} className="min-h-9 px-1 font-medium text-primary underline-offset-4 hover:underline">
               Clear search
-            </Button>
+            </button>
           </div>
         ) : null}
 
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
-          {errandListings.map((errand) => {
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {errandListings.map((errand, index) => {
             const usesHelpMamaPricing = hasHelpMamaPricing(errand);
             const displayPrice = usesHelpMamaPricing ? getHelpMamaStartingPrice(errand.helpMamaPricing) : errand.basePrice;
             // The cheapest care option, with its unit: "an hour, 3-hour minimum".
@@ -91,93 +91,41 @@ export default function RelaxPage() {
                 ? `an hour, ${HELP_MAMA_HOURLY_MINIMUM_HOURS}-hour minimum`
                 : `a ${cheapestCare.unit}`
               : errand.houseCleaningEnabled && !errand.shoppingEnabled && !errand.laundryEnabled
-                ? `${HOUSE_CLEANING_BASE_ROOM_LABEL} cleaning`
+                ? `for a ${HOUSE_CLEANING_BASE_ROOM_LABEL} clean`
               : errand.laundryEnabled && !errand.shoppingEnabled
                 ? "a laundry pickup"
                 : errand.shoppingEnabled
-                  ? "service fee per shopping trip"
-                  : "service package";
+                  ? "a shopping trip"
+                  : "a visit";
+            // What changes the price, in one line.
+            const priceRule = usesHelpMamaPricing
+              ? "Daytime, evening and overnight care"
+              : errand.shoppingEnabled
+                ? `Plus the shopping, and ${errand.shoppingCommissionPercent}% for buying and delivery`
+                : errand.houseCleaningEnabled
+                  ? "The price depends on the number of bedrooms"
+                  : errand.laundryEnabled
+                    ? "Picked up and brought back"
+                    : null;
             return (
-              <Card
+              <ListingCard
                 key={errand.id}
-                className="group cursor-pointer overflow-hidden border-border/60 bg-gradient-to-b from-background via-background to-muted/10 shadow-[0_14px_34px_-24px_rgba(15,23,42,0.42)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_22px_44px_-28px_rgba(15,23,42,0.55)]"
+                href={getPublicListingPath("errand", errand.id, errand.serviceName)}
+                title={errand.serviceName}
+                media={errand}
+                badge={errandKind(errand)}
+                subtitle={errand.location ? getShortSeoLocation(errand.location) : "Along the Coast"}
+                details={priceRule}
+                rating={errand.rating}
+                reviewCount={errand.reviewCount}
+                eagerImage={index < 3}
+                price={(
+                  <>
+                    {usesHelpMamaPricing ? "From " : ""}<ListingPrice><CurrencyAmount amountUsd={displayPrice} /></ListingPrice> {priceLabel}
+                  </>
+                )}
                 data-testid={`card-service-${errand.id}`}
-              >
-                <PremiumMediaGallery
-                  item={errand}
-                  title={errand.serviceName}
-                  aspectClassName="aspect-[16/10]"
-                  zoomLabel="View errand photo"
-                />
-
-                <div className="p-4">
-                  <div className="mb-3 flex items-start gap-3">
-                    <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary/10">
-                      <ShoppingBag className="h-5 w-5 text-primary" strokeWidth={1.5} />
-                    </div>
-                    <div className="flex-1">
-                      <h3 className="mb-1 font-serif text-xl font-medium tracking-tight">{errand.serviceName}</h3>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
-                        <span>Rated {errand.rating.toFixed(1)}/5 by verified guests</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <p className="mb-3 line-clamp-2 text-sm leading-5 text-muted-foreground">
-                    {usesHelpMamaPricing ? helpMamaPublicSummary : errand.description}
-                  </p>
-
-                  <PublicReviewPreview targetType="errand" targetId={errand.id} />
-
-                  {errand.location ? (
-                    <div className="mb-3 flex items-center gap-2 text-sm text-muted-foreground">
-                      <MapPin className="h-4 w-4" />
-                      <span>{errand.location}</span>
-                    </div>
-                  ) : null}
-
-                  <div className="mb-3 flex flex-wrap gap-2">
-                    {errand.features.slice(0, 3).map((feature, idx) => (
-                      <Badge key={idx} variant="secondary" className="text-xs">
-                        {feature}
-                      </Badge>
-                    ))}
-                    {errand.features.length > 3 && (
-                      <Badge variant="outline" className="text-xs">
-                        +{errand.features.length - 3} more
-                      </Badge>
-                    )}
-                  </div>
-
-                  <div className="flex items-center justify-between border-t border-border/60 pt-3">
-                    <div>
-                      <CurrencyAmount
-                        amountUsd={displayPrice}
-                        primaryClassName="text-lg font-semibold tracking-tight"
-                      />
-                      <p className="text-sm text-muted-foreground">
-                        {priceLabel}
-                      </p>
-                      <div className="mt-2 space-y-1 text-xs text-muted-foreground">
-                        {errand.shoppingEnabled ? (
-                          <div>Total adds receipt value + {errand.shoppingCommissionPercent}% service and delivery commission</div>
-                        ) : null}
-                        {errand.houseCleaningEnabled ? (
-                          <div>Cleaning total changes with the bedroom count and selected add-ons</div>
-                        ) : null}
-                      </div>
-                    </div>
-                    <Button
-                      className="rounded-full px-5"
-                      onClick={() => setLocation(getPublicListingPath("errand", errand.id, errand.serviceName))}
-                      data-testid={`button-book-${errand.id}`}
-                    >
-                      Book Now
-                    </Button>
-                  </div>
-                </div>
-              </Card>
+              />
             );
           })}
         </div>
@@ -185,7 +133,7 @@ export default function RelaxPage() {
         {errandListings.length === 0 && (
           <div className="text-center py-12">
             <p className="text-lg text-muted-foreground">
-              {query ? `No concierge services matched "${query}" yet.` : "No relax services available at the moment."}
+              {query ? `No services matched "${query}" yet.` : "No services are listed right now."}
             </p>
             <CustomServiceCta source="relax-no-results" className="mx-auto mt-6 max-w-xl text-left" />
           </div>

@@ -205,8 +205,9 @@ function AppShell() {
         <RouteSeo pathname={location} />
         {shouldShowHeader ? <Header /> : null}
         {shouldShowSiteChrome && currentSection ? (
-          // On a listing's own page, phones go straight to the listing.
-          <div className={isListingDetailPath(location) ? "max-md:hidden" : undefined}>
+          // On a listing's own page, phones go straight to the listing; the
+          // stays list has its own trip bar (where, when, who) instead.
+          <div className={isListingDetailPath(location) || location === "/accommodations" ? "max-md:hidden" : undefined}>
             <ConciergeSearchBar currentSection={currentSection} />
           </div>
         ) : null}

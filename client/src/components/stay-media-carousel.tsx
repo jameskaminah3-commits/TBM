@@ -19,6 +19,8 @@ type StayMediaCarouselProps = {
   eagerFirstImage?: boolean;
   showArrows?: boolean;
   layout?: "carousel" | "mosaic";
+  variant?: "default" | "card";
+  onOpen?: () => void;
 };
 
 export function StayMediaCarousel({
@@ -31,6 +33,8 @@ export function StayMediaCarousel({
   eagerFirstImage = true,
   showArrows,
   layout,
+  variant,
+  onOpen,
 }: StayMediaCarouselProps) {
   const item = React.useMemo(() => {
     const hasGalleryMedia = Boolean(stay.imageUrl || (stay.galleryUrls && stay.galleryUrls.length > 0));
@@ -54,6 +58,8 @@ export function StayMediaCarousel({
       eagerFirstImage={eagerFirstImage}
       showArrows={showArrows}
       layout={layout}
+      variant={variant}
+      onOpen={onOpen}
     />
   );
 }

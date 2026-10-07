@@ -25,6 +25,13 @@ type PremiumMediaGalleryProps = {
   showArrows?: boolean;
   /** "mosaic": on a laptop, one large photo and four smaller ones; a swipeable carousel on phones. */
   layout?: "carousel" | "mosaic";
+  /**
+   * "card": a listing card in results. Photos still swipe, a tap opens the
+   * listing (onOpen) instead of the full-screen gallery, and dots replace the
+   * counter, hints and thumbnails.
+   */
+  variant?: "default" | "card";
+  onOpen?: () => void;
 };
 
 const MOSAIC_ROWS: Record<number, string> = { 1: "grid-rows-1", 2: "grid-rows-2", 3: "grid-rows-3" };
@@ -47,7 +54,10 @@ export function PremiumMediaGallery({
   zoomLabel = "View photos",
   showArrows = true,
   layout = "carousel",
+  variant = "default",
+  onOpen,
 }: PremiumMediaGalleryProps) {
+  const isCard = variant === "card";
   const galleryImages = React.useMemo(() => getGalleryImages(item), [item]);
   const [carouselApi, setCarouselApi] = React.useState<CarouselApi>();
   const [activeIndex, setActiveIndex] = React.useState(0);
@@ -178,7 +188,9 @@ export function PremiumMediaGallery({
                   <button
                     type="button"
                     className={cn("group relative block w-full overflow-hidden bg-muted text-left", aspectClassName)}
-                    onClick={() => openLightbox(index)}
+                    onClick={() => (isCard && onOpen ? onOpen() : openLightbox(index))}
+                    // In a card the listing's title is the link; the photo is a larger target for the same place.
+                    tabIndex={isCard ? -1 : undefined}
                   >
                     <ListingMedia
                       src={imageUrl}
@@ -190,15 +202,15 @@ export function PremiumMediaGallery({
                       )}
                       loading={eagerFirstImage && index === 0 ? "eager" : "lazy"}
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-slate-900/10 to-transparent" />
-                    {galleryImages.length > 1 ? (
+                    <div className={cn("absolute inset-0 bg-gradient-to-t to-transparent", isCard ? "from-slate-950/35 via-transparent" : "from-slate-950/70 via-slate-900/10")} />
+                    {galleryImages.length > 1 && !isCard ? (
                       <div className="absolute left-4 top-4 flex items-center gap-2">
                         <div className="rounded-full border border-white/15 bg-black/35 px-3 py-1 text-[11px] font-semibold tracking-[0.18em] text-white/90 backdrop-blur-md">
                           {index + 1}/{galleryImages.length}
                         </div>
                       </div>
                     ) : null}
-                    {!(thumbnailPlacement === "overlay" && galleryImages.length > 1) ? (
+                    {!isCard && !(thumbnailPlacement === "overlay" && galleryImages.length > 1) ? (
                       <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between gap-3">
                         <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/35 px-3 py-2 text-xs font-medium text-white backdrop-blur-md">
                           <Maximize2 className="h-3.5 w-3.5" />
@@ -249,7 +261,18 @@ export function PremiumMediaGallery({
           </>
         ) : null}
 
-        {thumbnailPlacement === "overlay" && galleryImages.length > 1 ? (
+        {isCard && galleryImages.length > 1 ? (
+          <div className="pointer-events-none absolute inset-x-0 bottom-2.5 flex justify-center gap-1.5" aria-hidden="true">
+            {galleryImages.slice(0, 5).map((imageUrl, index) => (
+              <span
+                key={`${item.id}-dot-${index}`}
+                className={cn("h-1.5 w-1.5 rounded-full bg-white shadow transition-opacity", activeIndex === index ? "opacity-100" : "opacity-55")}
+              />
+            ))}
+          </div>
+        ) : null}
+
+        {!isCard && thumbnailPlacement === "overlay" && galleryImages.length > 1 ? (
           <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 p-3">
             <div className="flex items-center gap-2">
               {visibleThumbs.map((imageUrl, index) => (

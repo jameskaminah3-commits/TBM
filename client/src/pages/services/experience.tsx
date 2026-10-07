@@ -1,16 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
-import { useLocation } from "wouter";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { CurrencyAmount } from "@/components/currency-amount";
 import { filterExperiences, useConciergeSearch } from "@/lib/concierge-search";
 import { CustomServiceCta } from "@/components/custom-service-cta";
-import { PublicReviewPreview } from "@/components/public-review-preview";
-import { Clock3, Compass, MapPin, Star, Users } from "lucide-react";
-import { PremiumMediaGallery } from "@/components/premium-media-gallery";
+import { ListingCard, ListingPrice } from "@/components/listing-card";
 import type { Experience } from "@shared/schema";
-import { getPublicListingPath } from "@/lib/public-listing";
+import { getPublicListingPath, getShortSeoLocation } from "@/lib/public-listing";
+
+/** "Half a day", "3 hours": how long it takes, as guests say it. */
+function describeDuration(hours: number) {
+  if (hours >= 8) return "A full day";
+  if (hours === 1) return "1 hour";
+  return `${hours} hours`;
+}
 
 function getLowestExperiencePrice(experience: Experience) {
   const prices = [
@@ -21,87 +23,7 @@ function getLowestExperiencePrice(experience: Experience) {
   return prices.length ? Math.min(...prices) : experience.price;
 }
 
-function ExperienceCard({
-  experience,
-  onOpen,
-}: {
-  experience: Experience;
-  onOpen: () => void;
-}) {
-  const lowestPrice = getLowestExperiencePrice(experience);
-
-  return (
-    <Card className="group overflow-hidden border-border/60 bg-gradient-to-b from-background via-background to-muted/10 shadow-[0_14px_34px_-24px_rgba(15,23,42,0.42)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_22px_44px_-28px_rgba(15,23,42,0.55)]">
-      <PremiumMediaGallery
-        item={experience}
-        title={experience.title}
-        aspectClassName="aspect-[16/10]"
-        zoomLabel="View experience photo"
-      />
-
-      <div className="space-y-3 p-4">
-        <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
-            <Compass className="h-5 w-5 text-primary" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <h2 className="font-serif text-xl font-medium tracking-tight">{experience.title}</h2>
-          </div>
-        </div>
-
-        <p className="line-clamp-2 text-sm leading-5 text-muted-foreground">{experience.description}</p>
-
-        <div className="grid gap-2 text-sm text-muted-foreground">
-          <div className="flex items-center gap-2">
-            <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
-            <span>Rated {experience.rating.toFixed(1)}/5 by verified guests</span>
-          </div>
-          {experience.experienceLocation ? (
-            <div className="flex items-center gap-2 text-foreground">
-              <MapPin className="h-4 w-4 text-primary" />
-              <span className="font-medium">{experience.experienceLocation}</span>
-            </div>
-          ) : null}
-          <div className="flex items-center gap-2">
-            <Clock3 className="h-4 w-4" />
-            <span>{experience.durationHours} {experience.durationHours === 1 ? "hour" : "hours"}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Users className="h-4 w-4" />
-            <span>Hosted from {experience.location || "Provider base not set"}</span>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          {experience.features.slice(0, 2).map((feature) => (
-            <Badge key={feature} variant="secondary">{feature}</Badge>
-          ))}
-        </div>
-
-        <PublicReviewPreview targetType="experience" targetId={experience.id} />
-
-        <div className="flex flex-col gap-3 border-t border-border/60 pt-3 sm:flex-row sm:items-end sm:justify-between">
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-              From
-            </p>
-            <CurrencyAmount
-              amountUsd={lowestPrice}
-              primaryClassName="mt-1 break-words text-lg font-semibold tracking-tight"
-            />
-            <p className="text-sm text-muted-foreground">per person</p>
-          </div>
-          <Button className="w-full rounded-full px-5 sm:w-auto" onClick={onOpen}>
-            See More
-          </Button>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
 export default function ExperiencePage() {
-  const [, setLocation] = useLocation();
   const { query, clearQuery } = useConciergeSearch();
   const { data: experiences = [], isLoading, isError, error, refetch } = useQuery<Experience[]>({
     queryKey: ["/api/experiences"],
@@ -139,42 +61,58 @@ export default function ExperiencePage() {
   }
 
   return (
-    <div className="app-shell min-h-screen py-12">
+    <div className="app-shell min-h-screen pb-12 pt-6 md:pt-10">
       <div className="container mx-auto px-4 md:px-8">
-        <div className="mb-12">
-          <h1 className="mb-4 font-serif text-3xl font-medium leading-tight sm:text-4xl md:text-5xl">
+        <header className="mb-6">
+          <h1 className="font-serif text-2xl font-medium leading-tight sm:text-3xl md:text-4xl">
             Coastal Experiences from Mombasa
           </h1>
-          <p className="max-w-3xl text-base leading-7 text-muted-foreground sm:text-lg">
-            Discover crafted moments, local adventures and memorable outings from Mombasa, Nyali and the wider Kenyan Coast, designed to complement your stay.
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground sm:text-base sm:leading-7">
+            Days on the water, old towns, forests and food, from Mombasa, Nyali, Diani and along the Kenyan Coast. Book them on their own or with your stay.
           </p>
-        </div>
+        </header>
 
         {query ? (
-          <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-border/60 bg-muted/30 px-4 py-3 md:flex-row md:items-center md:justify-between">
-            <p className="text-sm text-muted-foreground">
-              Showing <span className="font-medium text-foreground">{filteredExperiences.length}</span> experience matches for "{query}"
-            </p>
-            <Button variant="ghost" className="h-9 self-start rounded-full px-4 md:self-auto" onClick={clearQuery}>
+          <div className="mb-4 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            <span>
+              <span className="font-medium text-foreground">{filteredExperiences.length}</span> experience{filteredExperiences.length === 1 ? "" : "s"} for "{query}"
+            </span>
+            <button type="button" onClick={clearQuery} className="min-h-9 px-1 font-medium text-primary underline-offset-4 hover:underline">
               Clear search
-            </Button>
+            </button>
           </div>
         ) : null}
 
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
-          {filteredExperiences.map((experience) => (
-            <ExperienceCard
-              key={experience.id}
-              experience={experience}
-              onOpen={() => setLocation(getPublicListingPath("experience", experience.id, experience.title))}
-            />
-          ))}
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {filteredExperiences.map((experience, index) => {
+            const sharedOnly = experience.sharedEnabled && !experience.privateEnabled;
+            return (
+              <ListingCard
+                key={experience.id}
+                href={getPublicListingPath("experience", experience.id, experience.title)}
+                title={experience.title}
+                media={experience}
+                badge={experience.sharedEnabled && experience.sharedDepartures?.length ? "Join a group" : experience.privateEnabled ? "Private" : null}
+                subtitle={`${describeDuration(experience.durationHours)} · ${getShortSeoLocation(experience.experienceLocation || experience.location)}`}
+                details={experience.meetingPoint ? `Meeting point: ${experience.meetingPoint}` : null}
+                rating={experience.rating}
+                reviewCount={experience.reviewCount}
+                eagerImage={index < 3}
+                price={(
+                  <>
+                    From <ListingPrice><CurrencyAmount amountUsd={getLowestExperiencePrice(experience)} /></ListingPrice> a person{sharedOnly ? ", in a group" : ""}
+                  </>
+                )}
+                data-testid={`card-service-${experience.id}`}
+              />
+            );
+          })}
         </div>
 
         {filteredExperiences.length === 0 ? (
           <div className="py-12 text-center">
             <p className="text-lg text-muted-foreground">
-              {query ? `No experiences matched "${query}" yet.` : "No experiences available yet."}
+              {query ? `No experiences matched "${query}" yet.` : "No experiences are listed right now."}
             </p>
             <CustomServiceCta source="experience-no-results" className="mx-auto mt-6 max-w-xl text-left" />
           </div>

@@ -22,6 +22,9 @@ export function CustomServiceCta({ source, compact = false, className = "" }: Cu
       <p className="mt-1 text-sm leading-6 text-muted-foreground">
         Tell us what you&apos;re after and your budget. If it isn&apos;t listed, our team finds it along the Coast and checks it before you pay.
       </p>
+      <p className="mt-1 text-sm leading-6 text-muted-foreground">
+        Our team replies within a few hours, Monday to Saturday, 8am to 8pm. Zaina answers any time.
+      </p>
       <div className="mt-4 flex flex-wrap gap-2">
         <Button
           className="rounded-full px-5"

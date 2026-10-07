@@ -1,137 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
-import { useLocation } from "wouter";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { CurrencyAmount } from "@/components/currency-amount";
 import { CustomServiceCta } from "@/components/custom-service-cta";
-import { PublicReviewPreview } from "@/components/public-review-preview";
-import { useCurrency } from "@/lib/currency";
-import { ChefHat, Clock, MapPin, Star, Users, Utensils } from "lucide-react";
-import {
-  getCookCustomMenuRequestFee,
-  getCookMinimumGuests,
-  getCookServiceFee,
-} from "@shared/cook-pricing";
+import { ListingCard, ListingPrice } from "@/components/listing-card";
+import { getCookMinimumGuests, getCookServiceFee } from "@shared/cook-pricing";
 import { filterCooks, useConciergeSearch } from "@/lib/concierge-search";
-import { PremiumMediaGallery } from "@/components/premium-media-gallery";
 import type { Cook } from "@shared/schema";
-import { getPublicListingPath } from "@/lib/public-listing";
-
-function CookCard({
-  cook,
-  onOpen,
-  usdToKes,
-}: {
-  cook: Cook;
-  onOpen: () => void;
-  usdToKes: number;
-}) {
-  return (
-    <Card
-      className="group overflow-hidden border-border/60 bg-gradient-to-b from-background via-background to-muted/10 shadow-[0_14px_34px_-24px_rgba(15,23,42,0.42)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_22px_44px_-28px_rgba(15,23,42,0.55)]"
-      data-testid={`card-service-${cook.id}`}
-    >
-      <PremiumMediaGallery
-        item={cook}
-        title={cook.title}
-        aspectClassName="aspect-[16/10]"
-        zoomLabel="View chef photo"
-      />
-
-      <div className="p-4">
-        <div className="mb-3 flex items-start gap-3">
-          <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary/10">
-            <ChefHat className="h-5 w-5 text-primary" strokeWidth={1.5} />
-          </div>
-          <div className="flex-1">
-            <h3 className="mb-1 font-serif text-xl font-medium tracking-tight">{cook.title}</h3>
-            <div className="mb-1.5 flex items-center gap-2 text-sm text-muted-foreground">
-              <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
-              <span>Rated {cook.rating.toFixed(1)}/5 by verified guests</span>
-            </div>
-            <Badge variant="secondary" className="text-xs capitalize">
-              <Utensils className="mr-1 h-3 w-3" />
-              {cook.speciality}
-            </Badge>
-            <p className="mt-1 text-sm font-medium text-foreground">{cook.serviceType}</p>
-          </div>
-        </div>
-
-        <p className="mb-3 line-clamp-2 text-sm leading-5 text-muted-foreground">
-          {cook.description}
-        </p>
-
-        <PublicReviewPreview targetType="cook" targetId={cook.id} />
-
-        <div className="mb-3 flex flex-wrap gap-2">
-          {cook.features.slice(0, 2).map((feature, idx) => (
-            <Badge key={idx} variant="outline" className="text-xs">
-              {feature}
-            </Badge>
-          ))}
-          {cook.customMenuEnabled ? (
-            <Badge variant="outline" className="text-xs">
-              Custom menu available
-            </Badge>
-          ) : null}
-          {cook.features.length > 2 ? (
-            <Badge variant="outline" className="text-xs">
-              +{cook.features.length - 2} more
-            </Badge>
-          ) : null}
-        </div>
-
-        <div className="mb-2.5 flex items-center gap-2 text-sm">
-          <Clock className="h-4 w-4 text-muted-foreground" />
-          <span>Custom scheduling available</span>
-        </div>
-
-        <div className="mb-2.5 flex items-center gap-2 text-sm">
-          <MapPin className="h-4 w-4 text-muted-foreground" />
-          <span>{cook.location}</span>
-        </div>
-
-        <div className="mb-3 flex items-center gap-2 text-sm">
-          <Users className="h-4 w-4 text-muted-foreground" />
-          <span>Minimum {getCookMinimumGuests(cook)} {getCookMinimumGuests(cook) === 1 ? "guest" : "guests"}</span>
-        </div>
-
-        <div className="space-y-2 border-t border-border/60 pt-3">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <CurrencyAmount
-                amountUsd={getCookServiceFee(cook)}
-                primaryClassName="text-lg font-semibold tracking-tight"
-              />
-              <p className="text-sm text-muted-foreground">
-                base package per day for {getCookMinimumGuests(cook)} guests
-              </p>
-              {cook.customMenuEnabled ? (
-                <p className="text-sm text-muted-foreground">
-                  Custom menu request from <CurrencyAmount amountUsd={getCookCustomMenuRequestFee(cook, usdToKes)} />
-                </p>
-              ) : null}
-            </div>
-            <div className="text-right text-sm font-medium text-primary">
-              <Button
-                className="rounded-full px-5"
-                onClick={onOpen}
-                data-testid={`button-view-cook-${cook.id}`}
-              >
-                View Details
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </Card>
-  );
-}
+import { getPublicListingPath, getShortSeoLocation } from "@/lib/public-listing";
 
 export default function DinePage() {
-  const [, setLocation] = useLocation();
-  const { usdToKes } = useCurrency();
   const { query, clearQuery } = useConciergeSearch();
   const { data: cooks, isLoading, isError, error, refetch } = useQuery<Cook[]>({
     queryKey: ["/api/cooks"],
@@ -170,43 +47,58 @@ export default function DinePage() {
   }
 
   return (
-    <div className="app-shell min-h-screen py-12">
+    <div className="app-shell min-h-screen pb-12 pt-6 md:pt-10">
       <div className="container mx-auto px-4 md:px-8">
-        <div className="mb-12">
-          <h1 className="mb-4 font-serif text-3xl font-medium leading-tight sm:text-4xl md:text-5xl">
+        <header className="mb-6">
+          <h1 className="font-serif text-2xl font-medium leading-tight sm:text-3xl md:text-4xl">
             Private Chefs and In-Villa Dining in Mombasa
           </h1>
-          <p className="max-w-3xl text-base leading-7 text-muted-foreground sm:text-lg">
-            Book a private chef or personal cook for in-villa dining in Mombasa, Nyali and across the Kenyan Coast, with menus shaped around your occasion.
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground sm:text-base sm:leading-7">
+            A private chef who cooks at your villa or apartment, with or without the shopping, in Mombasa, Nyali and along the Kenyan Coast.
           </p>
-        </div>
+        </header>
 
         {query ? (
-          <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-border/60 bg-muted/30 px-4 py-3 md:flex-row md:items-center md:justify-between">
-            <p className="text-sm text-muted-foreground">
-              Showing <span className="font-medium text-foreground">{cookListings.length}</span> chef matches for "{query}"
-            </p>
-            <Button variant="ghost" className="h-9 self-start rounded-full px-4 md:self-auto" onClick={clearQuery}>
+          <div className="mb-4 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            <span>
+              <span className="font-medium text-foreground">{cookListings.length}</span> chef{cookListings.length === 1 ? "" : "s"} for "{query}"
+            </span>
+            <button type="button" onClick={clearQuery} className="min-h-9 px-1 font-medium text-primary underline-offset-4 hover:underline">
               Clear search
-            </Button>
+            </button>
           </div>
         ) : null}
 
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
-          {cookListings.map((cook) => (
-            <CookCard
-              key={cook.id}
-              cook={cook}
-              usdToKes={usdToKes}
-              onOpen={() => setLocation(getPublicListingPath("cook", cook.id, cook.title))}
-            />
-          ))}
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {cookListings.map((cook, index) => {
+            const minimumGuests = getCookMinimumGuests(cook);
+            return (
+              <ListingCard
+                key={cook.id}
+                href={getPublicListingPath("cook", cook.id, cook.title)}
+                title={cook.title}
+                media={cook}
+                badge={cook.speciality || null}
+                subtitle={`${cook.serviceType} · ${getShortSeoLocation(cook.location)}`}
+                details={cook.maxGuests > minimumGuests ? `Cooks for ${minimumGuests} to ${cook.maxGuests} guests` : `Cooks for up to ${minimumGuests} guests`}
+                rating={cook.rating}
+                reviewCount={cook.reviewCount}
+                eagerImage={index < 3}
+                price={(
+                  <>
+                    <ListingPrice><CurrencyAmount amountUsd={getCookServiceFee(cook)} /></ListingPrice> a day for up to {minimumGuests} guests
+                  </>
+                )}
+                data-testid={`card-service-${cook.id}`}
+              />
+            );
+          })}
         </div>
 
         {cookListings.length === 0 ? (
           <div className="py-12 text-center">
             <p className="text-lg text-muted-foreground">
-              {query ? `No chefs matched "${query}" yet.` : "No dine services available at the moment."}
+              {query ? `No chefs matched "${query}" yet.` : "No chefs are listed right now."}
             </p>
             <CustomServiceCta source="dine-no-results" className="mx-auto mt-6 max-w-xl text-left" />
           </div>

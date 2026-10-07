@@ -14,19 +14,19 @@ const TABS = [
     href: "/accommodations",
     label: "Stay",
     icon: Building2,
-    match: (loc: string) => loc === "/accommodations" || loc.startsWith("/accommodation/"),
+    // A stay's checkout is /book/:id.
+    match: (loc: string) => loc === "/accommodations" || loc.startsWith("/accommodation/") || /^\/book\/[^/]+$/.test(loc),
   },
   {
     href: "/services",
     label: "Explore",
     icon: Compass,
+    // Service lists, a car's, chef's, errand's or experience's page, and their checkouts.
     match: (loc: string) =>
       loc === "/services" ||
       loc.startsWith("/services/") ||
-      loc.startsWith("/book/experience/") ||
-      loc.startsWith("/book/drive/") ||
-      loc.startsWith("/book/dine/") ||
-      loc.startsWith("/book/relax/"),
+      /^\/(transport|chef|errand|experience)\/[^/]+/.test(loc) ||
+      /^\/book\/(car|cook|errand|experience)\/[^/]+/.test(loc),
   },
   {
     href: "/bookings",
