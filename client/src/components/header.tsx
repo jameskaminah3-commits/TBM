@@ -13,6 +13,7 @@ import {
   Sparkles,
   Compass,
   CalendarDays,
+  ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { InboxQuickPanel } from "@/components/inbox-quick-panel";
@@ -49,6 +50,8 @@ export function Header() {
   const { selectedCurrency, setSelectedCurrency } = useCurrency();
   const { unreadCount } = useInbox({ enabled: isAuthenticated, refetchInterval: 60000 });
   const isInboxRoute = location === "/inbox";
+  // Public pages are always light; only the dashboards keep a theme choice.
+  const isDashboardRoute = location.startsWith("/admin/") || location.startsWith("/provider/");
 
   const handleLogout = async () => {
     await apiRequest("POST", "/api/logout");
@@ -65,6 +68,7 @@ export function Header() {
     { href: "/services/dine", label: "Dine", description: "Private chefs and dining", icon: UtensilsCrossed, testId: "link-nav-dine" },
     { href: "/services/relax", label: "Relax", description: "Errands, laundry, and support", icon: Sparkles, testId: "link-nav-relax" },
     { href: "/services/experience", label: "Experience", description: "Curated outings and moments", icon: Compass, testId: "link-nav-experience" },
+    { href: "/verify", label: "Verify", description: "Check a place before you pay", icon: ShieldCheck, testId: "link-nav-verify" },
     ...(isAuthenticated
       ? [{ href: "/bookings", label: "My Bookings", shortLabel: "Bookings", description: "Trips, updates, and status", icon: CalendarDays, testId: "link-nav-bookings" }]
       : []),
@@ -219,10 +223,12 @@ export function Header() {
             )}
           </div>
 
-          <div className="hidden xl:block">
-            <ThemeToggle />
-          </div>
-          
+          {isDashboardRoute ? (
+            <div className="hidden xl:block">
+              <ThemeToggle />
+            </div>
+          ) : null}
+
           {/* Mobile Menu */}
           <Sheet open={open} onOpenChange={setOpen}>
             <SheetTrigger asChild className="xl:hidden">
@@ -310,13 +316,15 @@ export function Header() {
                         <SelectItem value="KES">KSH</SelectItem>
                       </SelectContent>
                     </Select>
-                    <div className="mt-3 flex items-center justify-between rounded-[1rem] border border-border/70 bg-background/75 px-4 py-3 shadow-sm">
-                      <div>
-                        <div className="text-sm font-medium text-foreground">Theme</div>
-                        <div className="text-xs text-muted-foreground">Light and dark mode</div>
+                    {isDashboardRoute ? (
+                      <div className="mt-3 flex items-center justify-between rounded-[1rem] border border-border/70 bg-background/75 px-4 py-3 shadow-sm">
+                        <div>
+                          <div className="text-sm font-medium text-foreground">Theme</div>
+                          <div className="text-xs text-muted-foreground">Light and dark mode</div>
+                        </div>
+                        <ThemeToggle testId="mobile-button-theme-toggle" />
                       </div>
-                      <ThemeToggle testId="mobile-button-theme-toggle" />
-                    </div>
+                    ) : null}
                   </div>
 
                   <div className="surface-panel rounded-[1.5rem] border p-4">

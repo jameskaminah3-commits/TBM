@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
 import { ArrowUpDown, Bath, BedDouble, CalendarDays, ConciergeBell, MapPin, Search, SlidersHorizontal, Star, Users, WalletCards } from "lucide-react";
@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { StayMediaCarousel } from "@/components/stay-media-carousel";
 import { CurrencyAmount } from "@/components/currency-amount";
 import { CustomServiceCta } from "@/components/custom-service-cta";
+import { useCurrency } from "@/lib/currency";
 import { filterStays, getMeaningfulTokens, normalizeConciergeQuery } from "@/lib/concierge-search";
 import {
   buildStaySearchParams,
@@ -85,6 +86,43 @@ function sortStays<T extends Stay>(stays: T[], sort: StaySearchSort, query: stri
   });
 }
 
+/**
+ * Max price per night, typed and shown in the currency the guest has chosen.
+ * The search itself keeps US dollars, the currency stays are priced in; the
+ * amount is applied when the guest leaves the field or presses Enter.
+ */
+function MaxPriceInput({ maxPriceUsd, onCommit }: { maxPriceUsd: number | null; onCommit: (maxPriceUsd: number | null) => void }) {
+  const { selectedCurrency, convertFromUsd, convertToUsd } = useCurrency();
+  const shown = maxPriceUsd ? String(Math.round(convertFromUsd(maxPriceUsd))) : "";
+  const [text, setText] = useState(shown);
+  useEffect(() => setText(shown), [shown]);
+
+  const commit = () => {
+    const amount = Number.parseInt(text.replace(/[^\d]/g, ""), 10);
+    const next = Number.isNaN(amount) || amount < 1 ? null : Math.max(1, Math.ceil(convertToUsd(amount)));
+    if (next !== maxPriceUsd) onCommit(next);
+  };
+
+  return (
+    <Input
+      type="text"
+      inputMode="numeric"
+      value={text}
+      onChange={(event) => setText(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          commit();
+        }
+      }}
+      placeholder={`${selectedCurrency === "KES" ? "KSh" : "US$"} a night`}
+      className="h-9 rounded-full"
+      data-testid="input-stay-filter-max-price"
+    />
+  );
+}
+
 export default function Accommodations() {
   const [, setLocation] = useLocation();
   const search = useSearch();
@@ -96,6 +134,7 @@ export default function Accommodations() {
   }, [staySearch]);
   const hasTripFilters = hasStructuredStayFilters(staySearch);
   const stayNights = getStaySearchNights(staySearch.checkIn, staySearch.checkOut);
+  const { formatAmount } = useCurrency();
   
   const { data: accommodations, isLoading } = useQuery<StayWithRooms[]>({
     queryKey: ["/api/stays"],
@@ -194,7 +233,7 @@ export default function Accommodations() {
     }
 
     if (staySearch.maxPrice) {
-      chips.push(`Up to $${staySearch.maxPrice}/day`);
+      chips.push(`Up to ${formatAmount(staySearch.maxPrice)} a night`);
     }
 
     if (staySearch.minRating) {
@@ -208,7 +247,7 @@ export default function Accommodations() {
     staySearch.features.forEach((feature) => chips.push(feature));
 
     return chips;
-  }, [stayNights, staySearch.bathrooms, staySearch.bedrooms, staySearch.checkIn, staySearch.checkOut, staySearch.destination, staySearch.features, staySearch.guests, staySearch.maxPrice, staySearch.minRating, staySearch.stayType]);
+  }, [formatAmount, stayNights, staySearch.bathrooms, staySearch.bedrooms, staySearch.checkIn, staySearch.checkOut, staySearch.destination, staySearch.features, staySearch.guests, staySearch.maxPrice, staySearch.minRating, staySearch.stayType]);
 
   const clearAllFilters = () => {
     setLocation("/accommodations");
@@ -400,14 +439,9 @@ export default function Accommodations() {
                     <WalletCards className="h-3.5 w-3.5" />
                     Max price
                   </span>
-                  <Input
-                    type="number"
-                    min="1"
-                    value={staySearch.maxPrice ?? ""}
-                    onChange={(event) => updateNumberFilter("maxPrice", event.target.value)}
-                    placeholder="USD / day"
-                    className="h-9 rounded-full"
-                    data-testid="input-stay-filter-max-price"
+                  <MaxPriceInput
+                    maxPriceUsd={staySearch.maxPrice}
+                    onCommit={(maxPrice) => updateStaySearch({ maxPrice })}
                   />
                 </label>
 
@@ -532,12 +566,29 @@ export default function Accommodations() {
                   </div>
                   <div className="flex flex-col gap-3 min-[460px]:items-end">
                     <div className="text-right">
-                      {isHotelStay(accommodation) ? <div className="text-xs text-muted-foreground">from</div> : null}
-                      <CurrencyAmount
-                        amountUsd={accommodation.price}
-                        primaryClassName="text-lg font-semibold tracking-tight"
-                      />
-                      <div className="text-xs text-muted-foreground">{isHotelStay(accommodation) ? "per room / night" : "per day"}</div>
+                      {isHotelStay(accommodation) ? (
+                        <>
+                          <div className="text-xs text-muted-foreground">from</div>
+                          <CurrencyAmount amountUsd={accommodation.price} primaryClassName="text-lg font-semibold tracking-tight" />
+                          <div className="text-xs text-muted-foreground">a room per night</div>
+                        </>
+                      ) : stayNights && stayNights > 0 ? (
+                        <>
+                          <CurrencyAmount
+                            amountUsd={accommodation.price * stayNights}
+                            primaryClassName="text-lg font-semibold tracking-tight"
+                            data-testid={`text-stay-total-${accommodation.id}`}
+                          />
+                          <div className="text-xs text-muted-foreground">
+                            total for {stayNights} night{stayNights === 1 ? "" : "s"} · {formatAmount(accommodation.price)} a night
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <CurrencyAmount amountUsd={accommodation.price} primaryClassName="text-lg font-semibold tracking-tight" />
+                          <div className="text-xs text-muted-foreground">a night</div>
+                        </>
+                      )}
                     </div>
                     <Button
                       className="w-full rounded-full px-5 min-[460px]:w-auto"

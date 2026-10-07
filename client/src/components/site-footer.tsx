@@ -17,6 +17,7 @@ const exploreLinks = [
   { href: "/services/dine", label: "Dine" },
   { href: "/services/relax", label: "Relax" },
   { href: "/services/experience", label: "Experiences" },
+  { href: "/verify", label: "Verify a Listing" },
   { href: "/blog", label: "Concierge Articles" },
   { href: "/partner", label: "Partner With Us" },
 ];

@@ -30,6 +30,10 @@ const routeMetadata: Record<string, { title: string; description: string }> = {
     title: "Coastal Travel Services in Mombasa | Tembea Bila Matata",
     description: "Plan a smoother coastal stay with accommodation, transport, private dining, errands and experiences in Mombasa and Nyali.",
   },
+  "/verify": {
+    title: "Verify a Holiday Rental Before You Pay | Tembea Bila Matata",
+    description: "Found a villa or apartment on Facebook, Jiji, Instagram or Airbnb? Our on-ground partner visits the property in Mombasa, Diani, Watamu or Malindi and checks the host before you pay.",
+  },
   "/about": {
     title: "About Tembea Bila Matata | Mombasa Coastal Concierge",
     description: "Learn how Tembea Bila Matata combines curated stays and practical concierge services for travellers in Mombasa and the Kenyan Coast.",

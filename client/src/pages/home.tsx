@@ -13,6 +13,8 @@ import {
   Compass,
   CheckCircle2,
   Star,
+  ShieldCheck,
+  ArrowRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -29,6 +31,7 @@ import tailoredTripImageLarge from "@assets/generated_images/tailored-trip-1280.
 import tailoredTripImageSmall from "@assets/generated_images/tailored-trip-768.jpg";
 import type { Stay, Car as CarType, Cook, Errand, Experience } from "@shared/schema";
 import { todayInKenya } from "@shared/calendar-dates";
+import { openZaina } from "@/lib/zaina";
 
 type ShowcaseItem = {
   id: string;
@@ -175,7 +178,7 @@ export default function Home() {
   const heroImageSrcSet = `${heroImageSmall} 768w, ${heroImageLarge} 1408w`;
   const storyImageSizes = "(min-width: 1024px) 48vw, 100vw";
   const primaryCtaClassName =
-    "w-full rounded-xl border border-white/12 bg-[#f98b5b] px-6 py-5 text-base font-medium text-white shadow-[0_20px_44px_-24px_rgba(249,139,91,0.58),inset_0_1px_0_rgba(255,255,255,0.18)] transition-all duration-300 hover:-translate-y-0.5 hover:bg-[#f58756] hover:shadow-[0_24px_54px_-24px_rgba(249,139,91,0.66)] sm:w-auto sm:min-w-[16rem] sm:px-8 sm:py-6 sm:text-lg";
+    "w-full rounded-xl border border-white/12 bg-[#f98b5b] px-6 py-5 text-base font-semibold text-[#1f2a2e] shadow-[0_20px_44px_-24px_rgba(249,139,91,0.58),inset_0_1px_0_rgba(255,255,255,0.18)] transition-all duration-300 hover:-translate-y-0.5 hover:bg-[#f58756] hover:shadow-[0_24px_54px_-24px_rgba(249,139,91,0.66)] sm:w-auto sm:min-w-[16rem] sm:px-8 sm:py-6 sm:text-lg";
   // Stays are on the coast: the earliest check-in is Kenya's today, wherever the guest is.
   const todayIso = useMemo(() => todayInKenya(), []);
   const whyTembeaStories = [
@@ -235,14 +238,6 @@ export default function Home() {
       visual: "photo",
     },
   ] as const;
-
-  const scrollToServices = () => {
-    setShouldLoadShowcases(true);
-    const servicesSection = document.getElementById("services-section");
-    if (servicesSection) {
-      servicesSection.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  };
 
   useEffect(() => {
     if (shouldLoadShowcases) {
@@ -419,10 +414,10 @@ export default function Home() {
             <Button
               size="lg"
               className={primaryCtaClassName}
-              onClick={scrollToServices}
-              data-testid="button-explore-services"
+              onClick={() => openZaina()}
+              data-testid="button-plan-with-zaina"
             >
-              Browse All Services
+              Plan my trip with Zaina
             </Button>
             <Button
               size="lg"
@@ -448,6 +443,7 @@ export default function Home() {
                       placeholder="Where to?"
                       className="rounded-lg pl-10"
                       data-testid="input-destination"
+                      aria-label="Destination"
                     />
                   </div>
                 </div>
@@ -469,6 +465,7 @@ export default function Home() {
                       }}
                       className="rounded-lg pl-10"
                       data-testid="input-checkin"
+                      aria-label="Check-in date"
                     />
                   </div>
                 </div>
@@ -484,6 +481,7 @@ export default function Home() {
                       onChange={(event) => setCheckOut(event.target.value)}
                       className="rounded-lg pl-10"
                       data-testid="input-checkout"
+                      aria-label="Check-out date"
                     />
                   </div>
                 </div>
@@ -500,6 +498,7 @@ export default function Home() {
                       min="1"
                       className="rounded-lg pl-10"
                       data-testid="input-guests"
+                      aria-label="Guests"
                     />
                   </div>
                 </div>
@@ -574,6 +573,21 @@ export default function Home() {
               />
             </Link>
           </div>
+
+          <Link
+            href="/verify"
+            className="mx-auto mt-10 flex max-w-3xl items-center gap-4 rounded-[1.4rem] border border-border/70 bg-card px-5 py-4 shadow-sm transition-colors hover:border-primary/40"
+            data-testid="link-home-verify"
+          >
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <ShieldCheck className="h-5 w-5" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block font-semibold text-foreground">Found a place on Facebook or Jiji?</span>
+              <span className="block text-sm leading-6 text-muted-foreground">We visit it and check the host before you pay them.</span>
+            </span>
+            <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+          </Link>
         </div>
       </section>
 
@@ -663,7 +677,7 @@ export default function Home() {
                               </div>
                             </div>
                             <div className="rounded-[1.5rem] border border-primary/10 bg-white p-4 shadow-[0_14px_32px_-24px_rgba(15,23,42,0.22)] dark:border-border/40 dark:bg-card">
-                              <div className="mb-3 text-xs uppercase tracking-[0.24em] text-primary/70">Bila Matata Bundle</div>
+                              <div className="mb-3 text-xs uppercase tracking-[0.24em] text-primary">Bila Matata Bundle</div>
                               <div className="rounded-[1.2rem] bg-[linear-gradient(135deg,#0b7b87,#1ba8a3)] p-4 text-white">
                                 <div className="font-serif text-xl">
                                   Stay + Chef + Welcome shopping

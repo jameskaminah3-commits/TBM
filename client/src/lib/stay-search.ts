@@ -176,7 +176,7 @@ export function formatStaySearchDate(value: string) {
   }
 
   const parsed = parseISO(value);
-  return isValid(parsed) ? format(parsed, "MMM d") : value;
+  return isValid(parsed) ? format(parsed, "d MMM") : value;
 }
 
 export function getStaySearchNights(checkIn: string, checkOut: string) {

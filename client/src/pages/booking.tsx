@@ -5,6 +5,7 @@ import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Calendar, Users, CheckCircle2, Car, ChefHat, ShoppingBag, Compass, Clock, ArrowRight, ChevronDown, MapPin, BedDouble, ShieldCheck } from "lucide-react";
+import { AskZainaLink } from "@/components/ask-zaina-link";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1427,16 +1428,17 @@ export default function Booking() {
                       name="guestPhone"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Phone (Optional)</FormLabel>
+                          <FormLabel>WhatsApp number (optional)</FormLabel>
                           <FormControl>
                             <Input
                               type="tel"
-                              placeholder="+1 (555) 123-4567"
+                              placeholder="+254 712 345 678"
                               {...field}
                               className="text-base sm:text-sm"
                               data-testid="input-guest-phone"
                             />
                           </FormControl>
+                          <p className="text-xs text-muted-foreground">We confirm bookings and arrival details on WhatsApp.</p>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -1469,6 +1471,7 @@ export default function Booking() {
                                 className="pl-10 text-base sm:text-sm"
                                 {...field}
                                 data-testid="input-booking-checkin"
+                                aria-label="Check-in date"
                               />
                             </div>
                           </FormControl>
@@ -1491,6 +1494,7 @@ export default function Booking() {
                                 className="pl-10 text-base sm:text-sm"
                                 {...field}
                                 data-testid="input-booking-checkout"
+                                aria-label="Check-out date"
                               />
                             </div>
                           </FormControl>
@@ -1519,6 +1523,7 @@ export default function Booking() {
                                   field.onChange(Number.isNaN(value) ? 1 : value);
                                 }}
                                 data-testid="input-booking-guests"
+                                aria-label="Number of guests"
                               />
                             </div>
                           </FormControl>
@@ -2064,6 +2069,8 @@ export default function Booking() {
                     </div>
                   </div>
                 </div>
+
+                <AskZainaLink listingName={accommodation.title} className="justify-center" />
               </div>
             </Card>
           </div>

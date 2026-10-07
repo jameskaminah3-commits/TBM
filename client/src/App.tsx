@@ -7,7 +7,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Header } from "@/components/header";
 import { MobileTabBar } from "@/components/mobile-tab-bar";
-import { ChatConcierge } from "@/components/chat-concierge";
 import { ConciergeSearchBar } from "@/components/concierge-search-bar";
 import { SiteFooter } from "@/components/site-footer";
 import { TembeaLoader } from "@/components/tembea-loader";
@@ -81,6 +80,7 @@ const ProviderServiceRequests = lazy(() => import("@/pages/provider/service-requ
 const ProviderDocuments = lazy(() => import("@/pages/provider/documents"));
 const ProviderSupport = lazy(() => import("@/pages/provider/support"));
 const CustomServiceRequestPage = lazy(() => import("@/pages/custom-service-request"));
+const VerifyPage = lazy(() => import("@/pages/verify"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 const PublicListingDetail = lazy(() => import("@/pages/public-listing-detail"));
 
@@ -106,6 +106,7 @@ function Router() {
         <AppRoute path="/bookings" element={<Bookings />} />
         <AppRoute path="/inbox" element={<InboxPage />} />
         <AppRoute path="/request-custom-service" element={<CustomServiceRequestPage />} />
+        <AppRoute path="/verify" element={<VerifyPage />} />
         <AppRoute path="/services" element={<ServicesHub />} />
         <AppRoute path="/services/drive" element={<DrivePage />} />
         <AppRoute path="/services/dine" element={<DinePage />} />
@@ -185,7 +186,6 @@ function AppShell() {
   const isProviderRoute = location.startsWith("/provider/");
   const isDashboardRoute = isAdminRoute || isProviderRoute;
   const isAuthRoute = location.startsWith("/auth");
-  const isBookingRoute = location.startsWith("/book/");
   const shouldShowHeader = !isAuthRoute && !isProviderRoute;
   const shouldShowSiteChrome = !isAuthRoute && !isDashboardRoute;
 
@@ -221,7 +221,6 @@ function AppShell() {
           ) : null}
       </div>
       {shouldShowSiteChrome ? <MobileTabBar /> : null}
-      {shouldShowSiteChrome && !isBookingRoute ? <ChatConcierge /> : null}
       {shouldShowSiteChrome ? <ZainaWidget /> : null}
       {isAdminRoute ? <AdminZainaBubble /> : null}
       <Toaster />
@@ -238,7 +237,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <CurrencyProvider preferredCurrency={isDashboardRoute ? "KES" : undefined}>
         <ConciergeSearchProvider>
-          <ThemeProvider defaultTheme="light">
+          <ThemeProvider defaultTheme="light" forcedTheme={isDashboardRoute ? undefined : "light"}>
             <AppShell />
           </ThemeProvider>
         </ConciergeSearchProvider>

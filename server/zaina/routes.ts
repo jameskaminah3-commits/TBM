@@ -18,6 +18,7 @@ import { chatSessions, zainaAuditLogs } from "@shared/schema";
 import { and, asc, eq } from "drizzle-orm";
 import { handleZainaMessage } from "./router";
 import { consumeLimits, visitorKey, ZAINA_LIMITS } from "./limits";
+import { getListingVerificationFee } from "./tools";
 
 // ═══════════════════════════════════════════════════════════════════
 // FEATURE FLAG
@@ -83,6 +84,17 @@ export function registerZainaRoutes(app: Express): void {
       timestamp: new Date().toISOString(),
     });
   });
+  // ─── Listing-check fee, for the website's /verify page ────────
+  // Public and outside the gate: the page offers WhatsApp when Zaina is off.
+  app.get("/api/listing-verification/fee", async (_req: Request, res: Response) => {
+    try {
+      res.json(await getListingVerificationFee());
+    } catch (error) {
+      console.error("[LISTING_VERIFICATION] Fee lookup failed:", error);
+      res.status(500).json({ error: "The fee is not available right now." });
+    }
+  });
+
   // ─── Feature flag gate ────────────────────────────────────────
   // Applies to every route below. When Zaina is off, the customer's
   // widget gets a clean 503 and can hide itself.

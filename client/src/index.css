@@ -32,7 +32,7 @@
 
   --sidebar-border: 32 28% 86%;
 
-  --sidebar-primary: 182 49% 39%;
+  --sidebar-primary: 182 51% 30%;
 
   --sidebar-primary-foreground: 0 0% 100%;
 
@@ -40,7 +40,7 @@
 
   --sidebar-accent-foreground: 212 22% 22%;
 
-  --sidebar-ring: 182 49% 39%;
+  --sidebar-ring: 182 51% 30%;
 
   --popover: 38 72% 98%;
 
@@ -48,7 +48,7 @@
 
   --popover-border: 32 30% 81%;
 
-  --primary: 182 49% 39%;
+  --primary: 182 51% 30%;
 
   --primary-foreground: 0 0% 100%;
 
@@ -69,7 +69,7 @@
   --destructive-foreground: 0 0% 100%;
 
   --input: 32 30% 81%;
-  --ring: 182 49% 44%;
+  --ring: 182 51% 34%;
   --chart-1: 182 49% 39%;
   --chart-2: 31 86% 69%;
   --chart-3: 205 52% 38%;
@@ -571,19 +571,6 @@
     }
   }
 
-    @keyframes concierge-ring {
-    0%   { transform: scale(1);    opacity: 0.55; }
-    100% { transform: scale(1.65); opacity: 0; }
-  }
-
-  .animate-concierge-ring {
-    animation: concierge-ring 2.4s ease-out infinite;
-  }
-
-  .animate-concierge-ring-delayed {
-    animation: concierge-ring 2.4s ease-out 1.0s infinite;
-  }
-
   .app-shell {
     background-image:
       radial-gradient(circle at top left, hsl(var(--accent) / 0.16), transparent 30%),
@@ -790,5 +777,19 @@
   .border.active-elevate-2:not(.no-active-interaction-elevate)::after,
   .border.hover-elevate:not(.no-hover-interaction-elevate)::after {
     inset: -1px;
+  }
+}
+
+@layer components {
+  /* Zaina's tooltip and chat panel sit just above her button, which sits
+     above the phone tab bar (shown below 1280px). */
+  .zaina-above-launcher {
+    bottom: calc(4rem + env(safe-area-inset-bottom) + 0.875rem + 4.75rem);
+  }
+
+  @media (min-width: 1280px) {
+    .zaina-above-launcher {
+      bottom: 6.25rem;
+    }
   }
 }

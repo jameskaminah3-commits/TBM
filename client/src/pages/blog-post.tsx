@@ -297,8 +297,8 @@ export default function BlogPostDetail() {
         }
 
         return (
-          <Link href={href || "/"}>
-            <a className="hover:underline">{children}</a>
+          <Link href={href || "/"} className="hover:underline">
+            {children}
           </Link>
         );
       }
@@ -342,11 +342,9 @@ export default function BlogPostDetail() {
       />
 
       <article className="mx-auto max-w-6xl px-4 py-8 sm:py-10 lg:px-6">
-        <Link href="/blog">
-          <a className="mb-8 inline-flex items-center gap-2 text-muted-foreground transition-colors hover:text-foreground" data-testid="link-back-to-blog">
-            <ArrowLeft className="h-4 w-4" />
-            Back to Articles
-          </a>
+        <Link href="/blog" className="mb-8 inline-flex items-center gap-2 text-muted-foreground transition-colors hover:text-foreground" data-testid="link-back-to-blog">
+          <ArrowLeft className="h-4 w-4" />
+          Back to Articles
         </Link>
 
         <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_18rem]">

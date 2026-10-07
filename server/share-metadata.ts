@@ -351,6 +351,10 @@ function getStaticMetadata(pathname: string, baseUrl: string): ShareMetadata | n
       title: "Coastal Travel Services in Mombasa | Tembea Bila Matata",
       description: "Plan a smoother coastal stay with accommodation, transport, private dining, errands and experiences in Mombasa and Nyali.",
     },
+    "/verify": {
+      title: "Verify a Holiday Rental Before You Pay | Tembea Bila Matata",
+      description: "Found a villa or apartment on Facebook, Jiji, Instagram or Airbnb? Our on-ground partner visits the property in Mombasa, Diani, Watamu or Malindi and checks the host before you pay.",
+    },
     "/blog": {
       title: "Mombasa and Kenyan Coast Travel Journal | Tembea Bila Matata",
       description: "Local guides and practical travel advice for stays, transport, dining, family support and experiences in Mombasa and along the Kenyan Coast.",

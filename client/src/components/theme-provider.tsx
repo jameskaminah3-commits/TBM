@@ -6,6 +6,8 @@ type ThemeProviderProps = {
   children: React.ReactNode;
   defaultTheme?: Theme;
   storageKey?: string;
+  /** When set, this theme is shown whatever was saved. */
+  forcedTheme?: Theme;
 };
 
 type ThemeProviderState = {
@@ -24,20 +26,23 @@ export function ThemeProvider({
   children,
   defaultTheme = "light",
   storageKey = "vite-ui-theme",
+  forcedTheme,
   ...props
 }: ThemeProviderProps) {
   const [theme, setTheme] = useState<Theme>(
     () => (localStorage.getItem(storageKey) as Theme) || defaultTheme
   );
 
+  const shownTheme = forcedTheme ?? theme;
+
   useEffect(() => {
     const root = document.documentElement;
     root.classList.remove("light", "dark");
-    root.classList.add(theme);
-  }, [theme]);
+    root.classList.add(shownTheme);
+  }, [shownTheme]);
 
   const value = {
-    theme,
+    theme: shownTheme,
     setTheme: (theme: Theme) => {
       localStorage.setItem(storageKey, theme);
       setTheme(theme);

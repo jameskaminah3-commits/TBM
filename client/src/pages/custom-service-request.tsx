@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
+import { ShieldCheck } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
@@ -156,6 +157,17 @@ export default function CustomServiceRequestPage() {
               <br />
               Tell us what you&apos;re looking for and we&apos;ll create a personalised proposal for your Coast trip.
             </CardDescription>
+            <Link
+              href="/verify"
+              className="mt-3 flex items-start gap-2.5 rounded-xl border border-border/70 bg-muted/30 p-3 text-sm leading-6 text-foreground/85 hover:border-primary/40"
+              data-testid="link-custom-request-verify"
+            >
+              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+              <span>
+                Found a place somewhere else and want it checked before you pay?{" "}
+                <span className="font-medium text-primary">Verify a listing</span>
+              </span>
+            </Link>
           </CardHeader>
           <CardContent>
             <Form {...form}>

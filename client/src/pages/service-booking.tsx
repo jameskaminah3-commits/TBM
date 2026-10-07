@@ -16,6 +16,7 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { CurrencyAmount } from "@/components/currency-amount";
+import { AskZainaLink } from "@/components/ask-zaina-link";
 import { CheckoutPaymentPreview, bookingCheckoutPreviewCopy, customRequestCheckoutPreviewCopy } from "@/components/payment-provider-picker";
 import { useCurrency } from "@/lib/currency";
 import { cn } from "@/lib/utils";
@@ -1280,6 +1281,14 @@ export default function ServiceBooking() {
   }, [authLoading, bookingPath, form, hasRestoredPendingDraft, isAuthenticated, toast]);
 
   const totalPrice = calculatePrice();
+  // Help Mama has no price until the guest picks a time package (hourly,
+  // overnight, full day); until then the summary asks for one.
+  const childcareRateMissing = serviceType === "errand"
+    && serviceMode === "errand-childcare"
+    && !!service
+    && "basePrice" in service
+    && hasHelpMamaPricing(service)
+    && !getHelpMamaRateId(form.watch("serviceAddonSelections") || []);
   const days = calculateDays(form.watch("checkIn"), form.watch("checkOut"));
   const guestsCount = form.watch("guests") || 0;
   const serviceHours = form.watch("serviceHours") || 0;
@@ -2119,6 +2128,7 @@ export default function ServiceBooking() {
                                                 className="pl-10"
                                                 {...field}
                                                 data-testid={`input-errand-package-date-${index}`}
+                                                aria-label={`Date for visit ${index + 1}`}
                                               />
                                             </div>
                                           </FormControl>
@@ -2170,6 +2180,7 @@ export default function ServiceBooking() {
                                     min={todayDateInputValue}
                                     className="pl-10"
                                     data-testid="input-start-date"
+                                    aria-label="Start date"
                                     {...field}
                                   />
                                 </div>
@@ -2194,6 +2205,7 @@ export default function ServiceBooking() {
                                       min={todayDateInputValue}
                                       className="pl-10"
                                       data-testid="input-end-date"
+                                      aria-label="End date"
                                       {...field}
                                     />
                                   </div>
@@ -2550,7 +2562,11 @@ export default function ServiceBooking() {
                       />
                     )}
 
-                    {serviceType === "errand" && "basePrice" in service && (serviceMode === "errand-laundry" || serviceMode === "errand-house-cleaning") && (
+                    {/* Add-ons only show when the provider offers some. */}
+                    {serviceType === "errand" && "basePrice" in service && (
+                      (serviceMode === "errand-laundry" && (service.laundryAddons || []).length > 0)
+                      || (serviceMode === "errand-house-cleaning" && (service.houseCleaningAddons || []).length > 0)
+                    ) && (
                       <FormField
                         control={form.control}
                         name="serviceAddonSelections"
@@ -2577,9 +2593,7 @@ export default function ServiceBooking() {
                                       />
                                     </label>
                                   );
-                                }) : (
-                                  <div className="text-sm text-muted-foreground">No add-ons configured for this service yet.</div>
-                                )}
+                                }) : null}
                               </div>
                               <FormDescription>
                                 {serviceMode === "errand-laundry"
@@ -2688,6 +2702,7 @@ export default function ServiceBooking() {
                                   min="1"
                                   className="pl-10"
                                   data-testid="input-guests"
+                                  aria-label="Number of people"
                                   {...field}
                                   onChange={(e) => field.onChange(parseInt(e.target.value, 10))}
                                 />
@@ -2723,15 +2738,16 @@ export default function ServiceBooking() {
                         name="guestPhone"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Phone (Optional)</FormLabel>
+                            <FormLabel>WhatsApp number (optional)</FormLabel>
                             <FormControl>
                               <Input
                                 type="tel"
-                                placeholder="+254 700 000000"
+                                placeholder="+254 712 345 678"
                                 data-testid="input-guest-phone"
                                 {...field}
                               />
                             </FormControl>
+                            <FormDescription>We confirm bookings and arrival details on WhatsApp.</FormDescription>
                             <FormMessage />
                           </FormItem>
                         )}
@@ -2900,7 +2916,9 @@ export default function ServiceBooking() {
                               : "Base service fee"}
                     </span>
                     <span className="font-medium" data-testid="text-summary-unit-price">
-                      {"pricePerSession" in service && serviceMode === "cook-custom-menu" ? (
+                      {childcareRateMissing ? (
+                        <span className="text-muted-foreground">Choose a time package</span>
+                      ) : "pricePerSession" in service && serviceMode === "cook-custom-menu" ? (
                         <CurrencyAmount amountUsd={cookCustomMenuFeeUsd} />
                       ) : (
                         <CurrencyAmount
@@ -3018,7 +3036,11 @@ export default function ServiceBooking() {
                           <CurrencyAmount amountUsd={totalPrice} />
                         </div>
                       ) : null}
-                      {serviceType === "cook" && serviceMode === "cook-custom-menu" ? (
+                      {childcareRateMissing ? (
+                        <span className="text-sm font-medium text-muted-foreground" data-testid="text-summary-total">
+                          Choose a time package
+                        </span>
+                      ) : serviceType === "cook" && serviceMode === "cook-custom-menu" ? (
                         <CurrencyAmount
                           amountUsd={discountedTotalPrice}
                           primaryClassName="font-bold text-xl text-primary"
@@ -3052,6 +3074,8 @@ export default function ServiceBooking() {
                     {submitActionLabel}
                   </Button>
 
+                  <AskZainaLink listingName={serviceName} className="w-full justify-center" />
+
                   <p className="text-xs text-muted-foreground text-center">
                     {serviceType === "cook" && serviceMode === "cook-custom-menu"
                       ? "Your request fee is credited toward the approved menu. Once you accept the quote, the remaining balance is settled in full."
@@ -3068,10 +3092,10 @@ export default function ServiceBooking() {
       <div className="fixed inset-x-0 bottom-[calc(4rem_+_env(safe-area-inset-bottom))] z-40 border-t border-border/70 bg-background/95 px-4 py-3 shadow-[0_-18px_40px_rgba(15,23,42,0.16)] backdrop-blur lg:hidden">        <div className="mx-auto flex w-full max-w-4xl items-center gap-3">
           <div className="min-w-0 flex-1">
             <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              {discountedTotalPrice > 0 ? "Total" : "Booking"}
+              {discountedTotalPrice > 0 && !childcareRateMissing ? "Total" : "Booking"}
             </div>
             <div className="mt-1 text-base font-semibold text-foreground">
-              {discountedTotalPrice > 0 ? <CurrencyAmount amountUsd={discountedTotalPrice} /> : "Review details"}
+              {childcareRateMissing ? "Choose a time package" : discountedTotalPrice > 0 ? <CurrencyAmount amountUsd={discountedTotalPrice} /> : "Review details"}
             </div>
             <div className="truncate text-xs text-muted-foreground">
               {mobileBookingSummary}

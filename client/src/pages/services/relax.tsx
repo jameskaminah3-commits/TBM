@@ -8,7 +8,7 @@ import { CustomServiceCta } from "@/components/custom-service-cta";
 import { PublicReviewPreview } from "@/components/public-review-preview";
 import { MapPin, ShoppingBag, Star } from "lucide-react";
 import { filterErrands, useConciergeSearch } from "@/lib/concierge-search";
-import { HOUSE_CLEANING_BASE_ROOM_LABEL, getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
+import { HELP_MAMA_HOURLY_MINIMUM_HOURS, HOUSE_CLEANING_BASE_ROOM_LABEL, getHelpMamaRateOptions, getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
 import { PremiumMediaGallery } from "@/components/premium-media-gallery";
 import type { Errand } from "@shared/schema";
 import { getPublicListingPath } from "@/lib/public-listing";
@@ -82,12 +82,18 @@ export default function RelaxPage() {
           {errandListings.map((errand) => {
             const usesHelpMamaPricing = hasHelpMamaPricing(errand);
             const displayPrice = usesHelpMamaPricing ? getHelpMamaStartingPrice(errand.helpMamaPricing) : errand.basePrice;
-            const priceLabel = usesHelpMamaPricing
-              ? "starting Mama Care rate"
+            // The cheapest care option, with its unit: "an hour, 3-hour minimum".
+            const cheapestCare = usesHelpMamaPricing
+              ? getHelpMamaRateOptions(errand.helpMamaPricing).find((option) => option.price === displayPrice)
+              : undefined;
+            const priceLabel = cheapestCare
+              ? cheapestCare.unit === "hour"
+                ? `an hour, ${HELP_MAMA_HOURLY_MINIMUM_HOURS}-hour minimum`
+                : `a ${cheapestCare.unit}`
               : errand.houseCleaningEnabled && !errand.shoppingEnabled && !errand.laundryEnabled
                 ? `${HOUSE_CLEANING_BASE_ROOM_LABEL} cleaning`
               : errand.laundryEnabled && !errand.shoppingEnabled
-                ? "laundry package"
+                ? "a laundry pickup"
                 : errand.shoppingEnabled
                   ? "service fee per shopping trip"
                   : "service package";

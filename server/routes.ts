@@ -2979,6 +2979,7 @@ async function buildSitemapXml() {
     sitemapEntry({ baseUrl, path: "/services/dine", changefreq: "weekly", priority: "0.8", lastmod: now }),
     sitemapEntry({ baseUrl, path: "/services/relax", changefreq: "weekly", priority: "0.8", lastmod: now }),
     sitemapEntry({ baseUrl, path: "/services/experience", changefreq: "weekly", priority: "0.8", lastmod: now }),
+    sitemapEntry({ baseUrl, path: "/verify", changefreq: "monthly", priority: "0.8", lastmod: now }),
     sitemapEntry({ baseUrl, path: "/blog", changefreq: "daily", priority: "0.9", lastmod: now }),
     sitemapEntry({ baseUrl, path: "/about", changefreq: "monthly", priority: "0.5", lastmod: now }),
     sitemapEntry({ baseUrl, path: "/contact", changefreq: "monthly", priority: "0.5", lastmod: now }),

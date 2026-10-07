@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { CarFront, UtensilsCrossed, Sparkles, Compass, ArrowRight } from "lucide-react";
+import { CarFront, UtensilsCrossed, Sparkles, Compass, ArrowRight, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const SERVICES = [
@@ -42,6 +42,16 @@ const SERVICES = [
       "Curated local moments — dhow cruises, excursions, and hosted experiences designed around your trip.",
     accent: "bg-primary/10 text-primary",
     testId: "service-hub-experience",
+  },
+  {
+    href: "/verify",
+    icon: ShieldCheck,
+    label: "Verify",
+    tagline: "Check a place before you pay",
+    description:
+      "Found a villa on Facebook, Jiji or Instagram? Our partner on the ground visits it and checks the host before you send any money.",
+    accent: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+    testId: "service-hub-verify",
   },
 ] as const;
 

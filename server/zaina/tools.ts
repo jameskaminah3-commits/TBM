@@ -2741,6 +2741,20 @@ function getListingVerificationFeeKes() {
   return Number.isFinite(configured) && configured > 0 ? Math.round(configured) : 2500;
 }
 
+/**
+ * The listing-check fee: KSh as set, and US$ as set or converted at today's
+ * rate. Zaina charges it and the website's listing-check page shows it.
+ */
+export async function getListingVerificationFee(): Promise<{ feeKes: number; feeUsd: number }> {
+  const feeKes = getListingVerificationFeeKes();
+  const configuredUsd = Number(process.env.LISTING_VERIFICATION_FEE_USD ?? "0");
+  if (Number.isFinite(configuredUsd) && configuredUsd > 0) {
+    return { feeKes, feeUsd: Math.round(configuredUsd) };
+  }
+  const rate = await getUsdToKesRate();
+  return { feeKes, feeUsd: Math.max(1, Math.ceil(feeKes / rate.usdToKes)) };
+}
+
 /** Everything the customer has written in this conversation, oldest first. */
 async function getCustomerMessages(sessionId: string): Promise<string[]> {
   const rows = await db
@@ -2862,12 +2876,7 @@ export async function createListingVerificationRequest(
 
   const parsed = describeListingSource(listingLink, listingDetails, textArg(args.location) || undefined);
   const verificationLabel = [parsed.sourcePlatform, parsed.location].filter(Boolean).join(", ");
-  const feeKes = getListingVerificationFeeKes();
-  const rate = await getUsdToKesRate();
-  const configuredUsd = Number(process.env.LISTING_VERIFICATION_FEE_USD ?? "0");
-  const feeUsd = Number.isFinite(configuredUsd) && configuredUsd > 0
-    ? Math.round(configuredUsd)
-    : Math.max(1, Math.ceil(feeKes / rate.usdToKes));
+  const { feeKes, feeUsd } = await getListingVerificationFee();
   const currency = await getSessionCurrency(sessionId);
   const requestDetails = [
     "LISTING VERIFICATION REQUEST",

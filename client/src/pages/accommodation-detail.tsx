@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useParams, useLocation, useSearch, Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { Star, MapPin, Users, Bed, Bath, Car, ChefHat, ShoppingBag, CheckCircle2, CalendarDays, Clock, Compass, DoorOpen } from "lucide-react";
+import { Star, MapPin, Users, Bed, Bath, Car, ChefHat, ShoppingBag, CheckCircle2, CalendarDays, Clock, Compass, DoorOpen, MessageCircle } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -30,7 +30,15 @@ import {
   getPublicListingPath,
 } from "@/lib/public-listing";
 import { eachDayOfInterval, format, parseISO, startOfDay } from "date-fns";
-import { formatKenyaClockTime, parseCalendarDate, todayInKenya } from "@shared/calendar-dates";
+import { formatCalendarDate, formatKenyaClockTime, parseCalendarDate, todayInKenya } from "@shared/calendar-dates";
+import { bookingDepositPercent, calculateBookingDepositAmount } from "@shared/booking-payments";
+import { useCurrency } from "@/lib/currency";
+import { openZaina } from "@/lib/zaina";
+
+/** "Wed 7 Oct": how guests read a date. */
+function readableDate(value: string | null | undefined) {
+  return value ? formatCalendarDate(value, { weekday: "short", day: "numeric", month: "short" }, "en-GB") : null;
+}
 
 type StayAvailability = {
   propertyType?: "hotel" | "entire_place";
@@ -57,7 +65,8 @@ export default function AccommodationDetail() {
   const staySearchSuffix = toSearchSuffix(search);
   const hasTripFilters = hasStructuredStayFilters(staySearch);
   const stayNights = getStaySearchNights(staySearch.checkIn, staySearch.checkOut);
-  
+  const { formatAmount } = useCurrency();
+
   const { data: accommodation, isLoading } = useQuery<StayWithRooms>({
     queryKey: ["/api/stays", id],
     queryFn: async () => {
@@ -224,9 +233,9 @@ export default function AccommodationDetail() {
       />
       <div className="container mx-auto max-w-6xl px-4 sm:px-6 md:px-8">
         <nav aria-label="Breadcrumb" className="mb-6 text-sm text-muted-foreground">
-          <Link href="/"><a className="hover:text-foreground">Home</a></Link>
+          <Link href="/" className="hover:text-foreground">Home</Link>
           <span className="mx-2">/</span>
-          <Link href="/accommodations"><a className="hover:text-foreground">Accommodation in Mombasa and Nyali</a></Link>
+          <Link href="/accommodations" className="hover:text-foreground">Accommodation in Mombasa and Nyali</Link>
           <span className="mx-2">/</span>
           <span className="text-foreground">{accommodation.title}</span>
         </nav>
@@ -251,9 +260,6 @@ export default function AccommodationDetail() {
                   <h1 className="mb-2 font-serif text-3xl font-medium md:text-4xl">
                     {accommodation.title}
                   </h1>
-                  <p className="max-w-3xl text-sm leading-6 text-muted-foreground sm:text-base">
-                    {semanticSummary}
-                  </p>
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-muted-foreground">
                     <div className="flex items-center gap-1">
                       <MapPin className="h-4 w-4" />
@@ -261,7 +267,7 @@ export default function AccommodationDetail() {
                     </div>
                     <div className="flex items-center gap-1">
                       <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
-                      <span className="break-words">Rated {accommodation.rating.toFixed(1)}/5 by verified guests</span>
+                      <span className="break-words">Rated {accommodation.rating.toFixed(1)}/5{accommodation.reviewCount > 0 ? ` by ${accommodation.reviewCount} verified guest${accommodation.reviewCount === 1 ? "" : "s"}` : ""}</span>
                     </div>
                   </div>
                 </div>
@@ -292,7 +298,7 @@ export default function AccommodationDetail() {
                   <Card className="p-4">
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <CalendarDays className="h-4 w-4 shrink-0 text-primary" />
-                      <span>Available from {availability?.availableFrom ?? "today"}</span>
+                      <span>Available from {readableDate(availability?.availableFrom) ?? "today"}</span>
                     </div>
                   </Card>
                 </div>
@@ -319,7 +325,7 @@ export default function AccommodationDetail() {
                 <Card className="p-4">
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <CalendarDays className="h-4 w-4 text-primary" />
-                    <span>Available from {availability?.availableFrom ?? "today"}</span>
+                    <span>Available from {readableDate(availability?.availableFrom) ?? "today"}</span>
                   </div>
                 </Card>
               </div>
@@ -487,14 +493,35 @@ export default function AccommodationDetail() {
               ) : null}
 
               <div className="mb-6">
-                {isHotel ? <div className="text-sm text-muted-foreground">Rooms from</div> : null}
-                <CurrencyAmount
-                  amountUsd={accommodation.price}
-                  primaryClassName="text-3xl font-semibold"
-                  className="mb-1"
-                />
-                <div className="text-sm text-muted-foreground">{isHotel ? "per room / night" : "per day"}</div>
-                {isHotel ? <MealPlanChips plans={hotelSummary.mealPlans} className="mt-3" /> : null}
+                {isHotel ? (
+                  <>
+                    <div className="text-sm text-muted-foreground">Rooms from</div>
+                    <CurrencyAmount amountUsd={accommodation.price} primaryClassName="text-3xl font-semibold" className="mb-1" />
+                    <div className="text-sm text-muted-foreground">a room per night</div>
+                    <MealPlanChips plans={hotelSummary.mealPlans} className="mt-3" />
+                  </>
+                ) : stayNights && stayNights > 0 ? (
+                  <>
+                    <CurrencyAmount
+                      amountUsd={accommodation.price * stayNights}
+                      primaryClassName="text-3xl font-semibold"
+                      className="mb-1"
+                      data-testid="text-trip-total"
+                    />
+                    <div className="text-sm text-muted-foreground">
+                      total for {stayNights} night{stayNights === 1 ? "" : "s"} · {formatAmount(accommodation.price)} a night
+                    </div>
+                    <p className="mt-3 rounded-xl border border-primary/20 bg-primary/5 p-3 text-sm leading-6" data-testid="text-commitment-today">
+                      Pay <span className="font-semibold">{formatAmount(calculateBookingDepositAmount(accommodation.price * stayNights))}</span> today ({bookingDepositPercent}%) to lock these dates. The rest is paid later.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-sm text-muted-foreground">From</div>
+                    <CurrencyAmount amountUsd={accommodation.price} primaryClassName="text-3xl font-semibold" className="mb-1" />
+                    <div className="text-sm text-muted-foreground">a night · add your dates to see the total</div>
+                  </>
+                )}
               </div>
 
               <div className="space-y-3 mb-6 rounded-xl border bg-muted/30 p-4 text-sm">
@@ -511,7 +538,7 @@ export default function AccommodationDetail() {
                 )}
                 <div className="flex flex-col gap-1 min-[360px]:flex-row min-[360px]:items-center min-[360px]:justify-between">
                   <span className="font-medium">Next available</span>
-                  <span className="text-muted-foreground">{availability?.availableFrom ?? "Today"}</span>
+                  <span className="text-muted-foreground">{readableDate(availability?.availableFrom) ?? "Today"}</span>
                 </div>
                 <div className="rounded-xl border bg-background p-2">
                   <div className="mb-2 flex items-center justify-between px-1">
@@ -574,6 +601,25 @@ export default function AccommodationDetail() {
                 Book Now
               </Button>
               )}
+              <Button
+                variant="outline"
+                className="mt-3 w-full"
+                size="lg"
+                onClick={() => {
+                  const dates = staySearch.checkIn && staySearch.checkOut
+                    ? ` from ${readableDate(staySearch.checkIn)} to ${readableDate(staySearch.checkOut)}`
+                    : "";
+                  const guests = staySearch.guests ? ` for ${staySearch.guests} guest${staySearch.guests === 1 ? "" : "s"}` : "";
+                  openZaina(`I'm looking at ${accommodation.title}${dates}${guests}. Can you help me plan the rest of the trip?`);
+                }}
+                data-testid="button-plan-trip-with-zaina"
+              >
+                <MessageCircle className="mr-2 h-4 w-4" />
+                Plan my trip around this stay
+              </Button>
+              <p className="mt-2 text-center text-xs leading-5 text-muted-foreground">
+                Zaina can add an airport or SGR pickup, a chef, shopping before you arrive or a nanny, all in one booking.
+              </p>
 
               <Separator className="my-6" />
 
@@ -592,7 +638,7 @@ export default function AccommodationDetail() {
                 </div>
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <CheckCircle2 className="h-4 w-4 text-primary" />
-                  <span>Clear SLA agreements</span>
+                  <span>Pay by M-Pesa or card</span>
                 </div>
               </div>
             </Card>

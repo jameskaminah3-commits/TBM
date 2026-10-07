@@ -18,8 +18,11 @@
 //     stays in sync if the customer toggles USD/KES mid-chat.
 
 import { useEffect, useRef, useState } from "react";
+import { useLocation } from "wouter";
 import { ZainaAvatar } from "./ZainaAvatar";
 import { WHATSAPP_URL } from "@/lib/contact-info";
+import { ZAINA_OPEN_EVENT, setZainaAvailable, whatsAppUrlWithText, type OpenZainaDetail } from "@/lib/zaina";
+import { useCurrency } from "@/lib/currency";
 
 type Msg = { role: "user" | "assistant"; content: string };
 type Chip = { emoji: string; label: string };
@@ -123,6 +126,35 @@ function buildWhatsAppHandoffUrl(msgs: Msg[]): string {
 
   const separator = WHATSAPP_URL.includes("?") ? "&" : "?";
   return `${WHATSAPP_URL}${separator}text=${encodeURIComponent(summary)}`;
+}
+
+// A person on WhatsApp is always one tap away: with the chat so far once the
+// guest has written, otherwise with a plain hello.
+function whatsAppPersonUrl(msgs: Msg[]): string {
+  return msgs.some((m) => m.role === "user")
+    ? buildWhatsAppHandoffUrl(msgs)
+    : whatsAppUrlWithText("Hi Tembea Bila Matata, I'd like to talk to someone about my Coast trip.");
+}
+
+// Phones only: true while the guest is typing in a field outside Zaina, so
+// her button never sits on top of a form.
+function useFormFieldFocused() {
+  const [focused, setFocused] = useState(false);
+  useEffect(() => {
+    const isField = (target: EventTarget | null) =>
+      target instanceof HTMLElement &&
+      !target.closest("[data-zaina-panel]") &&
+      (target.matches("input, textarea, select") || target.isContentEditable);
+    const onIn = (event: FocusEvent) => setFocused(isField(event.target));
+    const onOut = () => setFocused(false);
+    document.addEventListener("focusin", onIn);
+    document.addEventListener("focusout", onOut);
+    return () => {
+      document.removeEventListener("focusin", onIn);
+      document.removeEventListener("focusout", onOut);
+    };
+  }, []);
+  return focused;
 }
 // Renders Zaina's (and team members') messages with lightweight markdown support:
 //   • [text](url) → clickable link, for web links only (javascript:, data: etc. show as text)
@@ -235,6 +267,14 @@ export function ZainaWidget() {
   const logRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const verifiedSessionRef = useRef<string | null>(null);
+  const [location] = useLocation();
+  const formFieldFocused = useFormFieldFocused();
+  // Zaina quotes in the currency the guest sees on the page (KSh or USD).
+  const { selectedCurrency } = useCurrency();
+  const currencyRef = useRef(selectedCurrency);
+  currencyRef.current = selectedCurrency;
+  // Checkout pages pin their own Book bar to the bottom of small screens.
+  const onCheckoutPage = location.startsWith("/book/");
 
   // ─── Feature flag ─────────────────────────────────────────────
   useEffect(() => {
@@ -255,6 +295,24 @@ export function ZainaWidget() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  useEffect(() => {
+    setZainaAvailable(widgetState === "ready" || widgetState === "handed_off");
+  }, [widgetState]);
+
+  // ─── Opened from a page ("Plan my trip with Zaina") ──────────
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      // Keep a trailing space: "Here's the link: " invites the guest to paste.
+      const message = (event as CustomEvent<OpenZainaDetail>).detail?.message;
+      if (message?.trim()) setInput(message.trimStart());
+      setShowTooltip(false);
+      setOpen(true);
+      setTimeout(() => inputRef.current?.focus(), 250);
+    };
+    window.addEventListener(ZAINA_OPEN_EVENT, onOpen);
+    return () => window.removeEventListener(ZAINA_OPEN_EVENT, onOpen);
   }, []);
 
   // ─── Chip selection on first ready ────────────────────────────
@@ -370,11 +428,7 @@ export function ZainaWidget() {
 
   // ─── Session ─────────────────────────────────────────────────
   function currentCurrency(): "USD" | "KES" {
-    const v =
-      localStorage.getItem("currency") ??
-      localStorage.getItem("display_currency") ??
-      "USD";
-    return v.toUpperCase() === "KES" ? "KES" : "USD";
+    return currencyRef.current === "KES" ? "KES" : "USD";
   }
 
   function clearLocalSession() {
@@ -629,9 +683,9 @@ export function ZainaWidget() {
       `}</style>
 
       {/* Floating tooltip — once per session */}
-      {showTooltip && !open && (
+      {showTooltip && !open && !formFieldFocused && !onCheckoutPage && (
  <div
-          className="zaina-tooltip-enter fixed bottom-60 right-4 sm:bottom-44 sm:right-6 z-[9999] max-w-[240px]
+          className="zaina-tooltip-enter zaina-above-launcher fixed right-4 xl:right-6 z-[9999] max-w-[240px]
                      rounded-2xl rounded-br-sm bg-white px-4 py-3 text-sm text-gray-800 shadow-xl"
         >
           {TOOLTIP_COPY}
@@ -645,19 +699,25 @@ export function ZainaWidget() {
         </div>
       )}
 
-      {/* Floating toggle button */}
+      {/* Floating toggle button: above the phone tab bar, never on top of a
+          form field, and out of the way of the Book bar on checkout pages. */}
       <button
         onClick={() => {
           setOpen((v) => !v);
           setShowTooltip(false);
         }}
         aria-label={open ? "Close Zaina" : "Open Zaina"}
-        className="fixed bottom-40 right-4 sm:bottom-24 sm:right-6 z-[9999] flex h-16 w-16 items-center justify-center rounded-full bg-emerald-700 shadow-xl transition-transform hover:scale-105"
+        className={
+          "bottom-above-tab fixed right-4 xl:right-6 z-[9999] flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-full bg-emerald-700 shadow-xl transition-transform hover:scale-105" +
+          (open ? " max-sm:hidden" : "") +
+          (formFieldFocused ? " max-sm:hidden" : "") +
+          (onCheckoutPage ? " max-lg:hidden" : "")
+        }
       >
         {open ? (
           <span className="text-2xl font-light text-white">✕</span>
         ) : (
-          <ZainaAvatar size={56} state={buttonAvatarState} />
+          <ZainaAvatar size={52} state={buttonAvatarState} />
         )}
         {!open && unreadReplies && (
           <span className="zaina-unread-dot absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full bg-amber-500" />
@@ -667,12 +727,15 @@ export function ZainaWidget() {
       {/* Chat panel */}
       {open && (
         <div
-          className="zaina-panel-enter fixed z-[9998] flex flex-col overflow-hidden rounded-2xl bg-white shadow-2xl
-                     bottom-[10.5rem] right-6 h-[580px] w-[380px] max-w-[calc(100vw-2rem)]
-                     max-sm:bottom-0 max-sm:right-0 max-sm:left-0 max-sm:h-[88vh] max-sm:w-full max-sm:rounded-t-2xl max-sm:rounded-b-none"
+          data-zaina-panel
+          role="dialog"
+          aria-label="Chat with Zaina"
+          className="zaina-panel-enter zaina-above-launcher fixed z-[9998] flex flex-col overflow-hidden rounded-2xl bg-white shadow-2xl
+                     right-4 xl:right-6 h-[580px] max-h-[calc(100dvh-12rem)] w-[380px] max-w-[calc(100vw-2rem)]
+                     max-sm:inset-0 max-sm:h-[100dvh] max-sm:max-h-none max-sm:w-full max-sm:max-w-none max-sm:rounded-none"
         >
           {/* Header with avatar breaking the baseline */}
-          <div className="relative bg-emerald-700 px-4 pb-5 pt-4 text-white">
+          <div className="relative bg-emerald-700 px-4 pb-5 pt-4 text-white max-sm:pt-[calc(env(safe-area-inset-top)+1rem)]">
             <div className="flex items-start gap-3">
               <div className="-mb-7 flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-emerald-600 ring-4 ring-emerald-700">
                 <ZainaAvatar size={56} state={avatarState} />
@@ -683,6 +746,14 @@ export function ZainaWidget() {
                   <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-300" />
                   {busy ? "Checking what's available…" : "Your Coast concierge · Ready to help"}
                 </div>
+                <a
+                  href={whatsAppPersonUrl(msgs)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 inline-flex items-center gap-1 rounded-full bg-emerald-900/40 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-emerald-900/60"
+                >
+                  Talk to a person on WhatsApp →
+                </a>
               </div>
               <button
                 onClick={() => {
@@ -706,7 +777,7 @@ export function ZainaWidget() {
               <button
                 onClick={() => setOpen(false)}
                 aria-label="Close chat"
-                className="rounded p-1 text-xl leading-none opacity-80 hover:bg-emerald-800 hover:opacity-100"
+                className="rounded p-2 text-xl leading-none opacity-80 hover:bg-emerald-800 hover:opacity-100"
               >
                 ✕
               </button>
