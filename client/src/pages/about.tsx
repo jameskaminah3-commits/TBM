@@ -1,5 +1,10 @@
 import type { ReactNode } from "react";
+import { Link } from "wouter";
+import { CheckCircle2 } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Button } from "@/components/ui/button";
+import { brandStory } from "@/lib/brand-story";
+import { openZaina, whatsAppUrlWithText } from "@/lib/zaina";
 import {
   BUSINESS_REGISTRATION_NAME,
   CONTACT_EMAIL,
@@ -148,53 +153,68 @@ const faqItems: Array<{ question: string; answer: ReactNode }> = [
   },
 ];
 
+// The owner's own story of TBM, from the same words the home page uses.
 export function AboutPage() {
+  const linkClassName = "font-medium text-primary underline-offset-4 hover:underline";
+
   return (
-    <PageShell
-      title="About Tembea Bila Matata"
-      intro="Tembea Bila Matata is a coastal hospitality, travel, and concierge platform designed to make exploring Kenya's coast simple, convenient, and memorable."
-    >
-      <section className="space-y-3">
-        <p>
-          Whether you're visiting for a beach holiday, business trip, family getaway, or extended stay, we help connect the pieces of your journey so you can
-          spend less time coordinating logistics and more time enjoying the experience.
-        </p>
-      </section>
+    <div className="min-h-screen py-10 sm:py-12">
+      <div className="container mx-auto max-w-4xl px-4 md:px-8">
+        <header className="mb-8 sm:mb-10">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">About Tembea Bila Matata</p>
+          <h1 className="mt-3 font-serif text-3xl font-medium leading-tight sm:text-4xl md:text-5xl">{brandStory.headline}</h1>
+          <p className="mt-4 text-lg leading-8 text-foreground/85 sm:text-xl">{brandStory.hook}</p>
+        </header>
 
-      <section className="space-y-3">
-        <h2 className="font-serif text-2xl font-medium text-foreground">What We Do</h2>
-        <p>
-          We bring together accommodation, transportation, curated experiences, concierge assistance, and lifestyle support services in one place.
-        </p>
-        <p>
-          From booking a villa or airport transfer to arranging a private chef, childcare support, shopping assistance, or a memorable coastal experience, our
-          goal is to provide a smoother and more personalized travel experience.
-        </p>
-      </section>
+        <div className="space-y-8 text-base leading-7 text-muted-foreground sm:space-y-10 sm:text-lg sm:leading-8">
+          <p>{brandStory.problem}</p>
 
-      <section className="space-y-3">
-        <h2 className="font-serif text-2xl font-medium text-foreground">Why It Matters</h2>
-        <p>
-          Travel can become stressful when accommodation, transport, activities, and day-to-day support are handled separately.
-        </p>
-        <p>
-          Tembea Bila Matata helps simplify the process by offering a single point of coordination for your stay. We aim to make arrivals easier, experiences
-          richer, and everyday needs more convenient, allowing guests to enjoy the Kenyan coast with greater comfort, confidence, and peace of mind.
-        </p>
-      </section>
+          <section className="space-y-4" aria-labelledby="about-answer-heading">
+            <h2 id="about-answer-heading" className="font-serif text-2xl font-medium text-foreground sm:text-3xl">{brandStory.answerLead}</h2>
+            <p>{brandStory.answer}</p>
+            <ul className="space-y-2">
+              {brandStory.examples.map((example) => (
+                <li key={example} className="flex items-start gap-3 text-foreground/90">
+                  <CheckCircle2 className="mt-1.5 h-4 w-4 shrink-0 text-primary" />
+                  {example}
+                </li>
+              ))}
+            </ul>
+          </section>
 
-      <section className="space-y-3">
-        <h2 className="font-serif text-2xl font-medium text-foreground">Our Vision</h2>
-        <p>
-          To become the trusted hospitality and lifestyle companion for travelers, families, professionals, and residents seeking reliable accommodation,
-          experiences, concierge support, and coastal lifestyle services.
-        </p>
-        <p>
-          At Tembea Bila Matata, we believe travel and stay should feel effortless, enjoyable, and free from unnecessary worries, because every journey is better
-          when it's bila matata.
-        </p>
-      </section>
-    </PageShell>
+          <div className="space-y-2">
+            <p>
+              {brandStory.paths.browse.question}{" "}
+              <Link href="/accommodations" className={linkClassName}>{brandStory.paths.browse.answer}</Link>
+            </p>
+            <p>
+              {brandStory.paths.tellUs.question}{" "}
+              <button type="button" onClick={() => openZaina()} className={linkClassName}>{brandStory.paths.tellUs.answer}</button>
+            </p>
+            <p>
+              {brandStory.paths.sendFirst.question}{" "}
+              <Link href="/verify" className={linkClassName}>{brandStory.paths.sendFirst.answer}</Link>
+            </p>
+          </div>
+
+          <p className="text-foreground/90">{brandStory.promises.join(" ")}</p>
+
+          <section className="rounded-2xl border border-border/60 bg-muted/30 p-6 sm:p-8" aria-label="Get in touch">
+            <p className="font-serif text-2xl font-medium leading-snug text-foreground sm:text-3xl">{brandStory.closing.join(" ")}</p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Button className="rounded-full px-6" onClick={() => openZaina()} data-testid="button-about-tell-us">
+                {brandStory.callToAction}
+              </Button>
+              <Button asChild variant="outline" className="rounded-full px-6">
+                <a href={whatsAppUrlWithText("Hi Tembea Bila Matata, here's what I need for my Coast trip: ")} target="_blank" rel="noreferrer">
+                  Message us on WhatsApp
+                </a>
+              </Button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
   );
 }
 

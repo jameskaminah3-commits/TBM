@@ -30,7 +30,7 @@ const STEPS = [
   {
     icon: FileText,
     title: "You get the report",
-    body: "A written report with photos within 72 hours of the visit, with a clear verified result or a warning. Then you decide whether to pay the host.",
+    body: "A written report with photos within 24 hours of the visit, with a clear verified result or a warning. Then you decide whether to pay the host.",
   },
 ];
 
@@ -141,7 +141,7 @@ export default function VerifyPage() {
               </li>
               <li className="flex gap-2.5">
                 <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                Report with photos within 72 hours of the visit
+                Report with photos within 24 hours of the visit
               </li>
             </ul>
           </div>

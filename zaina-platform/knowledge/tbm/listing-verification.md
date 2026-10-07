@@ -16,7 +16,7 @@ Found a villa on Airbnb, Facebook, Instagram or Jiji, or did an agent send you a
 - How far it is to the nearest beach, shops and hospital
 - Any discrepancies or red flags seen during the visit
 
-You get a written report with photos within 72 hours of the visit, with either a verified outcome or a warning flag.
+You get a written report with photos within 24 hours of the visit, with either a verified outcome or a warning flag.
 
 ## Where we verify
 

@@ -1,5 +1,6 @@
 import { Facebook, Mail, MapPin, Phone } from "lucide-react";
 import { Link } from "wouter";
+import { brandStory } from "@/lib/brand-story";
 import {
   BUSINESS_REGISTRATION_NAME,
   CONTACT_EMAIL,
@@ -41,9 +42,7 @@ export function SiteFooter() {
               <h3 className="font-serif text-2xl font-medium tracking-[0.08em]">Tembea Bila Matata</h3>
               <p className="mt-2 text-muted-foreground">Travel Without Worries</p>
             </div>
-            <p className="text-sm leading-6 text-muted-foreground">
-              Curated stays, transport, dining, errands, and experiences designed for smooth travel in Kenya.
-            </p>
+            <p className="text-sm leading-6 text-muted-foreground">{brandStory.answer}</p>
             <p className="text-sm leading-6 text-muted-foreground">{SERVICE_AREA}</p>
           </div>
 

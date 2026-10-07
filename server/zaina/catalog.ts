@@ -514,7 +514,7 @@ export const INVENTORY_CATALOG = {
       "Distance to nearest beach, shops, hospital",
       "Any discrepancies or red flags observed during the visit",
     ],
-    delivery: "Written report with photos within 72 hours of the visit.",
+    delivery: "Written report with photos within 24 hours of the visit.",
     request_tool: "create_listing_verification_request",
     payment:
       "The customer pays the verification fee in full before anyone is dispatched. " +

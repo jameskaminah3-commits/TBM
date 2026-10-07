@@ -14,7 +14,8 @@ import {
   CheckCircle2,
   Star,
   ShieldCheck,
-  ArrowRight,
+  Handshake,
+  Wrench,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -23,15 +24,11 @@ import { ListingMedia } from "@/components/listing-media";
 import { buildStaySearchParams } from "@/lib/stay-search";
 import heroImageLarge from "@assets/generated_images/home-hero-1408.jpg";
 import heroImageSmall from "@assets/generated_images/home-hero-768.jpg";
-import chefStoryImage from "@assets/generated_images/home-chef-960.jpg";
 import messyWhatsappImage from "@assets/generated_images/home-whatsapp-420.jpg";
-import trustStoryImageLarge from "@assets/generated_images/trust-story-1280.jpg";
-import trustStoryImageSmall from "@assets/generated_images/trust-story-768.jpg";
-import tailoredTripImageLarge from "@assets/generated_images/tailored-trip-1280.jpg";
-import tailoredTripImageSmall from "@assets/generated_images/tailored-trip-768.jpg";
 import type { Stay, Car as CarType, Cook, Errand, Experience } from "@shared/schema";
 import { todayInKenya } from "@shared/calendar-dates";
-import { openZaina } from "@/lib/zaina";
+import { brandStory } from "@/lib/brand-story";
+import { openZaina, whatsAppUrlWithText } from "@/lib/zaina";
 
 type ShowcaseItem = {
   id: string;
@@ -42,12 +39,9 @@ type ShowcaseItem = {
   reviewCount: number;
 };
 
-type StoryPhoto = {
-  src: string;
-  srcSet?: string;
-  width?: number;
-  height?: number;
-};
+// One icon per promise, in the order brandStory lists them: we check places,
+// we meet guests when they arrive, we fix what isn't right.
+const promiseIcons = [ShieldCheck, Handshake, Wrench];
 
 function ServiceShowcaseCard({
   icon,
@@ -176,68 +170,10 @@ export default function Home() {
   const servicesSectionRef = useRef<HTMLElement | null>(null);
   const heroServiceLabels = ["Stays", "Transport", "Private Chefs", "Experience", "Errands"];
   const heroImageSrcSet = `${heroImageSmall} 768w, ${heroImageLarge} 1408w`;
-  const storyImageSizes = "(min-width: 1024px) 48vw, 100vw";
   const primaryCtaClassName =
     "w-full rounded-xl border border-white/12 bg-[#f98b5b] px-6 py-5 text-base font-semibold text-[#1f2a2e] shadow-[0_20px_44px_-24px_rgba(249,139,91,0.58),inset_0_1px_0_rgba(255,255,255,0.18)] transition-all duration-300 hover:-translate-y-0.5 hover:bg-[#f58756] hover:shadow-[0_24px_54px_-24px_rgba(249,139,91,0.66)] sm:w-auto sm:min-w-[16rem] sm:px-8 sm:py-6 sm:text-lg";
   // Stays are on the coast: the earliest check-in is Kenya's today, wherever the guest is.
   const todayIso = useMemo(() => todayInKenya(), []);
-  const whyTembeaStories = [
-    {
-      eyebrow: "Trust You Can Rely On",
-      title: "Every detail is verified before it reaches your holiday.",
-      description:
-        "Every villa is personally inspected, every chef and driver is thoroughly vetted, and every experience is hand-picked. We only partner with people we would confidently recommend to our own families.",
-      image: {
-        src: trustStoryImageLarge,
-        srcSet: `${trustStoryImageSmall} 768w, ${trustStoryImageLarge} 1280w`,
-        width: 1280,
-        height: 698,
-      } satisfies StoryPhoto,
-      position: "center",
-      visual: "photo",
-    },
-    {
-      eyebrow: "Real Coast Expertise",
-      title: "Local knowledge that feels genuine, not packaged.",
-      description:
-        "Our chefs, drivers, and guides are locals who know the best markets, family recipes, hidden sunset spots, and genuine Swahili traditions - delivering experiences that feel authentic, not touristy.",
-      image: {
-        src: chefStoryImage,
-        width: 960,
-        height: 720,
-      } satisfies StoryPhoto,
-      position: "center",
-      visual: "photo",
-    },
-    {
-      eyebrow: "One App, Complete Peace Of Mind",
-      title: "Everything beautifully coordinated in one calm place.",
-      description:
-        "No more juggling multiple WhatsApp chats or vendors. From your stay to private chef, airport transfer, grocery shopping, laundry, and special experiences - everything is coordinated in one place.",
-      visual: "app",
-    },
-    {
-      eyebrow: "Smart Bundles That Actually Save You Time",
-      title: "Thoughtful combinations, less planning stress.",
-      description:
-        "We design thoughtful combinations like stay, chef, and welcome shopping so you get better value and a smoother trip without having to piece everything together yourself.",
-      visual: "bundle",
-    },
-    {
-      eyebrow: "Designed Around Your Kind Of Trip",
-      title: "Tailored for romance, family ease, or something worth celebrating.",
-      description:
-        "Whether you're a couple seeking romance, a family wanting convenience, or a group celebrating something special, we shape the details so your holiday feels personal and memorable.",
-      image: {
-        src: tailoredTripImageLarge,
-        srcSet: `${tailoredTripImageSmall} 768w, ${tailoredTripImageLarge} 1280w`,
-        width: 1280,
-        height: 896,
-      } satisfies StoryPhoto,
-      position: "center top",
-      visual: "photo",
-    },
-  ] as const;
 
   useEffect(() => {
     if (shouldLoadShowcases) {
@@ -392,11 +328,14 @@ export default function Home() {
         <div className="absolute inset-0 bg-gradient-to-b from-black/52 via-black/40 to-black/58" />
 
         <div className="relative z-10 container mx-auto px-4 text-center md:px-8">
-          <h1 className="mb-4 text-balance font-serif text-[2.35rem] font-medium leading-[1.02] text-white sm:mb-6 sm:text-5xl lg:text-7xl">
+          <p className="mb-3 text-[0.78rem] font-semibold uppercase tracking-[0.26em] text-white/85 [text-shadow:0_2px_10px_rgba(0,0,0,0.42)] sm:mb-4 sm:text-sm">
             Tembea Bila Matata
+          </p>
+          <h1 className="mb-4 text-balance font-serif text-[2.6rem] font-medium leading-[1.02] text-white sm:mb-6 sm:text-6xl lg:text-7xl">
+            {brandStory.headline}
           </h1>
-          <p className="mx-auto mb-6 max-w-4xl text-balance text-base leading-7 text-white/90 sm:mb-10 sm:text-lg md:text-xl">
-            Plan your Coast, without the chaos
+          <p className="mx-auto mb-6 max-w-3xl text-balance text-base leading-7 text-white/90 sm:mb-10 sm:text-lg md:text-xl">
+            {brandStory.hook}
           </p>
 
           <div className="mx-auto mb-6 flex max-w-4xl flex-wrap items-center justify-center gap-x-3 gap-y-2 px-3 text-[0.74rem] font-medium tracking-[0.12em] text-[rgba(246,240,232,0.86)] [text-shadow:0_2px_10px_rgba(0,0,0,0.42)] sm:mb-8 sm:gap-x-4 sm:px-0 sm:text-[0.86rem]">
@@ -415,18 +354,18 @@ export default function Home() {
               size="lg"
               className={primaryCtaClassName}
               onClick={() => openZaina()}
-              data-testid="button-plan-with-zaina"
+              data-testid="button-hero-tell-us"
             >
-              Plan my trip with Zaina
+              Tell us what you need
             </Button>
             <Button
               size="lg"
               variant="ghost"
               className="w-full rounded-xl border border-white/55 bg-white/8 px-6 py-5 text-base text-white shadow-lg backdrop-blur-sm hover:border-white/75 hover:bg-white/14 sm:w-auto sm:min-w-[16rem] sm:px-8 sm:py-6 sm:text-lg"
-              onClick={() => setLocation("/request-custom-service")}
-              data-testid="button-hero-custom-service"
+              onClick={() => setLocation("/verify")}
+              data-testid="button-hero-verify"
             >
-              Request a Custom Service
+              Check a listing before you pay
             </Button>
           </div>
 
@@ -513,6 +452,81 @@ export default function Home() {
         </div>
       </section>
 
+      {/* The story, in the owner's words: the usual way, then what TBM does. */}
+      <section className="bg-background py-16 md:py-24" aria-labelledby="home-story-heading">
+        <div className="container mx-auto grid max-w-6xl gap-10 px-4 md:px-8 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-center lg:gap-16">
+          <div className="min-w-0">
+            <p className="max-w-xl text-lg leading-8 text-foreground/80 sm:text-xl sm:leading-9">{brandStory.problem}</p>
+            <div className="mt-8 max-w-[17rem] overflow-hidden rounded-[1.5rem] border border-border/60 bg-muted shadow-[0_20px_45px_-36px_rgba(15,23,42,0.35)] sm:max-w-sm">
+              <img
+                src={messyWhatsappImage}
+                alt="WhatsApp chats with a driver, a chef and an errands service, each going back and forth over times and prices"
+                width={420}
+                height={568}
+                className="block h-auto w-full"
+                loading="lazy"
+                decoding="async"
+              />
+            </div>
+          </div>
+
+          <div className="min-w-0">
+            <h2 id="home-story-heading" className="text-balance font-serif text-[2.2rem] font-medium leading-tight text-foreground sm:text-5xl">
+              {brandStory.answerLead}
+            </h2>
+            <p className="mt-4 max-w-xl text-lg leading-8 text-muted-foreground sm:text-xl">{brandStory.answer}</p>
+            <ul className="mt-8 grid gap-3" data-testid="list-home-examples">
+              {brandStory.examples.map((example) => (
+                <li key={example} className="flex items-start gap-3 rounded-2xl border border-border/60 bg-card px-4 py-3 text-base leading-7 text-foreground/90 shadow-sm">
+                  <CheckCircle2 className="mt-1 h-5 w-5 shrink-0 text-primary" />
+                  {example}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      {/* Three ways in: browse and book, tell us, or send a listing first. */}
+      <section className="border-y border-border/60 bg-muted/30 py-14 md:py-20" aria-labelledby="home-paths-heading">
+        <div className="container mx-auto max-w-6xl px-4 md:px-8">
+          <h2 id="home-paths-heading" className="sr-only">Three ways to start</h2>
+          <div className="grid gap-4 md:grid-cols-3 md:gap-6">
+            <div className="flex flex-col rounded-[1.5rem] border border-border/60 bg-card p-6 shadow-sm">
+              <h3 className="text-sm font-medium text-muted-foreground">{brandStory.paths.browse.question}</h3>
+              <p className="mt-2 font-serif text-3xl font-medium leading-tight text-foreground">{brandStory.paths.browse.answer}</p>
+              <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-2 pt-6">
+                <Button asChild className="rounded-full px-5">
+                  <Link href="/accommodations" data-testid="link-home-path-browse">Browse stays</Link>
+                </Button>
+                <Link href="/services" className="text-sm font-medium text-primary hover:underline">See all services</Link>
+              </div>
+            </div>
+
+            <div className="flex flex-col rounded-[1.5rem] border border-border/60 bg-card p-6 shadow-sm">
+              <h3 className="text-sm font-medium text-muted-foreground">{brandStory.paths.tellUs.question}</h3>
+              <p className="mt-2 font-serif text-3xl font-medium leading-tight text-foreground">{brandStory.paths.tellUs.answer}</p>
+              <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-2 pt-6">
+                <Button className="rounded-full px-5" onClick={() => openZaina()} data-testid="button-home-path-tell-us">
+                  Tell us what you need
+                </Button>
+                <Link href="/request-custom-service" className="text-sm font-medium text-primary hover:underline">Or send a request</Link>
+              </div>
+            </div>
+
+            <div className="flex flex-col rounded-[1.5rem] border border-border/60 bg-card p-6 shadow-sm">
+              <h3 className="text-sm font-medium text-muted-foreground">{brandStory.paths.sendFirst.question}</h3>
+              <p className="mt-2 font-serif text-3xl font-medium leading-tight text-foreground">{brandStory.paths.sendFirst.answer}</p>
+              <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-2 pt-6">
+                <Button asChild className="rounded-full px-5">
+                  <Link href="/verify" data-testid="link-home-path-verify">Check a listing</Link>
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section id="services-section" ref={servicesSectionRef} className="bg-background py-20 md:py-24">
         <div className="container mx-auto px-4 md:px-8">
           <div className="mb-16 text-center">
@@ -573,171 +587,48 @@ export default function Home() {
               />
             </Link>
           </div>
-
-          <Link
-            href="/verify"
-            className="mx-auto mt-10 flex max-w-3xl items-center gap-4 rounded-[1.4rem] border border-border/70 bg-card px-5 py-4 shadow-sm transition-colors hover:border-primary/40"
-            data-testid="link-home-verify"
-          >
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <ShieldCheck className="h-5 w-5" />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block font-semibold text-foreground">Found a place on Facebook or Jiji?</span>
-              <span className="block text-sm leading-6 text-muted-foreground">We visit it and check the host before you pay them.</span>
-            </span>
-            <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-          </Link>
         </div>
       </section>
 
-      <section className="bg-[linear-gradient(180deg,rgba(249,245,239,0.95)_0%,rgba(246,240,231,0.95)_100%)] py-20 dark:bg-none dark:bg-muted/20 md:py-24">
-        <div className="container mx-auto px-4 md:px-8">
-          <div className="mb-16 text-center">
-            <h2 className="mb-4 font-serif text-[2rem] font-medium leading-tight sm:text-4xl lg:text-5xl">
-              Why Tembea Bila Matata
-            </h2>
-            <p className="mx-auto max-w-4xl text-base leading-7 text-muted-foreground sm:text-lg">
-              We go beyond listing services - we carefully select, verify, and coordinate everything so your Kenyan Coast trip feels effortless, authentic, and truly worry-free.
-            </p>
-          </div>
-
-          <div className="mx-auto flex max-w-6xl flex-col gap-6">
-            {whyTembeaStories.map((story, index) => (
-              <article
-                key={story.title}
-                className="group"
-              >
-                <div className="grid items-center gap-5 overflow-hidden rounded-[2rem] border border-black/5 bg-white/85 p-4 shadow-[0_20px_45px_-36px_rgba(15,23,42,0.2)] backdrop-blur-sm transition-[transform,box-shadow] duration-500 ease-out group-hover:-translate-y-2 group-hover:shadow-[0_28px_58px_-36px_rgba(15,23,42,0.28)] dark:border-border/40 dark:bg-card/80 dark:backdrop-blur-none md:p-5 lg:grid-cols-[minmax(0,1.02fr)_minmax(0,0.98fr)] lg:gap-8">
-                  <div className={index % 2 === 1 ? "lg:order-2" : ""}>
-                    <div className="relative overflow-hidden rounded-[1.5rem] bg-muted">
-                      {story.visual === "photo" ? (
-                        <div className="relative aspect-[4/3] md:aspect-[16/10]">
-                          <img
-                            src={story.image.src}
-                            srcSet={"srcSet" in story.image ? story.image.srcSet : undefined}
-                            sizes={storyImageSizes}
-                            alt={story.title}
-                            width={story.image.width}
-                            height={story.image.height}
-                            className="absolute inset-0 h-full w-full scale-100 object-cover transition-transform duration-700 ease-out group-hover:scale-[1.03]"
-                            style={{ objectPosition: story.position }}
-                            loading={index < 2 ? "eager" : "lazy"}
-                            decoding="async"
-                          />
-                          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(87,56,31,0.06)_0%,rgba(87,56,31,0.14)_36%,rgba(26,18,12,0.36)_100%)]" />
-                          <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,219,170,0.14),transparent_42%,rgba(10,123,135,0.08)_100%)]" />
-                          <div className="absolute left-4 top-4 flex h-10 w-10 items-center justify-center rounded-full border border-white/60 bg-[#e0f6f4]/88 shadow-sm backdrop-blur-sm">
-                            <CheckCircle2 className="h-4 w-4 text-primary" />
-                          </div>
-                        </div>
-                      ) : story.visual === "app" ? (
-                        <div className="relative aspect-[4/3] overflow-hidden bg-[linear-gradient(145deg,#f7efe4_0%,#f2e4d2_42%,#e6f5f2_100%)] p-6 dark:bg-none dark:bg-muted/30 md:aspect-[16/10]">
-                          <div className="absolute inset-x-0 top-0 h-24 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.7),transparent_70%)] dark:opacity-0" />
-                          <div className="mx-auto flex h-full max-w-[18rem] items-center justify-center">
-                            <div className="relative w-full rounded-[2rem] border border-black/8 bg-[#fffdf8] p-3 shadow-[0_30px_60px_-32px_rgba(15,23,42,0.35)] dark:border-border/40 dark:bg-card">
-                              <div className="mx-auto mb-3 h-1.5 w-14 rounded-full bg-stone-200 dark:bg-muted/60" />
-                              <div className="rounded-[1.4rem] bg-[linear-gradient(135deg,#0b7b87,#13a3a5)] p-4 text-white">
-                                <div className="text-xs uppercase tracking-[0.24em] text-white/75">Tembea Dashboard</div>
-                                <div className="mt-2 font-serif text-2xl">
-                                  Your Coast plan
-                                </div>
-                              </div>
-                              <div className="mt-3 space-y-2">
-                                {[
-                                  "Beach villa in Watamu",
-                                  "Private chef arrival dinner",
-                                  "Airport pickup confirmed",
-                                  "Welcome shopping handled",
-                                ].map((line) => (
-                                  <div key={line} className="flex items-center justify-between rounded-2xl bg-stone-50 px-3 py-2.5 dark:bg-muted/50">
-                                    <span className="text-sm text-stone-700 dark:text-foreground/80">{line}</span>
-                                    <span className="rounded-full bg-primary/10 px-2 py-1 text-[11px] font-medium text-primary">Ready</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="relative overflow-hidden bg-[linear-gradient(145deg,#f7efe4_0%,#f4eadf_40%,#eff7f6_100%)] p-5 dark:bg-none dark:bg-muted/20 min-h-[36rem] md:aspect-[16/10] md:min-h-0">
-                          <div className="grid gap-4 md:h-full md:grid-cols-2">
-                            <div className="relative overflow-hidden rounded-[1.5rem] border border-[#d8c4b3] bg-[linear-gradient(145deg,#efe3d6_0%,#e5d6c6_100%)] p-4 shadow-[0_14px_32px_-24px_rgba(15,23,42,0.22)] dark:border-border/50 dark:bg-muted/40">
-                              <div className="relative mb-3 text-xs uppercase tracking-[0.24em] text-stone-500 dark:text-muted-foreground">Older way</div>
-                              <div className="relative overflow-hidden rounded-[1.2rem] bg-[#d9cabd] dark:bg-muted/50">
-                                <img
-                                  src={messyWhatsappImage}
-                                  alt="Multiple WhatsApp chats coordinating travel services"
-                                  width={420}
-                                  height={568}
-                                  className="w-full object-contain"
-                                  loading="eager"
-                                  decoding="async"
-                                />
-                              </div>
-                            </div>
-                            <div className="rounded-[1.5rem] border border-primary/10 bg-white p-4 shadow-[0_14px_32px_-24px_rgba(15,23,42,0.22)] dark:border-border/40 dark:bg-card">
-                              <div className="mb-3 text-xs uppercase tracking-[0.24em] text-primary">Bila Matata Bundle</div>
-                              <div className="rounded-[1.2rem] bg-[linear-gradient(135deg,#0b7b87,#1ba8a3)] p-4 text-white">
-                                <div className="font-serif text-xl">
-                                  Stay + Chef + Welcome shopping
-                                </div>
-                                <div className="mt-2 text-sm text-white/80">One itinerary. One confirmation. One calm arrival.</div>
-                              </div>
-                              <div className="mt-3 space-y-2 text-sm text-stone-700 dark:text-foreground/80">
-                                <div className="flex items-center justify-between rounded-2xl bg-stone-50 px-3 py-2.5 dark:bg-muted/40">
-                                  <span>Bundle savings</span>
-                                  <span className="font-semibold text-primary">12% off</span>
-                                </div>
-                                <div className="flex items-center justify-between rounded-2xl bg-stone-50 px-3 py-2.5 dark:bg-muted/40">
-                                  <span>Arrival support</span>
-                                  <span className="font-semibold text-stone-900 dark:text-foreground">Included</span>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className={`px-2 py-2 md:px-3 ${index % 2 === 1 ? "lg:order-1" : ""}`}>
-                    <div className="mb-4 flex items-center gap-3 text-primary">
-                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10">
-                        <CheckCircle2 className="h-4.5 w-4.5" />
-                      </div>
-                      <span className="text-xs font-semibold uppercase tracking-[0.28em] text-primary/80">{story.eyebrow}</span>
-                    </div>
-                    <h3
-                      className="mb-4 max-w-xl text-balance font-serif text-3xl font-medium leading-tight text-foreground md:text-[2.3rem]"
-                    >
-                      {story.title}
-                    </h3>
-                    <p className="max-w-xl text-base leading-8 text-muted-foreground">{story.description}</p>
-                  </div>
-                </div>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="bg-background py-20 md:py-24">
-        <div className="container mx-auto px-4 text-center md:px-8">
-          <h2 className="mb-6 font-serif text-[2rem] font-medium leading-tight sm:text-4xl lg:text-5xl">
-            Ready for Your Coastal Escape?
+      {/* What guests can count on, and the closing line, in the owner's words. */}
+      <section className="bg-[linear-gradient(180deg,rgba(249,245,239,0.95)_0%,rgba(246,240,231,0.95)_100%)] py-16 dark:bg-none dark:bg-muted/20 md:py-24" aria-labelledby="home-promises-heading">
+        <div className="container mx-auto max-w-6xl px-4 md:px-8">
+          <h2 id="home-promises-heading" className="text-center font-serif text-[2rem] font-medium leading-tight sm:text-4xl lg:text-5xl">
+            Why Tembea Bila Matata
           </h2>
-          <p className="mx-auto mb-8 max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">
-            Book your perfect stay with all the services you need
-          </p>
-          <Button
-            size="lg"
-            className={primaryCtaClassName}
-            onClick={() => setLocation("/accommodations")}
-            data-testid="button-cta"
-          >
-            Explore Accommodations
-          </Button>
+          <ol className="mt-10 grid gap-4 md:grid-cols-3 md:gap-6" data-testid="list-home-promises">
+            {brandStory.promises.map((promise, index) => {
+              const Icon = promiseIcons[index] ?? CheckCircle2;
+              return (
+                <li key={promise} className="rounded-[1.5rem] border border-black/5 bg-white/85 p-6 shadow-[0_20px_45px_-36px_rgba(15,23,42,0.2)] dark:border-border/40 dark:bg-card/80">
+                  <span className="flex h-11 w-11 items-center justify-center rounded-full bg-primary/10 text-primary">
+                    <Icon className="h-5 w-5" />
+                  </span>
+                  <p className="mt-4 text-balance font-serif text-2xl font-medium leading-snug text-foreground">{promise}</p>
+                </li>
+              );
+            })}
+          </ol>
+
+          <div className="mx-auto mt-16 max-w-3xl text-center">
+            <p className="text-balance font-serif text-[1.9rem] font-medium leading-tight text-foreground sm:text-4xl">{brandStory.closing[0]}</p>
+            <p className="mt-3 text-balance font-serif text-[1.9rem] font-medium leading-tight text-primary sm:text-4xl">{brandStory.closing[1]}</p>
+            <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+              <Button size="lg" className={primaryCtaClassName} onClick={() => openZaina()} data-testid="button-cta">
+                {brandStory.callToAction}
+              </Button>
+              <Button asChild size="lg" variant="outline" className="w-full rounded-xl px-6 py-5 text-base sm:w-auto sm:px-8 sm:py-6 sm:text-lg">
+                <a
+                  href={whatsAppUrlWithText("Hi Tembea Bila Matata, here's what I need for my Coast trip: ")}
+                  target="_blank"
+                  rel="noreferrer"
+                  data-testid="link-home-whatsapp"
+                >
+                  Or message us on WhatsApp
+                </a>
+              </Button>
+            </div>
+          </div>
         </div>
       </section>
     </div>
