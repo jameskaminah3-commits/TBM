@@ -384,7 +384,7 @@ export default function AccommodationDetail() {
             <StayMediaCarousel
               stay={accommodation}
               layout="mosaic"
-              aspectClassName="aspect-[4/3] md:aspect-[16/9]"
+              aspectClassName="aspect-[4/3] md:aspect-auto md:h-[26rem] lg:h-[30rem]"
             />
           </div>
         </div>

@@ -89,6 +89,7 @@ import {
   isPendingBookingPathMatch,
 } from "@/lib/pending-booking";
 import { formatKenyaDateTime, isOnKenyaTime, todayInKenya } from "@shared/calendar-dates";
+import { bookingDepositPercent, calculateBookingDepositAmount } from "@shared/booking-payments";
 
 function isDateInputValue(value: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(value);
@@ -1304,11 +1305,14 @@ export default function ServiceBooking() {
     ? experienceSharedDepartures.find((departure) => departure.id === watchedServiceDepartureId)
     : undefined;
   const isCustomRequestMode = serviceMode === "cook-custom-menu" || serviceMode === "experience-custom-offer";
+  // Standard bookings are locked in with the commitment (50%); custom requests are paid in full.
   const checkoutPreviewCopy = isCustomRequestMode ? customRequestCheckoutPreviewCopy : bookingCheckoutPreviewCopy;
   const submitActionLabel = isCustomRequestMode ? "Submit request" : "Book";
   const experienceAddonTotal = serviceType === "experience" && service && "experienceType" in service
     ? getExperienceAddonTotal(service, serviceMode as ExperienceServiceMode | undefined, form.watch("serviceAddonSelections") || [])
     : 0;
+  const showsCommitment = !isCustomRequestMode && !childcareRateMissing && discountedTotalPrice > 0;
+  const dueToday = calculateBookingDepositAmount(discountedTotalPrice);
   const mobileBookingSummary = (() => {
     if (serviceType === "errand") {
       return getErrandMobileSummary(serviceMode, errandPackageCount);
@@ -3052,6 +3056,12 @@ export default function ServiceBooking() {
                       )}
                     </div>
                   </div>
+                  {showsCommitment ? (
+                    <div className="flex items-baseline justify-between gap-3 text-sm" data-testid="text-summary-due-today">
+                      <span className="text-muted-foreground">Pay today to lock it in ({bookingDepositPercent}%)</span>
+                      <span className="font-semibold text-foreground"><CurrencyAmount amountUsd={dueToday} /></span>
+                    </div>
+                  ) : null}
 
                   <CheckoutPaymentPreview
                     title={checkoutPreviewCopy.title}
@@ -3094,6 +3104,7 @@ export default function ServiceBooking() {
               {childcareRateMissing ? "Choose a time package" : discountedTotalPrice > 0 ? <CurrencyAmount amountUsd={discountedTotalPrice} /> : "Review details"}
             </div>
             <div className="truncate text-xs text-muted-foreground">
+              {showsCommitment ? <>Pay <span className="font-semibold text-foreground">{formatAmount(dueToday)}</span> today · </> : null}
               {mobileBookingSummary}
             </div>
           </div>

@@ -29,3 +29,20 @@ export function stayRefundIfCancelledToday(checkIn: string, today: string): Stay
     lastDay: tier.refundPercent > 0 ? addCalendarDays(checkIn, -tier.daysBefore) : null,
   };
 }
+
+/**
+ * The published rules for services, a line each, as the Refund & Cancellation
+ * Policy states them (the full policy is at /refund-cancellation).
+ */
+export const serviceCancellationSummaries = {
+  /** Chauffeur services and airport transfers. */
+  chauffeur: "Cancel more than 24 hours before for a full refund. Within 24 hours up to 50% may be charged, and there's no refund for a no-show.",
+  /** Car rentals (self-drive). */
+  selfDrive: "Cancel more than 72 hours before pickup for a full refund. Between 24 and 72 hours up to 50% is charged; within 24 hours, or for a no-show, there's no refund.",
+  /** Curated experiences and tours. */
+  experience: "More than 7 days before, you get a full or partial refund, depending on the operator. Between 2 and 7 days a partial refund may apply; within 48 hours there's no refund unless agreed.",
+  /** Concierge, errands, childcare and private chefs. */
+  concierge: "Cancel before any preparation starts and you may get a full refund. Once preparation or the service has begun, the refund may be reduced or unavailable.",
+} as const;
+
+export type ServiceCancellationKind = keyof typeof serviceCancellationSummaries;
