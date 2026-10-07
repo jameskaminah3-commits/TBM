@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { DatePicker } from "@/components/date-range-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -224,7 +225,7 @@ export default function CustomServiceRequestPage() {
                       <FormItem>
                         <FormLabel>Preferred date</FormLabel>
                         <FormControl>
-                          <Input type="date" {...field} />
+                          <DatePicker value={field.value || ""} onChange={field.onChange} label="Preferred date" data-testid="input-custom-date" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>

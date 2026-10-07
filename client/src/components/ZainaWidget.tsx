@@ -136,6 +136,20 @@ function whatsAppPersonUrl(msgs: Msg[]): string {
     : whatsAppUrlWithText("Hi Tembea Bila Matata, I'd like to talk to someone about my Coast trip.");
 }
 
+// True while a dialog or sheet (the menu, a date picker) is open: Radix marks
+// the page with data-scroll-locked, and Zaina's button steps aside.
+function useOverlayOpen() {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const read = () => setOpen(document.body.hasAttribute("data-scroll-locked"));
+    read();
+    const observer = new MutationObserver(read);
+    observer.observe(document.body, { attributes: true, attributeFilter: ["data-scroll-locked"] });
+    return () => observer.disconnect();
+  }, []);
+  return open;
+}
+
 // Phones only: true while the guest is typing in a field outside Zaina, so
 // her button never sits on top of a form.
 function useFormFieldFocused() {
@@ -269,6 +283,7 @@ export function ZainaWidget() {
   const verifiedSessionRef = useRef<string | null>(null);
   const [location] = useLocation();
   const formFieldFocused = useFormFieldFocused();
+  const overlayOpen = useOverlayOpen();
   // Zaina quotes in the currency the guest sees on the page (KSh or USD).
   const { selectedCurrency } = useCurrency();
   const currencyRef = useRef(selectedCurrency);
@@ -683,7 +698,7 @@ export function ZainaWidget() {
       `}</style>
 
       {/* Floating tooltip — once per session */}
-      {showTooltip && !open && !formFieldFocused && !onCheckoutPage && (
+      {showTooltip && !open && !formFieldFocused && !overlayOpen && !onCheckoutPage && (
  <div
           className="zaina-tooltip-enter zaina-above-launcher fixed right-4 xl:right-6 z-[9999] max-w-[240px]
                      rounded-2xl rounded-br-sm bg-white px-4 py-3 text-sm text-gray-800 shadow-xl"
@@ -711,6 +726,7 @@ export function ZainaWidget() {
           "bottom-above-tab fixed right-4 xl:right-6 z-[9999] flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-full bg-emerald-700 shadow-xl transition-transform hover:scale-105" +
           (open ? " max-sm:hidden" : "") +
           (formFieldFocused ? " max-sm:hidden" : "") +
+          (overlayOpen && !open ? " hidden" : "") +
           (onCheckoutPage ? " max-lg:hidden" : "")
         }
       >

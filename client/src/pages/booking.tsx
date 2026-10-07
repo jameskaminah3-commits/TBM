@@ -4,14 +4,15 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Calendar, Users, CheckCircle2, Car, ChefHat, ShoppingBag, Compass, Clock, ArrowRight, ChevronDown, MapPin, BedDouble, ShieldCheck } from "lucide-react";
+import { Baby, CheckCircle2, Car, ChefHat, ShoppingBag, Compass, ChevronDown, MapPin, MessageCircle, Minus, Plus, Sparkles } from "lucide-react";
 import { AskZainaLink } from "@/components/ask-zaina-link";
+import { openZaina } from "@/lib/zaina";
+import { DateRangePicker, describeTripRange } from "@/components/date-range-picker";
+import { StayRefundNote } from "@/components/stay-refund-note";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -33,7 +34,6 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { CurrencyAmount } from "@/components/currency-amount";
-import { CheckoutPaymentPreview, bookingCheckoutPreviewCopy } from "@/components/payment-provider-picker";
 import { useCurrency } from "@/lib/currency";
 import {
   Form,
@@ -47,7 +47,6 @@ import { calculateCookServiceTotal, getCookMinimumGuests, getCookServiceFee } fr
 import {
   calculateHelpMamaPackagePrice,
   calculateHouseCleaningPackagePrice,
-  HOUSE_CLEANING_BASE_ROOM_LABEL,
   getHelpMamaAgeBandId,
   getHelpMamaRateId,
   getHelpMamaRateOptions,
@@ -68,6 +67,7 @@ import type {
   StayServiceSelection,
 } from "@shared/schema";
 import { insertBookingSchema } from "@shared/schema";
+import { bookingDepositPercent, calculateBookingDepositAmount } from "@shared/booking-payments";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   captureMarketingQueryParams,
@@ -83,7 +83,6 @@ import {
 } from "@/lib/pending-booking";
 import { readStaySearchState, toSearchSuffix } from "@/lib/stay-search";
 import { HotelRoomPicker } from "@/components/hotel-room-picker";
-import { StayKindBadge } from "@/components/stay-kind";
 import {
   describeHotelStay,
   getRoomsNeeded,
@@ -113,31 +112,61 @@ type ExperienceConciergeService = ExperienceType & { category: "experiences" };
 type AddonService = CarAddonService | CookAddonService | ErrandAddonService;
 type ConciergeService = AddonService | ExperienceConciergeService;
 
-type ConciergeRecommendation = {
-  key: string;
-  serviceId: string;
-  category: ConciergeService["category"];
-  title: string;
-  summary: string;
-  priceLabel: string;
-  score: number;
-  stage: "Arrival" | "Stay" | "Explore";
-  reasons: string[];
-  actionLabel: string;
-  suggestedMode?: string;
-};
-
 type RankedAddonService = {
   service: AddonService;
   score: number;
   reasons: string[];
 };
 
-const addonServiceSections = [
-  { key: "cars", label: "Transport", description: "Cars and chauffeur options", icon: Car },
-  { key: "cooks", label: "Chefs", description: "Private chefs and in-stay dining", icon: ChefHat },
-  { key: "errands", label: "Errands", description: "Shopping, laundry, and home support", icon: ShoppingBag },
-] as const;
+type TripExtraKey = "pickup" | "chef" | "shopping" | "nanny" | "home" | "dayOut";
+
+type TripExtraGroup = {
+  key: TripExtraKey;
+  title: string;
+  description: string;
+  icon: typeof Car;
+  homeOnly: boolean;
+  items: ConciergeService[];
+};
+
+// What guests ask TBM to arrange, in their words. A stay's page can ask for
+// any of these with ?add=pickup,chef and checkout opens with them first.
+const tripExtraGroupDefs: Array<Omit<TripExtraGroup, "items">> = [
+  { key: "pickup", title: "Airport or SGR pickup, or a car", description: "A driver for your arrival, by the hour or the day, or a car to drive yourself.", icon: Car, homeOnly: false },
+  { key: "chef", title: "A private chef", description: "Cooks at your stay, with or without the shopping.", icon: ChefHat, homeOnly: true },
+  { key: "shopping", title: "Shopping before you arrive", description: "Groceries and essentials waiting when you get there.", icon: ShoppingBag, homeOnly: true },
+  { key: "nanny", title: "A nanny", description: "Help with the children, by the hour, the night or the day.", icon: Baby, homeOnly: true },
+  { key: "home", title: "Cleaning and laundry", description: "A clean during your stay, or laundry picked up and brought back.", icon: Sparkles, homeOnly: true },
+  { key: "dayOut", title: "A day out", description: "Tours and days out along the Coast, booked with your stay.", icon: Compass, homeOnly: false },
+];
+
+function preferredExperienceMode(service: ExperienceConciergeService, guests: number) {
+  if (guests <= 3 && service.privateEnabled) return "experience-private";
+  if (service.sharedEnabled) return "experience-shared";
+  if (service.privateEnabled) return "experience-private";
+  if (service.customQuoteEnabled) return "experience-custom-offer";
+  return null;
+}
+
+/** The booking mode an extra starts in, for the group it is added from. */
+function suggestedModeFor(groupKey: TripExtraKey, service: ConciergeService, guests: number) {
+  if (service.category === "cars") return service.priceWithDriverHourly ? "car-chauffeur-hourly" : "car-chauffeur-day";
+  if (service.category === "cooks") return "cook-service-fee";
+  if (service.category === "experiences") return preferredExperienceMode(service, guests) ?? undefined;
+  if (groupKey === "shopping") return "errand-shopping";
+  if (groupKey === "nanny") return "errand-childcare";
+  return service.houseCleaningEnabled ? "errand-house-cleaning" : "errand-laundry";
+}
+
+/** The group a chosen extra shows in: the one it was added from. */
+function groupForSelection(selection: StayServiceSelection): TripExtraKey {
+  if (selection.category === "cars") return "pickup";
+  if (selection.category === "cooks") return "chef";
+  if (selection.category === "experiences") return "dayOut";
+  if (selection.serviceMode === "errand-shopping") return "shopping";
+  if (selection.serviceMode === "errand-childcare") return "nanny";
+  return "home";
+}
 
 const bookingFormSchema = insertBookingSchema.extend({
   checkIn: z.string().min(1, "Check-in date is required"),
@@ -804,12 +833,6 @@ export default function Booking() {
     () => stayServiceSelections.some((selection) => selection.serviceMode === "experience-custom-offer"),
     [stayServiceSelections],
   );
-  const [isBrowseAllAddonsOpen, setIsBrowseAllAddonsOpen] = useState(false);
-  const [expandedAddonSections, setExpandedAddonSections] = useState<Record<AddonService["category"], boolean>>({
-    cars: true,
-    cooks: true,
-    errands: true,
-  });
 
   useEffect(() => {
     if (authLoading || isAuthenticated) {
@@ -921,238 +944,89 @@ export default function Booking() {
       .filter(({ score }) => score >= 0)
       .sort((left, right) => right.score - left.score);
   }, [accommodation, addonServices, guestsValue, nights]);
-  const rankedAddonServiceSections = useMemo(
-    () => addonServiceSections.filter((section) => offersHomeServices || section.key === "cars").map((section) => ({
-      ...section,
-      items: rankedAddonServices.filter(({ service }) => service.category === section.key),
-    })),
-    [offersHomeServices, rankedAddonServices],
+  // ─── The trip plan: extras grouped the way guests ask for them ───
+  const requestedExtras = useMemo(
+    () => new Set((new URLSearchParams(search).get("add") || "").split(",").map((value) => value.trim()).filter(Boolean)),
+    [search],
   );
+  const [openExtraGroups, setOpenExtraGroups] = useState<Partial<Record<TripExtraKey, boolean>>>({});
+  const [showBarDetails, setShowBarDetails] = useState(false);
+  const addonScores = useMemo(
+    () => new Map(rankedAddonServices.map(({ service, score }) => [service.id, score])),
+    [rankedAddonServices],
+  );
+  const tripExtraGroups = useMemo<TripExtraGroup[]>(() => {
+    const byScore = (items: ConciergeService[]) =>
+      [...items].sort((left, right) => (addonScores.get(right.id) ?? 0) - (addonScores.get(left.id) ?? 0));
+    const errands = availableConciergeServices.filter((service): service is ErrandAddonService => service.category === "errands");
+    const itemsFor: Record<TripExtraKey, ConciergeService[]> = {
+      pickup: availableConciergeServices.filter((service) => service.category === "cars"),
+      // A chef who can't cook for this many guests is left out (see the ranking).
+      chef: availableConciergeServices.filter((service) => service.category === "cooks" && addonScores.has(service.id)),
+      shopping: errands.filter((service) => service.shoppingEnabled),
+      nanny: errands.filter((service) => supportsChildcareErrand(service)),
+      home: errands.filter((service) => service.houseCleaningEnabled || service.laundryEnabled),
+      dayOut: availableConciergeServices.filter((service) => service.category === "experiences"
+        && service.maxGuests >= guestsValue && preferredExperienceMode(service, guestsValue) !== null),
+    };
+    return tripExtraGroupDefs
+      .filter((group) => offersHomeServices || !group.homeOnly)
+      .map((group) => ({ ...group, items: byScore(itemsFor[group.key]) }))
+      .sort((left, right) => Number(requestedExtras.has(right.key)) - Number(requestedExtras.has(left.key)));
+  }, [addonScores, availableConciergeServices, guestsValue, offersHomeServices, requestedExtras]);
 
-  const conciergeRecommendations = useMemo<ConciergeRecommendation[]>(() => {
-    if (!accommodation) return [];
+  const extraName = (service: ConciergeService) => (service.category === "experiences" ? service.title : getServiceTitle(service));
 
-    const stayText = normalizeText([
-      accommodation.title,
-      accommodation.location,
-      accommodation.description,
-      ...accommodation.features,
-    ].join(" "));
+  const extraPriceLabel = (groupKey: TripExtraKey, service: ConciergeService): string => {
+    if (service.category === "cars") {
+      if (service.priceWithDriverHourly) return `${formatAmount(service.priceWithDriverHourly)} an hour with a driver`;
+      if (service.priceWithDriver) return `${formatAmount(service.priceWithDriver)} a day with a driver`;
+      return `${formatAmount(service.pricePerDay ?? 0)} a day, self-drive`;
+    }
+    if (service.category === "cooks") {
+      return `${formatAmount(getCookServiceFee(service))} a day for up to ${getCookMinimumGuests(service)} guests`;
+    }
+    if (service.category === "experiences") {
+      const mode = preferredExperienceMode(service, guestsValue);
+      if (mode === "experience-custom-offer") return "Priced for your group";
+      const price = mode === "experience-shared" ? service.sharedPricePerPerson || service.price : service.privatePricePerPerson || service.price;
+      return `${formatAmount(price)} a person`;
+    }
+    if (groupKey === "nanny" && hasHelpMamaPricing(service)) {
+      const cheapest = getHelpMamaRateOptions(service.helpMamaPricing)
+        .reduce<ReturnType<typeof getHelpMamaRateOptions>[number] | null>((best, option) => (!best || option.price < best.price ? option : best), null);
+      if (cheapest) return `From ${formatAmount(cheapest.price)} ${cheapest.unit === "hour" ? "an hour" : `a ${cheapest.unit}`}`;
+    }
+    if (groupKey === "shopping") return `${formatAmount(service.basePrice)} a trip, plus the shopping`;
+    if (groupKey === "home") {
+      return service.houseCleaningEnabled
+        ? `${formatAmount(service.basePrice)} a visit for a studio or 1-bedroom`
+        : `${formatAmount(service.basePrice)} a pickup`;
+    }
+    return `From ${formatAmount(service.basePrice)}`;
+  };
 
-    const isLuxuryStay = accommodation.price >= 280 || includesAny(stayText, ["luxury", "villa", "private pool", "sea view"]);
-    const isLongStay = nights >= 4;
-    const isShortStay = nights > 0 && nights <= 2;
-    const isFamilyTrip = guestsValue >= 4 || accommodation.bedrooms >= 2;
-    const isCityStay = includesAny(stayText, ["nairobi", "city", "kilimani", "westlands", "urban"]);
-    const isCoastalStay = includesAny(stayText, ["diani", "watamu", "nyali", "mombasa", "beach", "coast", "ocean"]);
-    const hasKitchen = includesAny(stayText, ["kitchen", "self catering", "villa", "apartment"]);
+  const extraDetail = (service: ConciergeService): string => {
+    if (service.category === "cars") return [service.seats ? `${service.seats} seats` : null, service.transmission || null].filter(Boolean).join(" · ");
+    if (service.category === "cooks") return service.speciality || service.location || "";
+    if (service.category === "experiences") {
+      return [service.durationHours ? `${service.durationHours} hours` : null, service.experienceLocation || service.location || null].filter(Boolean).join(" · ");
+    }
+    return service.location || "";
+  };
 
-    const recommendations: ConciergeRecommendation[] = [];
+  const extraTotal = (service: ConciergeService): number => {
+    if (service.category === "experiences") {
+      const selection = getExistingSelection(service.id);
+      if (selection?.serviceMode === "experience-custom-offer") return 0;
+      const price = selection?.serviceMode === "experience-shared" ? service.sharedPricePerPerson || service.price : service.privatePricePerPerson || service.price;
+      return price * (selection?.guests || guestsValue);
+    }
+    return calculateServiceTotal(service, nights);
+  };
 
-    availableConciergeServices.forEach((service) => {
-      const locationScore = scoreLocationMatch(accommodation.location, service.location);
-
-      if (service.category === "cars" && service.seats >= guestsValue) {
-        if (service.priceWithDriverHourly && (isShortStay || isCityStay)) {
-          const reasons = [
-            isShortStay ? "Better for airport runs and one-off plans" : "Useful when you only need a car for specific windows",
-            isCityStay ? "A strong fit for city movement without paying for a full day" : "Lets you stay flexible without committing a whole day",
-          ];
-          recommendations.push({
-            key: `${service.id}-hourly`,
-            serviceId: service.id,
-            category: service.category,
-            title: `${service.model} hourly chauffeur`,
-            summary: "Pre-book a driver for arrivals, dinner transfers, meetings, or a few planned stops.",
-            priceLabel: `${formatAmount(service.priceWithDriverHourly)}/hour`,
-            score: 54 + locationScore + (isShortStay ? 14 : 0) + (isCityStay ? 10 : 0),
-            stage: "Arrival",
-            reasons,
-            actionLabel: selectedServices.includes(service.id) ? "Edit stay transport" : "Add stay transport",
-            suggestedMode: "car-chauffeur-hourly",
-          });
-        }
-
-        if (service.pricePerDay || service.priceWithDriver) {
-          const dailyPrice = service.pricePerDay ?? service.priceWithDriver;
-          const reasons = [
-            isFamilyTrip ? `Well suited for ${guestsValue} guests` : "Keeps local transport simple during the stay",
-            isLongStay ? "Worth it when you have multiple days to cover" : "Good if you want flexible movement around the area",
-          ];
-          recommendations.push({
-            key: `${service.id}-day`,
-            serviceId: service.id,
-            category: service.category,
-            title: `${service.model} day support`,
-            summary: "A dependable car option for airport transfers, errands, dining plans, and day movement around the stay.",
-            priceLabel: `${formatAmount(dailyPrice)}/day`,
-            score: 42 + locationScore + (isFamilyTrip ? 12 : 0) + (isLongStay ? 8 : 0),
-            stage: "Arrival",
-            reasons,
-            actionLabel: selectedServices.includes(service.id) ? "Edit stay transport" : "Add car to stay",
-            suggestedMode: "car-chauffeur-day",
-          });
-        }
-      }
-
-      if (service.category === "cooks") {
-        const minimumGuests = getCookMinimumGuests(service);
-        if (guestsValue < minimumGuests || service.maxGuests < guestsValue) {
-          return;
-        }
-        const reasons = [
-          isFamilyTrip ? "Useful when several people are dining at the stay" : "Takes meal planning off the trip",
-          isLuxuryStay || hasKitchen ? "Fits a stay designed for dining in" : "Good for your arrival night or one special meal",
-        ];
-        recommendations.push({
-          key: `${service.id}-chef`,
-          serviceId: service.id,
-          category: service.category,
-          title: service.title,
-          summary: "A chef recommendation that matches the size and comfort level of this stay.",
-          priceLabel: `${formatAmount(getCookServiceFee(service))} chef fee`,
-          score: 48 + locationScore + (isFamilyTrip ? 14 : 0) + (isLuxuryStay ? 8 : 0) + (hasKitchen ? 8 : 0),
-          stage: "Stay",
-          reasons,
-          actionLabel: selectedServices.includes(service.id) ? "Edit chef setup" : "Add chef to stay",
-          suggestedMode: "cook-service-fee",
-        });
-      }
-
-      if (service.category === "errands") {
-        if (service.shoppingEnabled && (hasKitchen || isLongStay || isShortStay)) {
-          recommendations.push({
-            key: `${service.id}-shopping`,
-            serviceId: service.id,
-            category: service.category,
-            title: `${service.serviceName} shopping support`,
-            summary: "Ideal if you want the stay stocked before arrival or want to avoid the first grocery run.",
-            priceLabel: `${formatAmount(service.basePrice)} base`,
-            score: 46 + locationScore + (hasKitchen ? 12 : 0) + (isLongStay ? 8 : 0) + (isShortStay ? 5 : 0),
-            stage: "Arrival",
-            reasons: [
-              hasKitchen ? "Matches a self-catering stay" : "Useful for first-day convenience",
-              isLongStay ? "Especially helpful for longer stays" : "Good if you want to settle in faster",
-            ],
-            actionLabel: selectedServices.includes(service.id) ? "Edit grocery support" : "Add grocery support",
-            suggestedMode: "errand-shopping",
-          });
-        }
-
-        if (supportsChildcareErrand(service) && isFamilyTrip) {
-          recommendations.push({
-            key: `${service.id}-childcare`,
-            serviceId: service.id,
-            category: service.category,
-            title: `${service.serviceName} family support`,
-            summary: "Useful when parents need gentle supervision, feeding help, clinic visit support, or quiet coverage during work plans.",
-            priceLabel: hasHelpMamaPricing(service)
-              ? `From ${formatAmount(getHelpMamaStartingPrice(service.helpMamaPricing))}`
-              : `${formatAmount(service.basePrice)} base`,
-            score: 49 + locationScore + 12,
-            stage: "Stay",
-            reasons: [
-              "Designed for travelling families",
-              "Helpful when parents need conference, work, or rest time",
-            ],
-            actionLabel: selectedServices.includes(service.id) ? "Edit family support" : "Add family support",
-            suggestedMode: "errand-childcare",
-          });
-        }
-
-        if (service.houseCleaningEnabled && (isLongStay || isFamilyTrip || accommodation.bathrooms >= 2)) {
-          recommendations.push({
-            key: `${service.id}-cleaning`,
-            serviceId: service.id,
-            category: service.category,
-            title: `${service.serviceName} cleaning support`,
-            summary: "A comfort-focused recommendation to keep the stay feeling reset when several people are using it.",
-            priceLabel: `${formatAmount(service.basePrice)} ${HOUSE_CLEANING_BASE_ROOM_LABEL}`,
-            score: 43 + locationScore + (isLongStay ? 12 : 0) + (isFamilyTrip ? 9 : 0),
-            stage: "Stay",
-            reasons: [
-              isLongStay ? "A strong fit for a multi-night booking" : "Helpful when the villa gets busy",
-              accommodation.bathrooms >= 2 ? "Makes sense for a larger stay footprint" : "Good for comfort between plans",
-            ],
-            actionLabel: selectedServices.includes(service.id) ? "Edit cleaning support" : "Add cleaning support",
-            suggestedMode: "errand-house-cleaning",
-          });
-        }
-
-        if (service.laundryEnabled && nights >= 5) {
-          recommendations.push({
-            key: `${service.id}-laundry`,
-            serviceId: service.id,
-            category: service.category,
-            title: `${service.serviceName} laundry support`,
-            summary: "Worth planning early so a longer stay does not turn into suitcase management.",
-            priceLabel: `${formatAmount(service.basePrice)} base`,
-            score: 40 + locationScore + 14,
-            stage: "Stay",
-            reasons: [
-              "Most useful once the stay stretches past a few nights",
-              isFamilyTrip ? "Especially practical for group packing" : "Helps keep the trip light and easy",
-            ],
-            actionLabel: selectedServices.includes(service.id) ? "Edit laundry support" : "Plan laundry support",
-            suggestedMode: "errand-laundry",
-          });
-        }
-      }
-
-      if (service.category === "experiences" && service.maxGuests >= guestsValue) {
-        const preferredExperienceMode =
-          guestsValue <= 3 && service.privateEnabled
-            ? "experience-private"
-            : service.sharedEnabled
-              ? "experience-shared"
-              : service.privateEnabled
-                ? "experience-private"
-                : service.customQuoteEnabled
-                  ? "experience-custom-offer"
-                  : null;
-
-        if (preferredExperienceMode) {
-          const price =
-            preferredExperienceMode === "experience-shared"
-              ? service.sharedPricePerPerson || service.price
-              : preferredExperienceMode === "experience-private"
-                ? service.privatePricePerPerson || service.price
-                : 0;
-
-          const reasons = [
-            isCoastalStay ? "Pairs naturally with a leisure-style stay" : "Gives the trip a clear day plan beyond the villa",
-            preferredExperienceMode === "experience-shared"
-              ? "Shared departures make sense when flexibility matters"
-              : "Private format keeps the trip tailored to your group",
-          ];
-
-          recommendations.push({
-            key: `${service.id}-${preferredExperienceMode}`,
-            serviceId: service.id,
-            category: service.category,
-            title: service.title,
-            summary: "An experience that complements the mood and pace of this stay rather than feeling tacked on.",
-            priceLabel: preferredExperienceMode === "experience-custom-offer" ? "Tailored quote" : `${formatAmount(price)}/person`,
-            score: 49 + locationScore + (isCoastalStay ? 14 : 0) + (isLuxuryStay ? 6 : 0),
-            stage: "Explore",
-            reasons,
-            actionLabel:
-              preferredExperienceMode === "experience-shared"
-                ? (selectedServices.includes(service.id) ? "Edit shared experience" : "Add shared experience")
-                : preferredExperienceMode === "experience-custom-offer"
-                  ? (selectedServices.includes(service.id) ? "Edit tailored experience" : "Request tailored experience")
-                  : (selectedServices.includes(service.id) ? "Edit private experience" : "Book private experience"),
-            suggestedMode: preferredExperienceMode,
-          });
-        }
-      }
-    });
-
-    return recommendations
-      .sort((left, right) => right.score - left.score)
-      .filter((recommendation, index, all) => index === all.findIndex((entry) => entry.key === recommendation.key))
-      .slice(0, 6);
-  }, [accommodation, availableConciergeServices, formatAmount, guestsValue, nights, selectedServices]);
+  const dueToday = calculateBookingDepositAmount(discountedTotalPrice);
+  const tripDatesLine = checkInValue && checkOutValue ? describeTripRange(checkInValue, checkOutValue) : "Add your dates";
 
   const hasBookingOverlap = (data: BookingFormValues) => {
     return availability?.blockedRanges.some((range) => {
@@ -1292,212 +1166,114 @@ export default function Booking() {
     );
   }
 
-  return (
-    <div className="app-shell min-h-screen pb-24 pt-6 sm:pb-10 sm:pt-8 lg:pb-12">
-      <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="space-y-6">
-          <Card className="surface-soft-card min-w-0 overflow-hidden border">
-            <div className="grid min-w-0 gap-0 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
-              <div className="aspect-[16/11] overflow-hidden bg-muted/55 sm:aspect-[16/9] lg:aspect-auto lg:h-full">
-                <img
-                  src={accommodation.imageUrl || "https://images.unsplash.com/photo-1564501049412-61c2a3083791?w=1200"}
-                  alt={accommodation.title}
-                  className="h-full w-full object-cover"
-                />
-              </div>
+  const priceLines = (
+    <div className="space-y-2.5 text-sm" data-testid="list-trip-price-lines">
+      <div className="flex justify-between gap-3">
+        <span className="break-words text-muted-foreground">
+          {isHotel && hotelQuote?.ok
+            ? describeHotelStay(hotelQuote.snapshot)
+            : nights > 0 ? `${accommodation.title}, ${nights} night${nights === 1 ? "" : "s"}` : accommodation.title}
+        </span>
+        <span className="shrink-0"><CurrencyAmount amountUsd={accommodationTotal} /></span>
+      </div>
+      {selectedSummaryServices.map((service) => {
+        const isTailored = getExistingSelection(service.id)?.serviceMode === "experience-custom-offer";
+        return (
+          <div key={service.id} className="flex justify-between gap-3">
+            <span className="break-words text-muted-foreground">{extraName(service)}</span>
+            <span className="shrink-0">{isTailored ? "Quoted later" : <CurrencyAmount amountUsd={extraTotal(service)} />}</span>
+          </div>
+        );
+      })}
+      {promoPreview ? (
+        <div className="flex justify-between gap-3 text-emerald-700">
+          <span className="break-words">{promoPreview.bundleLabel || promoPreview.promoName}</span>
+          <span className="shrink-0">-<CurrencyAmount amountUsd={promoSavings} /></span>
+        </div>
+      ) : null}
+    </div>
+  );
 
-              <div className="space-y-5 p-5 sm:p-6 lg:p-7">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline" className="surface-badge w-fit rounded-full border text-muted-foreground">
-                    {isHotel ? "Hotel Booking" : "Stay Booking"}
-                  </Badge>
-                  <StayKindBadge stay={accommodation} />
-                </div>
-
-                <div className="space-y-2">
-                  <h1 className="font-serif text-3xl font-semibold leading-tight text-foreground sm:text-4xl">
-                    Complete your stay booking
-                  </h1>
-                  <p className="max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
-                    Choose your dates, confirm guest details, and add only the extras that actually fit this trip.
-                  </p>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="text-xl font-semibold text-foreground sm:text-2xl">{accommodation.title}</div>
-                  <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-                    <span className="inline-flex items-center gap-2">
-                      <MapPin className="h-4 w-4" />
-                      {accommodation.location}
-                    </span>
-                    {isHotel ? (
-                      <span className="inline-flex items-center gap-2">
-                        <BedDouble className="h-4 w-4" />
-                        {hotelRoomTypes.length} room type{hotelRoomTypes.length === 1 ? "" : "s"}
-                      </span>
-                    ) : (
-                      <>
-                        <span className="inline-flex items-center gap-2">
-                          <BedDouble className="h-4 w-4" />
-                          {accommodation.bedrooms} bedroom{accommodation.bedrooms === 1 ? "" : "s"}
-                        </span>
-                        <span className="inline-flex items-center gap-2">
-                          <Users className="h-4 w-4" />
-                          Up to {accommodation.maxOccupancy} guests
-                        </span>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <div className="surface-subtle rounded-2xl border p-4">
-                    <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">From</div>
-                    <div className="mt-2 flex items-baseline gap-1 text-lg font-semibold text-foreground">
-                      <CurrencyAmount amountUsd={accommodation.price} />
-                      <span className="text-sm font-normal text-muted-foreground">{isHotel ? "/ room / night" : "/ night"}</span>
-                    </div>
-                  </div>
-
-                  <div className="surface-subtle rounded-2xl border p-4">
-                    <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Trip</div>
-                    <div className="mt-2 text-lg font-semibold text-foreground">
-                      {nights > 0 ? `${nights} night${nights === 1 ? "" : "s"}` : "Select dates"}
-                    </div>
-                  </div>
-
-                  <div className="surface-subtle rounded-2xl border p-4">
-                    <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Extras</div>
-                    <div className="mt-2 text-lg font-semibold text-foreground">
-                      {selectedSummaryServices.length > 0 ? `${selectedSummaryServices.length} added` : "None yet"}
-                    </div>
-                  </div>
-                </div>
-
-                {accommodation.features.length > 0 ? (
-                  <div className="flex flex-wrap gap-2">
-                    {accommodation.features.slice(0, 4).map((feature, index) => (
-                      <Badge
-                        key={`${accommodation.id}-${feature}-${index}`}
-                        variant="outline"
-                        className="surface-badge rounded-full border text-foreground/78"
-                      >
-                        {feature}
-                      </Badge>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
+  const totals = (
+    <div className="space-y-2">
+      <div className="flex items-baseline justify-between gap-3 text-lg font-semibold">
+        <span>Total</span>
+        <div className="text-right">
+          {promoPreview ? (
+            <div className="text-sm font-normal text-muted-foreground line-through">
+              <CurrencyAmount amountUsd={totalPrice} />
             </div>
-          </Card>
+          ) : null}
+          <CurrencyAmount amountUsd={discountedTotalPrice} data-testid="text-total-price" />
+        </div>
+      </div>
+      {nights > 0 && discountedTotalPrice > 0 ? (
+        <div className="flex items-baseline justify-between gap-3 rounded-xl bg-primary/8 px-3 py-2 text-sm" data-testid="text-due-today">
+          <span className="font-medium text-foreground">Pay today to lock your dates ({bookingDepositPercent}%)</span>
+          <span className="shrink-0 font-semibold"><CurrencyAmount amountUsd={dueToday} /></span>
+        </div>
+      ) : null}
+      {hasCustomQuoteAddon ? (
+        <p className="text-xs leading-5 text-muted-foreground">Tailored experiences are quoted by our team and paid separately.</p>
+      ) : null}
+    </div>
+  );
 
-          <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.1fr)_22rem] lg:items-start">
-            <div className="order-2 min-w-0 space-y-6 lg:order-1">
+  return (
+    <div className="app-shell min-h-screen pb-44 pt-6 sm:pt-8 lg:pb-12">
+      <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8">
+        <header className="mb-6 flex items-center gap-4">
+          <img
+            src={accommodation.imageUrl || accommodation.galleryUrls?.[0] || ""}
+            alt=""
+            className="h-16 w-16 shrink-0 rounded-2xl bg-muted object-cover sm:h-20 sm:w-20"
+          />
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">Your trip</p>
+            <h1 className="mt-1 truncate font-serif text-2xl font-semibold leading-tight text-foreground sm:text-3xl">{accommodation.title}</h1>
+            <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" />{accommodation.location}</span>
+              {isHotel
+                ? <span>{hotelRoomTypes.length} room type{hotelRoomTypes.length === 1 ? "" : "s"}</span>
+                : <span>{accommodation.bedrooms} bedroom{accommodation.bedrooms === 1 ? "" : "s"} · up to {accommodation.maxOccupancy} guests</span>}
+            </p>
+          </div>
+        </header>
+
+        <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_23rem] lg:items-start">
+          <div className="min-w-0">
             <Form {...form}>
               <form id="stay-booking-form" onSubmit={form.handleSubmit(submitBooking)} className="space-y-6">
+                {/* 1. Dates, guests and (for a hotel) the room */}
                 <Card className="surface-soft-card min-w-0 overflow-hidden border">
-                  <div className="border-b border-border/60 px-5 py-5 sm:px-6">
-                    <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Step 1</div>
-                    <h2 className="mt-2 text-xl font-semibold text-foreground sm:text-2xl">Guest details</h2>
-                    <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                      We use these details to hold the stay and contact you about arrival.
+                  <div className="border-b border-border/60 px-5 py-4 sm:px-6">
+                    <h2 className="text-lg font-semibold text-foreground sm:text-xl">1. Your stay</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {isHotel ? "Your dates, guests, room and meal plan. Prices are per room, per night." : "Your dates and how many of you are coming."}
                     </p>
                   </div>
-                  <div className="space-y-4 px-5 py-5 sm:px-6 sm:py-6">
-                    <FormField
-                      control={form.control}
-                      name="guestName"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Full Name</FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder="John Doe"
-                              {...field}
-                              className="text-base sm:text-sm"
-                              data-testid="input-guest-name"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="guestPhone"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>WhatsApp number (optional)</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="tel"
-                              placeholder="+254 712 345 678"
-                              {...field}
-                              className="text-base sm:text-sm"
-                              data-testid="input-guest-phone"
-                            />
-                          </FormControl>
-                          <p className="text-xs text-muted-foreground">We confirm bookings and arrival details on WhatsApp.</p>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                </Card>
-
-                <Card className="surface-soft-card min-w-0 overflow-hidden border">
-                  <div className="border-b border-border/60 px-5 py-5 sm:px-6">
-                    <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Step 2</div>
-                    <h2 className="mt-2 text-xl font-semibold text-foreground sm:text-2xl">{isHotel ? "Dates, room and meal plan" : "Stay details"}</h2>
-                    <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                      {isHotel
-                        ? "Pick your dates and guests, then your room and its meal plan. Prices are per room, per night."
-                        : "Pick your dates and group size so we can price the stay and tailor the right extras."}
-                    </p>
-                  </div>
-                  <div className="grid gap-4 px-5 py-5 sm:grid-cols-2 sm:px-6 sm:py-6 xl:grid-cols-3">
-                    <FormField
-                      control={form.control}
-                      name="checkIn"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Check-in Date</FormLabel>
-                          <FormControl>
-                            <div className="relative">
-                              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                              <Input
-                                type="date"
-                                className="pl-10 text-base sm:text-sm"
-                                {...field}
-                                data-testid="input-booking-checkin"
-                                aria-label="Check-in date"
-                              />
-                            </div>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
+                  <div className="grid gap-5 px-5 py-5 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] sm:px-6">
                     <FormField
                       control={form.control}
                       name="checkOut"
-                      render={({ field }) => (
+                      render={() => (
                         <FormItem>
-                          <FormLabel>Check-out Date</FormLabel>
+                          <FormLabel>Dates</FormLabel>
                           <FormControl>
-                            <div className="relative">
-                              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                              <Input
-                                type="date"
-                                className="pl-10 text-base sm:text-sm"
-                                {...field}
-                                data-testid="input-booking-checkout"
-                                aria-label="Check-out date"
-                              />
-                            </div>
+                            <DateRangePicker
+                              checkIn={checkInValue || ""}
+                              checkOut={checkOutValue || ""}
+                              bookedRanges={availability?.blockedRanges}
+                              onChange={(next) => {
+                                form.setValue("checkIn", next.checkIn, { shouldDirty: true, shouldValidate: true });
+                                form.setValue("checkOut", next.checkOut, { shouldDirty: true, shouldValidate: true });
+                              }}
+                              data-testid="input-booking-dates"
+                            />
                           </FormControl>
+                          {form.formState.errors.checkIn ? (
+                            <p className="text-sm font-medium text-destructive">{form.formState.errors.checkIn.message}</p>
+                          ) : null}
                           <FormMessage />
                         </FormItem>
                       )}
@@ -1506,34 +1282,48 @@ export default function Booking() {
                     <FormField
                       control={form.control}
                       name="guests"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Number of Guests</FormLabel>
-                          <FormControl>
-                            <div className="relative">
-                              <Users className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                              <Input
-                                type="number"
-                                min="1"
-                                max={accommodation.maxOccupancy}
-                                className="pl-10 text-base sm:text-sm"
-                                {...field}
-                                onChange={(e) => {
-                                  const value = e.target.value === "" ? 1 : parseInt(e.target.value, 10);
-                                  field.onChange(Number.isNaN(value) ? 1 : value);
-                                }}
-                                data-testid="input-booking-guests"
-                                aria-label="Number of guests"
-                              />
+                      render={({ field }) => {
+                        const guests = Number(field.value) || 1;
+                        const maxGuests = Math.max(1, accommodation.maxOccupancy || 1);
+                        return (
+                          <FormItem>
+                            <FormLabel>Guests</FormLabel>
+                            <div className="flex items-center gap-3">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon"
+                                className="h-11 w-11 rounded-full"
+                                aria-label="One guest fewer"
+                                disabled={guests <= 1}
+                                onClick={() => field.onChange(Math.max(1, guests - 1))}
+                              >
+                                <Minus className="h-4 w-4" />
+                              </Button>
+                              <span className="min-w-[2ch] text-center text-lg font-semibold tabular-nums" aria-live="polite" data-testid="input-booking-guests">
+                                {guests}
+                              </span>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon"
+                                className="h-11 w-11 rounded-full"
+                                aria-label="One guest more"
+                                disabled={guests >= maxGuests}
+                                onClick={() => field.onChange(Math.min(maxGuests, guests + 1))}
+                              >
+                                <Plus className="h-4 w-4" />
+                              </Button>
+                              <span className="text-sm text-muted-foreground">Up to {maxGuests}</span>
                             </div>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
+                            <FormMessage />
+                          </FormItem>
+                        );
+                      }}
                     />
                   </div>
                   {isHotel ? (
-                    <div className="border-t border-border/60 px-5 py-5 sm:px-6 sm:py-6">
+                    <div className="border-t border-border/60 px-5 py-5 sm:px-6">
                       {hotelRoomTypes.length > 0 ? (
                         <HotelRoomPicker
                           roomTypes={hotelRoomTypes}
@@ -1556,552 +1346,267 @@ export default function Booking() {
                   ) : null}
                 </Card>
 
-                <Card className="min-w-0 overflow-hidden border-none bg-[linear-gradient(135deg,rgba(15,23,42,0.99),rgba(20,34,56,0.97),rgba(15,74,87,0.9))] text-white shadow-[0_22px_65px_rgba(15,23,42,0.42)]">
-                  <div className="p-5 sm:p-6 lg:p-7">
-                    <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
-                      <div className="max-w-2xl">
-                        <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-medium uppercase tracking-[0.2em] text-white/80">
-                          <Compass className="h-3.5 w-3.5" />
-                          Step 3
-                        </div>
-                        <h2 className="text-xl font-semibold text-white sm:text-2xl">Curated for your stay</h2>
-                        <p className="mt-2 text-sm text-white/68">
-                          Thoughtfully selected to match your stay, dates, and group size.
-                        </p>
-                      </div>
-                      <div className="rounded-2xl border border-white/15 bg-black/10 px-4 py-3 text-sm text-white/82 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
-                        {nights > 0 ? `${nights} night${nights === 1 ? "" : "s"}` : "Trip length pending"} - {guestsValue} guest{guestsValue === 1 ? "" : "s"}
-                      </div>
-                    </div>
-
-                    <div className="grid gap-4 lg:grid-cols-2">
-                      {conciergeRecommendations.length > 0 ? conciergeRecommendations.map((recommendation) => {
-                        const isSelected = selectedServices.includes(recommendation.serviceId);
-                        const Icon = recommendation.category === "cars"
-                          ? Car
-                          : recommendation.category === "cooks"
-                            ? ChefHat
-                            : recommendation.category === "errands"
-                              ? ShoppingBag
-                              : Compass;
-
-                        return (
-                          <div
-                            key={recommendation.key}
-                            className="min-w-0 rounded-3xl border border-white/14 bg-[rgba(255,255,255,0.07)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-sm"
-                          >
-                            <div className="mb-4 flex items-start justify-between gap-3">
-                              <div className="flex items-start gap-3">
-                                <div className="mt-0.5 rounded-2xl bg-black/15 p-3 ring-1 ring-white/10">
-                                  <Icon className="h-5 w-5" />
-                                </div>
-                                <div className="min-w-0">
-                                  <div className="mb-2 flex flex-wrap gap-2">
-                                    <Badge variant="secondary" className="border-0 bg-white/12 text-white hover:bg-white/12">
-                                      {recommendation.stage}
-                                    </Badge>
-                                    {recommendation.category === "cars" && recommendation.title.toLowerCase().includes("hourly") ? (
-                                      <Badge variant="secondary" className="border-0 bg-white/12 text-white hover:bg-white/12">
-                                        <Clock className="mr-1 h-3 w-3" />
-                                        Hourly
-                                      </Badge>
-                                    ) : null}
-                                  </div>
-                                  <h3 className="text-lg font-semibold text-white">{recommendation.title}</h3>
-                                  <div className="text-sm text-white/74">{recommendation.priceLabel}</div>
-                                </div>
-                              </div>
+                {/* 2. Extras, in one booking and one payment */}
+                <Card className="surface-soft-card min-w-0 overflow-hidden border">
+                  <div className="border-b border-border/60 px-5 py-4 sm:px-6">
+                    <h2 className="text-lg font-semibold text-foreground sm:text-xl">2. Add to your trip</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">Optional. Whatever you add comes in this one booking and one payment.</p>
+                  </div>
+                  <div className="space-y-3 px-5 py-5 sm:px-6">
+                    {tripExtraGroups.map((group) => {
+                      const GroupIcon = group.icon;
+                      const requested = requestedExtras.has(group.key);
+                      const items = group.items.filter((service) => {
+                        const selection = getExistingSelection(service.id);
+                        return !selection || groupForSelection(selection) === group.key;
+                      });
+                      if (items.length === 0 && !requested) return null;
+                      const chosen = items.filter((service) => selectedServices.includes(service.id));
+                      const showAll = Boolean(openExtraGroups[group.key]);
+                      const visible = showAll ? items : Array.from(new Set([...chosen, ...items.slice(0, 2)]));
+                      return (
+                        <section
+                          key={group.key}
+                          className={`rounded-2xl border p-4 ${requested ? "border-primary/40 bg-primary/5" : "border-border/70 bg-background/60"}`}
+                          aria-labelledby={`extra-${group.key}`}
+                          data-testid={`extra-group-${group.key}`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                              <GroupIcon className="h-5 w-5" />
+                            </span>
+                            <div className="min-w-0">
+                              <h3 id={`extra-${group.key}`} className="font-semibold text-foreground">{group.title}</h3>
+                              <p className="text-sm leading-6 text-muted-foreground">{group.description}</p>
+                              {requested ? <p className="mt-1 text-xs font-medium text-primary">You asked to add this.</p> : null}
                             </div>
-
-                            <div className="mb-4 border-t border-white/10 pt-4">
-                              <p className="text-sm leading-6 text-white/66">{recommendation.summary}</p>
-                            </div>
-
-                            <div className="mb-4 flex flex-wrap gap-2">
-                              {recommendation.reasons.map((reason) => (
-                                <span key={reason} className="rounded-full border border-white/14 bg-black/15 px-3 py-1 text-xs text-white/80">
-                                  {reason}
-                                </span>
-                              ))}
-                            </div>
-
-                            <Button
-                              type="button"
-                              variant={isSelected ? "secondary" : "default"}
-                              className={isSelected
-                                ? "w-full border border-white/18 bg-white/10 text-white hover:bg-white/16"
-                                : "w-full bg-primary text-primary-foreground shadow-[0_12px_24px_rgba(13,148,136,0.24)] hover:bg-primary/90"}
-                              onClick={() => openSelectionDialog(recommendation.serviceId, recommendation.suggestedMode)}
-                            >
-                              {recommendation.actionLabel}
-                              <ArrowRight className="ml-2 h-4 w-4" />
-                            </Button>
                           </div>
-                        );
-                      }) : (
-                        <div className="rounded-3xl border border-white/12 bg-[rgba(255,255,255,0.07)] p-5 text-sm text-white/72">
-                          Set your dates and group size to unlock sharper stay-aware recommendations.
-                        </div>
-                      )}
-                    </div>
+
+                          {items.length > 0 ? (
+                            <ul className="mt-3 divide-y divide-border/60">
+                              {visible.map((service) => {
+                                const isChosen = selectedServices.includes(service.id);
+                                const selection = getExistingSelection(service.id);
+                                const detail = extraDetail(service);
+                                return (
+                                  <li key={service.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 py-3" data-testid={`extra-${group.key}-${service.id}`}>
+                                    <div className="min-w-0 flex-1">
+                                      <div className="font-medium text-foreground">{extraName(service)}</div>
+                                      <div className="text-sm text-muted-foreground">
+                                        {extraPriceLabel(group.key, service)}{detail ? ` · ${detail}` : ""}
+                                      </div>
+                                      {isChosen && selection ? (
+                                        <div className="mt-1 text-sm font-medium text-primary">
+                                          Added: {getServiceModeLabel(selection.serviceMode)}
+                                          {selection.serviceMode === "experience-custom-offer" ? null : <> · <CurrencyAmount amountUsd={extraTotal(service)} /></>}
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                    {isChosen ? (
+                                      <div className="flex gap-2">
+                                        <Button type="button" variant="outline" size="sm" className="min-h-10 rounded-full" onClick={() => openSelectionDialog(service.id)}>
+                                          Edit
+                                        </Button>
+                                        <Button type="button" variant="ghost" size="sm" className="min-h-10 rounded-full" onClick={() => removeSelectedService(service.id)}>
+                                          Remove
+                                        </Button>
+                                      </div>
+                                    ) : (
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="min-h-10 rounded-full px-4"
+                                        onClick={() => openSelectionDialog(service.id, suggestedModeFor(group.key, service, guestsValue))}
+                                        data-testid={`button-add-extra-${service.id}`}
+                                      >
+                                        <Plus className="mr-1 h-4 w-4" />
+                                        Add
+                                      </Button>
+                                    )}
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          ) : (
+                            <p className="mt-3 text-sm text-muted-foreground">
+                              Nothing is listed for this yet. Ask Zaina and our team will arrange it for your trip.
+                            </p>
+                          )}
+
+                          {items.length > 2 ? (
+                            <button
+                              type="button"
+                              className="mt-1 text-sm font-medium text-primary underline-offset-4 hover:underline"
+                              aria-expanded={showAll}
+                              onClick={() => setOpenExtraGroups((current) => ({ ...current, [group.key]: !showAll }))}
+                            >
+                              {showAll ? "Show fewer" : `See all ${items.length}`}
+                            </button>
+                          ) : null}
+                        </section>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-2 text-sm font-medium text-primary underline-offset-4 hover:underline"
+                      onClick={() => openZaina(`For my stay at ${accommodation.title}, could you also arrange: `)}
+                    >
+                      <MessageCircle className="h-4 w-4" />
+                      Something else in mind? Ask Zaina to arrange it
+                    </button>
                   </div>
                 </Card>
 
+                {/* 3. Who's booking */}
                 <Card className="surface-soft-card min-w-0 overflow-hidden border">
-                  <Collapsible open={isBrowseAllAddonsOpen} onOpenChange={setIsBrowseAllAddonsOpen}>
-                    <div className="rounded-3xl border border-border/70 bg-background/36 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-                      <CollapsibleTrigger asChild>
-                        <button
-                          type="button"
-                          className="flex w-full items-center justify-between gap-4 p-5 text-left sm:p-6"
-                          data-testid="browse-all-stay-addons"
-                        >
-                          <div className="min-w-0">
-                            <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Step 4</div>
-                            <h2 className="mt-2 text-xl font-semibold text-foreground sm:text-2xl">Browse all stay add-ons</h2>
-                            <p className="mt-1 text-sm text-muted-foreground">
-                              Optional: explore every ranked stay add-on beyond the tailored picks.
-                            </p>
-                          </div>
-                          <ChevronDown className={`h-5 w-5 text-muted-foreground transition-transform ${isBrowseAllAddonsOpen ? "rotate-180" : ""}`} />
-                        </button>
-                      </CollapsibleTrigger>
-
-                      <CollapsibleContent>
-                        <div className="space-y-4 border-t border-border/60 p-5">
-                          {rankedAddonServices.length > 0 ? rankedAddonServiceSections.map((section) => {
-                            const SectionIcon = section.icon;
-                            const isOpen = expandedAddonSections[section.key];
-
-                            return (
-                              <Collapsible
-                                key={section.key}
-                                open={isOpen}
-                                onOpenChange={(open) => setExpandedAddonSections((current) => ({ ...current, [section.key]: open }))}
-                              >
-                                <div className="rounded-2xl border border-border/70 bg-card/72">
-                                  <CollapsibleTrigger asChild>
-                                    <button
-                                      type="button"
-                                      className="flex w-full items-center justify-between gap-4 p-4 text-left"
-                                      data-testid={`addon-section-${section.key}`}
-                                    >
-                                      <div className="flex min-w-0 items-center gap-3">
-                                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-muted/72">
-                                          <SectionIcon className="h-5 w-5 text-foreground/80" />
-                                        </div>
-                                        <div className="min-w-0">
-                                          <div className="font-semibold text-foreground">{section.label}</div>
-                                          <div className="text-sm text-muted-foreground">
-                                            {section.description} {section.items.length > 0 ? `(${section.items.length})` : "(0)"}
-                                          </div>
-                                        </div>
-                                      </div>
-                                      <ChevronDown className={`h-5 w-5 shrink-0 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`} />
-                                    </button>
-                                  </CollapsibleTrigger>
-
-                                  <CollapsibleContent>
-                                    <div className="space-y-4 border-t border-border/60 p-4">
-                                      {section.items.length > 0 ? section.items.map(({ service, reasons }) => {
-                                        const Icon = service.category === "cars"
-                                          ? Car
-                                          : service.category === "cooks"
-                                            ? ChefHat
-                                            : ShoppingBag;
-                                        const isSelected = selectedServices.includes(service.id);
-                                        const existingSelection = getExistingSelection(service.id);
-                                        const supportedModes = getSupportedModes(service);
-
-                                        return (
-                                          <div
-                                            key={service.id}
-                                            className={`rounded-2xl border p-4 transition-colors ${
-                                              isSelected ? "border-primary/35 bg-primary/10" : "border-border/70 bg-background/42"
-                                            }`}
-                                            data-testid={`service-${service.id}`}
-                                          >
-                                            <div className="flex items-start gap-4">
-                                              <Checkbox
-                                                checked={isSelected}
-                                                onCheckedChange={() => {
-                                                  if (isSelected) {
-                                                    removeSelectedService(service.id);
-                                                    return;
-                                                  }
-
-                                                  openSelectionDialog(service.id);
-                                                }}
-                                                data-testid={`checkbox-service-${service.id}`}
-                                              />
-                                              <div className="min-w-0 flex-1">
-                                                <div className="flex flex-wrap items-start justify-between gap-3">
-                                                  <div className="flex min-w-0 items-center gap-3">
-                                                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${isSelected ? "bg-primary/14" : "bg-muted/70"}`}>
-                                                      <Icon className={`h-5 w-5 ${isSelected ? "text-primary" : "text-foreground/78"}`} />
-                                                    </div>
-                                                    <div className="min-w-0">
-                                                      <div className="font-semibold text-foreground">{getServiceTitle(service)}</div>
-                                                      <div className="text-sm text-muted-foreground">{getServicePriceLabel(service)}</div>
-                                                    </div>
-                                                  </div>
-                                                  <Badge variant="secondary" className="border-0 bg-muted/78 capitalize text-foreground/74">
-                                                    {service.category === "cooks" ? "Chef" : service.category === "cars" ? "Drive" : "Support"}
-                                                  </Badge>
-                                                </div>
-
-                                                <p className="mt-3 border-t border-border/60 pt-3 text-sm text-muted-foreground line-clamp-2">
-                                                  {service.description}
-                                                </p>
-
-                                                <div className="mt-3 flex flex-wrap gap-2">
-                                                  {reasons.map((reason) => (
-                                                    <span key={reason} className="rounded-full border border-border/60 bg-muted/52 px-3 py-1 text-xs text-muted-foreground">
-                                                      {reason}
-                                                    </span>
-                                                  ))}
-                                                </div>
-
-                                                {service.features.length > 0 ? (
-                                                  <div className="mt-3 flex flex-wrap gap-1">
-                                                    {service.features.slice(0, 3).map((feature, index) => (
-                                                      <Badge key={`${service.id}-${feature}-${index}`} variant="outline" className="text-xs">
-                                                        {feature}
-                                                      </Badge>
-                                                    ))}
-                                                  </div>
-                                                ) : null}
-
-                                                <div className="mt-3 flex flex-wrap gap-2">
-                                                  {supportedModes.map((mode) => (
-                                                    <Badge
-                                                      key={`${service.id}-${mode}`}
-                                                      variant="outline"
-                                                      className={existingSelection?.serviceMode === mode ? "border-primary/40 bg-primary/10 text-primary" : "text-xs"}
-                                                    >
-                                                      {getServiceModeLabel(mode)}
-                                                    </Badge>
-                                                  ))}
-                                                </div>
-
-                                                {existingSelection ? (
-                                                  <div className="mt-3 rounded-xl border border-primary/20 bg-primary/10 px-3 py-2 text-sm text-foreground">
-                                                    Selected offer: {getServiceModeLabel(existingSelection.serviceMode)}
-                                                  </div>
-                                                ) : (
-                                                  <p className="mt-3 text-sm text-muted-foreground">
-                                                    Choose this add-on to pick the exact offer that fits this stay.
-                                                  </p>
-                                                )}
-
-                                                <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                                                  <Button
-                                                    type="button"
-                                                    className="sm:flex-1"
-                                                    onClick={() => openSelectionDialog(service.id)}
-                                                    data-testid={`button-service-offer-${service.id}`}
-                                                  >
-                                                    {isSelected ? "Edit selected offer" : "Choose offer"}
-                                                  </Button>
-                                                  {isSelected ? (
-                                                    <Button
-                                                      type="button"
-                                                      variant="outline"
-                                                      className="sm:w-auto"
-                                                      onClick={() => removeSelectedService(service.id)}
-                                                      data-testid={`button-remove-service-${service.id}`}
-                                                    >
-                                                      Remove
-                                                    </Button>
-                                                  ) : null}
-                                                </div>
-                                              </div>
-                                            </div>
-                                          </div>
-                                        );
-                                      }) : (
-                                        <p className="text-sm text-muted-foreground">
-                                          No {section.label.toLowerCase()} add-ons are available right now.
-                                        </p>
-                                      )}
-                                    </div>
-                                  </CollapsibleContent>
-                                </div>
-                              </Collapsible>
-                            );
-                          }) : (
-                            <p className="text-sm text-muted-foreground text-center py-4">
-                              No partner-backed stay add-ons are available at the moment.
-                            </p>
-                          )}
-                        </div>
-                      </CollapsibleContent>
-                    </div>
-                  </Collapsible>
+                  <div className="border-b border-border/60 px-5 py-4 sm:px-6">
+                    <h2 className="text-lg font-semibold text-foreground sm:text-xl">3. Your details</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">So we can confirm the booking and arrange your arrival.</p>
+                  </div>
+                  <div className="grid gap-4 px-5 py-5 sm:grid-cols-2 sm:px-6">
+                    <FormField
+                      control={form.control}
+                      name="guestName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Full name</FormLabel>
+                          <FormControl>
+                            <Input placeholder="As on your ID" autoComplete="name" {...field} className="text-base sm:text-sm" data-testid="input-guest-name" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="guestPhone"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>WhatsApp number (optional)</FormLabel>
+                          <FormControl>
+                            <Input type="tel" autoComplete="tel" placeholder="+254 712 345 678" {...field} className="text-base sm:text-sm" data-testid="input-guest-phone" />
+                          </FormControl>
+                          <p className="text-xs text-muted-foreground">We confirm bookings and arrival details on WhatsApp.</p>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
                 </Card>
-
               </form>
             </Form>
           </div>
 
-          <div className="order-1 min-w-0 lg:order-2 lg:sticky lg:top-24">
-            <Card className="surface-soft-card min-w-0 overflow-hidden border">
-              <div className="border-b border-border/60 px-5 py-5 sm:px-6">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Your trip</div>
-                    <h2 className="mt-2 text-xl font-semibold text-foreground">Booking summary</h2>
-                  </div>
-                  <Badge variant="outline" className="surface-badge rounded-full border text-muted-foreground">
-                    {selectedSummaryServices.length > 0 ? `${selectedSummaryServices.length} add-on${selectedSummaryServices.length === 1 ? "" : "s"}` : "Stay only"}
-                  </Badge>
-                </div>
+          {/* The trip's summary: pinned beside the form on a laptop, after it on a phone. */}
+          <aside className="min-w-0 lg:sticky lg:top-24" aria-labelledby="trip-summary-heading">
+            <Card className="surface-soft-card min-w-0 overflow-hidden border" id="trip-summary">
+              <div className="border-b border-border/60 px-5 py-4">
+                <h2 id="trip-summary-heading" className="text-lg font-semibold text-foreground">Trip summary</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {tripDatesLine} · {guestsValue} guest{guestsValue === 1 ? "" : "s"}
+                </p>
+              </div>
+              <div className="space-y-4 px-5 py-4">
+                {priceLines}
+                <div className="border-t border-border/60 pt-4">{totals}</div>
               </div>
 
-              <div className="space-y-5 px-5 py-5 sm:px-6 sm:py-6">
-                <div className="hidden rounded-2xl border border-border/70 bg-background/90 p-4 shadow-sm lg:block">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Ready to lock it in?</div>
-                      <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                        Secure payment stays ready in My Bookings, and if checkout pauses, we keep your dates and details safe.
-                      </p>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      {promoPreview ? (
-                        <div className="text-sm font-normal text-muted-foreground line-through">
-                          <CurrencyAmount amountUsd={totalPrice} />
-                        </div>
-                      ) : null}
-                      <CurrencyAmount amountUsd={discountedTotalPrice} data-testid="text-total-price-desktop-cta" />
-                    </div>
-                  </div>
+              <div className="space-y-3 border-t border-border/60 px-5 py-4">
+                <Button
+                  type="submit"
+                  form="stay-booking-form"
+                  size="lg"
+                  className="hidden min-h-12 w-full lg:inline-flex"
+                  disabled={createBookingMutation.isPending}
+                  data-testid="button-complete-booking"
+                >
+                  Book this trip
+                </Button>
+                <p className="text-xs leading-5 text-muted-foreground">
+                  Next, you pay the deposit in My Bookings by M-Pesa or card. That locks your dates; the rest is paid later.
+                </p>
+                <StayRefundNote checkIn={checkInValue} className="text-xs leading-5" />
+              </div>
 
-                  <Button
-                    type="submit"
-                    form="stay-booking-form"
-                    size="lg"
-                    className="mt-4 relative min-h-12 w-full overflow-hidden px-8 py-3.5 shadow-[0_14px_34px_rgba(8,145,178,0.24)] before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-white/45 before:content-['']"
-                    disabled={createBookingMutation.isPending}
-                    data-testid="button-complete-booking"
-                  >
-                    Book
-                  </Button>
-                </div>
-
-                <div className="overflow-hidden rounded-3xl border border-border/70 bg-background/40">
-                  <div className="aspect-[16/10] overflow-hidden">
-                    <img
-                      src={accommodation.imageUrl || "https://images.unsplash.com/photo-1564501049412-61c2a3083791?w=800"}
-                      alt={accommodation.title}
-                      className="h-full w-full object-cover"
-                    />
-                  </div>
-                  <div className="space-y-4 p-4">
-                    <div>
-                      <div className="font-semibold text-foreground">{accommodation.title}</div>
-                      <div className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
-                        <MapPin className="h-4 w-4" />
-                        <span className="break-words">{accommodation.location}</span>
-                      </div>
-                    </div>
-
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="surface-subtle rounded-2xl border p-3">
-                        <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">From</div>
-                        <div className="mt-2 flex items-baseline gap-1 font-semibold text-foreground">
-                          <CurrencyAmount amountUsd={accommodation.price} />
-                          <span className="text-xs font-normal text-muted-foreground">{isHotel ? "/ room / night" : "/ night"}</span>
-                        </div>
-                      </div>
-
-                      <div className="surface-subtle rounded-2xl border p-3">
-                        <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Guests</div>
-                        <div className="mt-2 font-semibold text-foreground">
-                          {nights > 0 ? guestsValue : `Up to ${accommodation.maxOccupancy}`}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="surface-subtle rounded-2xl border p-4 text-sm">
-                  <div className="mb-2 flex justify-between gap-3">
-                    <span className="text-muted-foreground">Trip length</span>
-                    <span className="font-medium text-foreground">
-                      {nights > 0 ? `${nights} night${nights === 1 ? "" : "s"}` : "Select dates"}
-                    </span>
-                  </div>
-                  <div className="flex justify-between gap-3">
-                    <span className="text-muted-foreground">Guests</span>
-                    <span className="font-medium text-foreground">{guestsValue}</span>
-                  </div>
-                  {isHotel && hotelQuote?.ok ? (
-                    <div className="mt-2 flex justify-between gap-3" data-testid="summary-room">
-                      <span className="text-muted-foreground">Room</span>
-                      <span className="text-right font-medium text-foreground">{describeHotelStay(hotelQuote.snapshot)}</span>
-                    </div>
-                  ) : null}
-                </div>
-
-                <div className="surface-subtle rounded-2xl border p-4">
-                  <Label htmlFor="stay-promo-code" className="text-sm font-medium">
-                    Promo code
-                  </Label>
+              <Collapsible className="border-t border-border/60">
+                <CollapsibleTrigger asChild>
+                  <button type="button" className="flex w-full items-center justify-between px-5 py-3 text-left text-sm font-medium text-foreground">
+                    Have a promo code?
+                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                  </button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="px-5 pb-4">
+                  <Label htmlFor="stay-promo-code" className="sr-only">Promo code</Label>
                   <Input
                     id="stay-promo-code"
                     value={promoCode}
                     onChange={(event) => setPromoCode(event.target.value.toUpperCase())}
-                    placeholder="APRIL-BUNDLE"
-                    className="mt-2 text-base sm:text-sm"
+                    placeholder="e.g. APRIL-BUNDLE"
+                    className="text-base sm:text-sm"
                   />
-                  <div className="mt-2 text-xs leading-5 text-muted-foreground">
+                  <p className="mt-2 text-xs leading-5 text-muted-foreground">
                     {promoPreviewQuery.isFetching
-                      ? "Checking the best available offer for this stay..."
+                      ? "Checking the code…"
                       : promoPreview
-                        ? promoPreview.appliedAutomatically
-                          ? `${promoPreview.promoName} is applying automatically.`
-                          : `${promoPreview.promoName} is ready for this booking.`
-                        : promoRejectionReason
-                          ? promoRejectionReason
-                          : "Bundle offers can apply automatically when this trip qualifies."}
-                  </div>
-                  {promoPreview ? (
-                    <div className="mt-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-emerald-700">Promo applied</div>
-                          <div className="mt-1 text-sm font-semibold text-emerald-950">
-                            {promoPreview.bundleLabel || promoPreview.promoName}
-                          </div>
-                          <div className="mt-1 text-xs leading-5 text-emerald-800">
-                            {promoPreview.promoCode
-                              ? `Code ${promoPreview.promoCode} is applied to this stay.`
-                              : "This offer is applying automatically to this stay."}
-                          </div>
-                        </div>
-                        <div className="shrink-0 text-right">
-                          <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-emerald-700">You save</div>
-                          <div className="mt-1 text-sm font-semibold text-emerald-950">
-                            <CurrencyAmount amountUsd={promoSavings} />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
+                        ? `${promoPreview.promoName} is applied.`
+                        : promoRejectionReason || "Some offers apply on their own when your trip qualifies."}
+                  </p>
+                </CollapsibleContent>
+              </Collapsible>
 
-              </div>
-
-              <div className="space-y-5 px-5 pb-5 sm:px-6 sm:pb-6">
-                <div className="mb-3 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Price breakdown</div>
-                <div className="space-y-3 text-sm">
-                  <div className="flex justify-between gap-3">
-                    <span className="break-words text-muted-foreground">
-                      {isHotel && hotelQuote?.ok ? describeHotelStay(hotelQuote.snapshot) : "Accommodation"}
-                    </span>
-                    <span className="shrink-0"><CurrencyAmount amountUsd={accommodationTotal} /></span>
-                  </div>
-
-                  {selectedSummaryServices.length > 0 ? selectedSummaryServices.map((service) => (
-                    <div key={service.id} className="flex justify-between gap-3">
-                      <span className="break-words text-muted-foreground">
-                        {service.category === "experiences" ? service.title : getServiceTitle(service)}
-                      </span>
-                      <span className="shrink-0">
-                        <CurrencyAmount amountUsd={service.category === "experiences"
-                          ? (getExistingSelection(service.id)?.serviceMode === "experience-custom-offer"
-                              ? 0
-                              : ((getExistingSelection(service.id)?.serviceMode === "experience-shared" ? service.sharedPricePerPerson || service.price : service.privatePricePerPerson || service.price) * (getExistingSelection(service.id)?.guests || guestsValue)))
-                          : calculateServiceTotal(service, nights)} />
-                      </span>
-                    </div>
-                  )) : (
-                    <div className="text-sm text-muted-foreground">No stay extras added yet.</div>
-                  )}
-
-                  {promoPreview ? (
-                    <div className="flex justify-between gap-3 text-emerald-700">
-                      <span className="break-words">{promoPreview.bundleLabel || promoPreview.promoName}</span>
-                      <span className="shrink-0">-<CurrencyAmount amountUsd={promoSavings} /></span>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-
-              <div className="space-y-5 border-t border-border/60 px-5 py-5 sm:px-6 sm:py-6">
-                <div className="flex justify-between gap-3 text-lg font-semibold">
-                  <span>Total</span>
-                  <div className="text-right">
-                    {promoPreview ? (
-                      <div className="text-sm font-normal text-muted-foreground line-through">
-                        <CurrencyAmount amountUsd={totalPrice} />
-                      </div>
-                    ) : null}
-                    <CurrencyAmount amountUsd={discountedTotalPrice} data-testid="text-total-price" />
-                  </div>
-                </div>
-
-                <CheckoutPaymentPreview
-                  title={bookingCheckoutPreviewCopy.title}
-                  description={bookingCheckoutPreviewCopy.description}
-                />
-
-                <div className="surface-subtle rounded-2xl border p-4 text-sm text-muted-foreground">
-                  <div className="mb-3 flex items-start gap-2">
-                    <ShieldCheck className="mt-0.5 h-4 w-4 text-primary" />
-                    <span>
-                      Clear pricing, verified local providers, and support if your plans need to change.
-                    </span>
-                  </div>
-                  <div className="space-y-2 text-xs">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 className="h-3 w-3 text-primary" />
-                      <span>Free cancellation up to 48 hours</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 className="h-3 w-3 text-primary" />
-                      <span>24/7 customer support</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 className="h-3 w-3 text-primary" />
-                      <span>Verified local providers</span>
-                    </div>
-                  </div>
-                </div>
-
-                <AskZainaLink listingName={accommodation.title} className="justify-center" />
+              <div className="border-t border-border/60 px-5 py-4 text-sm text-muted-foreground">
+                <ul className="space-y-2">
+                  <li className="flex gap-2"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />Pay by M-Pesa or card</li>
+                  <li className="flex gap-2"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />Zaina answers any time; our team Monday to Saturday, 8am to 8pm</li>
+                </ul>
+                <AskZainaLink listingName={accommodation.title} className="mt-3" />
               </div>
             </Card>
-          </div>
+          </aside>
         </div>
       </div>
-      </div>
-      {/* Above the site's tab bar (4rem tall below xl), which would otherwise cover the Book button. */}
-      <div className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-40 border-t border-border/70 bg-background/92 px-4 py-3 shadow-[0_-18px_40px_rgba(15,23,42,0.16)] backdrop-blur lg:hidden">
-        <div className="mx-auto flex w-full max-w-7xl items-center gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              {nights > 0 ? "Total" : "From"}
-            </div>
-            <div className="mt-1 text-base font-semibold text-foreground">
-              {nights > 0 ? <CurrencyAmount amountUsd={discountedTotalPrice} /> : <CurrencyAmount amountUsd={accommodation.price} />}
-            </div>
-            <div className="truncate text-xs text-muted-foreground">
-              {nights > 0
-                ? `${nights} night${nights === 1 ? "" : "s"} - ${selectedSummaryServices.length} add-on${selectedSummaryServices.length === 1 ? "" : "s"}`
-                : "Choose dates to lock your total"}
-            </div>
-          </div>
 
-          <Button
-            type="submit"
-            form="stay-booking-form"
-            className="min-h-11 shrink-0 px-5"
-            disabled={createBookingMutation.isPending}
-          >
-            Book
-          </Button>
+      {/* Phones: the trip's total and what's due today stay in reach, above the tab bar. */}
+      <div className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-40 border-t border-border/70 bg-background/95 px-4 py-3 shadow-[0_-18px_40px_rgba(15,23,42,0.16)] backdrop-blur lg:hidden">
+        <div className="mx-auto w-full max-w-6xl">
+          {showBarDetails ? (
+            <div className="mb-3 max-h-[45vh] space-y-3 overflow-y-auto border-b border-border/60 pb-3" id="trip-bar-details">
+              <p className="text-sm font-medium text-foreground">{tripDatesLine}</p>
+              {priceLines}
+              {totals}
+            </div>
+          ) : null}
+          <div className="flex items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="text-base font-semibold text-foreground">
+                {nights > 0 ? <CurrencyAmount amountUsd={discountedTotalPrice} /> : <>From <CurrencyAmount amountUsd={accommodation.price} /></>}
+              </div>
+              <div className="truncate text-xs text-muted-foreground">
+                {nights > 0 && discountedTotalPrice > 0
+                  ? <>Pay <span className="font-semibold text-foreground">{formatAmount(dueToday)}</span> today · {nights} night{nights === 1 ? "" : "s"}{selectedSummaryServices.length ? ` + ${selectedSummaryServices.length} extra${selectedSummaryServices.length === 1 ? "" : "s"}` : ""}</>
+                  : "Add your dates to see the total"}
+              </div>
+              <button
+                type="button"
+                className="mt-0.5 text-xs font-medium text-primary underline-offset-4 hover:underline"
+                aria-expanded={showBarDetails}
+                aria-controls="trip-bar-details"
+                onClick={() => setShowBarDetails((value) => !value)}
+              >
+                {showBarDetails ? "Hide details" : "Details"}
+              </button>
+            </div>
+            <Button
+              type="submit"
+              form="stay-booking-form"
+              className="min-h-12 shrink-0 rounded-full px-6"
+              disabled={createBookingMutation.isPending}
+              data-testid="button-complete-booking-mobile"
+            >
+              Book
+            </Button>
+          </div>
         </div>
       </div>
       <Dialog open={!!configuringServiceId && !!configuringService && !!draftSelection} onOpenChange={(open) => {
@@ -2113,10 +1618,10 @@ export default function Booking() {
         <DialogContent className="max-h-[95vh] w-[calc(100vw-1rem)] max-w-xl overflow-y-auto sm:w-full">
           <DialogHeader>
             <DialogTitle>
-              {configuringService ? `Add ${"model" in configuringService ? configuringService.model : "title" in configuringService ? configuringService.title : "serviceName" in configuringService ? configuringService.serviceName : "service"} to this stay` : "Configure stay service"}
+              {configuringService ? `Add ${"model" in configuringService ? configuringService.model : "title" in configuringService ? configuringService.title : "serviceName" in configuringService ? configuringService.serviceName : "service"} to your trip` : "Add to your trip"}
             </DialogTitle>
             <DialogDescription>
-              Set the details once here and we will attach it directly to the stay booking.
+              Set the details and it's added to this booking.
             </DialogDescription>
           </DialogHeader>
 
@@ -2469,7 +1974,7 @@ export default function Booking() {
               Cancel
             </Button>
             <Button type="button" className="w-full sm:w-auto" onClick={saveDraftSelection}>
-              Save to stay
+              Add to my trip
             </Button>
           </DialogFooter>
         </DialogContent>

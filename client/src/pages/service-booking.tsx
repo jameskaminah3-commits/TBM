@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { CurrencyAmount } from "@/components/currency-amount";
 import { AskZainaLink } from "@/components/ask-zaina-link";
+import { DatePicker, DateRangePicker } from "@/components/date-range-picker";
 import { CheckoutPaymentPreview, bookingCheckoutPreviewCopy, customRequestCheckoutPreviewCopy } from "@/components/payment-provider-picker";
 import { useCurrency } from "@/lib/currency";
 import { cn } from "@/lib/utils";
@@ -2120,17 +2121,13 @@ export default function ServiceBooking() {
                                         <FormItem>
                                           <FormLabel>Date</FormLabel>
                                           <FormControl>
-                                            <div className="relative">
-                                              <Calendar className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                                              <Input
-                                                type="date"
-                                                min={todayDateInputValue}
-                                                className="pl-10"
-                                                {...field}
-                                                data-testid={`input-errand-package-date-${index}`}
-                                                aria-label={`Date for visit ${index + 1}`}
-                                              />
-                                            </div>
+                                            <DatePicker
+                                              value={field.value || ""}
+                                              onChange={field.onChange}
+                                              minDate={todayDateInputValue}
+                                              label={`Date for visit ${index + 1}`}
+                                              data-testid={`input-errand-package-date-${index}`}
+                                            />
                                           </FormControl>
                                           <FormMessage />
                                         </FormItem>
@@ -2164,51 +2161,50 @@ export default function ServiceBooking() {
                       />
                     ) : serviceType === "experience" && serviceMode === "experience-shared" ? null : (
                       <div className="grid md:grid-cols-2 gap-4">
-                        <FormField
-                          control={form.control}
-                          name="checkIn"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>
-                                {serviceType === "cook" ? "Start Date" : "Start Date"}
-                              </FormLabel>
-                              <FormControl>
-                                <div className="relative">
-                                  <Calendar className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                                  <Input
-                                    type="date"
-                                    min={todayDateInputValue}
-                                    className="pl-10"
-                                    data-testid="input-start-date"
-                                    aria-label="Start date"
-                                    {...field}
-                                  />
-                                </div>
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-
-                        {serviceMode !== "car-chauffeur-hourly" && serviceType !== "experience" && (
+                        {serviceMode !== "car-chauffeur-hourly" && serviceType !== "experience" ? (
                           <FormField
                             control={form.control}
                             name="checkOut"
+                            render={() => (
+                              <FormItem className="md:col-span-2">
+                                <FormLabel>Dates</FormLabel>
+                                <FormControl>
+                                  <DateRangePicker
+                                    unit="day"
+                                    checkIn={form.watch("checkIn") || ""}
+                                    checkOut={form.watch("checkOut") || ""}
+                                    minDate={todayDateInputValue}
+                                    bookedRanges={serviceType === "car" ? carAvailability?.blockedRanges : serviceType === "cook" ? cookAvailability?.blockedRanges : undefined}
+                                    onChange={(next) => {
+                                      form.setValue("checkIn", next.checkIn, { shouldDirty: true, shouldValidate: true });
+                                      form.setValue("checkOut", next.checkOut, { shouldDirty: true, shouldValidate: true });
+                                    }}
+                                    data-testid="input-service-dates"
+                                  />
+                                </FormControl>
+                                {form.formState.errors.checkIn ? (
+                                  <p className="text-sm font-medium text-destructive">{form.formState.errors.checkIn.message}</p>
+                                ) : null}
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        ) : (
+                          <FormField
+                            control={form.control}
+                            name="checkIn"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>End Date</FormLabel>
+                                <FormLabel>Date</FormLabel>
                                 <FormControl>
-                                  <div className="relative">
-                                    <Calendar className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                                    <Input
-                                      type="date"
-                                      min={todayDateInputValue}
-                                      className="pl-10"
-                                      data-testid="input-end-date"
-                                      aria-label="End date"
-                                      {...field}
-                                    />
-                                  </div>
+                                  <DatePicker
+                                    value={field.value || ""}
+                                    onChange={field.onChange}
+                                    minDate={todayDateInputValue}
+                                    bookedRanges={serviceType === "car" ? carAvailability?.blockedRanges : undefined}
+                                    label={serviceType === "experience" ? "Experience date" : "Pickup date"}
+                                    data-testid="input-start-date"
+                                  />
                                 </FormControl>
                                 <FormMessage />
                               </FormItem>

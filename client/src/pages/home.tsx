@@ -4,7 +4,6 @@ import { useLocation, Link } from "wouter";
 import {
   Search,
   MapPin,
-  Calendar,
   Users,
   Home as HomeIcon,
   Car,
@@ -21,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ListingMedia } from "@/components/listing-media";
+import { DateRangePicker } from "@/components/date-range-picker";
 import { buildStaySearchParams } from "@/lib/stay-search";
 import heroImageLarge from "@assets/generated_images/home-hero-1408.jpg";
 import heroImageSmall from "@assets/generated_images/home-hero-768.jpg";
@@ -387,42 +387,19 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div>
-                  <div className="mb-2 text-sm font-medium text-muted-foreground">Check in</div>
-                  <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      type="date"
-                      value={checkIn}
-                      min={todayIso}
-                      onChange={(event) => {
-                        const nextCheckIn = event.target.value;
-                        setCheckIn(nextCheckIn);
-                        if (checkOut && nextCheckIn && checkOut < nextCheckIn) {
-                          setCheckOut(nextCheckIn);
-                        }
-                      }}
-                      className="rounded-lg pl-10"
-                      data-testid="input-checkin"
-                      aria-label="Check-in date"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="mb-2 text-sm font-medium text-muted-foreground">Check out</div>
-                  <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      type="date"
-                      value={checkOut}
-                      min={checkIn || todayIso}
-                      onChange={(event) => setCheckOut(event.target.value)}
-                      className="rounded-lg pl-10"
-                      data-testid="input-checkout"
-                      aria-label="Check-out date"
-                    />
-                  </div>
+                <div className="md:col-span-2">
+                  <div className="mb-2 text-sm font-medium text-muted-foreground" id="home-dates-label">Dates</div>
+                  <DateRangePicker
+                    checkIn={checkIn}
+                    checkOut={checkOut}
+                    minDate={todayIso}
+                    onChange={(next) => {
+                      setCheckIn(next.checkIn);
+                      setCheckOut(next.checkOut);
+                    }}
+                    placeholder="Check in – check out"
+                    data-testid="input-dates"
+                  />
                 </div>
 
                 <div>
