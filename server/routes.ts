@@ -4475,7 +4475,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         paymentStatus: validatedData.totalPrice > 0 ? "pending" : "paid",
         paymentCurrency: "USD",
         paymentCheckoutAmount: null,
-        paymentDepositAmount: null,
+        // The commitment that locks the dates: 50%, as for bookings Zaina
+        // makes; the team can agree another amount. Custom requests, chef
+        // menus and listing checks are paid in full.
+        paymentDepositAmount: validatedData.totalPrice > 0 && supportsBookingDeposit(validatedData)
+          ? calculateBookingDepositAmount(validatedData.totalPrice)
+          : null,
         paymentAmountPaid: 0,
       });
       queueNotificationTask(

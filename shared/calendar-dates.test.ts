@@ -46,6 +46,13 @@ test("date ranges read naturally", () => {
   assert.equal(formatCalendarDate("2026-12-20", { weekday: "short", month: "short", day: "numeric" }), "Sun, Dec 20");
 });
 
+test("date ranges for guests in Kenya put the day first", () => {
+  assert.equal(formatCalendarDateRange("2026-11-16", "2026-11-20", "en-GB"), "16–20 Nov 2026");
+  assert.equal(formatCalendarDateRange("2026-11-28", "2026-12-02", "en-GB"), "28 Nov – 2 Dec 2026");
+  assert.equal(formatCalendarDateRange("2026-12-30", "2027-01-02", "en-GB"), "30 Dec 2026 – 2 Jan 2027");
+  assert.equal(formatCalendarDateRange("2026-12-20", "2026-12-20", "en-GB"), "20 Dec 2026");
+});
+
 test("calendar dates are validated and counted without clocks", () => {
   assert.equal(isCalendarDate("2026-12-20"), true);
   assert.equal(isCalendarDate("2026-02-30"), false);

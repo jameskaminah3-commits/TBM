@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useSearch } from "wouter";
-import { Calendar, MapPin, Users, Car, ChefHat, ShoppingBag, Compass, CheckCircle2, UserRound, Clock3, ShieldCheck, Phone, Mail, Star, Download, Smartphone, ExternalLink, AlertTriangle } from "lucide-react";
+import { Calendar, MapPin, Users, Car, ChefHat, ShoppingBag, Compass, CheckCircle2, UserRound, Clock3, ShieldCheck, Phone, Mail, Star, Download, Smartphone, ExternalLink, AlertTriangle, MessageCircle, Baby } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -35,13 +35,14 @@ import {
   isBookingFullyPaid,
   supportsBookingDeposit,
 } from "@shared/booking-payments";
-import { formatCalendarDate, formatCalendarDateRange, formatKenyaClockTime, formatKenyaDateTime, isOnKenyaTime } from "@shared/calendar-dates";
+import { daysBetweenCalendarDates, formatCalendarDate, formatCalendarDateRange, formatKenyaClockTime, formatKenyaDateTime, isOnKenyaTime, todayInKenya } from "@shared/calendar-dates";
 import { customServiceRequestFeeUsd } from "@shared/custom-service";
-import { describeHotelStay, formatMealPlan, mealPlans } from "@shared/hotel-rooms";
+import { describeHotelStay, isHotelStay, mealPlans } from "@shared/hotel-rooms";
 import type { Booking, BookingWithMarketing, Stay, Car as CarType, Cook, Errand, Experience, Review, CustomerPaymentMethod, ListingVerificationTask } from "@shared/schema";
 import { CONTACT_PHONE, CONTACT_PHONE_DISPLAY, WHATSAPP_URL } from "@/lib/contact-info";
+import { openZaina } from "@/lib/zaina";
 
-type ReviewTarget = { targetType: "stay" | "car" | "cook" | "errand" | "experience"; targetId: string; label: string };
+type ReviewTarget ={ targetType: "stay" | "car" | "cook" | "errand" | "experience"; targetId: string; label: string };
 
 const TEMP_MPESA_SEND_MONEY_NUMBER = "0718475264";
 const PAYMENT_SUPPORT_LINE = `Trouble paying? Our support team can help — WhatsApp or call ${CONTACT_PHONE_DISPLAY}.`;
@@ -77,39 +78,6 @@ const canRetryBookingPayment = (booking: Booking) =>
   && !isBookingPaid(booking)
   && booking.status !== "cancelled"
   && booking.status !== "completed";
-const getBookingPaymentStatusLabel = (booking: Booking) => {
-  if (booking.paymentProvider === "mpesa-manual" && booking.paymentStatus === "processing") {
-    return hasLockedInBookingDeposit(booking) ? "Manual M-Pesa submitted - balance review" : "Manual M-Pesa submitted";
-  }
-
-  if (hasLockedInBookingDeposit(booking)) {
-    if (booking.paymentStatus === "failed") {
-      return "Balance payment failed";
-    }
-    if (booking.paymentStatus === "cancelled") {
-      return "Balance checkout cancelled";
-    }
-    if (booking.paymentStatus === "processing") {
-      return "Balance processing";
-    }
-    return "Deposit paid - balance due";
-  }
-
-  switch (booking.paymentStatus) {
-    case "paid":
-      return "Paid";
-    case "processing":
-      return "Processing";
-    case "failed":
-      return "Payment failed";
-    case "cancelled":
-      return "Checkout cancelled";
-    case "refunded":
-      return "Refunded";
-    default:
-      return hasBookingDepositRequirement(booking) ? "Deposit due" : "Payment pending";
-  }
-};
 const getBookingDueLabel = (booking: Booking) => {
   if (isBookingPaid(booking)) {
     return "Total paid";
@@ -136,6 +104,25 @@ const getBookingStatusLabel = (status: string) => status === "late"
           : status === "cancelled"
             ? "Cancelled"
             : "Upcoming";
+/** The one thing a guest should know about a trip at a glance. */
+type TripNextStep = { label: string; tone: "muted" | "warn" | "good" | "info" };
+
+const nextStepToneClass: Record<TripNextStep["tone"], string> = {
+  muted: "border-border bg-muted/50 text-muted-foreground",
+  warn: "border-amber-300 bg-amber-50 text-amber-900",
+  good: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  info: "border-primary/25 bg-primary/5 text-primary",
+};
+
+/** What a guest can still add to an upcoming stay; Zaina arranges it. */
+const tripAddOnOptions = [
+  { key: "pickup", label: "Airport or SGR pickup", ask: "an airport or SGR pickup", icon: Car, homeOnly: false },
+  { key: "chef", label: "A private chef", ask: "a private chef", icon: ChefHat, homeOnly: true },
+  { key: "shopping", label: "Groceries before you arrive", ask: "groceries ready before we arrive", icon: ShoppingBag, homeOnly: true },
+  { key: "nanny", label: "A nanny", ask: "a nanny", icon: Baby, homeOnly: true },
+  { key: "dayOut", label: "A day out", ask: "a day out", icon: Compass, homeOnly: false },
+] as const;
+
 const getBookingScheduleSlots = (booking: Booking) => (booking.serviceScheduleSlots || []).filter((slot): slot is { date: string; note: string } => !!slot?.date).sort((a, b) => a.date.localeCompare(b.date));
 const getBookingThreadInitialLabel = (booking: Booking) => {
   if (booking.serviceMode === "errand-shopping") return "Shopping List";
@@ -143,7 +130,7 @@ const getBookingThreadInitialLabel = (booking: Booking) => {
   return "Request";
 };
 const getReviewTone = (rating: number) => rating === 5 ? "Exceptional" : rating === 4 ? "Excellent" : rating === 3 ? "Good" : rating === 2 ? "Fair" : "Needs attention";
-const formatTimelineLabel = (value?: string | null) => value ? new Date(value).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : null;
+const formatTimelineLabel = (value?: string | null) => value ? new Date(value).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : null;
 const getRequestPreview = (details?: string | null) => {
   if (!details) {
     return "No details shared.";
@@ -162,7 +149,7 @@ const getRequestPreview = (details?: string | null) => {
   return flattened.length > 180 ? `${flattened.slice(0, 177)}...` : flattened;
 };
 // Booking dates are the coast's calendar dates: shown the same in every time zone.
-const formatTimelineDateRange = (start: string, end: string) => formatCalendarDateRange(start, end);
+const formatTimelineDateRange = (start: string, end: string) => formatCalendarDateRange(start, end, "en-GB");
 
 function BookingTimeline({ booking }: { booking: Booking }) {
   const items = [
@@ -761,31 +748,9 @@ export default function Bookings() {
 
   const getStay = (id: string | null) => (!id ? null : stays?.find((stay) => stay.id === id));
   const getServiceItem = (id: string) => cars?.find((item) => item.id === id) || cooks?.find((item) => item.id === id) || errands?.find((item) => item.id === id) || experiences?.find((item) => item.id === id);
-  const formatDate = (dateString: string) => formatCalendarDate(dateString);
+  const formatDate = (dateString: string) => formatCalendarDate(dateString, { weekday: "short", day: "numeric", month: "short", year: "numeric" }, "en-GB");
   // Service times are Kenya time; visitors on another clock see it labelled.
   const formatTime = (timeString?: string | null) => !timeString ? null : `${formatKenyaClockTime(timeString)}${isOnKenyaTime() ? "" : " Kenya time"}`;
-  const getStatusBadge = (status: string) => status === "upcoming"
-    ? <Badge>Upcoming</Badge>
-    : status === "in-progress"
-      ? <Badge className="bg-green-600">In progress</Badge>
-      : status === "pending-payment"
-        ? <Badge className="bg-amber-600">Pending Payment</Badge>
-        : status === "pending"
-          ? <Badge className="bg-amber-600">Pending</Badge>
-      : status === "completed"
-        ? <Badge variant="secondary">Completed</Badge>
-        : status === "late"
-          ? <Badge className="bg-amber-600">Needs attention</Badge>
-          : status === "cancelled"
-            ? <Badge variant="outline">Cancelled</Badge>
-            : <Badge variant="outline">{status}</Badge>;
-  const getStageState = (booking: Booking, stage: "booked" | "offer" | "active" | "completed") => {
-    if (stage === "booked") return true;
-    if (stage === "offer") return booking.serviceMode === "cook-custom-menu" || booking.serviceMode === "experience-custom-offer";
-    if (stage === "active") return booking.status === "in-progress" || booking.status === "late";
-    if (stage === "completed") return booking.status === "completed";
-    return false;
-  };
   const getCustomMenuFee = (booking: Booking) => (
     booking.serviceRequestFee
     || (booking.serviceRequestFeeKes ? Math.max(1, Math.ceil((booking.serviceRequestFeeKes ?? 0) / 130)) : 0)
@@ -954,6 +919,43 @@ export default function Bookings() {
         : paymentHoldUntil
           ? `Your dates are held for you until ${formatHoldTime(paymentHoldUntil)} while you complete the payment.`
           : `Your dates are reserved once you pay${hasDepositRule ? " the deposit" : ""}. When you open checkout, we hold them for you for ${bookingPaymentHoldMinutes} minutes.`;
+    const bookingRef = booking.id.slice(0, 8).toUpperCase();
+    const nights = stay ? Math.max(1, daysBetweenCalendarDates(booking.checkIn, booking.checkOut)) : 0;
+    const scheduleSlots = getBookingScheduleSlots(booking);
+    const nextStep = ((): TripNextStep => {
+      if (booking.status === "cancelled") return { label: "Cancelled", tone: "muted" };
+      if (booking.status === "completed") return { label: "Completed", tone: "muted" };
+      if (booking.status === "late") return { label: "Needs attention", tone: "warn" };
+      if (customMenuReady(booking)) return { label: "Chef quote ready for you", tone: "warn" };
+      if (experienceOfferReady(booking)) return { label: "Offer ready for you", tone: "warn" };
+      if (manualMpesaPending) return { label: "Checking your M-Pesa payment", tone: "info" };
+      if (canRetryBookingPayment(booking)) {
+        if (hasLockedInBookingDeposit(booking)) return { label: "Dates locked · balance to pay", tone: "good" };
+        return hasDepositRule
+          ? { label: "Pay the deposit to lock your dates", tone: "warn" }
+          : { label: "Payment due", tone: "warn" };
+      }
+      if (isBookingPaid(booking)) return { label: "Paid in full", tone: "good" };
+      return { label: bookingStatusText, tone: "info" };
+    })();
+    // An upcoming stay can still grow into a trip: whatever isn't booked yet, Zaina can add.
+    const bookedServiceIds = new Set(booking.selectedServices);
+    const selectionModes = new Set((booking.stayServiceSelections ?? []).map((selection) => selection.serviceMode));
+    const alreadyBooked: Record<(typeof tripAddOnOptions)[number]["key"], boolean> = {
+      pickup: Boolean(cars?.some((car) => bookedServiceIds.has(car.id))),
+      chef: Boolean(cooks?.some((cook) => bookedServiceIds.has(cook.id))),
+      shopping: selectionModes.has("errand-shopping"),
+      nanny: selectionModes.has("errand-childcare"),
+      dayOut: Boolean(experiences?.some((experience) => bookedServiceIds.has(experience.id))),
+    };
+    const tripAddOns = stay && !isHistoryBookingStatus(booking.status) && booking.checkIn >= todayInKenya()
+      ? tripAddOnOptions.filter((option) => !alreadyBooked[option.key] && (!isHotelStay(stay) || !option.homeOnly))
+      : [];
+    const askZainaAboutTrip = (request?: string) => openZaina(
+      request
+        ? `Please add ${request} to my booking ${bookingRef} (${bookingTitle}, ${bookingDates}).`
+        : `About my booking ${bookingRef} (${bookingTitle}, ${bookingDates}): `,
+    );
     const renderHero = (className?: string) =>
       stay ? (
         <ListingMedia
@@ -990,10 +992,12 @@ export default function Bookings() {
               </div>
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  {getStatusBadge(booking.status)}
-                  <Badge variant={isBookingPaid(booking) ? "secondary" : "outline"} className="rounded-full">
-                    {getBookingPaymentStatusLabel(booking)}
-                  </Badge>
+                  <span
+                    className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold", nextStepToneClass[nextStep.tone])}
+                    data-testid={`text-next-step-${booking.id}`}
+                  >
+                    {nextStep.label}
+                  </span>
                   {booking.serviceMode === "cook-custom-menu" ? <Badge variant="outline" className="rounded-full">Chef quote</Badge> : null}
                   {booking.serviceMode === "experience-custom-offer" ? <Badge variant="outline" className="rounded-full">Custom offer</Badge> : null}
                   {booking.serviceMode === "listing-verification" ? <Badge variant="outline" className="rounded-full border-violet-300 text-violet-800">Listing verification</Badge> : null}
@@ -1006,7 +1010,7 @@ export default function Bookings() {
                 <div className="mt-3 text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">{bookingType}</div>
                 <h3 className="mt-1 text-base font-semibold leading-snug tracking-tight text-foreground sm:text-xl">{bookingTitle}</h3>
                 <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted-foreground">
-                  <span className="flex items-center gap-1"><Calendar className="h-4 w-4" />{bookingDates}</span>
+                  <span className="flex items-center gap-1"><Calendar className="h-4 w-4" />{bookingDates}{nights ? ` · ${nights} night${nights === 1 ? "" : "s"}` : ""}</span>
                   {bookingLocation ? <span className="flex items-center gap-1"><MapPin className="h-4 w-4" />{bookingLocation}</span> : null}
                   <span className="flex items-center gap-1"><Users className="h-4 w-4" />{booking.guests} guest{booking.guests === 1 ? "" : "s"}</span>
                 </div>
@@ -1016,34 +1020,30 @@ export default function Bookings() {
                 <div className={cn(hotelRooms && serviceLabels.length > 0 ? "mt-1" : "mt-3", "text-sm text-muted-foreground")}>{summaryLine}</div>
               </div>
             </div>
-            <div className="flex w-full shrink-0 flex-col gap-3 rounded-[20px] border border-white/70 bg-white/75 px-4 py-3 text-left shadow-[0_16px_30px_-24px_rgba(15,23,42,0.34)] sm:rounded-[22px] lg:min-w-[190px] lg:w-auto lg:items-end lg:text-right">
-              <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{getBookingDueLabel(booking)}</div>
-                {booking.marketingAttribution ? (
-                  <div className="mt-1 text-xs text-muted-foreground line-through">
-                    {formatAmount(booking.marketingAttribution.originalSubtotal)}
+            <div className="flex w-full shrink-0 flex-col gap-1 rounded-[20px] border border-white/70 bg-white/75 px-4 py-3 text-left shadow-[0_16px_30px_-24px_rgba(15,23,42,0.34)] sm:rounded-[22px] lg:min-w-[190px] lg:w-auto lg:items-end lg:text-right" data-testid={`text-trip-money-${booking.id}`}>
+              {canRetryBookingPayment(booking) ? (
+                <>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{getBookingDueLabel(booking)}</div>
+                  <div className="text-xl font-semibold tracking-tight text-foreground">{formatPayable(checkoutAmountDue, quotedFeeKes)}</div>
+                  {checkoutAmountDue !== booking.totalPrice ? (
+                    <div className="text-xs text-muted-foreground">
+                      of {formatPayable(booking.totalPrice, requestFeeKes)}{amountPaid > 0 ? ` · ${formatAmount(amountPaid)} paid` : ""}
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                    {isBookingPaid(booking) ? "Paid" : "Trip total"}
                   </div>
-                ) : null}
-                <div className="mt-1 text-xl font-semibold tracking-tight text-foreground">
-                  {isBookingPaid(booking) ? formatPayable(booking.totalPrice, requestFeeKes) : formatPayable(checkoutAmountDue, quotedFeeKes)}
+                  <div className="text-xl font-semibold tracking-tight text-foreground">{formatPayable(booking.totalPrice, requestFeeKes)}</div>
+                </>
+              )}
+              {booking.marketingAttribution ? (
+                <div className="text-xs font-medium text-emerald-700">
+                  Saved {formatAmount(booking.marketingAttribution.discountAmount)} with {getBookingPromoLabel(booking)}
                 </div>
-                {!isBookingPaid(booking) && checkoutAmountDue !== booking.totalPrice ? (
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    Booking total {formatPayable(booking.totalPrice, requestFeeKes)}
-                  </div>
-                ) : null}
-                {booking.marketingAttribution ? (
-                  <div className="mt-1 text-xs font-medium text-emerald-700">
-                    Saved {formatAmount(booking.marketingAttribution.discountAmount)} with {getBookingPromoLabel(booking)}
-                  </div>
-                ) : null}
-              </div>
-              <div className="space-y-1 text-sm">
-                <div className="font-medium text-foreground">{bookingStatusText}</div>
-                <div className="text-muted-foreground">{getBookingPaymentStatusLabel(booking)}</div>
-                <div className="text-muted-foreground">Booking ID {booking.id.slice(0, 8).toUpperCase()}</div>
-                <div className="text-xs text-muted-foreground">Open details</div>
-              </div>
+              ) : null}
             </div>
           </div>
         </AccordionTrigger>
@@ -1052,59 +1052,70 @@ export default function Bookings() {
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
               <div className="space-y-4">
 
-            <div className="grid gap-4 md:grid-cols-[1.1fr_0.9fr]">
-              <div className="rounded-[24px] border border-border/60 bg-background/85 p-5 shadow-[0_16px_36px_-30px_rgba(15,23,42,0.3)]">
-                <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">Overview</div>
-                <div className="flex flex-wrap gap-2">
-                  {getStatusBadge(booking.status)}
-                  <Badge variant={getStageState(booking, "booked") ? "default" : "outline"} className="rounded-full">Booked</Badge>
-                  {(booking.serviceMode === "cook-custom-menu" || booking.serviceMode === "experience-custom-offer") ? (
-                    <Badge variant={getStageState(booking, "offer") ? "secondary" : "outline"} className="rounded-full">Offer</Badge>
-                  ) : null}
-                  <Badge variant={getStageState(booking, "active") ? "default" : "outline"} className={`rounded-full ${getStageState(booking, "active") ? "bg-green-600" : ""}`}>Active</Badge>
-                  <Badge variant={getStageState(booking, "completed") ? "secondary" : "outline"} className="rounded-full">Complete</Badge>
-                </div>
-                {primaryService && !stay ? <div className="mt-4 rounded-[20px] bg-muted/40 p-4 text-sm text-muted-foreground">{primaryService.description}</div> : null}
-                {serviceLabels.length > 0 ? (
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {serviceLabels.map((label) => (
-                      <Badge key={label} variant="secondary" className="rounded-full">{label}</Badge>
-                    ))}
+            {/* The trip in one place: when, where, who, and everything booked. */}
+            <div className="rounded-[24px] border border-border/60 bg-background/85 p-5 shadow-[0_16px_36px_-30px_rgba(15,23,42,0.3)]" data-testid={`trip-summary-${booking.id}`}>
+              <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">Your trip</div>
+              <dl className="divide-y divide-border/60 text-sm">
+                {scheduleSlots.length > 0 ? (
+                  <div className="flex items-baseline justify-between gap-4 py-2.5">
+                    <dt className="shrink-0 text-muted-foreground">Dates</dt>
+                    <dd className="space-y-1 text-right font-medium text-foreground">
+                      {scheduleSlots.map((slot, index) => <div key={`${slot.date}-${index}`}>{formatDate(slot.date)}{slot.note?.trim() ? ` · ${slot.note.trim()}` : ""}</div>)}
+                    </dd>
                   </div>
-                ) : null}
-                <div className="mt-4 grid gap-3 text-sm text-muted-foreground sm:grid-cols-2">
-                  <div className="flex items-center gap-2 rounded-2xl bg-muted/35 px-4 py-3">
-                    <Calendar className="h-4 w-4 text-primary" />
-                    <span>{bookingDates}</span>
-                  </div>
-                  {bookingLocation ? (
-                    <div className="flex items-center gap-2 rounded-2xl bg-muted/35 px-4 py-3">
-                      <MapPin className="h-4 w-4 text-primary" />
-                      <span>{bookingLocation}</span>
+                ) : stay ? (
+                  <>
+                    <div className="flex items-baseline justify-between gap-4 py-2.5">
+                      <dt className="shrink-0 text-muted-foreground">Check-in</dt>
+                      <dd className="text-right font-medium text-foreground">{formatDate(booking.checkIn)}{stay.checkInTime ? `, from ${formatTime(stay.checkInTime)}` : ""}</dd>
                     </div>
-                  ) : null}
-                </div>
-              </div>
-
-              <div className="rounded-[24px] border border-border/60 bg-background/85 p-5 shadow-[0_16px_36px_-30px_rgba(15,23,42,0.3)]">
-                <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">Schedule</div>
-                {getBookingScheduleSlots(booking).length > 0 ? (
-                  <div className="space-y-2 text-sm text-muted-foreground">
-                    {getBookingScheduleSlots(booking).map((slot, index) => <div key={`${slot.date}-${index}`}>{formatDate(slot.date)}{slot.note?.trim() ? ` - ${slot.note.trim()}` : ""}</div>)}
-                  </div>
+                    <div className="flex items-baseline justify-between gap-4 py-2.5">
+                      <dt className="shrink-0 text-muted-foreground">Check-out</dt>
+                      <dd className="text-right font-medium text-foreground">{formatDate(booking.checkOut)}{stay.checkOutTime ? `, by ${formatTime(stay.checkOutTime)}` : ""}</dd>
+                    </div>
+                  </>
                 ) : (
-                  <div className="grid gap-3 text-sm text-muted-foreground">
-                    <div className="flex flex-col gap-1 rounded-2xl bg-muted/35 px-4 py-3 min-[360px]:flex-row min-[360px]:items-center min-[360px]:justify-between">
-                      <span>Check-in</span>
-                      <span className="font-medium text-foreground">{formatDate(booking.checkIn)}</span>
-                    </div>
-                    <div className="flex flex-col gap-1 rounded-2xl bg-muted/35 px-4 py-3 min-[360px]:flex-row min-[360px]:items-center min-[360px]:justify-between">
-                      <span>Check-out</span>
-                      <span className="font-medium text-foreground">{formatDate(booking.checkOut)}</span>
-                    </div>
+                  <div className="flex items-baseline justify-between gap-4 py-2.5">
+                    <dt className="shrink-0 text-muted-foreground">Dates</dt>
+                    <dd className="text-right font-medium text-foreground">{bookingDates}</dd>
                   </div>
                 )}
-              </div>
+                {bookingLocation ? (
+                  <div className="flex items-baseline justify-between gap-4 py-2.5">
+                    <dt className="shrink-0 text-muted-foreground">Where</dt>
+                    <dd className="text-right font-medium text-foreground">{bookingLocation}</dd>
+                  </div>
+                ) : null}
+                <div className="flex items-baseline justify-between gap-4 py-2.5">
+                  <dt className="shrink-0 text-muted-foreground">Guests</dt>
+                  <dd className="text-right font-medium text-foreground">{booking.guests}</dd>
+                </div>
+              </dl>
+              {stay || serviceLabels.length > 0 ? (
+                <div className="mt-4">
+                  <div className="text-sm font-semibold text-foreground">What's booked</div>
+                  <ul className="mt-2 space-y-1.5 text-sm text-muted-foreground">
+                    {stay ? (
+                      <li className="flex items-start gap-2">
+                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                        <span>
+                          {stay.title}: {hotelRooms ? `${hotelRooms}, ${nights} night${nights === 1 ? "" : "s"}` : `${nights} night${nights === 1 ? "" : "s"}`}
+                          {booking.hotelStay && mealPlans[booking.hotelStay.mealPlan]?.includes ? (
+                            <span className="block text-xs">{mealPlans[booking.hotelStay.mealPlan].includes}</span>
+                          ) : null}
+                        </span>
+                      </li>
+                    ) : null}
+                    {serviceLabels.map((label) => (
+                      <li key={label} className="flex items-start gap-2">
+                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                        <span>{label}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {primaryService && !stay ? <div className="mt-4 rounded-[20px] bg-muted/40 p-4 text-sm text-muted-foreground">{primaryService.description}</div> : null}
             </div>
 
             {booking.serviceMode === "cook-custom-menu" ? (
@@ -1241,87 +1252,57 @@ export default function Bookings() {
             />
           </div>
           <div className="space-y-4">
-            <div className="rounded-[28px] border border-stone-200/80 bg-[linear-gradient(180deg,rgba(255,252,247,0.98),rgba(247,243,236,0.92))] p-5 shadow-[0_18px_40px_-30px_rgba(28,25,23,0.32)]">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-stone-500">Next step</div>
-                <div className="mt-2 text-sm font-medium text-stone-900">{bookingStatusText}</div>
-                <div className="mt-1 text-sm text-stone-600">
-                  {canRetryBookingPayment(booking)
-                    ? "Finish payment from here whenever you're ready."
+            {/* What the trip costs, what's paid, and what's due now. */}
+            <div className="rounded-[28px] border border-stone-200/80 bg-[linear-gradient(180deg,rgba(255,252,247,0.98),rgba(247,243,236,0.92))] p-5 shadow-[0_18px_40px_-30px_rgba(28,25,23,0.32)]" data-testid={`trip-money-${booking.id}`}>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-stone-500">Paid and due</div>
+              <div className="mt-2 text-base font-semibold text-stone-900">{nextStep.label}</div>
+              <div className="mt-1 text-sm text-stone-600">
+                {manualMpesaPending
+                  ? "We're checking the M-Pesa payment you sent. We'll confirm it here."
+                  : canRetryBookingPayment(booking)
+                  ? "Pay from here whenever you're ready."
+                  : isBookingPaid(booking)
+                    ? "Nothing left to pay."
                     : isHistoryBookingStatus(booking.status)
-                      ? "This booking is closed, but the record and messages stay available."
-                      : "Everything tied to this booking stays organized here."}
-                </div>
-                <div className="mt-4">
-                  <div className="mb-1 text-xs uppercase tracking-[0.16em] text-stone-500">{getBookingDueLabel(booking)}</div>
-                  {booking.marketingAttribution ? (
-                    <div className="mb-2 text-sm text-stone-500 line-through">
-                      {formatAmount(booking.marketingAttribution.originalSubtotal)}
-                    </div>
-                  ) : null}
-                  <CurrencyAmount
-                    amountUsd={isBookingPaid(booking) ? booking.totalPrice : checkoutAmountDue}
-                    quotedKes={isBookingPaid(booking) ? requestFeeKes : quotedFeeKes}
-                    variant="stacked"
-                    primaryClassName="text-3xl font-semibold tracking-tight text-stone-900"
-                    secondaryClassName="text-sm text-stone-500"
-                  />
-                </div>
-                <div className="mt-5 space-y-3 text-sm">
-                  {booking.marketingAttribution ? (
-                    <>
-                      <div className="flex flex-col gap-1 rounded-2xl bg-emerald-50 px-4 py-3 min-[360px]:flex-row min-[360px]:items-center min-[360px]:justify-between">
-                        <span className="text-emerald-800">Promo</span>
-                        <span className="font-medium text-emerald-950">
-                          {getBookingPromoLabel(booking)}
-                          {booking.marketingAttribution.promoCode ? ` (${booking.marketingAttribution.promoCode})` : ""}
-                        </span>
-                      </div>
-                      <div className="flex flex-col gap-1 rounded-2xl bg-emerald-50 px-4 py-3 min-[360px]:flex-row min-[360px]:items-center min-[360px]:justify-between">
-                        <span className="text-emerald-800">You saved</span>
-                        <span className="font-medium text-emerald-950">{formatAmount(booking.marketingAttribution.discountAmount)}</span>
-                      </div>
-                    </>
-                  ) : null}
-                  <div className="flex flex-col gap-1 rounded-2xl bg-white/80 px-4 py-3 min-[360px]:flex-row min-[360px]:items-center min-[360px]:justify-between">
-                    <span className="text-stone-500">Booking ID</span>
-                    <span className="font-medium text-stone-900">{booking.id.slice(0, 8)}</span>
-                </div>
-                  <div className="flex flex-col gap-1 rounded-2xl bg-white/80 px-4 py-3 min-[360px]:flex-row min-[360px]:items-center min-[360px]:justify-between">
-                    <span className="text-stone-500">Payment</span>
-                    <span className="font-medium text-stone-900">{getBookingPaymentStatusLabel(booking)}</span>
-                </div>
-                {!isBookingPaid(booking) ? (
-                  <div className="flex flex-col gap-1 rounded-2xl bg-white/80 px-4 py-3 min-[360px]:flex-row min-[360px]:items-center min-[360px]:justify-between">
-                    <span className="text-stone-500">Booking total</span>
-                    <span className="font-medium text-stone-900">{formatPayable(booking.totalPrice, requestFeeKes)}</span>
-                  </div>
-                ) : null}
-                {amountPaid > 0 && !isBookingPaid(booking) ? (
-                  <div className="flex flex-col gap-1 rounded-2xl bg-white/80 px-4 py-3 min-[360px]:flex-row min-[360px]:items-center min-[360px]:justify-between">
-                    <span className="text-stone-500">Already paid</span>
-                    <span className="font-medium text-stone-900">{formatAmount(amountPaid)}</span>
-                  </div>
-                ) : null}
-                {outstandingAmount > 0 && !isBookingPaid(booking) ? (
-                  <div className="flex flex-col gap-1 rounded-2xl bg-white/80 px-4 py-3 min-[360px]:flex-row min-[360px]:items-center min-[360px]:justify-between">
-                    <span className="text-stone-500">Still outstanding</span>
-                    <span className="font-medium text-stone-900">{formatAmount(outstandingAmount)}</span>
-                  </div>
-                ) : null}
-                {booking.hotelStay ? (
-                  <div className="flex flex-col gap-1 rounded-2xl bg-white/80 px-4 py-3 min-[360px]:flex-row min-[360px]:items-center min-[360px]:justify-between">
-                    <span className="text-stone-500">Room</span>
-                    <span className="font-medium text-stone-900 min-[360px]:text-right">
-                      {booking.hotelStay.rooms > 1 ? `${booking.hotelStay.rooms} × ` : ""}{booking.hotelStay.roomTypeName}
-                      <span className="block text-xs font-normal text-stone-500">{formatMealPlan(booking.hotelStay.mealPlan)} · {mealPlans[booking.hotelStay.mealPlan]?.includes}</span>
-                    </span>
-                  </div>
-                ) : null}
-                <div className="flex flex-col gap-1 rounded-2xl bg-white/80 px-4 py-3 min-[360px]:flex-row min-[360px]:items-center min-[360px]:justify-between">
-                  <span className="text-stone-500">Guests</span>
-                  <span className="font-medium text-stone-900">{booking.guests}</span>
-                </div>
+                      ? "This booking is closed. Its record and messages stay here."
+                      : "Everything for this booking stays here."}
               </div>
+              <dl className="mt-4 space-y-2 text-sm">
+                <div className="flex items-baseline justify-between gap-3">
+                  <dt className="text-stone-500">Trip total</dt>
+                  <dd className="text-right font-medium text-stone-900">
+                    {booking.marketingAttribution ? (
+                      <span className="mr-2 text-xs font-normal text-stone-500 line-through">{formatAmount(booking.marketingAttribution.originalSubtotal)}</span>
+                    ) : null}
+                    {formatPayable(booking.totalPrice, requestFeeKes)}
+                  </dd>
+                </div>
+                {booking.marketingAttribution ? (
+                  <div className="flex items-baseline justify-between gap-3 text-emerald-800">
+                    <dt>{getBookingPromoLabel(booking)}{booking.marketingAttribution.promoCode ? ` (${booking.marketingAttribution.promoCode})` : ""}</dt>
+                    <dd className="font-medium">Saved {formatAmount(booking.marketingAttribution.discountAmount)}</dd>
+                  </div>
+                ) : null}
+                <div className="flex items-baseline justify-between gap-3">
+                  <dt className="text-stone-500">Paid so far</dt>
+                  <dd className="font-medium text-stone-900">
+                    {isBookingPaid(booking) ? formatPayable(booking.totalPrice, requestFeeKes) : formatAmount(amountPaid)}
+                  </dd>
+                </div>
+                {!isBookingPaid(booking) && outstandingAmount > 0 && outstandingAmount !== checkoutAmountDue ? (
+                  <div className="flex items-baseline justify-between gap-3">
+                    <dt className="text-stone-500">Left to pay</dt>
+                    <dd className="font-medium text-stone-900">{formatAmount(outstandingAmount)}</dd>
+                  </div>
+                ) : null}
+                {canRetryBookingPayment(booking) ? (
+                  <div className="flex items-baseline justify-between gap-3 border-t border-stone-200 pt-2">
+                    <dt className="font-semibold text-stone-900">{getBookingDueLabel(booking)}</dt>
+                    <dd className="text-lg font-semibold text-stone-900" data-testid={`text-due-now-${booking.id}`}>{formatPayable(checkoutAmountDue, quotedFeeKes)}</dd>
+                  </div>
+                ) : null}
+              </dl>
+              <div className="mt-4 text-xs text-stone-500">Booking ID {bookingRef}</div>
             </div>
             {canRetryBookingPayment(booking) ? (
               <div className="rounded-[24px] border border-amber-200/70 bg-[linear-gradient(180deg,rgba(255,251,235,0.96),rgba(255,255,255,0.95))] p-4 shadow-[0_16px_36px_-30px_rgba(146,64,14,0.24)] dark:border-border/60 dark:bg-card">
@@ -1485,10 +1466,43 @@ export default function Bookings() {
                 </div>
               </div>
             ) : null}
+            {tripAddOns.length > 0 ? (
+              <div className="rounded-[24px] border border-primary/20 bg-primary/5 p-4" data-testid={`complete-trip-${booking.id}`}>
+                <div className="text-sm font-semibold text-foreground">Complete your trip</div>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                  Ask Zaina to add any of these. She checks it's free for your dates and confirms the price with you before anything is booked.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {tripAddOns.map((option) => {
+                    const Icon = option.icon;
+                    return (
+                      <button
+                        key={option.key}
+                        type="button"
+                        onClick={() => askZainaAboutTrip(option.ask)}
+                        className="inline-flex min-h-11 items-center gap-2 rounded-full border border-border bg-background px-4 text-sm font-medium text-foreground transition-colors hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        data-testid={`button-add-to-trip-${option.key}`}
+                      >
+                        <Icon className="h-4 w-4 text-primary" aria-hidden="true" />
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
             <div className="rounded-[24px] border border-border/60 bg-background/85 p-4 shadow-[0_16px_36px_-30px_rgba(15,23,42,0.3)]">
-              <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">Links</div>
-              <div className="space-y-3">
-                {booking.accommodationId ? <Button variant="outline" className="w-full rounded-full" onClick={() => setLocation(`/accommodation/${booking.accommodationId}`)}>View stay</Button> : null}
+              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">Help with this trip</div>
+              <p className="text-sm leading-6 text-muted-foreground">
+                Zaina answers any time. Our team is here Monday to Saturday, 8am to 8pm, on WhatsApp or{" "}
+                <a href={`tel:${CONTACT_PHONE}`} className="font-medium text-foreground underline underline-offset-2">{CONTACT_PHONE_DISPLAY}</a>.
+              </p>
+              <div className="mt-3 space-y-3">
+                <Button variant="outline" className="w-full rounded-full" onClick={() => askZainaAboutTrip()} data-testid={`button-trip-help-${booking.id}`}>
+                  <MessageCircle className="mr-2 h-4 w-4" />
+                  Ask Zaina about this trip
+                </Button>
+                {booking.accommodationId ? <Button variant="outline" className="w-full rounded-full" onClick={() => setLocation(`/accommodation/${booking.accommodationId}`)}>View the stay</Button> : null}
                 {amountPaid > 0 ? (
                   <Button variant="outline" className="w-full rounded-full" onClick={() => downloadReceipt(booking)}>
                     <Download className="mr-2 h-4 w-4" />
@@ -1508,9 +1522,6 @@ export default function Bookings() {
 
   const renderBookingsList = (items: BookingWithMarketing[], emptyTitle: string, emptyDescription: string) => items.length ? (
     <div className="space-y-3">
-      <div className="rounded-[22px] border border-border/60 bg-white/75 px-4 py-3 text-sm text-muted-foreground shadow-[0_16px_36px_-30px_rgba(15,23,42,0.24)]">
-        Open one booking at a time to check payment, messages, and the next step without the page feeling crowded.
-      </div>
       <Accordion
         key={`${pageIntent.bookingId ?? "default"}-${items[0]?.id ?? "empty"}`}
         type="single"
@@ -1545,17 +1556,17 @@ export default function Bookings() {
           <div className="pointer-events-none absolute -left-8 bottom-0 h-28 w-28 rounded-full bg-accent/10 blur-2xl" />
           <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
             <div className="space-y-3">
-              <Badge variant="outline" className="rounded-full bg-background/85 px-3 py-1">Bookings</Badge>
+              <Badge variant="outline" className="rounded-full bg-background/85 px-3 py-1">My Bookings</Badge>
               <div>
-                <h1 className="font-serif text-3xl font-semibold tracking-tight leading-tight sm:text-4xl md:text-5xl">{user?.firstName ? `${user.firstName}, your bookings` : "Your bookings"}</h1>
-                <p className="mt-3 max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">See what needs attention, reopen any booking, and keep your trip details in one calmer place.</p>
+                <h1 className="font-serif text-3xl font-semibold tracking-tight leading-tight sm:text-4xl md:text-5xl">{user?.firstName ? `${user.firstName}, your trips` : "Your trips"}</h1>
+                <p className="mt-3 max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">What's booked, what's paid and what happens next, for every trip.</p>
               </div>
-              <Button variant="outline" className="rounded-full bg-background/85" onClick={() => setLocation("/inbox")}>Open Inbox Center</Button>
+              <Button variant="outline" className="rounded-full bg-background/85" onClick={() => setLocation("/inbox")}>All messages</Button>
             </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:min-w-[460px] xl:grid-cols-3">
-              <Card className="border-border/60 bg-background/85 shadow-[0_18px_36px_-30px_rgba(15,23,42,0.4)]"><CardContent className="p-4"><div className="text-sm text-muted-foreground">Open</div><div className="mt-1 text-2xl font-semibold">{activeBookings.length}</div></CardContent></Card>
-              <Card className="border-border/60 bg-background/85 shadow-[0_18px_36px_-30px_rgba(15,23,42,0.4)]"><CardContent className="p-4"><div className="text-sm text-muted-foreground">Needs action</div><div className="mt-1 text-2xl font-semibold">{attentionBookingsCount}</div></CardContent></Card>
-              <Card className="border-border/60 bg-background/85 shadow-[0_18px_36px_-30px_rgba(15,23,42,0.4)]"><CardContent className="p-4"><div className="text-sm text-muted-foreground">Past</div><div className="mt-1 text-2xl font-semibold">{historyBookings.length}</div></CardContent></Card>
+            <div className="grid grid-cols-3 gap-2 sm:gap-3 xl:min-w-[460px]">
+              <Card className="border-border/60 bg-background/85 shadow-[0_18px_36px_-30px_rgba(15,23,42,0.4)]"><CardContent className="p-3 sm:p-4"><div className="text-xs text-muted-foreground sm:text-sm">Open</div><div className="mt-1 text-xl font-semibold sm:text-2xl">{activeBookings.length}</div></CardContent></Card>
+              <Card className="border-border/60 bg-background/85 shadow-[0_18px_36px_-30px_rgba(15,23,42,0.4)]"><CardContent className="p-3 sm:p-4"><div className="text-xs text-muted-foreground sm:text-sm">Needs action</div><div className="mt-1 text-xl font-semibold sm:text-2xl">{attentionBookingsCount}</div></CardContent></Card>
+              <Card className="border-border/60 bg-background/85 shadow-[0_18px_36px_-30px_rgba(15,23,42,0.4)]"><CardContent className="p-3 sm:p-4"><div className="text-xs text-muted-foreground sm:text-sm">Past</div><div className="mt-1 text-xl font-semibold sm:text-2xl">{historyBookings.length}</div></CardContent></Card>
             </div>
           </div>
         </div>
