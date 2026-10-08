@@ -14,11 +14,12 @@ import { CurrencyProvider } from "@/lib/currency";
 import { ConciergeSearchProvider, getSectionFromPath } from "@/lib/concierge-search";
 import { isListingDetailPath } from "@/lib/public-listing";
 import { ZainaWidget } from "@/components/ZainaWidget";
-import { AdminZainaBubble } from "@/components/admin-zaina-bubble";
 import { RouteSeo } from "@/components/route-seo";
 import { useRouteMediaReady } from "@/hooks/use-route-media-ready";
 import { NavSheetProvider } from "@/hooks/use-nav-sheet";
 const Home = lazy(() => import("@/pages/home"));
+// Only staff on admin pages see this bubble; guests never download it.
+const AdminZainaBubble = lazy(() => import("@/components/admin-zaina-bubble").then((module) => ({ default: module.AdminZainaBubble })));
 
 const Accommodations = lazy(() => import("@/pages/accommodations"));
 const AccommodationDetail = lazy(() => import("@/pages/accommodation-detail"));
@@ -229,7 +230,11 @@ function AppShell() {
       </div>
       {shouldShowSiteChrome ? <MobileTabBar /> : null}
       {shouldShowSiteChrome ? <ZainaWidget /> : null}
-      {isAdminRoute ? <AdminZainaBubble /> : null}
+      {isAdminRoute ? (
+        <Suspense fallback={null}>
+          <AdminZainaBubble />
+        </Suspense>
+      ) : null}
       <Toaster />
     </TooltipProvider>
       </NavSheetProvider>

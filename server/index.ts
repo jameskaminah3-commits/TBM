@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import express, { type NextFunction, type Request, type Response } from "express";
+import compression from "compression";
 import type { Server } from "http";
 import type { AddressInfo } from "net";
 import path from "path";
@@ -101,6 +102,10 @@ app.use((req, res, next) => {
 });
 
 app.use(applySecurityHeaders);
+
+// Pages, scripts, styles and API replies go out compressed (brotli or gzip):
+// a phone on a slow connection downloads a fraction of the bytes.
+app.use(compression());
 
 app.use(express.json({
   limit: jsonBodyLimit,

@@ -68,6 +68,7 @@ export function ListingCard({
           showArrows={false}
           variant="card"
           onOpen={() => setLocation(href)}
+          imageSizes="(min-width: 1280px) 25vw, (min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
         />
         {badge ? (
           <span className="pointer-events-none absolute left-3 top-3 rounded-full bg-white/95 px-2.5 py-1 text-xs font-semibold text-slate-900 shadow-sm">

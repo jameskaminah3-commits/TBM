@@ -91,13 +91,30 @@ export function serveStatic(app: Express) {
 
     res
       .status(metadata.statusCode ?? 200)
-      .set({ "Content-Type": "text/html" })
+      // Each page is built per request (title, share tags, nonce): always check back.
+      .set({ "Content-Type": "text/html", "Cache-Control": "no-cache" })
       .send(page);
   };
 
   app.get("/", renderIndex);
   app.get("/index.html", renderIndex);
-  app.use(express.static(distPath, { index: false }));
+  app.use(express.static(distPath, {
+    index: false,
+    setHeaders(res, filePath) {
+      const relativePath = path.relative(distPath, filePath).split(path.sep).join("/");
+      if (relativePath.startsWith("assets/")) {
+        // Built scripts, styles and images carry a content hash in their names.
+        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      } else if (relativePath.startsWith("fonts/")) {
+        res.setHeader("Cache-Control", "public, max-age=2592000");
+      } else if (relativePath === "sw.js") {
+        // The service worker must update as soon as a new one is deployed.
+        res.setHeader("Cache-Control", "no-cache");
+      } else {
+        res.setHeader("Cache-Control", "public, max-age=86400");
+      }
+    },
+  }));
 
   // fall through to index.html if the file doesn't exist
   app.get("*", renderIndex);

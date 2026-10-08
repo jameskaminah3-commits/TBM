@@ -32,6 +32,8 @@ type PremiumMediaGalleryProps = {
    */
   variant?: "default" | "card";
   onOpen?: () => void;
+  /** How wide the photos show in the page, for picking smaller copies. */
+  imageSizes?: string;
 };
 
 const MOSAIC_ROWS: Record<number, string> = { 1: "grid-rows-1", 2: "grid-rows-2", 3: "grid-rows-3" };
@@ -56,6 +58,7 @@ export function PremiumMediaGallery({
   layout = "carousel",
   variant = "default",
   onOpen,
+  imageSizes,
 }: PremiumMediaGalleryProps) {
   const isCard = variant === "card";
   const galleryImages = React.useMemo(() => getGalleryImages(item), [item]);
@@ -201,6 +204,7 @@ export function PremiumMediaGallery({
                         imageClassName,
                       )}
                       loading={eagerFirstImage && index === 0 ? "eager" : "lazy"}
+                      sizes={imageSizes}
                     />
                     <div className={cn("absolute inset-0 bg-gradient-to-t to-transparent", isCard ? "from-slate-950/35 via-transparent" : "from-slate-950/70 via-slate-900/10")} />
                     {galleryImages.length > 1 && !isCard ? (

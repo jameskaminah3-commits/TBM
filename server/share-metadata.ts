@@ -26,9 +26,18 @@ type ShareMetadata = {
   publishedTime?: string | null;
   modifiedTime?: string | null;
   author?: string | null;
+  /** An image to fetch first: the home page's hero, which is the page's largest paint. */
+  preloadImage?: { href: string; srcset: string; sizes: string } | null;
 };
 
 const siteName = "Tembea Bila Matata";
+
+// The home hero, in client/public/images (fixed names, so the server can name them here).
+const homeHeroPreload = {
+  href: "/images/home-hero-768.webp",
+  srcset: "/images/home-hero-768.webp 768w, /images/home-hero-1408.webp 1408w",
+  sizes: "100vw",
+};
 const defaultTitle = "Tembea Bila Matata - Travel Local, Stay Easy";
 const defaultDescription =
   "Book curated stays, cars, private chefs, errands, and experiences across Kenya with Tembea Bila Matata.";
@@ -521,7 +530,11 @@ function defaultMetadata(req: Request): ShareMetadata {
   const baseUrl = getRequestBaseUrl(req);
   const staticMetadata = getStaticMetadata(req.path, baseUrl);
   if (staticMetadata) {
-    return { ...staticMetadata, robots: getRobotsForPath(req.path) };
+    return {
+      ...staticMetadata,
+      robots: getRobotsForPath(req.path),
+      preloadImage: req.path === "/" ? homeHeroPreload : null,
+    };
   }
   return {
     title: defaultTitle,
@@ -691,6 +704,9 @@ export function injectShareMetadata(html: string, metadata: ShareMetadata) {
     metaTag("name", "robots", metadata.robots || "index,follow"),
     getGoogleSiteVerificationTag(),
     `<link rel="canonical" href="${escapeHtml(metadata.canonicalUrl)}" />`,
+    metadata.preloadImage
+      ? `<link rel="preload" as="image" href="${escapeHtml(metadata.preloadImage.href)}" imagesrcset="${escapeHtml(metadata.preloadImage.srcset)}" imagesizes="${escapeHtml(metadata.preloadImage.sizes)}" fetchpriority="high" />`
+      : null,
     metadata.structuredData
       ? `<script type="application/ld+json" data-seo-structured="true"${cspNonce ? ` nonce="${escapeHtml(cspNonce)}"` : ""}>${JSON.stringify(metadata.structuredData).replace(/</g, "\\u003c")}</script>`
       : null,

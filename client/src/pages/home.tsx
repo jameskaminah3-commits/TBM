@@ -22,8 +22,10 @@ import { Input } from "@/components/ui/input";
 import { ListingMedia } from "@/components/listing-media";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { buildStaySearchParams } from "@/lib/stay-search";
-import heroImageLarge from "@assets/generated_images/home-hero-1408.jpg";
-import heroImageSmall from "@assets/generated_images/home-hero-768.jpg";
+// The hero lives in /images under fixed names, so the server can tell the
+// browser to fetch it first on the home page (see server/share-metadata.ts).
+const heroImageLarge = "/images/home-hero-1408.webp";
+const heroImageSmall = "/images/home-hero-768.webp";
 import messyWhatsappImage from "@assets/generated_images/home-whatsapp-420.jpg";
 import type { Stay, Car as CarType, Cook, Errand, Experience } from "@shared/schema";
 import { todayInKenya } from "@shared/calendar-dates";
@@ -323,7 +325,8 @@ export default function Home() {
           className="absolute inset-0 h-full w-full object-cover"
           loading="eager"
           decoding="async"
-          fetchPriority="high"
+          // React 18 passes the attribute through only in lowercase.
+          {...{ fetchpriority: "high" }}
         />
         <div className="absolute inset-0 bg-gradient-to-b from-black/52 via-black/40 to-black/58" />
 

@@ -40,7 +40,6 @@ import { useAuth } from "@/hooks/useAuth";
 import { useInbox } from "@/hooks/use-inbox";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { supabase } from "@/lib/supabase";
 
 export function Header() {
   const [location] = useLocation();
@@ -55,6 +54,8 @@ export function Header() {
 
   const handleLogout = async () => {
     await apiRequest("POST", "/api/logout");
+    // Supabase (for Google sign-in) loads only when needed, so it isn't in every page's first download.
+    const { supabase } = await import("@/lib/supabase");
     await supabase?.auth.signOut({ scope: "local" });
     queryClient.setQueryData(["/api/auth/user"], null);
     queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });

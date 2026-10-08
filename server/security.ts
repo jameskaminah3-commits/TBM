@@ -48,7 +48,8 @@ function formatDirective(name: string, values: Iterable<string>) {
 }
 
 function buildContentSecurityPolicy(nonce: string) {
-  const connectSrc = new Set<string>(["'self'", "https://fonts.googleapis.com", "https://fonts.gstatic.com"]);
+  // Fonts are served from our own domain, so nothing loads from Google Fonts.
+  const connectSrc = new Set<string>(["'self'"]);
   const imageAndMediaSrc = new Set<string>(["'self'", "data:", "blob:", "https:"]);
 
   addOrigin(connectSrc, process.env.SUPABASE_URL);
@@ -82,8 +83,8 @@ function buildContentSecurityPolicy(nonce: string) {
     formatDirective("manifest-src", ["'self'"]),
     formatDirective("worker-src", ["'self'", "blob:"]),
     formatDirective("script-src", ["'self'", `'nonce-${nonce}'`]),
-    formatDirective("style-src", ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"]),
-    formatDirective("font-src", ["'self'", "data:", "https://fonts.gstatic.com"]),
+    formatDirective("style-src", ["'self'", "'unsafe-inline'"]),
+    formatDirective("font-src", ["'self'", "data:"]),
     formatDirective("img-src", imageAndMediaSrc),
     formatDirective("media-src", imageAndMediaSrc),
     formatDirective("connect-src", connectSrc),
