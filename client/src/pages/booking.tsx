@@ -976,6 +976,16 @@ export default function Booking() {
   }, [addonScores, availableConciergeServices, guestsValue, offersHomeServices, requestedExtras]);
 
   const extraName = (service: ConciergeService) => (service.category === "experiences" ? service.title : getServiceTitle(service));
+  // In the price lines, say what each extra is, not just its name ("X-Trail").
+  const extraLineLabel = (service: ConciergeService) => {
+    const mode = getExistingSelection(service.id)?.serviceMode;
+    const kind = service.category === "cars"
+      ? mode === "car-self-drive-day" ? "Self-drive" : mode === "car-chauffeur-hourly" ? "Driver by the hour" : "Car with a driver"
+      : service.category === "cooks" ? "Private chef"
+      : service.category === "experiences" ? "Day out"
+      : null;
+    return kind ? `${kind}: ${extraName(service)}` : extraName(service);
+  };
 
   const extraPriceLabel = (groupKey: TripExtraKey, service: ConciergeService): string => {
     if (service.category === "cars") {
@@ -1180,7 +1190,7 @@ export default function Booking() {
         const isTailored = getExistingSelection(service.id)?.serviceMode === "experience-custom-offer";
         return (
           <div key={service.id} className="flex justify-between gap-3">
-            <span className="break-words text-muted-foreground">{extraName(service)}</span>
+            <span className="break-words text-muted-foreground">{extraLineLabel(service)}</span>
             <span className="shrink-0">{isTailored ? "Quoted later" : <CurrencyAmount amountUsd={extraTotal(service)} />}</span>
           </div>
         );
@@ -1416,7 +1426,7 @@ export default function Booking() {
                                         type="button"
                                         variant="outline"
                                         size="sm"
-                                        className="min-h-10 rounded-full px-4"
+                                        className="min-h-11 rounded-full px-4 sm:min-h-10"
                                         onClick={() => openSelectionDialog(service.id, suggestedModeFor(group.key, service, guestsValue))}
                                         data-testid={`button-add-extra-${service.id}`}
                                       >
@@ -1437,7 +1447,7 @@ export default function Booking() {
                           {items.length > 2 ? (
                             <button
                               type="button"
-                              className="mt-1 text-sm font-medium text-primary underline-offset-4 hover:underline"
+                              className="mt-1 inline-flex min-h-11 items-center text-sm font-medium text-primary underline-offset-4 hover:underline"
                               aria-expanded={showAll}
                               onClick={() => setOpenExtraGroups((current) => ({ ...current, [group.key]: !showAll }))}
                             >
@@ -1449,7 +1459,7 @@ export default function Booking() {
                     })}
                     <button
                       type="button"
-                      className="inline-flex items-center gap-2 text-sm font-medium text-primary underline-offset-4 hover:underline"
+                      className="inline-flex min-h-11 items-center gap-2 text-left text-sm font-medium text-primary underline-offset-4 hover:underline"
                       onClick={() => openZaina(`For my stay at ${accommodation.title}, could you also arrange: `)}
                     >
                       <MessageCircle className="h-4 w-4" />
@@ -1589,7 +1599,7 @@ export default function Booking() {
               </div>
               <button
                 type="button"
-                className="mt-0.5 text-xs font-medium text-primary underline-offset-4 hover:underline"
+                className="-mx-1 -my-2 inline-flex min-h-11 min-w-11 items-center px-1 text-xs font-medium text-primary underline-offset-4 hover:underline"
                 aria-expanded={showBarDetails}
                 aria-controls="trip-bar-details"
                 onClick={() => setShowBarDetails((value) => !value)}
@@ -1913,7 +1923,8 @@ export default function Booking() {
 
                   <div className="space-y-2">
                     <Label>Age band</Label>
-                    {normalizeHelpMamaPricing(configuringService.helpMamaPricing).ageBands.map((band) => {
+                    {/* Only the ages this carer takes (a band with no prices isn't offered). */}
+                    {normalizeHelpMamaPricing(configuringService.helpMamaPricing).ageBands.filter((band) => getHelpMamaRateOptions(configuringService.helpMamaPricing, band.id).length > 0).map((band) => {
                       const selectedAddons = draftSelection.serviceAddonSelections || [];
                       const checked = selectedAddons.includes(band.id);
                       return (

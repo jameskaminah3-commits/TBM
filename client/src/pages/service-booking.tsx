@@ -1431,7 +1431,7 @@ export default function ServiceBooking() {
           <Button
             variant="ghost"
             onClick={() => setLocation(config.backPath)}
-            className="mb-4 sm:mb-6"
+            className="mb-4 min-h-11 sm:mb-6"
             data-testid="button-back"
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
@@ -2088,9 +2088,9 @@ export default function ServiceBooking() {
                           <FormItem className="space-y-4">
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                               <div>
-                                <FormLabel>Package dates</FormLabel>
+                                <FormLabel>Which days</FormLabel>
                                 <FormDescription>
-                                  Book one package per date. Add a short note like a preferred time or access instruction.
+                                  One visit per day. Add a note for each, like a time or how to get in.
                                 </FormDescription>
                               </div>
                               <Button
@@ -2098,17 +2098,17 @@ export default function ServiceBooking() {
                                 variant="outline"
                                 size="sm"
                                 onClick={() => appendErrandSlot({ date: "", note: "" })}
-                                className="w-full sm:w-auto"
+                                className="min-h-11 w-full sm:min-h-9 sm:w-auto"
                               >
-                                <Plus className="mr-2 h-4 w-4" />
-                                Add Package
+                                <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
+                                Add another day
                               </Button>
                             </div>
                             <div className="space-y-3">
                               {errandSlotFields.map((slot, index) => (
                                 <div key={slot.id} className="rounded-lg border p-4 space-y-3">
                                   <div className="flex items-center justify-between gap-3">
-                                    <div className="text-sm font-medium">Package {index + 1}</div>
+                                    <div className="text-sm font-medium">Day {index + 1}</div>
                                     {errandSlotFields.length > 1 ? (
                                       <Button
                                         type="button"
@@ -2433,7 +2433,9 @@ export default function ServiceBooking() {
                             control={form.control}
                             name="serviceAddonSelections"
                             render={({ field }) => {
-                              const ageBands = normalizeHelpMamaPricing(service.helpMamaPricing).ageBands;
+                              // Only the ages this carer takes (a band with no prices isn't offered).
+                              const ageBands = normalizeHelpMamaPricing(service.helpMamaPricing).ageBands
+                                .filter((band) => getHelpMamaRateOptions(service.helpMamaPricing, band.id).length > 0);
                               const currentSelections = field.value || [];
                               const selectedRateId = getHelpMamaRateId(currentSelections);
                               const selectedAgeBandId = getHelpMamaAgeBandId(currentSelections, service.helpMamaPricing);
@@ -2721,7 +2723,7 @@ export default function ServiceBooking() {
                     <Separator />
 
                     <div className="space-y-4">
-                      <h3 className="font-semibold">Your details</h3>
+                      <h2 className="font-semibold">Your details</h2>
 
                       <FormField
                         control={form.control}
@@ -2764,7 +2766,7 @@ export default function ServiceBooking() {
 
             <div className="lg:col-span-1">
               <Card className="min-w-0 p-4 sm:p-6 lg:sticky lg:top-8">
-                <h3 className="font-semibold text-lg mb-4">Your booking</h3>
+                <h2 className="font-semibold text-lg mb-4">Your booking</h2>
 
                 <div className="space-y-4">
                   <div className="flex items-start justify-between gap-3 text-sm">

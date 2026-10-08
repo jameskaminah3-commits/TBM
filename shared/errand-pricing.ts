@@ -84,9 +84,19 @@ function getBandRatePrice(band: HelpMamaPricing["ageBands"][number], rateKey: He
   return normalizePrice(band[HELP_MAMA_RATE_FIELDS[rateKey]]);
 }
 
+function bandHasOwnRates(band: HelpMamaPricing["ageBands"][number]) {
+  return (Object.keys(HELP_MAMA_RATE_FIELDS) as HelpMamaRateKey[]).some((rateKey) => getBandRatePrice(band, rateKey) > 0);
+}
+
 function getRatePrice(pricing: HelpMamaPricing, rateKey: HelpMamaRateKey, ageBandId?: string | null) {
   const selectedBand = ageBandId ? pricing.ageBands.find((band) => band.id === ageBandId) : null;
   if (selectedBand) {
+    // A listing priced before age bands existed has no band prices: every age
+    // then takes the listing's own rates. Once any band is priced, a band left
+    // at zero is an age the carer doesn't take.
+    if (!pricing.ageBands.some(bandHasOwnRates)) {
+      return normalizePrice(pricing[HELP_MAMA_LEGACY_RATE_FIELDS[rateKey]]);
+    }
     return getBandRatePrice(selectedBand, rateKey);
   }
 

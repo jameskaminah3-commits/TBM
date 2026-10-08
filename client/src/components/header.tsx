@@ -310,7 +310,7 @@ export function Header() {
                       Preferences
                     </div>
                     <Select value={selectedCurrency} onValueChange={(value) => setSelectedCurrency(value as "USD" | "KES")}>
-                      <SelectTrigger className="h-12 rounded-[1rem] border-border/70 bg-background/75 shadow-sm" data-testid="mobile-select-currency">
+                      <SelectTrigger className="h-12 max-md:h-12 rounded-[1rem] border-border/70 bg-background/75 shadow-sm" data-testid="mobile-select-currency">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>

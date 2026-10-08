@@ -995,7 +995,7 @@ export default function Bookings() {
         )}
         data-testid={`booking-${booking.id}`}
       >
-        <AccordionTrigger className="items-start gap-3 px-4 py-4 text-left hover:no-underline sm:gap-4 sm:px-5 sm:py-4 lg:px-6">
+        <AccordionTrigger headingLevel={2} className="items-start gap-3 px-4 py-4 text-left hover:no-underline sm:gap-4 sm:px-5 sm:py-4 lg:px-6">
           <div className="flex min-w-0 flex-1 flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex min-w-0 items-start gap-3 sm:gap-4">
               <div className="relative h-20 w-24 shrink-0 overflow-hidden rounded-[20px] border border-border/20 bg-stone-950 shadow-[0_16px_30px_-24px_rgba(15,23,42,0.45)] sm:h-28 sm:w-36 sm:rounded-[22px]">
@@ -1020,7 +1020,7 @@ export default function Bookings() {
                   ) : null}
                 </div>
                 <div className="mt-3 text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">{bookingType}</div>
-                <h2 className="mt-1 text-base font-semibold leading-snug tracking-tight text-foreground sm:text-xl">{bookingTitle}</h2>
+                <div className="mt-1 text-base font-semibold leading-snug tracking-tight text-foreground sm:text-xl">{bookingTitle}</div>
                 <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted-foreground">
                   <span className="flex items-center gap-1"><Calendar className="h-4 w-4" />{bookingDates}{nights ? ` · ${nights} night${nights === 1 ? "" : "s"}` : ""}</span>
                   {bookingLocation ? <span className="flex items-center gap-1"><MapPin className="h-4 w-4" />{bookingLocation}</span> : null}
@@ -1376,7 +1376,7 @@ export default function Bookings() {
                       : "Choose your payment method whenever you're ready to continue."}
                 />
                 <Button
-                  className="mt-4 w-full"
+                  className="mt-4 h-11 w-full"
                   disabled={startPaymentMutation.isPending}
                   onClick={() => openRetryCheckout(booking)}
                 >
@@ -1394,20 +1394,20 @@ export default function Bookings() {
                 </Button>
                 <Button
                   variant="outline"
-                  className="mt-3 w-full"
+                  className="mt-3 h-11 w-full"
                   disabled={manualMpesaMutation.isPending || holdForManualMpesaMutation.isPending}
                   onClick={() => manualMpesaBookingId === booking.id ? setManualMpesaBookingId(null) : openManualMpesaForm(booking)}
                 >
                   <Smartphone className="mr-2 h-4 w-4" />
                   {manualMpesaBookingId === booking.id
-                    ? "Hide temporary M-Pesa"
+                    ? "Hide M-Pesa Send Money"
                     : holdForManualMpesaMutation.isPending && holdForManualMpesaMutation.variables?.id === booking.id
                       ? "Checking your dates..."
-                      : "Temporary M-Pesa send money"}
+                      : "Pay by M-Pesa Send Money"}
                 </Button>
                 {manualMpesaBookingId === booking.id ? (
-                  <div className="mt-4 rounded-[22px] border border-emerald-200 bg-emerald-50/80 p-4">
-                    <div className="text-sm font-semibold text-emerald-950">Temporary M-Pesa instructions</div>
+                  <div className="mt-4 rounded-[22px] border border-emerald-200 bg-emerald-50/80 p-4" data-testid={`manual-mpesa-${booking.id}`}>
+                    <div className="text-sm font-semibold text-emerald-950">Pay by M-Pesa Send Money</div>
                     <div className="mt-2 text-sm leading-6 text-emerald-900">
                       Send <span className="font-semibold">{formatPayable(checkoutAmountDue, quotedFeeKes, "KES")}</span> to <span className="font-semibold">{TEMP_MPESA_SEND_MONEY_NUMBER}</span>, then submit the M-Pesa code below for confirmation.
                     </div>
@@ -1418,36 +1418,43 @@ export default function Bookings() {
                     ) : null}
                     <div className="mt-4 space-y-3">
                       <div className="space-y-2">
-                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-800">M-Pesa code</div>
+                        <label htmlFor={`manual-mpesa-code-${booking.id}`} className="block text-xs font-semibold uppercase tracking-[0.16em] text-emerald-800">M-Pesa code</label>
                         <Input
+                          id={`manual-mpesa-code-${booking.id}`}
                           value={manualMpesaCode}
                           onChange={(event) => setManualMpesaCode(event.target.value.toUpperCase())}
                           placeholder="e.g. QJD7X8Y9Z"
-                          className="bg-white"
+                          autoCapitalize="characters"
+                          autoComplete="off"
+                          className="h-11 bg-white"
                         />
                       </div>
                       <div className="space-y-2">
-                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-800">Sender phone</div>
+                        <label htmlFor={`manual-mpesa-phone-${booking.id}`} className="block text-xs font-semibold uppercase tracking-[0.16em] text-emerald-800">Phone you sent from</label>
                         <Input
+                          id={`manual-mpesa-phone-${booking.id}`}
+                          type="tel"
+                          inputMode="tel"
                           value={manualMpesaSenderPhone}
                           onChange={(event) => setManualMpesaSenderPhone(event.target.value)}
-                          placeholder="e.g. 0718475264"
-                          className="bg-white"
+                          placeholder="e.g. 0712 345 678"
+                          className="h-11 bg-white"
                         />
                       </div>
                       <div className="space-y-2">
-                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-800">Note</div>
+                        <label htmlFor={`manual-mpesa-note-${booking.id}`} className="block text-xs font-semibold uppercase tracking-[0.16em] text-emerald-800">Note (optional)</label>
                         <Textarea
+                          id={`manual-mpesa-note-${booking.id}`}
                           rows={3}
                           value={manualMpesaNote}
                           onChange={(event) => setManualMpesaNote(event.target.value)}
-                          placeholder="Optional note for the team"
+                          placeholder="Anything our team should know"
                           className="bg-white"
                         />
                       </div>
                       <div className="flex flex-col gap-2 sm:flex-row">
                         <Button
-                          className="w-full sm:flex-1"
+                          className="h-11 w-full sm:flex-1"
                           disabled={manualMpesaMutation.isPending}
                           onClick={() => manualMpesaMutation.mutate({
                             bookingId: booking.id,
@@ -1460,7 +1467,7 @@ export default function Bookings() {
                         </Button>
                         <Button
                           variant="ghost"
-                          className="w-full sm:w-auto"
+                          className="h-11 w-full sm:w-auto"
                           disabled={manualMpesaMutation.isPending}
                           onClick={() => setManualMpesaBookingId(null)}
                         >
@@ -1510,11 +1517,11 @@ export default function Bookings() {
                 <a href={`tel:${CONTACT_PHONE}`} className="font-medium text-foreground underline underline-offset-2">{CONTACT_PHONE_DISPLAY}</a>.
               </p>
               <div className="mt-3 space-y-3">
-                <Button variant="outline" className="w-full rounded-full" onClick={() => askZainaAboutTrip()} data-testid={`button-trip-help-${booking.id}`}>
+                <Button variant="outline" className="h-11 w-full rounded-full" onClick={() => askZainaAboutTrip()} data-testid={`button-trip-help-${booking.id}`}>
                   <MessageCircle className="mr-2 h-4 w-4" />
                   Ask Zaina about this trip
                 </Button>
-                {booking.accommodationId ? <Button variant="outline" className="w-full rounded-full" onClick={() => setLocation(`/accommodation/${booking.accommodationId}`)}>View the stay</Button> : null}
+                {booking.accommodationId ? <Button variant="outline" className="h-11 w-full rounded-full" onClick={() => setLocation(`/accommodation/${booking.accommodationId}`)}>View the stay</Button> : null}
                 {amountPaid > 0 ? (
                   <Button variant="outline" className="w-full rounded-full" onClick={() => downloadReceipt(booking)}>
                     <Download className="mr-2 h-4 w-4" />

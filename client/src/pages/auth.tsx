@@ -623,7 +623,7 @@ export default function AuthPage() {
                     <Label htmlFor="identifier">Email or phone</Label>
                     <Input
                       id="identifier"
-                      className="h-12 rounded-2xl border-stone-200 px-4 text-base"
+                      className="h-12 max-md:h-12 rounded-2xl border-stone-200 px-4 text-base"
                       placeholder="jane@example.com or +254..."
                       value={identifier}
                       onChange={(event) => setIdentifier(event.target.value)}
@@ -639,7 +639,7 @@ export default function AuthPage() {
                     <Input
                       id="password"
                       type="password"
-                      className="h-12 rounded-2xl border-stone-200 px-4 text-base"
+                      className="h-12 max-md:h-12 rounded-2xl border-stone-200 px-4 text-base"
                       placeholder="Password"
                       value={password}
                       onChange={(event) => setPassword(event.target.value)}
@@ -725,7 +725,7 @@ export default function AuthPage() {
                     <Label htmlFor="name">Full name</Label>
                     <Input
                       id="name"
-                      className="h-12 rounded-2xl border-stone-200 px-4 text-base"
+                      className="h-12 max-md:h-12 rounded-2xl border-stone-200 px-4 text-base"
                       placeholder="Jane Doe"
                       value={name}
                       onChange={(event) => setName(event.target.value)}
@@ -739,7 +739,7 @@ export default function AuthPage() {
                     <Input
                       id="email"
                       type="email"
-                      className="h-12 rounded-2xl border-stone-200 px-4 text-base"
+                      className="h-12 max-md:h-12 rounded-2xl border-stone-200 px-4 text-base"
                       placeholder="jane@example.com"
                       value={email}
                       onChange={(event) => setEmail(event.target.value)}
@@ -755,7 +755,7 @@ export default function AuthPage() {
                     <Input
                       id="phone"
                       type="tel"
-                      className="h-12 rounded-2xl border-stone-200 px-4 text-base"
+                      className="h-12 max-md:h-12 rounded-2xl border-stone-200 px-4 text-base"
                       placeholder="+254700000000"
                       value={phone}
                       onChange={(event) => setPhone(event.target.value)}
@@ -770,7 +770,7 @@ export default function AuthPage() {
                     <Input
                       id="signup-password"
                       type="password"
-                      className="h-12 rounded-2xl border-stone-200 px-4 text-base"
+                      className="h-12 max-md:h-12 rounded-2xl border-stone-200 px-4 text-base"
                       placeholder="At least 8 characters"
                       value={password}
                       onChange={(event) => setPassword(event.target.value)}
@@ -820,7 +820,7 @@ export default function AuthPage() {
                     <Input
                       id="verify-email"
                       type="email"
-                      className="h-12 rounded-2xl border-stone-200 px-4 text-base"
+                      className="h-12 max-md:h-12 rounded-2xl border-stone-200 px-4 text-base"
                       placeholder="jane@example.com"
                       value={email}
                       onChange={(event) => setEmail(event.target.value)}
@@ -835,7 +835,7 @@ export default function AuthPage() {
                     <Label htmlFor="verify-otp">Verification code</Label>
                     <Input
                       id="verify-otp"
-                      className="h-12 rounded-2xl border-stone-200 px-4 text-base tracking-[0.18em]"
+                      className="h-12 max-md:h-12 rounded-2xl border-stone-200 px-4 text-base tracking-[0.18em]"
                       inputMode="numeric"
                       autoComplete="one-time-code"
                       maxLength={6}
@@ -884,7 +884,7 @@ export default function AuthPage() {
                     <Input
                       id="reset-email"
                       type="email"
-                      className="h-12 rounded-2xl border-stone-200 px-4 text-base"
+                      className="h-12 max-md:h-12 rounded-2xl border-stone-200 px-4 text-base"
                       placeholder="jane@example.com"
                       value={email}
                       onChange={(event) => setEmail(event.target.value)}
@@ -921,7 +921,7 @@ export default function AuthPage() {
                     <Input
                       id="reset-email-confirm"
                       type="email"
-                      className="h-12 rounded-2xl border-stone-200 px-4 text-base"
+                      className="h-12 max-md:h-12 rounded-2xl border-stone-200 px-4 text-base"
                       placeholder="jane@example.com"
                       value={email}
                       onChange={(event) => setEmail(event.target.value)}
@@ -941,7 +941,7 @@ export default function AuthPage() {
                       <Label htmlFor="otp">OTP</Label>
                       <Input
                         id="otp"
-                        className="h-12 rounded-2xl border-stone-200 px-4 text-base tracking-[0.18em]"
+                        className="h-12 max-md:h-12 rounded-2xl border-stone-200 px-4 text-base tracking-[0.18em]"
                         inputMode="numeric"
                         autoComplete="one-time-code"
                         maxLength={6}
@@ -958,7 +958,7 @@ export default function AuthPage() {
                     <Input
                       id="new-password"
                       type="password"
-                      className="h-12 rounded-2xl border-stone-200 px-4 text-base"
+                      className="h-12 max-md:h-12 rounded-2xl border-stone-200 px-4 text-base"
                       placeholder="At least 8 characters"
                       value={newPassword}
                       onChange={(event) => setNewPassword(event.target.value)}

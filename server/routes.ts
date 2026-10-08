@@ -77,7 +77,7 @@ import { db } from "./db";
 import { bookings, users, stays, cars, cooks, errands, experiences, listings, blogPosts, customOffers, stayReservations, carReservations, cookReservations } from "@shared/schema";
 import { calculateCookInclusiveTotal, calculateCookServiceTotal, getCookMinimumGuests } from "@shared/cook-pricing";
 import { customServiceRequestFeeUsd } from "@shared/custom-service";
-import { calculateHelpMamaPackagePrice, calculateHouseCleaningPackagePrice, getHouseCleaningBedroomCount, HELP_MAMA_HOURLY_MINIMUM_HOURS, getHelpMamaAgeBandId, getHelpMamaRateId, hasHelpMamaPricing, isHelpMamaHourlyRate } from "@shared/errand-pricing";
+import { calculateHelpMamaPackagePrice, calculateHouseCleaningPackagePrice, getHouseCleaningBedroomCount, HELP_MAMA_HOURLY_MINIMUM_HOURS, getHelpMamaAgeBandId, getHelpMamaRateId, getHelpMamaRateOptions, hasHelpMamaPricing, isHelpMamaHourlyRate } from "@shared/errand-pricing";
 import {
   createHostedCheckoutSession,
   getApplicationBaseUrl,
@@ -1484,6 +1484,10 @@ async function validateAccommodationAddonSelections(params: {
             }
             if (isHelpMamaHourlyRate(selectedRateId) && (!selection.serviceHours || selection.serviceHours < HELP_MAMA_HOURLY_MINIMUM_HOURS)) {
               throw new Error(`Hourly Mama Care bookings for "${errand.serviceName}" require at least ${HELP_MAMA_HOURLY_MINIMUM_HOURS} hours.`);
+            }
+            // Never fall back to another price for a care time this age doesn't have.
+            if (!getHelpMamaRateOptions(errand.helpMamaPricing, selectedAgeBandId).some((rate) => rate.id === selectedRateId)) {
+              throw new Error(`That care time isn't offered for this age with "${errand.serviceName}". Choose another.`);
             }
             packagePrice = calculateHelpMamaPackagePrice(errand, selection.serviceAddonSelections, selection.serviceHours);
           }
@@ -4296,6 +4300,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   }
                   if (isHelpMamaHourlyRate(selectedRateId) && (!validatedData.serviceHours || validatedData.serviceHours < HELP_MAMA_HOURLY_MINIMUM_HOURS)) {
                     return res.status(400).json({ error: `Hourly Mama Care bookings require at least ${HELP_MAMA_HOURLY_MINIMUM_HOURS} hours.` });
+                  }
+                  // Never fall back to another price for a care time this age doesn't have.
+                  if (!getHelpMamaRateOptions(errand.helpMamaPricing, selectedAgeBandId).some((rate) => rate.id === selectedRateId)) {
+                    return res.status(400).json({ error: "That care time isn't offered for this age. Choose another." });
                   }
                   packagePrice = calculateHelpMamaPackagePrice(errand, validatedData.serviceAddonSelections, validatedData.serviceHours);
                 }

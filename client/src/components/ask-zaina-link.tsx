@@ -9,7 +9,7 @@ export function AskZainaLink({ listingName, className }: { listingName: string; 
     <button
       type="button"
       onClick={() => openZaina(`I'm booking ${listingName} and have a question: `)}
-      className={cn("inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline", className)}
+      className={cn("inline-flex min-h-11 items-center gap-2 text-left text-sm font-medium text-primary hover:underline", className)}
       data-testid="button-ask-zaina-checkout"
     >
       <MessageCircle className="h-4 w-4" />
