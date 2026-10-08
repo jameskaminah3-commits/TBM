@@ -42,8 +42,12 @@ export async function setupVite(app: Express, server: Server) {
     appType: "custom",
   });
 
+  // The home page has one address.
+  app.get("/index.html", (_req, res) => res.redirect(301, "/"));
   app.use(vite.middlewares);
-  app.use("*", async (req, res, next) => {
+  // As in production: a page request, with req.path as the page's own path
+  // (app.use("*") would strip it to "/"), so titles and 404s match.
+  app.get("*", async (req, res, next) => {
     const url = req.originalUrl;
 
     try {
@@ -97,7 +101,8 @@ export function serveStatic(app: Express) {
   };
 
   app.get("/", renderIndex);
-  app.get("/index.html", renderIndex);
+  // The home page has one address.
+  app.get("/index.html", (_req, res) => res.redirect(301, "/"));
   app.use(express.static(distPath, {
     index: false,
     setHeaders(res, filePath) {

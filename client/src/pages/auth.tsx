@@ -4,7 +4,7 @@ import { FaApple } from "react-icons/fa";
 import { FcGoogle } from "react-icons/fc";
 import type { IconType } from "react-icons";
 import { Link, useLocation } from "wouter";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,27 +26,27 @@ const modeCopy: Record<Mode, ModeCopy> = {
   "sign-in": {
     title: "Welcome back",
     description: "Sign in to continue with your bookings, inbox, or dashboard.",
-    submitLabel: "Sign In",
+    submitLabel: "Sign in",
   },
   "sign-up": {
     title: "Create account",
     description: "Use one account for bookings, updates, and future requests.",
-    submitLabel: "Create Account",
+    submitLabel: "Create account",
   },
   "verify-email": {
     title: "Verify your email",
     description: "Enter the 6-digit code we sent to finish setting up your account.",
-    submitLabel: "Verify and Continue",
+    submitLabel: "Verify and continue",
   },
   "forgot-password": {
     title: "Reset password",
     description: "Enter your email and we will send you a 6-digit code.",
-    submitLabel: "Send Code",
+    submitLabel: "Send code",
   },
   "reset-password": {
     title: "Enter your code",
     description: "Use the code from your email and choose a new password.",
-    submitLabel: "Reset Password",
+    submitLabel: "Reset password",
   },
 };
 
@@ -530,7 +530,7 @@ export default function AuthPage() {
   return (
     <div className="min-h-[100svh] bg-[radial-gradient(circle_at_top,rgba(20,184,166,0.1),transparent_34%),linear-gradient(180deg,rgba(255,252,247,1),rgba(246,248,247,1))]">
       <div className="mx-auto flex min-h-[100svh] w-full max-w-md flex-col justify-center px-4 py-6 sm:px-6 sm:py-10">
-        <Button type="button" variant="ghost" size="sm" asChild className="mb-4 w-fit rounded-full px-2 text-muted-foreground">
+        <Button type="button" variant="ghost" size="sm" asChild className="mb-4 min-h-11 w-fit rounded-full px-3 text-sm text-muted-foreground">
           <Link href="/">
             <ArrowLeft className="h-4 w-4" />
             Back home
@@ -540,7 +540,7 @@ export default function AuthPage() {
         <Card className="overflow-hidden rounded-[2rem] border-stone-200/80 bg-white/95 shadow-[0_28px_80px_-56px_rgba(15,23,42,0.42)]">
           <CardHeader className="space-y-5 px-5 pb-0 pt-6 sm:px-6">
             <div className="space-y-3">
-              <Link href="/" className="inline-flex items-center gap-3">
+              <Link href="/" className="inline-flex min-h-11 items-center gap-3">
                 <BrandMark className="h-10 shrink-0" />
                 <span className="font-serif text-lg tracking-[0.08em] text-stone-950">
                   Tembea Bila Matata
@@ -554,9 +554,9 @@ export default function AuthPage() {
               ) : null}
 
               <div className="space-y-2">
-                <CardTitle className="text-2xl tracking-tight text-stone-950 sm:text-[2rem]">
+                <h1 className="text-2xl font-semibold leading-tight tracking-tight text-stone-950 sm:text-[2rem]">
                   {currentMode.title}
-                </CardTitle>
+                </h1>
                 <CardDescription className="text-sm leading-6 sm:text-base">
                   {currentMode.description}
                 </CardDescription>
@@ -569,17 +569,19 @@ export default function AuthPage() {
                   type="button"
                   variant={mode === "sign-in" ? "default" : "ghost"}
                   className="min-h-11 rounded-[1rem] px-3 text-sm"
+                  aria-pressed={mode === "sign-in"}
                   onClick={() => openMode("sign-in")}
                 >
-                  Sign In
+                  Sign in
                 </Button>
                 <Button
                   type="button"
                   variant={mode === "sign-up" ? "default" : "ghost"}
                   className="min-h-11 rounded-[1rem] px-3 text-sm"
+                  aria-pressed={mode === "sign-up"}
                   onClick={() => openMode("sign-up")}
                 >
-                  Sign Up
+                  Sign up
                 </Button>
               </div>
             ) : null}
@@ -649,7 +651,7 @@ export default function AuthPage() {
                   <div className="flex justify-end">
                     <button
                       type="button"
-                      className="text-sm font-medium text-teal-700 underline-offset-4 hover:underline"
+                      className="inline-flex min-h-11 items-center text-sm font-medium text-teal-700 underline-offset-4 hover:underline"
                       onClick={() => openMode("forgot-password")}
                     >
                       Forgot password?
@@ -664,7 +666,7 @@ export default function AuthPage() {
                   New here?{" "}
                   <button
                     type="button"
-                    className="font-medium text-teal-700 underline-offset-4 hover:underline"
+                    className="inline-flex min-h-11 items-center font-medium text-teal-700 underline-offset-4 hover:underline"
                     onClick={() => openMode("sign-up")}
                   >
                     Create account
@@ -675,7 +677,7 @@ export default function AuthPage() {
                   Need to verify your email?{" "}
                   <button
                     type="button"
-                    className="font-medium text-teal-700 underline-offset-4 hover:underline"
+                    className="inline-flex min-h-11 items-center font-medium text-teal-700 underline-offset-4 hover:underline"
                     onClick={() => {
                       setEmail(looksLikeEmail(identifier) ? identifier.trim().toLowerCase() : email);
                       setOtp("");
@@ -787,7 +789,7 @@ export default function AuthPage() {
                   Already have an account?{" "}
                   <button
                     type="button"
-                    className="font-medium text-teal-700 underline-offset-4 hover:underline"
+                    className="inline-flex min-h-11 items-center font-medium text-teal-700 underline-offset-4 hover:underline"
                     onClick={() => openMode("sign-in")}
                   >
                     Sign in
@@ -798,7 +800,7 @@ export default function AuthPage() {
                   Already have a code?{" "}
                   <button
                     type="button"
-                    className="font-medium text-teal-700 underline-offset-4 hover:underline"
+                    className="inline-flex min-h-11 items-center font-medium text-teal-700 underline-offset-4 hover:underline"
                     onClick={() => {
                       setOtp("");
                       openMode("verify-email");
@@ -865,7 +867,7 @@ export default function AuthPage() {
                   Already verified?{" "}
                   <button
                     type="button"
-                    className="font-medium text-teal-700 underline-offset-4 hover:underline"
+                    className="inline-flex min-h-11 items-center font-medium text-teal-700 underline-offset-4 hover:underline"
                     onClick={() => openMode("sign-in")}
                   >
                     Back to sign in
@@ -902,7 +904,7 @@ export default function AuthPage() {
                   Remembered it?{" "}
                   <button
                     type="button"
-                    className="font-medium text-teal-700 underline-offset-4 hover:underline"
+                    className="inline-flex min-h-11 items-center font-medium text-teal-700 underline-offset-4 hover:underline"
                     onClick={() => openMode("sign-in")}
                   >
                     Back to sign in
@@ -975,7 +977,7 @@ export default function AuthPage() {
                   Need a new code?{" "}
                   <button
                     type="button"
-                    className="font-medium text-teal-700 underline-offset-4 hover:underline"
+                    className="inline-flex min-h-11 items-center font-medium text-teal-700 underline-offset-4 hover:underline"
                     onClick={() => {
                       setResetPasswordOtpBypassed(false);
                       openMode("forgot-password");

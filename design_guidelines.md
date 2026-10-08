@@ -1,214 +1,184 @@
-# Coastal Travel Platform - Design Guidelines
+# Tembea Bila Matata: Design Guide
 
-## Design Approach
-
-**Selected Approach:** Modern Premium Coastal Travel Theme
-
-**Brand Identity:**
-- Tembea Bila Matata: Travel Without Worries
-- Tagline: "Stays, Cars, Cooks, and Errands — all in one place"
-- Lifestyle-focused navigation and coastal aesthetic
-
-**Core Principles:**
-1. **Coastal Luxury:** Evoke seaside tranquility with turquoise, coral, and sand tones
-2. **Modern & Premium:** Clean layouts with generous spacing and soft shadows
-3. **Trust Through Design:** Professional appearance with verified service indicators
-4. **Mobile-First Responsive:** Seamless experience across all devices
+How the guest-facing site looks, reads and behaves. Follow it for new pages and
+when changing old ones. The admin and partner dashboards follow the same tokens
+but are not bound by the guest patterns below.
 
 ---
 
-## Color Palette
+## What the site has to say
 
-**Brand Colors:**
-- **Primary:** #0DA9A4 (Turquoise Ocean) - HSL(178, 86%, 36%)
-  - Used for CTAs, links, and brand accents
-- **Accent:** #FF8C5A (Coral Sunset) - HSL(18, 100%, 68%)
-  - Used for secondary CTAs, highlights, and hover states
-- **Background:** #F7F3EE (Sand) - HSL(33, 38%, 95%)
-  - Main page background color
-- **Text:** #1F2A2E (Dark Slate) - HSL(196, 19%, 15%)
-  - Primary text color
+Tembea Bila Matata means "travel without worries". The site sells one promise:
+**the Coast trip, sorted by people on the ground who check things first.** Stays,
+rides, private chefs, help at the stay, days out, and checking a listing found
+somewhere else, along the Kenyan Coast.
 
-**Supporting Colors:**
-- **Light Neutrals:** Soft grays and off-whites for cards and sections
-- **Overlay Gradients:** Dark gradients over hero images for text readability
+- Lead with what guests get and what we check, not with features.
+- The home and About pages tell the owner's story in the owner's words. They
+  read it from `client/src/lib/brand-story.ts`; change the words there, once.
+- No dead ends. When a list runs out, offer Zaina or a custom request
+  (`CustomServiceCta`), never an empty page.
 
 ---
 
-## Typography
+## Words
 
-**Font System:** Google Fonts via CDN
-- **Headings:** Poppins (400, 500, 600, 700) - Modern, clean, geometric
-- **Body:** Inter (400, 500, 600) - Excellent readability for long-form content
-
-**Hierarchy:**
-- **Hero Headlines:** Poppins, 3xl to 6xl (48-72px), font-semibold, leading-tight
-- **Section Titles:** Poppins, 2xl to 4xl (32-48px), font-semibold
-- **Card Titles:** Poppins, xl to 2xl (20-32px), font-medium
-- **Body Text:** Inter, base to lg (16-18px), font-normal, leading-relaxed
-- **Metadata/Labels:** Inter, sm to base (14-16px), font-medium
-- **Fine Print:** Inter, xs to sm (12-14px), font-normal
-
----
-
-## Layout System
-
-**Spacing Primitives:** Generous spacing for modern feel
-- **Micro spacing:** gap-2, gap-3 (8-12px)
-- **Component spacing:** p-6, p-8, gap-6 (24-32px)
-- **Section padding:** py-16, py-20, py-24 (64-96px desktop)
-- **Major spacing:** mb-12, mb-16, mb-20 (section breaks)
-
-**Grid System:**
-- **Service Cards:** grid-cols-1 md:grid-cols-2 lg:grid-cols-4 (equal columns)
-- **Feature Cards:** grid-cols-1 md:grid-cols-3 (3-column layout)
-- **Content Cards:** grid-cols-1 md:grid-cols-2 lg:grid-cols-3
-- **Mobile:** All grids collapse to single column
-
-**Container Widths:**
-- **Hero sections:** w-full with inner max-w-7xl px-4 md:px-8
-- **Content sections:** max-w-6xl mx-auto px-4 md:px-8
-- **Reading content:** max-w-4xl mx-auto
+- **Sentence case** for buttons, labels, form fields, chips and section
+  headings: "Book now", "Pay today", "Your trip". Page titles (`h1`) and the
+  legal pages may keep title case.
+- Plain words guests use: "a night", "Pay today", "Your trip", "Home help",
+  "Sign in". Not "accommodation inventory", "SLA", "service location".
+- Say the price for the whole stay or service once dates are known, and say
+  what is due today. Never hide the commitment.
+- Kenyan English and conventions: day-first dates ("12 Dec – 15 Dec"), KSh and
+  US$, "8am to 8pm".
+- Prices start in the visitor's currency: KSh in Kenya, US$ elsewhere. Use
+  `useCurrency()` and `CurrencyAmount`; never format money by hand.
+- The same facts in the same words everywhere. Reply time: "Our team replies
+  within a few hours, Monday to Saturday, 8am to 8pm. Zaina answers any time."
+  Cancellation lines come from `shared/cancellation-policy.ts`.
+- Text written for search engines belongs in the page metadata
+  (`shared/page-metadata.ts`, `SeoHead`), not on the page.
 
 ---
 
-## Component Library
+## Colour
 
-### Navigation
-**Header:** Sticky navigation with transparency
-- Height: h-16
-- Subtle backdrop blur
-- Logo left, navigation center, theme toggle right
-- On mobile: Logo left, hamburger menu right
+Tokens live in `client/src/index.css` (light and dark). Use the Tailwind names,
+never raw hex values in components.
 
-### Hero Section
-**Layout:** Full-width hero with coastal beach image
-- Large headline: "Tembea Bila Matata — Travel Without Worries"
-- Sub-headline: "Stays, Cars, Cooks, and Errands — all in one place"
-- CTA button in accent color
-- Dark gradient overlay for text readability
+| Token | Light | Use |
+|---|---|---|
+| `primary` | #257174, deep teal | Main actions, links, selected states, focus ring |
+| `background` | #F9F1E7, sand | Page background |
+| `card` | #FEFBF6 | Cards, panels, inputs on sand |
+| `foreground` | #202B37, dark slate | Text |
+| `muted-foreground` | #5A6672 | Secondary text. Don't fade it further with `/70`: it fails contrast |
+| `accent` | #F4B26C, warm sand-gold | Small highlights only, never body text |
+| `border` | #DDD0C0 | Borders and dividers |
+| `destructive` | #C52020 | Errors and destructive actions |
 
-**Search Widget:** Elevated card with backdrop blur
-- Destination, check-in, check-out, guests
-- Rounded corners (rounded-xl)
-- Soft shadows (shadow-xl)
+Dark mode swaps in a navy background (#131A25) and a brighter teal (#3BB6BA).
+Check every new screen in both.
 
-### Service Cards
-**Layout:** Large clickable cards for each service
-- **Stays, Drive, Dine, Relax**
-- Coastal-themed images or large icons
-- Title in Poppins font
-- Short descriptive text
-- Rounded corners (rounded-xl)
-- Soft shadows (shadow-md)
-- Hover: Lift effect + glow (transform + shadow-lg)
-- Responsive grid: 1 column mobile, 2 tablet, 4 desktop
-
-### "Why Choose Us" Section
-**Layout:** 4-column feature grid
-- Icons with circular backgrounds
-- Feature title in Poppins
-- Description text in Inter
-- Sand background (#F7F3EE)
-- Even spacing between items
-- Mobile: Single column stack
-
-### Footer
-**Layout:** Clean footer with brand info
-- Brand name "Tembea Bila Matata"
-- Tagline
-- WhatsApp contact link
-- Social media icons
-- Copyright notice
-- Sand background
+Text must reach 4.5:1 contrast (3:1 for large text). Status colours (emerald
+for paid, amber for pending) are for badges and icons, with the meaning also in
+words.
 
 ---
 
-## Images & Visual Elements
+## Type
 
-**Hero Image:** Beach house, coastal villa, or vacation setting
-- Full-width, high-quality
-- Dimensions: 1920x1080 minimum
-- Dark gradient overlay for text contrast
+Both families are self-hosted from `client/public/fonts` (SIL Open Font
+Licence), declared at the top of `index.css` and preloaded in `index.html`. Do
+not add Google Fonts or other font CDNs back.
 
-**Service Card Images:** Coastal-themed imagery
-- Beaches, cars, local cuisine, lifestyle
-- Consistent aspect ratio (4:3 or 16:9)
-- Soft corners matching card border-radius
+- **Cormorant Garamond** (`font-serif`, 400 to 700): page titles, section
+  titles, prices in summaries. Medium weight, `leading-tight`.
+- **Plus Jakarta Sans** (`font-sans`, 200 to 800): everything else.
 
-**Icons:** Lucide React icons
-- Outline style for default state
-- Consistent sizing (h-10 w-10 for large features)
-- Turquoise primary color
+| Role | Classes |
+|---|---|
+| Page title (`h1`) | `font-serif text-[2rem] sm:text-5xl font-medium leading-[1.1]` |
+| Section title (`h2`) | `font-serif text-2xl sm:text-3xl font-medium` |
+| Eyebrow above a title | `text-xs font-semibold uppercase tracking-[0.2em] text-primary` |
+| Card or item title | `text-base font-semibold` |
+| Body | `text-base leading-7` (lead paragraphs `sm:text-lg`) |
+| Helper and fine print | `text-sm leading-6 text-muted-foreground` |
 
----
-
-## Responsive Behavior
-
-**Breakpoints:**
-- Mobile: < 768px (single column, stacked)
-- Tablet: 768px - 1024px (2 columns)
-- Desktop: > 1024px (3-4 columns)
-
-**Mobile Priorities:**
-- Service cards stack vertically
-- Hero search form simplified
-- All grids become single column
-- Touch-friendly button sizes (min-h-12)
-- Reduced padding for smaller screens
+Inputs use `text-base` on phones so iOS doesn't zoom in.
 
 ---
 
-## Interactions & Animations
+## Layout
 
-**Smooth Hover Effects:**
-- Buttons: Subtle lift (translateY)
-- Cards: Scale + shadow increase (scale-105 + shadow-lg)
-- Links: Color transition to accent
-- Transition duration: 200-300ms
-
-**Scroll Animations:**
-- Fade-in on scroll for sections
-- Smooth reveal for content cards
-
-**Button Styles:**
-- Rounded corners (rounded-lg to rounded-xl, 8-12px)
-- Accent color for primary CTAs
-- Border-style for secondary actions
-- Ghost style for tertiary actions
+- Phone first. Design at 390 px, then 768, 1024 and 1440. Nothing may scroll
+  sideways at 390 px.
+- Containers: `container mx-auto px-4 md:px-8` with `max-w-3xl` for forms,
+  `max-w-5xl` for content pages, `max-w-6xl` or wider for results.
+- Section rhythm: `py-10 md:py-16`; a hero band uses `border-b bg-muted/30`.
+- Rounded corners: cards `rounded-[1.25rem]` to `rounded-[1.5rem]`, buttons and
+  chips `rounded-full`, inputs `rounded-lg`.
+- Below 1280 px the mobile tab bar is fixed at the bottom. Anything else pinned
+  to the bottom sits above it:
+  `fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-40 lg:hidden`.
+  On listing pages the Zaina launcher is lifted with `.zaina-lifted` so it
+  never covers a pinned Book bar.
 
 ---
 
-## Key Design Features
+## Components and patterns
 
-**Coastal Aesthetic:**
-- Turquoise and coral accent colors
-- Sand-toned backgrounds
-- Beach/ocean imagery
-- Light, airy spacing
-- Soft, inviting shadows
+Reuse these before building anything new.
 
-**Premium Feel:**
-- Generous whitespace
-- High-quality imagery
-- Professional typography
-- Subtle animations
-- Clean, modern layouts
+| Pattern | Where | Notes |
+|---|---|---|
+| Listing card | `components/listing-card.tsx` | One card for stays, cars, chefs, help and experiences. The title link stretches over the card; the photo swipes; WhatsApp share sits on top. Badge, rating, details and price (`ListingPrice`) are props. |
+| Photo gallery | `components/premium-media-gallery.tsx` | Mosaic on a listing page, swipe carousel in a card (`variant="card"`), full-screen lightbox. Pass `imageSizes` so phones get small images. |
+| Date range picker | `components/date-range-picker.tsx` | The only date picker for stays and multi-day services. Shows booked nights crossed out; a full-screen sheet on phones. `DatePicker` is the single-day version. |
+| Pinned Book bar | stay, listing and checkout pages | On phones: price, what's due today and one button, pinned above the tab bar. |
+| Trip plan checkout | `pages/booking.tsx`, `pages/service-booking.tsx` | One total, the commitment due today (default 50%, the admin can vary it) and the balance, then payment. |
+| Trip page | `pages/bookings.tsx` | Each booking shows its next step, what's paid and due, and "Add to trip". |
+| Custom request | `components/custom-service-cta.tsx`, `pages/custom-service-request.tsx` | The way out when nothing fits: Ask Zaina or send a request with a budget. |
+| Zaina front door | `lib/zaina.ts` (`openZaina`) | Open Zaina with a starting message that says what the guest was doing. Never change the live Zaina widget from a page. |
+| Payment marks | `components/site-footer.tsx`, `components/payment-provider-picker.tsx` | M-Pesa, Visa, Mastercard, Apple Pay. Only methods the checkout really offers. |
+| Proof near the price | stay and listing pages | Reviews with first name and month (`public-review-preview.tsx`), the cancellation line, what was checked. |
+| Not found | `pages/not-found.tsx` | Unknown links get a real 404 from the server and this page: home, or ask Zaina. |
 
-**Trust Signals:**
-- Verified badges
-- SLA indicators
-- Professional service cards
-- Clear pricing
-- Transparent information
+Buttons: `Button` from `components/ui/button`, `rounded-full`. One main
+action per screen in `primary`; the rest `outline` or `ghost`.
+
+Choices of 2 to 6 options are chips (`role="radio"` in a `radiogroup`, or Radix
+`RadioGroup`), not dropdowns. Dropdowns are for long lists.
 
 ---
 
-## Implementation Notes
+## Accessibility
 
-- Use Tailwind CSS for all styling
-- Apply coastal color variables from index.css
-- Ensure all interactive elements have hover states
-- Maintain consistent spacing throughout
-- Test on mobile, tablet, and desktop viewports
-- Optimize images for web performance
+Every page must pass axe (WCAG 2.2 AA and best practice) on a phone and a
+desktop. In practice:
+
+- **Tap targets at least 44 px** (`min-h-11`, icon buttons `h-11 w-11`) on
+  phones. Links inside running text are the only exception.
+- **Every control has a name.** Icon-only buttons get `aria-label`; decorative
+  icons get `aria-hidden="true"`. When a control also shows text, its name
+  starts with or contains that text (the date pickers put their label in an
+  `sr-only` span instead of an `aria-label`).
+- **One `h1` per page, no skipped levels.** Listing cards use `h2` on results
+  pages. The footer uses `h2` for its columns.
+- **Landmarks:** one `main` (in `App.tsx`; pages never add their own), the
+  header, the footer, labelled `nav`s, and the concierge search as a `search`
+  landmark. Carousels and repeated regions get an `aria-label`.
+- Star ratings: `role="img"` with an `aria-label` such as "5 out of 5 stars".
+- Visible focus rings (`focus-visible:ring-2 ring-ring`). Never remove an
+  outline without replacing it.
+- Form errors appear under the field, in words, and the form scrolls to the
+  first one.
+
+---
+
+## Speed
+
+Measured on a slow 4G phone, a page should show its main content in under
+3 seconds.
+
+- No render-blocking third parties. Fonts are self-hosted and preloaded.
+- Images: WebP where possible, `width` and `height` set, `loading="lazy"` below
+  the fold, `sizes` on anything in a grid. Only the first visible image is
+  eager, with `fetchpriority="high"` on the home hero.
+- Load heavy or rare code on demand (`lazy()` routes, dynamic `import()` for
+  Supabase on sign-out, the admin Zaina bubble).
+- The server compresses responses and lets browsers keep hashed assets for a
+  year; HTML is checked with the server on every visit.
+
+---
+
+## Before a page ships
+
+1. Phone (390 px) and desktop (1440 px), light and dark, with real-length text.
+2. Nothing scrolls sideways; nothing hides behind the tab bar or Zaina.
+3. axe is clean; every control is at least 44 px on a phone.
+4. Prices show in KSh and in US$, with the total and what is due today.
+5. The page has a title and description in `shared/page-metadata.ts` (fixed
+   pages) or through `SeoHead` (listings), and is listed in
+   `shared/app-routes.ts` so the server doesn't answer it with a 404.

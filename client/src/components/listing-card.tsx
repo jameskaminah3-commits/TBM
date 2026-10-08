@@ -89,14 +89,14 @@ export function ListingCard({
 
       <div className="flex flex-1 flex-col gap-1 p-4">
         <div className="flex items-start justify-between gap-3">
-          <h3 className="line-clamp-2 text-base font-semibold leading-snug text-foreground">
+          <h2 className="line-clamp-2 text-base font-semibold leading-snug text-foreground">
             <Link
               href={href}
               className="after:absolute after:inset-0 after:rounded-2xl after:content-[''] focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring"
             >
               {title}
             </Link>
-          </h3>
+          </h2>
           <span className="flex shrink-0 items-center gap-1 pt-0.5 text-sm">
             {reviewCount > 0 ? (
               <>

@@ -95,10 +95,10 @@ export function ConciergeSearchBar({ currentSection }: { currentSection: Concier
   return (
     <section className="border-b border-border/60 bg-[linear-gradient(180deg,rgba(255,250,244,0.96),rgba(255,255,255,0.98),rgba(249,243,235,0.86))] dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.98),rgba(17,24,39,0.95),rgba(15,23,42,0.92))]">
       <div className="container mx-auto px-4 py-2 md:px-8 md:py-2.5">
-        <form className="space-y-2" onSubmit={submitSearch}>
+        <form className="space-y-2" onSubmit={submitSearch} role="search" aria-labelledby="concierge-search-label">
           <div className="flex flex-col gap-1.5 xl:flex-row xl:items-center xl:gap-3">
             <div className="min-w-0 xl:w-[220px]">
-              <p className="text-sm font-medium leading-6 text-foreground/88 md:text-[0.88rem] dark:text-foreground/82">
+              <p id="concierge-search-label" className="text-sm font-medium leading-6 text-foreground/88 md:text-[0.88rem] dark:text-foreground/82">
                 {content.label}
               </p>
             </div>
@@ -110,13 +110,13 @@ export function ConciergeSearchBar({ currentSection }: { currentSection: Concier
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
                   placeholder={content.placeholder}
-                  className="h-10 rounded-full border-border/70 bg-background/92 pl-10 pr-4 text-sm shadow-[0_16px_24px_-22px_rgba(146,118,89,0.28)] placeholder:text-muted-foreground/85 dark:border-white/10 dark:bg-slate-950/36 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] min-[560px]:h-9"
+                  className="h-11 rounded-full border-border/70 bg-background/92 pl-10 pr-4 text-sm shadow-[0_16px_24px_-22px_rgba(146,118,89,0.28)] placeholder:text-muted-foreground/85 dark:border-white/10 dark:bg-slate-950/36 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] min-[560px]:h-9"
                   data-testid="input-concierge-search"
                 />
               </div>
 
               <div className="flex flex-col gap-1.5 min-[420px]:flex-row min-[420px]:items-center min-[560px]:flex-shrink-0">
-                <Button type="submit" className="h-10 w-full rounded-full px-4 text-sm whitespace-nowrap min-[420px]:w-auto min-[560px]:h-9 min-[560px]:min-w-[104px]" data-testid="button-concierge-search">
+                <Button type="submit" className="h-11 w-full rounded-full px-4 text-sm whitespace-nowrap min-[420px]:w-auto min-[560px]:h-9 min-[560px]:min-w-[104px]" data-testid="button-concierge-search">
                   Search
                 </Button>
 
@@ -124,7 +124,7 @@ export function ConciergeSearchBar({ currentSection }: { currentSection: Concier
                   <Button
                     type="button"
                     variant="ghost"
-                    className="h-10 w-full rounded-full px-3.5 text-sm whitespace-nowrap text-muted-foreground dark:text-foreground/72 min-[420px]:w-auto min-[560px]:h-9"
+                    className="h-11 w-full rounded-full px-3.5 text-sm whitespace-nowrap text-muted-foreground dark:text-foreground/72 min-[420px]:w-auto min-[560px]:h-9"
                     onClick={() => {
                       setDraft("");
                       if (currentSection === "stays") {
@@ -145,12 +145,12 @@ export function ConciergeSearchBar({ currentSection }: { currentSection: Concier
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-1.5">
+          <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 [&::-webkit-scrollbar]:hidden">
             {content.chips.map((chip) => (
               <button
                 key={chip}
                 type="button"
-                className="rounded-full border border-border/70 bg-background/92 px-2.5 py-1 text-[0.72rem] font-medium text-muted-foreground shadow-[0_10px_18px_-18px_rgba(146,118,89,0.34)] transition-colors hover:border-primary/40 hover:text-foreground dark:border-white/10 dark:bg-slate-950/34 dark:text-foreground/74 dark:hover:border-primary/45 dark:hover:bg-slate-950/52 dark:hover:text-foreground dark:shadow-none md:px-3 md:py-1.5 md:text-[0.78rem]"
+                className="min-h-11 shrink-0 rounded-full border border-border/70 bg-background/92 px-3.5 py-1 text-[0.8rem] font-medium text-muted-foreground sm:min-h-0 sm:px-2.5 shadow-[0_10px_18px_-18px_rgba(146,118,89,0.34)] transition-colors hover:border-primary/40 hover:text-foreground dark:border-white/10 dark:bg-slate-950/34 dark:text-foreground/74 dark:hover:border-primary/45 dark:hover:bg-slate-950/52 dark:hover:text-foreground dark:shadow-none md:px-3 md:py-1.5 md:text-[0.78rem]"
                 onClick={() => {
                   setDraft(chip);
                   runSearch(chip);

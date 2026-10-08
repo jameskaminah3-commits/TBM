@@ -224,7 +224,7 @@ export default function VerifyPage() {
 
         <p className="mt-8 text-center text-sm text-muted-foreground">
           Rather book a stay with us?{" "}
-          <Link href="/accommodations" className="inline-flex items-center gap-1 font-medium text-primary hover:underline">
+          <Link href="/accommodations" className="inline-flex min-h-11 items-center gap-1 font-medium text-primary hover:underline">
             Browse stays <ArrowRight className="h-3.5 w-3.5" />
           </Link>
         </p>

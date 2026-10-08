@@ -343,7 +343,7 @@ export default function Accommodations() {
                     role="radio"
                     aria-checked={active}
                     onClick={() => updateStaySearch({ stayType: option.value })}
-                    className={`min-h-9 rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                    className={`min-h-11 rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors sm:min-h-9 ${
                       active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
                     }`}
                     data-testid={`button-stay-type-${option.value}`}

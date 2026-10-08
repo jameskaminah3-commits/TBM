@@ -206,7 +206,7 @@ export default function ShortBookingLink() {
 
   if (!serviceType || !normalizedCode || isError || (!isLoading && !matchingListing)) {
     return (
-      <main className="mx-auto flex min-h-[60vh] max-w-xl items-center px-6 py-16">
+      <div className="mx-auto flex min-h-[60vh] max-w-xl items-center px-6 py-16">
         <Card className="w-full space-y-4 border-stone-200 p-6 text-center">
           <h1 className="font-serif text-2xl text-foreground">Share link not found</h1>
           <p className="text-sm leading-6 text-muted-foreground">
@@ -216,18 +216,18 @@ export default function ShortBookingLink() {
             Go Home
           </Button>
         </Card>
-      </main>
+      </div>
     );
   }
 
   if (isLoading || !matchingListing) {
     return (
-      <main className="mx-auto flex min-h-[60vh] max-w-xl items-center px-6 py-16">
+      <div className="mx-auto flex min-h-[60vh] max-w-xl items-center px-6 py-16">
         <Card className="w-full space-y-3 border-stone-200 p-6 text-center">
           <h1 className="font-serif text-2xl text-foreground">Opening listing</h1>
           <p className="text-sm text-muted-foreground">One moment while we prepare the photos and details.</p>
         </Card>
-      </main>
+      </div>
     );
   }
 
@@ -240,7 +240,7 @@ export default function ShortBookingLink() {
   const bookingPath = `${getCanonicalBookingPath(serviceType, matchingListing.id)}${currencyQuery}`;
 
   return (
-    <main className="min-h-screen bg-background py-10">
+    <div className="min-h-screen bg-background py-10">
       <div className="container mx-auto max-w-6xl px-4 md:px-8">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <Button type="button" variant="ghost" className="rounded-full px-4" onClick={() => setLocation("/")}>
@@ -337,6 +337,6 @@ export default function ShortBookingLink() {
           </section>
         </div>
       </div>
-    </main>
+    </div>
   );
 }

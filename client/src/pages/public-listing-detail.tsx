@@ -388,7 +388,7 @@ export default function PublicListingDetail({ kind }: { kind: ListingKind }) {
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
               {reviewCount > 0 ? (
                 hasWrittenReviews ? (
-                  <a href="#reviews" className="inline-flex items-center gap-1 font-medium text-foreground underline underline-offset-4 hover:text-primary" data-testid="link-listing-rating">
+                  <a href="#reviews" className="inline-flex min-h-11 items-center gap-1 font-medium text-foreground underline underline-offset-4 hover:text-primary" data-testid="link-listing-rating">
                     <Star className="h-4 w-4 fill-amber-400 text-amber-400" aria-hidden="true" />
                     {averageRating.toFixed(1)} · {reviewCount} review{reviewCount === 1 ? "" : "s"}
                   </a>
@@ -652,11 +652,11 @@ export default function PublicListingDetail({ kind }: { kind: ListingKind }) {
               <Button className="mt-4 h-12 w-full rounded-full text-base" onClick={() => setLocation(bookingHref)} data-testid="button-book-listing">
                 {bookLabelByKind[kind]}
               </Button>
-              <Button variant="outline" className="mt-3 w-full rounded-full" onClick={askZaina} data-testid="button-ask-zaina-listing">
+              <Button variant="outline" className="mt-3 h-11 w-full rounded-full" onClick={askZaina} data-testid="button-ask-zaina-listing">
                 <MessageCircle className="mr-2 h-4 w-4" />
                 Ask Zaina about this
               </Button>
-              <Link href={category.href} className="mt-4 block text-center text-sm font-medium text-primary hover:underline">Browse more</Link>
+              <Link href={category.href} className="mt-2 flex min-h-11 items-center justify-center text-sm font-medium text-primary hover:underline">Browse more</Link>
             </Card>
           </aside>
         </div>

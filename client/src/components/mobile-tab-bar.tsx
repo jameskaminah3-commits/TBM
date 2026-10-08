@@ -49,7 +49,7 @@ export function MobileTabBar() {
   return (
     <nav
       aria-label="Primary navigation"
-      className="fixed bottom-0 inset-x-0 z-50 xl:hidden border-t border-border/60 bg-background/95 backdrop-blur-xl supports-[backdrop-filter]:bg-background/88"
+      className="fixed bottom-0 inset-x-0 z-50 xl:hidden border-t border-border/60 bg-background"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       <div className="flex h-16 items-stretch">
@@ -61,7 +61,7 @@ export function MobileTabBar() {
               href={href}
               className={cn(
                 "relative flex flex-1 flex-col items-center justify-center gap-1 pt-1 transition-colors duration-150",
-                active ? "text-primary" : "text-muted-foreground/80 hover:text-foreground",
+                active ? "text-primary" : "text-muted-foreground hover:text-foreground",
               )}
               aria-current={active ? "page" : undefined}
             >
@@ -71,11 +71,12 @@ export function MobileTabBar() {
               <Icon
                 className="h-[1.35rem] w-[1.35rem] transition-transform duration-150"
                 strokeWidth={active ? 2.25 : 1.75}
+                aria-hidden="true"
               />
               <span
                 className={cn(
-                  "text-[0.6rem] font-semibold leading-none tracking-[0.04em]",
-                  active ? "text-primary" : "text-muted-foreground/70",
+                  "text-[0.6875rem] font-semibold leading-none tracking-[0.02em]",
+                  active ? "text-primary" : "text-muted-foreground",
                 )}
               >
                 {label}
@@ -90,7 +91,7 @@ export function MobileTabBar() {
           onClick={() => setOpen(true)}
           className={cn(
             "relative flex flex-1 flex-col items-center justify-center gap-1 pt-1 transition-colors duration-150",
-            isMoreActive ? "text-primary" : "text-muted-foreground/80 hover:text-foreground",
+            isMoreActive ? "text-primary" : "text-muted-foreground hover:text-foreground",
           )}
           aria-label="More navigation options"
         >
@@ -100,11 +101,12 @@ export function MobileTabBar() {
           <MoreHorizontal
             className="h-[1.35rem] w-[1.35rem]"
             strokeWidth={isMoreActive ? 2.25 : 1.75}
+            aria-hidden="true"
           />
           <span
             className={cn(
-              "text-[0.6rem] font-semibold leading-none tracking-[0.04em]",
-              isMoreActive ? "text-primary" : "text-muted-foreground/70",
+              "text-[0.6875rem] font-semibold leading-none tracking-[0.02em]",
+              isMoreActive ? "text-primary" : "text-muted-foreground",
             )}
           >
             More

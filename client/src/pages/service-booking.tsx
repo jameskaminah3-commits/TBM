@@ -400,25 +400,29 @@ const SERVICE_CONFIG = {
   car: {
     endpoint: "/api/cars",
     icon: Car,
-    label: "Car Rental",
+    label: "Car hire",
+    backLabel: "Back to cars",
     backPath: "/services/drive",
   },
   cook: {
     endpoint: "/api/cooks",
     icon: ChefHat,
-    label: "Personal Chef",
+    label: "Private chef",
+    backLabel: "Back to chefs",
     backPath: "/services/dine",
   },
   errand: {
     endpoint: "/api/errands",
     icon: ShoppingBag,
-    label: "Errand Service",
+    label: "Home help",
+    backLabel: "Back to home help",
     backPath: "/services/relax",
   },
   experience: {
     endpoint: "/api/experiences",
     icon: Compass,
     label: "Experience",
+    backLabel: "Back to experiences",
     backPath: "/services/experience",
   },
 } as const;
@@ -1401,7 +1405,7 @@ export default function ServiceBooking() {
         <div className="max-w-4xl mx-auto text-center">
           <h1 className="text-2xl font-bold mb-4">Service not found</h1>
           <Button onClick={() => setLocation(config.backPath)} data-testid="button-back-home">
-            Back to {config.label}s
+            {config.backLabel}
           </Button>
         </div>
       </div>
@@ -1494,15 +1498,15 @@ export default function ServiceBooking() {
 
                           <div className="grid gap-3 rounded-md border border-primary/15 bg-primary/5 p-3 text-sm sm:grid-cols-3">
                             <div>
-                              <div className="font-semibold text-foreground">Base Service Fee</div>
+                              <div className="font-semibold text-foreground">Base service fee</div>
                               <div className="mt-1 text-muted-foreground">{formatDualAmount(service.basePrice)} per shopping trip</div>
                             </div>
                             <div>
-                              <div className="font-semibold text-foreground">Variable Commission</div>
+                              <div className="font-semibold text-foreground">Variable commission</div>
                               <div className="mt-1 text-muted-foreground">{service.shoppingCommissionPercent}% of the receipt value</div>
                             </div>
                             <div>
-                              <div className="font-semibold text-foreground">Receipt Value</div>
+                              <div className="font-semibold text-foreground">Receipt value</div>
                               <div className="mt-1 text-muted-foreground">Paid toward the shopping items</div>
                             </div>
                           </div>
@@ -1636,7 +1640,7 @@ export default function ServiceBooking() {
                     <div className="rounded-lg border bg-muted/30 p-4 space-y-2">
                       <div className="flex items-center gap-2 text-sm font-medium">
                         <Calendar className="w-4 h-4" />
-                        <span>Chef Availability</span>
+                        <span>Chef's availability</span>
                       </div>
                       <p className="text-sm text-muted-foreground">
                         Next available date: {cookAvailability.availableFrom}.
@@ -1678,7 +1682,7 @@ export default function ServiceBooking() {
                     <div className="space-y-4 text-sm">
                       {service.meetingPoint ? (
                         <div className="rounded-md bg-background/70 p-3">
-                          <div className="font-medium text-foreground">Meeting Point</div>
+                          <div className="font-medium text-foreground">Meeting point</div>
                           <div className="mt-1 break-words leading-5 text-muted-foreground">{service.meetingPoint}</div>
                         </div>
                       ) : null}
@@ -1698,7 +1702,7 @@ export default function ServiceBooking() {
                         ) : null}
                         {experienceExclusions.length > 0 ? (
                           <div className="rounded-md bg-background/70 p-3">
-                            <div className="font-medium text-foreground">Not Included</div>
+                            <div className="font-medium text-foreground">Not included</div>
                             <div className="mt-2 space-y-2">
                               {experienceExclusions.map((item) => (
                                 <div key={item} className="flex min-w-0 items-start gap-2 text-muted-foreground">
@@ -1722,7 +1726,7 @@ export default function ServiceBooking() {
                         name="serviceMode"
                         render={({ field }) => (
                           <FormItem className="space-y-3">
-                            <FormLabel>Booking Option</FormLabel>
+                            <FormLabel>How you want it</FormLabel>
                             <FormControl>
                               <RadioGroup
                                 value={field.value}
@@ -1774,7 +1778,7 @@ export default function ServiceBooking() {
                         name="serviceMode"
                         render={({ field }) => (
                           <FormItem className="space-y-3">
-                            <FormLabel>Chef Booking Option</FormLabel>
+                            <FormLabel>How the chef works</FormLabel>
                             <FormControl>
                               <RadioGroup
                                 value={field.value}
@@ -1840,7 +1844,7 @@ export default function ServiceBooking() {
                         name="serviceMode"
                         render={({ field }) => (
                           <FormItem className="space-y-3">
-                            <FormLabel>Errand Option</FormLabel>
+                            <FormLabel>What you need</FormLabel>
                             <FormControl>
                               <RadioGroup
                                 value={field.value}
@@ -1887,7 +1891,7 @@ export default function ServiceBooking() {
                                   <label className="flex items-start gap-3 rounded-lg border p-4 cursor-pointer">
                                     <RadioGroupItem value="errand-house-cleaning" className="mt-1" />
                                     <div>
-                                      <div className="font-medium">House Cleaning</div>
+                                      <div className="font-medium">House cleaning</div>
                                       <div className="text-sm text-muted-foreground">
                                         {formatAmount(service.basePrice)} for a studio / 1-bedroom, then scales by bedrooms
                                       </div>
@@ -1922,7 +1926,7 @@ export default function ServiceBooking() {
                         name="serviceMode"
                         render={({ field }) => (
                           <FormItem className="space-y-3">
-                            <FormLabel>Booking Option</FormLabel>
+                            <FormLabel>How you want it</FormLabel>
                             <FormControl>
                               <RadioGroup value={field.value ?? undefined} onValueChange={field.onChange} className="space-y-2 sm:space-y-3">
                                 {service.privateEnabled ? (
@@ -2084,7 +2088,7 @@ export default function ServiceBooking() {
                           <FormItem className="space-y-4">
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                               <div>
-                                <FormLabel>Package Dates</FormLabel>
+                                <FormLabel>Package dates</FormLabel>
                                 <FormDescription>
                                   Book one package per date. Add a short note like a preferred time or access instruction.
                                 </FormDescription>
@@ -2223,7 +2227,7 @@ export default function ServiceBooking() {
                               name="serviceStartTime"
                               render={({ field }) => (
                                 <FormItem>
-                                  <FormLabel>Pickup Time</FormLabel>
+                                  <FormLabel>Pickup time</FormLabel>
                                   <FormControl>
                                     <div className="relative">
                                       <Clock className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -2263,7 +2267,7 @@ export default function ServiceBooking() {
                           name="servicePickupLocation"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Pickup Location</FormLabel>
+                              <FormLabel>Pickup place</FormLabel>
                               <FormControl>
                                 <div className="relative">
                                   <MapPin className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -2312,7 +2316,7 @@ export default function ServiceBooking() {
                         name="serviceLocation"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>{serviceType === "car" ? "Pickup / Service Location" : "Service Location"}</FormLabel>
+                            <FormLabel>{serviceType === "car" ? "Where to pick you up" : "Where"}</FormLabel>
                             <FormControl>
                               <div className="relative">
                                 <MapPin className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -2342,7 +2346,7 @@ export default function ServiceBooking() {
                         name="serviceRequestDetails"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Custom Menu Brief</FormLabel>
+                            <FormLabel>Your menu ideas</FormLabel>
                             <FormControl>
                               <Textarea
                                 rows={5}
@@ -2403,7 +2407,7 @@ export default function ServiceBooking() {
                           name="serviceRequestDetails"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Shopping List</FormLabel>
+                              <FormLabel>Shopping list</FormLabel>
                               <FormControl>
                                 <Textarea
                                   rows={4}
@@ -2436,7 +2440,7 @@ export default function ServiceBooking() {
                               const rateOptions = getHelpMamaRateOptions(service.helpMamaPricing, selectedAgeBandId);
                               return (
                                 <FormItem className="space-y-4">
-                                  <FormLabel>Mama Care Pricing</FormLabel>
+                                  <FormLabel>Help Mama rates</FormLabel>
                                   <div className="space-y-2">
                                     <Label>Age band</Label>
                                     {ageBands.map((band) => {
@@ -2518,7 +2522,7 @@ export default function ServiceBooking() {
                           name="serviceRequestDetails"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Family Care Notes</FormLabel>
+                              <FormLabel>About your family</FormLabel>
                               <FormControl>
                                 <Textarea
                                   rows={4}
@@ -2613,7 +2617,7 @@ export default function ServiceBooking() {
                         name="serviceRequestDetails"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Special Request</FormLabel>
+                            <FormLabel>Anything else we should know</FormLabel>
                             <FormControl>
                               <Textarea
                                 rows={4}
@@ -2634,7 +2638,7 @@ export default function ServiceBooking() {
                         name="serviceRequestDetails"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Custom Offer Brief</FormLabel>
+                            <FormLabel>What you have in mind</FormLabel>
                             <FormControl>
                               <Textarea
                                 rows={5}
@@ -2655,7 +2659,7 @@ export default function ServiceBooking() {
                         name="serviceZone"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Zone Pricing</FormLabel>
+                            <FormLabel>Where on the Coast</FormLabel>
                             <Select value={field.value || "default"} onValueChange={(value) => field.onChange(value === "default" ? "" : value)}>
                               <FormControl>
                                 <SelectTrigger>
@@ -2717,14 +2721,14 @@ export default function ServiceBooking() {
                     <Separator />
 
                     <div className="space-y-4">
-                      <h3 className="font-semibold">Your Information</h3>
+                      <h3 className="font-semibold">Your details</h3>
 
                       <FormField
                         control={form.control}
                         name="guestName"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Full Name</FormLabel>
+                            <FormLabel>Full name</FormLabel>
                             <FormControl>
                               <Input placeholder="John Doe" data-testid="input-guest-name" {...field} />
                             </FormControl>
@@ -2760,7 +2764,7 @@ export default function ServiceBooking() {
 
             <div className="lg:col-span-1">
               <Card className="min-w-0 p-4 sm:p-6 lg:sticky lg:top-8">
-                <h3 className="font-semibold text-lg mb-4">Booking Summary</h3>
+                <h3 className="font-semibold text-lg mb-4">Your booking</h3>
 
                 <div className="space-y-4">
                   <div className="flex items-start justify-between gap-3 text-sm">

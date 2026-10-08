@@ -383,7 +383,7 @@ export default function Home() {
                       value={destination}
                       onChange={(event) => setDestination(event.target.value)}
                       placeholder="Where to?"
-                      className="rounded-lg pl-10"
+                      className="h-11 rounded-lg pl-10"
                       data-testid="input-destination"
                       aria-label="Destination"
                     />
@@ -415,7 +415,7 @@ export default function Home() {
                       onChange={(event) => setGuests(event.target.value)}
                       placeholder="2"
                       min="1"
-                      className="rounded-lg pl-10"
+                      className="h-11 rounded-lg pl-10"
                       data-testid="input-guests"
                       aria-label="Guests"
                     />
@@ -423,9 +423,9 @@ export default function Home() {
                 </div>
               </div>
 
-              <Button className="w-full rounded-lg" size="lg" type="submit" data-testid="button-search">
-                <Search className="mr-2 h-5 w-5" />
-                Search Accommodations
+              <Button className="h-12 w-full rounded-lg text-base" size="lg" type="submit" data-testid="button-search">
+                <Search className="mr-2 h-5 w-5" aria-hidden="true" />
+                Search stays
               </Button>
             </Card>
           </form>
@@ -476,10 +476,10 @@ export default function Home() {
               <h3 className="text-sm font-medium text-muted-foreground">{brandStory.paths.browse.question}</h3>
               <p className="mt-2 font-serif text-3xl font-medium leading-tight text-foreground">{brandStory.paths.browse.answer}</p>
               <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-2 pt-6">
-                <Button asChild className="rounded-full px-5">
+                <Button asChild className="h-11 rounded-full px-5">
                   <Link href="/accommodations" data-testid="link-home-path-browse">Browse stays</Link>
                 </Button>
-                <Link href="/services" className="text-sm font-medium text-primary hover:underline">See all services</Link>
+                <Link href="/services" className="inline-flex min-h-11 items-center text-sm font-medium text-primary hover:underline">See all services</Link>
               </div>
             </div>
 
@@ -487,10 +487,10 @@ export default function Home() {
               <h3 className="text-sm font-medium text-muted-foreground">{brandStory.paths.tellUs.question}</h3>
               <p className="mt-2 font-serif text-3xl font-medium leading-tight text-foreground">{brandStory.paths.tellUs.answer}</p>
               <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-2 pt-6">
-                <Button className="rounded-full px-5" onClick={() => openZaina()} data-testid="button-home-path-tell-us">
+                <Button className="h-11 rounded-full px-5" onClick={() => openZaina()} data-testid="button-home-path-tell-us">
                   Tell us what you need
                 </Button>
-                <Link href="/request-custom-service" className="text-sm font-medium text-primary hover:underline">Or send a request</Link>
+                <Link href="/request-custom-service" className="inline-flex min-h-11 items-center text-sm font-medium text-primary hover:underline">Or send a request</Link>
               </div>
             </div>
 
@@ -498,7 +498,7 @@ export default function Home() {
               <h3 className="text-sm font-medium text-muted-foreground">{brandStory.paths.sendFirst.question}</h3>
               <p className="mt-2 font-serif text-3xl font-medium leading-tight text-foreground">{brandStory.paths.sendFirst.answer}</p>
               <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-2 pt-6">
-                <Button asChild className="rounded-full px-5">
+                <Button asChild className="h-11 rounded-full px-5">
                   <Link href="/verify" data-testid="link-home-path-verify">Check a listing</Link>
                 </Button>
               </div>
@@ -510,7 +510,7 @@ export default function Home() {
       <section id="services-section" ref={servicesSectionRef} className="bg-background py-20 md:py-24">
         <div className="container mx-auto px-4 md:px-8">
           <div className="mb-16 text-center">
-            <h2 className="mb-4 font-serif text-[2rem] font-medium leading-tight sm:text-4xl lg:text-5xl">Our Services</h2>
+            <h2 className="mb-4 font-serif text-[2rem] font-medium leading-tight sm:text-4xl lg:text-5xl">Our services</h2>
             <p className="mx-auto max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">
               Everything you need to plan, book, and enjoy the Coast with less effort and better local access
             </p>

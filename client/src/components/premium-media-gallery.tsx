@@ -184,7 +184,7 @@ export function PremiumMediaGallery({
       <div className={cn(mosaic && "md:hidden")}>
       <div className={containerClassName ?? "relative overflow-hidden rounded-[1.6rem] bg-muted"}>
         {galleryImages.length > 0 ? (
-          <Carousel className="overflow-hidden" opts={{ loop: galleryImages.length > 1 }} setApi={setCarouselApi}>
+          <Carousel className="overflow-hidden" opts={{ loop: galleryImages.length > 1 }} setApi={setCarouselApi} aria-label={`Photos of ${title}`}>
             <CarouselContent className="ml-0">
               {galleryImages.map((imageUrl, index) => (
                 <CarouselItem key={`${item.id}-image-${index}`} className="pl-0">
@@ -243,7 +243,7 @@ export function PremiumMediaGallery({
             <button
               type="button"
               aria-label="Previous photo"
-              className="absolute left-3 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/35 text-white backdrop-blur-md transition hover:bg-black/50"
+              className="absolute left-3 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/35 text-white backdrop-blur-md transition hover:bg-black/50"
               onClick={(event) => {
                 event.stopPropagation();
                 carouselApi?.scrollPrev();
@@ -254,7 +254,7 @@ export function PremiumMediaGallery({
             <button
               type="button"
               aria-label="Next photo"
-              className="absolute right-3 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/35 text-white backdrop-blur-md transition hover:bg-black/50"
+              className="absolute right-3 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/35 text-white backdrop-blur-md transition hover:bg-black/50"
               onClick={(event) => {
                 event.stopPropagation();
                 carouselApi?.scrollNext();

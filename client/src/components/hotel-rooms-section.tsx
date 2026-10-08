@@ -118,8 +118,9 @@ export function HotelRoomsSection({
                           </div>
                           <Button
                             size="sm"
-                            className="shrink-0 rounded-full px-4"
+                            className="min-h-11 shrink-0 rounded-full px-5 sm:min-h-9"
                             disabled={soldOut}
+                            aria-label={`Book ${roomType.name}, ${mealPlans[rate.mealPlan].name}`}
                             onClick={() => onBook(roomType.id, rate.mealPlan)}
                             data-testid={`button-book-room-${roomType.id}-${rate.mealPlan}`}
                           >

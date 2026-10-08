@@ -27,14 +27,14 @@ export function CustomServiceCta({ source, compact = false, className = "" }: Cu
       </p>
       <div className="mt-4 flex flex-wrap gap-2">
         <Button
-          className="rounded-full px-5"
+          className="h-11 rounded-full px-5"
           onClick={() => openZaina("I can't find exactly what I need. Here's what I'm looking for: ")}
           data-testid={`button-ask-zaina-${source ?? "custom"}`}
         >
           <MessageCircle className="mr-2 h-4 w-4" />
           Ask Zaina
         </Button>
-        <Button asChild variant="outline" className="rounded-full px-5">
+        <Button asChild variant="outline" className="h-11 rounded-full px-5">
           <Link href={href}>Send a request</Link>
         </Button>
       </div>

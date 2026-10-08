@@ -224,7 +224,6 @@ export function DateRangePicker({
     <button
       type="button"
       id={id}
-      aria-label={checkIn ? `${label}: ${triggerText}` : label}
       className={cn(
         "flex min-h-11 w-full items-center gap-3 rounded-lg border border-input bg-background px-3 py-2 text-left text-sm shadow-sm transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         className,
@@ -232,8 +231,11 @@ export function DateRangePicker({
       onClick={() => setOpen(true)}
       data-testid={testId}
     >
-      <CalendarDays className="h-4 w-4 shrink-0 text-muted-foreground" />
-      <span className={cn("min-w-0 flex-1 truncate", checkIn ? "text-foreground" : "text-muted-foreground")}>{triggerText}</span>
+      <CalendarDays className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <span className={cn("min-w-0 flex-1 truncate", checkIn ? "text-foreground" : "text-muted-foreground")}>
+        <span className="sr-only">{label}: </span>
+        {triggerText}
+      </span>
     </button>
   );
 
@@ -353,7 +355,6 @@ export function DatePicker({
     <button
       type="button"
       id={id}
-      aria-label={value ? `${label}: ${formatTripDate(value)}` : label}
       className={cn(
         "flex min-h-11 w-full items-center gap-3 rounded-lg border border-input bg-background px-3 py-2 text-left text-sm shadow-sm transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         className,
@@ -364,8 +365,9 @@ export function DatePicker({
       }}
       data-testid={testId}
     >
-      <CalendarDays className="h-4 w-4 shrink-0 text-muted-foreground" />
+      <CalendarDays className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
       <span className={cn("min-w-0 flex-1 truncate", value ? "text-foreground" : "text-muted-foreground")}>
+        <span className="sr-only">{label}: </span>
         {value ? formatTripDate(value) : placeholder}
       </span>
     </button>

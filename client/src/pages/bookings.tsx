@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useSearch } from "wouter";
-import { Calendar, MapPin, Users, Car, ChefHat, ShoppingBag, Compass, CheckCircle2, UserRound, Clock3, ShieldCheck, Phone, Mail, Star, Download, Smartphone, ExternalLink, AlertTriangle, MessageCircle, Baby } from "lucide-react";
+import { Calendar, MapPin, Users, Car, ChefHat, ShoppingBag, Compass, CheckCircle2, UserRound, Clock3, ShieldCheck, Phone, Mail, Star, Download, Smartphone, ExternalLink, AlertTriangle, MessageCircle, Baby, Home, Sparkles } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -70,6 +70,17 @@ const getBookingPromoLabel = (booking: BookingWithMarketing) =>
   || "Promo";
 
 const isHistoryBookingStatus = (status: string) => status === "completed" || status === "cancelled";
+// A request sent from the custom request page names what it's for in its
+// details ("Custom request type: dine"); the trip page titles it from that.
+const customRequestKinds: Record<string, { title: string; icon: typeof Car }> = {
+  stay: { title: "Custom request: a stay", icon: Home },
+  drive: { title: "Custom request: a ride", icon: Car },
+  dine: { title: "Custom request: a chef", icon: ChefHat },
+  errands: { title: "Custom request: help at your stay", icon: ShoppingBag },
+  experience: { title: "Custom request: a day out", icon: Compass },
+};
+const getCustomRequestKind = (details?: string | null) =>
+  customRequestKinds[details?.match(/^Custom request type: (\w+)/m)?.[1] ?? ""] ?? { title: "Custom request", icon: Sparkles };
 const isBookingPaid = (booking: Pick<Booking, "totalPrice" | "paymentStatus" | "paymentAmountPaid">) => isBookingFullyPaid(booking);
 const hasBookingDepositRequirement = (booking: Pick<Booking, "serviceMode" | "paymentDepositAmount">) =>
   supportsBookingDeposit(booking) && typeof booking.paymentDepositAmount === "number" && booking.paymentDepositAmount > 0;
@@ -869,7 +880,8 @@ export default function Bookings() {
   const renderBookingCard = (booking: BookingWithMarketing) => {
     const stay = getStay(booking.accommodationId);
     const primaryService = booking.selectedServices[0] ? getServiceItem(booking.selectedServices[0]) : null;
-    const serviceTitle = !primaryService ? "Service Booking" : "model" in primaryService ? primaryService.model : "title" in primaryService ? primaryService.title : primaryService.serviceName;
+    const customRequest = !primaryService && booking.serviceMode === "experience-custom-offer" ? getCustomRequestKind(booking.serviceRequestDetails) : null;
+    const serviceTitle = customRequest ? customRequest.title : !primaryService ? "Service booking" : "model" in primaryService ? primaryService.model : "title" in primaryService ? primaryService.title : primaryService.serviceName;
     const bookingTitle = booking.serviceMode === "listing-verification" ? "External listing verification" : stay?.title ?? serviceTitle;
     // A hotel booking is its rooms on its meal plan.
     const hotelRooms = booking.hotelStay ? describeHotelStay(booking.hotelStay) : null;
@@ -966,7 +978,7 @@ export default function Bookings() {
         />
       ) : (
         <div className={cn("flex h-full items-center justify-center bg-[linear-gradient(135deg,rgba(15,23,42,0.08),rgba(13,148,136,0.18))] text-primary", className)}>
-          {!primaryService || "model" in primaryService ? <Car className="h-8 w-8" /> : "speciality" in primaryService ? <ChefHat className="h-8 w-8" /> : "experienceType" in primaryService ? <Compass className="h-8 w-8" /> : <ShoppingBag className="h-8 w-8" />}
+          {customRequest ? <customRequest.icon className="h-8 w-8" aria-hidden="true" /> : !primaryService || "model" in primaryService ? <Car className="h-8 w-8" aria-hidden="true" /> : "speciality" in primaryService ? <ChefHat className="h-8 w-8" aria-hidden="true" /> : "experienceType" in primaryService ? <Compass className="h-8 w-8" aria-hidden="true" /> : <ShoppingBag className="h-8 w-8" aria-hidden="true" />}
         </div>
       );
 
@@ -1008,7 +1020,7 @@ export default function Bookings() {
                   ) : null}
                 </div>
                 <div className="mt-3 text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">{bookingType}</div>
-                <h3 className="mt-1 text-base font-semibold leading-snug tracking-tight text-foreground sm:text-xl">{bookingTitle}</h3>
+                <h2 className="mt-1 text-base font-semibold leading-snug tracking-tight text-foreground sm:text-xl">{bookingTitle}</h2>
                 <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted-foreground">
                   <span className="flex items-center gap-1"><Calendar className="h-4 w-4" />{bookingDates}{nights ? ` · ${nights} night${nights === 1 ? "" : "s"}` : ""}</span>
                   {bookingLocation ? <span className="flex items-center gap-1"><MapPin className="h-4 w-4" />{bookingLocation}</span> : null}
@@ -1538,7 +1550,7 @@ export default function Bookings() {
         {items.map(renderBookingCard)}
       </Accordion>
     </div>
-  ) : <Card className="border-border/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,249,251,0.9))] p-8 text-center shadow-[0_18px_44px_-32px_rgba(15,23,42,0.35)] sm:p-12 dark:bg-none dark:bg-card/90"><div className="mx-auto max-w-md"><div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted"><Calendar className="h-8 w-8 text-muted-foreground" /></div><h3 className="mb-2 text-xl font-semibold">{emptyTitle}</h3><p className="text-muted-foreground">{emptyDescription}</p></div></Card>;
+  ) : <Card className="border-border/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,249,251,0.9))] p-8 text-center shadow-[0_18px_44px_-32px_rgba(15,23,42,0.35)] sm:p-12 dark:bg-none dark:bg-card/90"><div className="mx-auto max-w-md"><div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted"><Calendar className="h-8 w-8 text-muted-foreground" /></div><h2 className="mb-2 text-xl font-semibold">{emptyTitle}</h2><p className="text-muted-foreground">{emptyDescription}</p></div></Card>;
 
   if (isLoading) {
     return <div className="min-h-screen py-12"><div className="container mx-auto max-w-6xl px-4 md:px-8"><Skeleton className="mb-8 h-12 w-64" /><div className="space-y-4">{[1, 2, 3].map((i) => <Card key={i} className="p-6"><Skeleton className="h-32 w-full" /></Card>)}</div></div></div>;
@@ -1561,7 +1573,7 @@ export default function Bookings() {
                 <h1 className="font-serif text-3xl font-semibold tracking-tight leading-tight sm:text-4xl md:text-5xl">{user?.firstName ? `${user.firstName}, your trips` : "Your trips"}</h1>
                 <p className="mt-3 max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">What's booked, what's paid and what happens next, for every trip.</p>
               </div>
-              <Button variant="outline" className="rounded-full bg-background/85" onClick={() => setLocation("/inbox")}>All messages</Button>
+              <Button variant="outline" className="h-11 rounded-full bg-background/85" onClick={() => setLocation("/inbox")}>All messages</Button>
             </div>
             <div className="grid grid-cols-3 gap-2 sm:gap-3 xl:min-w-[460px]">
               <Card className="border-border/60 bg-background/85 shadow-[0_18px_36px_-30px_rgba(15,23,42,0.4)]"><CardContent className="p-3 sm:p-4"><div className="text-xs text-muted-foreground sm:text-sm">Open</div><div className="mt-1 text-xl font-semibold sm:text-2xl">{activeBookings.length}</div></CardContent></Card>

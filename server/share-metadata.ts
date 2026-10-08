@@ -2,6 +2,8 @@ import type { Request } from "express";
 import type { BlogPost, Car, Cook, Errand, Experience, Stay } from "@shared/schema";
 import { getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
 import { isHotelStay } from "@shared/hotel-rooms";
+import { isKnownAppPath } from "@shared/app-routes";
+import { staticPageKey, staticPageMetadata } from "@shared/page-metadata";
 import {
   buildListingSeoDescription,
   formatSeoLocation,
@@ -41,7 +43,8 @@ const homeHeroPreload = {
 const defaultTitle = "Tembea Bila Matata - Travel Local, Stay Easy";
 const defaultDescription =
   "Book curated stays, cars, private chefs, errands, and experiences across Kenya with Tembea Bila Matata.";
-const defaultImagePath = "/tembeabilamatata-logo.jpg";
+// The branded link preview (1200 x 630) for pages without a photo of their own.
+const defaultImagePath = "/images/share-card.jpg";
 const sharePreviewUsdToKes = 130;
 
 function isPublicListing<T extends { isPublic: boolean; managerUserId?: string | null }>(
@@ -331,57 +334,7 @@ function getListingStructuredData(
 }
 
 function getStaticMetadata(pathname: string, baseUrl: string): ShareMetadata | null {
-  const metadata: Record<string, { title: string; description: string }> = {
-    "/": {
-      title: "Mombasa Stays, Car Hire, Private Chefs & Concierge Services | Tembea Bila Matata",
-      description: "Discover curated accommodation, car hire, private chefs, holiday errands and coastal experiences in Mombasa, Nyali and across the Kenyan Coast.",
-    },
-    "/accommodations": {
-      title: "Accommodation in Mombasa & Nyali | Furnished Apartments and Holiday Stays",
-      description: "Browse curated furnished apartments, holiday homes and short-stay accommodation in Mombasa, Nyali and the Kenyan Coast.",
-    },
-    "/services/drive": {
-      title: "Car Hire, Self-Drive & Chauffeur Service in Mombasa | Tembea Bila Matata",
-      description: "Find self-drive cars, chauffeur-driven vehicles, airport transfers and coastal transport in Mombasa, Nyali and nearby destinations.",
-    },
-    "/services/dine": {
-      title: "Private Chefs and In-Villa Dining in Mombasa & Nyali",
-      description: "Book a private chef, personal cook or in-villa dining experience in Mombasa, Nyali and across the Kenyan Coast.",
-    },
-    "/services/relax": {
-      title: "Concierge, Errand and In-Villa Family Services in Mombasa",
-      description: "Arrange holiday errands, shopping, laundry, housekeeping and in-villa childcare support across Mombasa and the Kenyan Coast.",
-    },
-    "/services/experience": {
-      title: "Coastal Experiences, Tours and Activities in Mombasa",
-      description: "Explore curated coastal experiences, local activities and memorable outings from Mombasa, Nyali and the wider Kenyan Coast.",
-    },
-    "/services": {
-      title: "Coastal Travel Services in Mombasa | Tembea Bila Matata",
-      description: "Plan a smoother coastal stay with accommodation, transport, private dining, errands and experiences in Mombasa and Nyali.",
-    },
-    "/verify": {
-      title: "Verify a Holiday Rental Before You Pay | Tembea Bila Matata",
-      description: "Found a villa or apartment on Facebook, Jiji, Instagram or Airbnb? Our on-ground partner visits the property in Mombasa, Diani, Watamu or Malindi and checks the host before you pay.",
-    },
-    "/blog": {
-      title: "Mombasa and Kenyan Coast Travel Journal | Tembea Bila Matata",
-      description: "Local guides and practical travel advice for stays, transport, dining, family support and experiences in Mombasa and along the Kenyan Coast.",
-    },
-    "/about": {
-      title: "About Tembea Bila Matata | Mombasa Coastal Concierge",
-      description: "Learn how Tembea Bila Matata combines curated stays and practical concierge services for travellers in Mombasa and the Kenyan Coast.",
-    },
-    "/contact": {
-      title: "Contact Tembea Bila Matata | Mombasa and Kenyan Coast",
-      description: "Contact Tembea Bila Matata for accommodation, transport, private chef, concierge and coastal travel support.",
-    },
-    "/faq": {
-      title: "Frequently Asked Questions | Tembea Bila Matata",
-      description: "Find answers about booking stays, transport, chefs, errands, experiences and concierge services in Mombasa and the Kenyan Coast.",
-    },
-  };
-  const item = metadata[pathname];
+  const item = staticPageMetadata[pathname];
   if (!item) return null;
   return {
     ...item,
@@ -528,33 +481,43 @@ function getRobotsForPath(pathname: string) {
 
 function defaultMetadata(req: Request): ShareMetadata {
   const baseUrl = getRequestBaseUrl(req);
-  const staticMetadata = getStaticMetadata(req.path, baseUrl);
+  const pageKey = staticPageKey(req.path);
+  const staticMetadata = getStaticMetadata(pageKey, baseUrl);
   if (staticMetadata) {
     return {
       ...staticMetadata,
-      robots: getRobotsForPath(req.path),
-      preloadImage: req.path === "/" ? homeHeroPreload : null,
+      robots: getRobotsForPath(pageKey),
+      preloadImage: pageKey === "/" ? homeHeroPreload : null,
     };
   }
   return {
     title: defaultTitle,
     description: defaultDescription,
     imageUrl: `${baseUrl}${defaultImagePath}`,
-    canonicalUrl: `${baseUrl}${req.path === "/" ? "/" : req.path}`,
+    canonicalUrl: `${baseUrl}${req.path === "/" ? "/" : req.path.replace(/\/+$/, "")}`,
     type: "website",
-    robots: getRobotsForPath(req.path),
+    robots: getRobotsForPath(pageKey),
   };
+}
+
+/** A 404: titled as one, and left out by search engines. */
+function notFoundMetadata(fallback: ShareMetadata): ShareMetadata {
+  return { ...fallback, title: "Page not found | Tembea Bila Matata", robots: "noindex,follow", statusCode: 404, preloadImage: null };
 }
 
 export async function resolveShareMetadata(req: Request): Promise<ShareMetadata> {
   const fallback = defaultMetadata(req);
+  // An address the site has no page for: a real 404, which search engines leave out.
+  if (!isKnownAppPath(req.path)) {
+    return notFoundMetadata(fallback);
+  }
   const blogSlug = parseBlogRoute(req.path);
   if (blogSlug) {
     const baseUrl = getRequestBaseUrl(req);
     try {
       const post = await storage.getBlogPostBySlug(blogSlug);
       if (!post || post.status !== "published") {
-        return { ...fallback, robots: "noindex,follow", statusCode: 404 };
+        return notFoundMetadata(fallback);
       }
 
       const metadata = buildBlogMetadata(post, baseUrl);
@@ -596,7 +559,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
     if (route.kind === "stay") {
       const stay = await resolveListing(route) as Stay | undefined;
       if (!isPublicListing(stay)) {
-        return { ...fallback, robots: "noindex,follow", statusCode: 404 };
+        return notFoundMetadata(fallback);
       }
       const canonicalUrl = `${baseUrl}${getPublicListingPath("stay", stay.id, stay.title)}`;
       const metadata = buildStayMetadata(stay, baseUrl, canonicalUrl, currency);
@@ -608,7 +571,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
     if (route.kind === "car") {
       const car = await resolveListing(route) as Car | undefined;
       if (!isPublicListing(car)) {
-        return { ...fallback, robots: "noindex,follow", statusCode: 404 };
+        return notFoundMetadata(fallback);
       }
       const canonicalUrl = `${baseUrl}${getPublicListingPath("car", car.id, getListingName("car", car))}`;
       const metadata = buildCarMetadata(car, baseUrl, canonicalUrl, currency);
@@ -620,7 +583,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
     if (route.kind === "cook") {
       const cook = await resolveListing(route) as Cook | undefined;
       if (!isPublicListing(cook)) {
-        return { ...fallback, robots: "noindex,follow", statusCode: 404 };
+        return notFoundMetadata(fallback);
       }
       const canonicalUrl = `${baseUrl}${getPublicListingPath("cook", cook.id, cook.title)}`;
       const metadata = buildCookMetadata(cook, baseUrl, canonicalUrl, currency);
@@ -632,7 +595,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
     if (route.kind === "errand") {
       const errand = await resolveListing(route) as Errand | undefined;
       if (!isPublicListing(errand)) {
-        return { ...fallback, robots: "noindex,follow", statusCode: 404 };
+        return notFoundMetadata(fallback);
       }
       const canonicalUrl = `${baseUrl}${getPublicListingPath("errand", errand.id, errand.serviceName)}`;
       const metadata = buildErrandMetadata(errand, baseUrl, canonicalUrl, currency);
@@ -643,7 +606,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
 
     const experience = await resolveListing(route) as Experience | undefined;
     if (!isPublicListing(experience)) {
-      return { ...fallback, robots: "noindex,follow", statusCode: 404 };
+      return notFoundMetadata(fallback);
     }
     const canonicalUrl = `${baseUrl}${getPublicListingPath("experience", experience.id, experience.title)}`;
     const metadata = buildExperienceMetadata(experience, baseUrl, canonicalUrl, currency);
@@ -694,6 +657,8 @@ export function injectShareMetadata(html: string, metadata: ShareMetadata) {
     metaTag("property", "og:image", metadata.imageUrl),
     metaTag("property", "og:image:secure_url", metadata.imageUrl),
     metaTag("property", "og:image:alt", metadata.title),
+    metadata.imageUrl.endsWith(defaultImagePath) ? metaTag("property", "og:image:width", "1200") : null,
+    metadata.imageUrl.endsWith(defaultImagePath) ? metaTag("property", "og:image:height", "630") : null,
     metaTag("name", "twitter:card", "summary_large_image"),
     metaTag("name", "twitter:title", metadata.title),
     metaTag("name", "twitter:description", metadata.description),

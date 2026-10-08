@@ -202,10 +202,10 @@ export function AboutPage() {
           <section className="rounded-2xl border border-border/60 bg-muted/30 p-6 sm:p-8" aria-label="Get in touch">
             <p className="font-serif text-2xl font-medium leading-snug text-foreground sm:text-3xl">{brandStory.closing.join(" ")}</p>
             <div className="mt-6 flex flex-wrap gap-3">
-              <Button className="rounded-full px-6" onClick={() => openZaina()} data-testid="button-about-tell-us">
+              <Button className="h-11 rounded-full px-6" onClick={() => openZaina()} data-testid="button-about-tell-us">
                 {brandStory.callToAction}
               </Button>
-              <Button asChild variant="outline" className="rounded-full px-6">
+              <Button asChild variant="outline" className="h-11 rounded-full px-6">
                 <a href={whatsAppUrlWithText("Hi Tembea Bila Matata, here's what I need for my Coast trip: ")} target="_blank" rel="noreferrer">
                   Message us on WhatsApp
                 </a>
@@ -232,28 +232,28 @@ export function ContactPage() {
       </section>
 
       <section className="space-y-4">
-        <h2 className="font-serif text-2xl font-medium text-foreground">Contact Information</h2>
+        <h2 className="font-serif text-2xl font-medium text-foreground">Contact information</h2>
         <div className="grid gap-5 sm:grid-cols-2">
           <div className="space-y-1">
             <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-foreground/80">Email</h3>
-            <a href={`mailto:${CONTACT_EMAIL}`} className="break-all text-primary underline-offset-4 hover:underline">
+            <a href={`mailto:${CONTACT_EMAIL}`} className="inline-flex min-h-11 items-center break-all text-primary underline-offset-4 hover:underline">
               {CONTACT_EMAIL}
             </a>
           </div>
           <div className="space-y-1">
             <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-foreground/80">Phone & WhatsApp</h3>
-            <a href={`tel:${CONTACT_PHONE}`} className="text-primary underline-offset-4 hover:underline">
+            <a href={`tel:${CONTACT_PHONE}`} className="inline-flex min-h-11 items-center text-primary underline-offset-4 hover:underline">
               {CONTACT_PHONE_DISPLAY}
             </a>
           </div>
           <div className="space-y-1">
             <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-foreground/80">Location</h3>
-            <a href={GOOGLE_MAPS_URL} target="_blank" rel="noreferrer" className="text-primary underline-offset-4 hover:underline">
+            <a href={GOOGLE_MAPS_URL} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center text-primary underline-offset-4 hover:underline">
               {CONTACT_LOCATION}
             </a>
           </div>
           <div className="space-y-1">
-            <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-foreground/80">Business Name</h3>
+            <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-foreground/80">Business name</h3>
             <p>{BUSINESS_REGISTRATION_NAME}</p>
           </div>
         </div>
@@ -268,20 +268,20 @@ export function ContactPage() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="font-serif text-2xl font-medium text-foreground">Business Inquiries</h2>
+        <h2 className="font-serif text-2xl font-medium text-foreground">Business inquiries</h2>
         <p>For partnership opportunities, service collaborations, media inquiries, or corporate bookings, please contact us via email or WhatsApp.</p>
         <p>{SERVICE_AREA}</p>
       </section>
 
       <section className="space-y-3">
-        <h2 className="font-serif text-2xl font-medium text-foreground">Support Hours</h2>
+        <h2 className="font-serif text-2xl font-medium text-foreground">Support hours</h2>
         <p>Monday - Saturday</p>
         <p>8:00 AM - 8:00 PM (East Africa Time)</p>
         <p>Messages received outside business hours will be responded to as soon as possible.</p>
       </section>
 
       <section className="space-y-3">
-        <h2 className="font-serif text-2xl font-medium text-foreground">Response Time</h2>
+        <h2 className="font-serif text-2xl font-medium text-foreground">Response time</h2>
         <p>We aim to respond to most inquiries within a few hours during business hours.</p>
       </section>
     </PageShell>
@@ -294,6 +294,7 @@ export function FaqPage() {
       title="Frequently Asked Questions"
       intro="Quick answers to common questions about bookings, services, and how Tembea Bila Matata works."
     >
+      <h2 className="sr-only">Questions and answers</h2>
       <Accordion type="single" collapsible className="space-y-3">
         {faqItems.map((item) => (
           <AccordionItem

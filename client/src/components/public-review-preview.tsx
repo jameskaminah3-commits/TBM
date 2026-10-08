@@ -83,9 +83,9 @@ export function PublicReviewPreview({
                 <span className="font-medium text-foreground">{firstName(review.guestName)}</span>
                 <span className="text-xs text-muted-foreground">{formatReviewMonth(review.createdAt)}</span>
               </div>
-              <div className="mt-1 flex items-center gap-0.5" aria-label={`${review.rating} out of 5`}>
+              <div className="mt-1 flex items-center gap-0.5" role="img" aria-label={`${review.rating} out of 5 stars`}>
                 {Array.from({ length: 5 }).map((_, index) => (
-                  <Star key={index} className={`h-3.5 w-3.5 ${index < review.rating ? "fill-amber-400 text-amber-400" : "text-muted-foreground/35"}`} />
+                  <Star key={index} aria-hidden="true" className={`h-3.5 w-3.5 ${index < review.rating ? "fill-amber-400 text-amber-400" : "text-muted-foreground/35"}`} />
                 ))}
               </div>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">{review.comment?.trim()}</p>

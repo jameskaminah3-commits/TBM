@@ -228,7 +228,7 @@ export default function BlogPostDetail() {
       <div className="min-h-screen flex items-center justify-center">
         <SeoHead title="Article not found | Tembea Bila Matata" robots="noindex,follow" canonicalUrl={buildCanonicalUrl("/blog")} />
         <div className="space-y-4 text-center">
-          <h1 className="font-serif text-4xl font-medium" data-testid="text-error-heading">Article Not Found</h1>
+          <h1 className="font-serif text-4xl font-medium" data-testid="text-error-heading">Article not found</h1>
           <p className="text-muted-foreground" data-testid="text-error-message">
             The article you're looking for doesn't exist or has been removed.
           </p>
@@ -476,7 +476,7 @@ export default function BlogPostDetail() {
           <aside className="lg:sticky lg:top-24 lg:self-start">
             <Card className="surface-soft-card">
               <CardContent className="p-5">
-                <div className="mb-4 text-sm font-medium uppercase tracking-[0.24em] text-muted-foreground">In This Article</div>
+                <div className="mb-4 text-sm font-medium uppercase tracking-[0.24em] text-muted-foreground">In this article</div>
                 {headings.length ? (
                   <nav className="space-y-3">
                     {headings.map((heading) => (

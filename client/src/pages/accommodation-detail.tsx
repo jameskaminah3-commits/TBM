@@ -360,7 +360,7 @@ export default function AccommodationDetail() {
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
               {reviewCount > 0 ? (
                 hasWrittenReviews ? (
-                  <a href="#reviews" className="inline-flex items-center gap-1 font-medium text-foreground underline underline-offset-4 hover:text-primary" data-testid="link-stay-rating">
+                  <a href="#reviews" className="inline-flex min-h-11 items-center gap-1 font-medium text-foreground underline underline-offset-4 hover:text-primary" data-testid="link-stay-rating">
                     <Star className="h-4 w-4 fill-amber-400 text-amber-400" aria-hidden="true" />
                     {averageRating.toFixed(1)} · {reviewCount} review{reviewCount === 1 ? "" : "s"}
                   </a>
@@ -490,7 +490,7 @@ export default function AccommodationDetail() {
               <button
                 type="button"
                 onClick={askZaina}
-                className="mt-4 text-sm font-medium text-primary underline-offset-4 hover:underline"
+                className="mt-2 inline-flex min-h-11 items-center text-left text-sm font-medium text-primary underline-offset-4 hover:underline"
               >
                 Something else in mind? Ask Zaina to arrange it
               </button>
@@ -567,7 +567,7 @@ export default function AccommodationDetail() {
                     onChange={(next) => updateTrip({ checkIn: next.checkIn || null, checkOut: next.checkOut || null })}
                     bookedRanges={availability?.blockedRanges}
                     placeholder="Add your dates"
-                    className="min-h-10 border-0 px-0 shadow-none"
+                    className="min-h-11 border-0 px-0 shadow-none"
                     open={datesOpen}
                     onOpenChange={setDatesOpen}
                     data-testid="input-stay-dates"
@@ -617,7 +617,7 @@ export default function AccommodationDetail() {
                     <a href="#make-it-a-trip" className="font-medium text-primary underline-offset-4 hover:underline">Change</a>
                   </p>
                 ) : (
-                  <a href="#make-it-a-trip" className="inline-flex items-center gap-1.5 font-medium text-primary underline-offset-4 hover:underline">
+                  <a href="#make-it-a-trip" className="inline-flex min-h-11 items-center gap-1.5 font-medium text-primary underline-offset-4 hover:underline">
                     <Plus className="h-4 w-4" aria-hidden="true" />
                     {isHotel ? "Add a pickup or a day out" : "Add a pickup, a chef or a nanny"}
                   </a>
@@ -650,7 +650,7 @@ export default function AccommodationDetail() {
 
               <Button
                 variant="outline"
-                className="mt-4 w-full rounded-full"
+                className="mt-4 h-11 w-full rounded-full"
                 onClick={askZaina}
                 data-testid="button-plan-trip-with-zaina"
               >

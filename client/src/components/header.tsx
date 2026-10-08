@@ -94,7 +94,7 @@ export function Header() {
         <div className="flex min-w-0 flex-1 items-center xl:min-w-[18rem] xl:flex-none xl:pr-2 2xl:min-w-[20rem]">
           <Link
             href="/"
-            className="group flex min-w-0 flex-1 items-center gap-3 xl:flex-none xl:gap-3.5 xl:rounded-[1.4rem] xl:border xl:border-border/70 xl:bg-[linear-gradient(180deg,hsl(var(--background)/0.98),hsl(var(--muted)/0.45))] xl:px-3.5 xl:py-2 xl:shadow-[0_18px_34px_-30px_rgba(15,23,42,0.45)]"
+            className="group flex min-h-11 min-w-0 flex-1 items-center gap-3 xl:flex-none xl:gap-3.5 xl:rounded-[1.4rem] xl:border xl:border-border/70 xl:bg-[linear-gradient(180deg,hsl(var(--background)/0.98),hsl(var(--muted)/0.45))] xl:px-3.5 xl:py-2 xl:shadow-[0_18px_34px_-30px_rgba(15,23,42,0.45)]"
             data-testid="link-home"
           >
             <div className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-[1rem] bg-[radial-gradient(circle_at_top,hsl(var(--primary)/0.18),hsl(var(--card)/0.95)_72%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] xl:flex">
@@ -206,7 +206,7 @@ export function Header() {
               >
                 <Link href={`/auth?next=${encodeURIComponent(location)}`}>
                   <LogIn className="h-4 w-4 mr-2" />
-                  Log In
+                  Sign in
                 </Link>
               </Button>
             )}
@@ -219,7 +219,7 @@ export function Header() {
                 data-testid="button-logout"
               >
                 <LogOut className="h-4 w-4 mr-2" />
-                Log Out
+                Sign out
               </Button>
             )}
           </div>
@@ -236,10 +236,11 @@ export function Header() {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-10 w-10 shrink-0 rounded-full border border-border/70 bg-gradient-to-b from-background via-background to-muted/50 shadow-[0_10px_24px_-18px_rgba(15,23,42,0.7)]"
+                className="h-11 w-11 shrink-0 rounded-full border border-border/70 bg-gradient-to-b from-background via-background to-muted/50 shadow-[0_10px_24px_-18px_rgba(15,23,42,0.7)]"
+                aria-label="Open menu"
                 data-testid="button-mobile-menu"
               >
-                <Menu className="h-5 w-5" />
+                <Menu className="h-5 w-5" aria-hidden="true" />
               </Button>
             </SheetTrigger>
             <SheetContent
@@ -385,7 +386,7 @@ export function Header() {
                         >
                           <Link href={`/auth?next=${encodeURIComponent(location)}`} onClick={() => setOpen(false)}>
                             <LogIn className="h-4 w-4 mr-2" />
-                            Log In
+                            Sign in
                           </Link>
                         </Button>
                       )}
@@ -400,7 +401,7 @@ export function Header() {
                           data-testid="mobile-button-logout"
                         >
                           <LogOut className="h-4 w-4 mr-2" />
-                          Log Out
+                          Sign out
                         </Button>
                       )}
                     </div>
