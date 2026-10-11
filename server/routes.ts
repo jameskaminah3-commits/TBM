@@ -77,6 +77,7 @@ import { listUploads, saveBase64Upload } from "./media";
 import { toPublicListing, withoutProviderProtectedFields } from "./listing-privacy";
 import { toProviderBooking } from "./provider-booking-view";
 import { diffListingFields } from "./listing-edits";
+import { resolveShortLinkPath } from "./share-metadata";
 import { canRespondToAssignment } from "./provider-policy";
 import { PAYMENT_MESSAGE_ROLE, canSeeThreadMessage } from "@shared/booking-thread";
 import { db } from "./db";
@@ -6653,6 +6654,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin Listings Management
+  // Old short share links go to the listing's public page, keeping any tracking.
+  app.get("/b/:shortType/:code", async (req, res, next) => {
+    try {
+      const path = await resolveShortLinkPath(req.path);
+      if (!path) {
+        return next();
+      }
+      const query = new URL(req.originalUrl, "http://localhost").searchParams;
+      query.delete("currency");
+      const search = query.toString();
+      res.redirect(301, `${path}${search ? `?${search}` : ""}`);
+    } catch (error) {
+      console.error("[SHARE] Failed to resolve a short link:", error);
+      next();
+    }
+  });
+
   // Providers' listing edits since TBM last reviewed them.
   app.get("/api/admin/listing-edits", requireAdmin, async (_req, res) => {
     try {

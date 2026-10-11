@@ -28,6 +28,8 @@ import {
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { errandAddonSchema, helpMamaPricingSchema, insertErrandSchema, type Errand, type ErrandAddon, type HelpMamaPricing } from "@shared/schema";
 import { getDefaultHouseCleaningAddons, normalizeHelpMamaPricing } from "@shared/errand-pricing";
+import { ListingShareSheet } from "@/components/listing-share-sheet";
+import { getListingSharePrice } from "@shared/listing-share";
 
 const featureOptions = [
   "Same-Day Service",
@@ -169,9 +171,14 @@ export default function ProviderErrandEdit() {
   return (
     <ProviderLayout>
       <div className="p-8 max-w-4xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-3xl font-serif font-semibold mb-2">Manage Errand Listing</h1>
-          <p className="text-muted-foreground">Update your shopping, laundry, house cleaning, and family support details.</p>
+        <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h1 className="text-3xl font-serif font-semibold mb-2">Manage Errand Listing</h1>
+            <p className="text-muted-foreground">Update your shopping, laundry, house cleaning, and family support details.</p>
+          </div>
+          {errand ? (
+            <ListingShareSheet kind="errand" id={errand.id} name={errand.serviceName} description={errand.description} {...getListingSharePrice("errand", errand)} isPublic={errand.isPublic} source="provider" size="default" triggerLabel="Share listing" />
+          ) : null}
         </div>
         <Card id="details" className="scroll-mt-24">
           <CardHeader>

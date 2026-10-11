@@ -50,6 +50,10 @@ import { buildCanonicalUrl } from "@/lib/canonical-url";
 import { useCurrency } from "@/lib/currency";
 import { openZaina } from "@/lib/zaina";
 import { cn } from "@/lib/utils";
+import { ListingShareSheet } from "@/components/listing-share-sheet";
+import { useOwnsListing } from "@/hooks/use-owns-listing";
+import { getListingSharePrice } from "@shared/listing-share";
+import { ListingUnavailable } from "@/components/listing-unavailable";
 import {
   buildListingSeoDescription,
   formatSeoLocation,
@@ -294,6 +298,7 @@ export default function PublicListingDetail({ kind }: { kind: ListingKind }) {
       return response.json();
     },
   });
+  const ownsListing = useOwnsListing(kind, listing?.id);
 
   // The same reviews the reviews section shows, so the rating at the top agrees with it.
   const { data: reviews } = useQuery<Array<{ rating: number; comment?: string | null }>>({
@@ -330,11 +335,9 @@ export default function PublicListingDetail({ kind }: { kind: ListingKind }) {
 
   if (isError || !listing) {
     return (
-      <div className="min-h-screen py-20 text-center">
-        <SeoHead title="Listing not found | Tembea Bila Matata" robots="noindex,follow" canonicalUrl={buildCanonicalUrl(category.href)} />
-        <h1 className="font-serif text-3xl font-medium">Listing not found</h1>
-        <p className="mx-auto mt-3 max-w-xl text-muted-foreground">This listing is no longer available. Browse the current services instead.</p>
-        <Button className="mt-6 rounded-full" onClick={() => setLocation(category.href)}>Browse services</Button>
+      <div className="min-h-screen">
+        <SeoHead title="Listing not available | Tembea Bila Matata" robots="noindex,follow" canonicalUrl={buildCanonicalUrl(category.href)} />
+        <ListingUnavailable kind={kind} browseHref={category.href} browseLabel={({ car: "Browse cars and drivers", cook: "Browse private chefs", errand: "Browse home help and errands", experience: "Browse experiences" } as const)[kind]} />
       </div>
     );
   }
@@ -384,7 +387,19 @@ export default function PublicListingDetail({ kind }: { kind: ListingKind }) {
         <div className="flex flex-col gap-5 md:gap-6">
           <header className="order-2 md:order-1">
             <p className="text-sm font-medium text-primary">{kindLine} · {getShortSeoLocation(location)}</p>
-            <h1 className="mt-1 font-serif text-3xl font-medium leading-tight md:text-4xl" data-testid="text-listing-title">{listingName}</h1>
+            <div className="mt-1 flex items-start justify-between gap-3">
+              <h1 className="min-w-0 font-serif text-3xl font-medium leading-tight md:text-4xl" data-testid="text-listing-title">{listingName}</h1>
+              <ListingShareSheet
+                kind={kind}
+                id={listing.id}
+                name={listingName}
+                description={listing.description}
+                {...getListingSharePrice(kind, listing)}
+                isPublic
+                source={ownsListing ? "provider" : "visitor"}
+                triggerClassName="mt-1 min-h-11 shrink-0"
+              />
+            </div>
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
               {reviewCount > 0 ? (
                 hasWrittenReviews ? (

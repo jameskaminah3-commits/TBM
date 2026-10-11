@@ -1,0 +1,90 @@
+// Sharing a listing: the public link (with tracking that names no account) and
+// the message that goes with it.
+import { getPublicListingPath, type PublicListingKind } from "./seo.ts";
+
+export type ShareChannel = "whatsapp" | "copy" | "native";
+// "provider" when the listing's own provider shares it; "visitor" for anyone else.
+export type ShareSource = "provider" | "visitor";
+
+export function buildListingShareUrl(
+  origin: string,
+  listing: { kind: PublicListingKind; id: string; name: string },
+  options: { source: ShareSource; channel: ShareChannel },
+) {
+  const url = new URL(getPublicListingPath(listing.kind, listing.id, listing.name), origin);
+  url.searchParams.set("utm_source", options.source === "provider" ? "provider" : "share");
+  url.searchParams.set("utm_medium", options.channel);
+  url.searchParams.set("utm_campaign", "listing_share");
+  return url.toString();
+}
+
+const kindNoun: Record<PublicListingKind, string> = {
+  stay: "stay",
+  car: "car",
+  cook: "chef",
+  errand: "service",
+  experience: "experience",
+};
+
+// The first sentence, or the first ~140 characters cut at a word.
+export function shortShareDescription(text: string | null | undefined, maxLength = 140) {
+  const clean = (text ?? "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  if (!clean) return "";
+  const sentence = clean.match(/^.+?[.!?](?=\s|$)/)?.[0] ?? clean;
+  if (sentence.length <= maxLength) return sentence;
+  const clipped = sentence.slice(0, maxLength - 1);
+  const lastSpace = clipped.lastIndexOf(" ");
+  return `${(lastSpace > 60 ? clipped.slice(0, lastSpace) : clipped).replace(/[,;:\s]+$/, "")}…`;
+}
+
+// A price only goes in when the sharer chooses, and always with its conditions.
+export function formatSharePriceLine(amountKes: number, unit: string) {
+  return `From KSh ${Math.round(amountKes).toLocaleString("en-KE")} ${unit}, subject to availability and TBM's terms.`;
+}
+
+export function buildListingShareMessage(args: {
+  kind: PublicListingKind;
+  name: string;
+  description?: string | null;
+  url: string;
+  priceLine?: string | null;
+}) {
+  return [
+    `Check out this ${kindNoun[args.kind]} on Tembea Bila Matata: ${args.name}`,
+    shortShareDescription(args.description),
+    args.priceLine ?? "",
+    `View details: ${args.url}`,
+  ].filter(Boolean).join("\n");
+}
+
+export function buildWhatsAppShareHref(message: string) {
+  return `https://wa.me/?text=${encodeURIComponent(message)}`;
+}
+
+type PricedListing = {
+  price?: number | null;
+  propertyType?: string | null;
+  pricePerDay?: number | null;
+  priceWithDriver?: number | null;
+  serviceFee?: number | null;
+  pricePerSession?: number | null;
+  basePrice?: number | null;
+  privatePricePerPerson?: number | null;
+  sharedPricePerPerson?: number | null;
+};
+
+// The listing's current public starting price (US dollars) and how it's counted.
+export function getListingSharePrice(kind: PublicListingKind, listing: PricedListing): { priceUsd: number; priceUnit: string } | null {
+  const pick = (...amounts: Array<number | null | undefined>) => amounts.find((amount) => (amount ?? 0) > 0) ?? 0;
+  const options: Record<PublicListingKind, { priceUsd: number; priceUnit: string }> = {
+    stay: { priceUsd: pick(listing.price), priceUnit: listing.propertyType === "hotel" ? "a room a night" : "a night" },
+    car: listing.pricePerDay && listing.pricePerDay > 0
+      ? { priceUsd: listing.pricePerDay, priceUnit: "a day, self-drive" }
+      : { priceUsd: pick(listing.priceWithDriver), priceUnit: "a day with a driver" },
+    cook: { priceUsd: pick(listing.serviceFee, listing.pricePerSession), priceUnit: "for the chef's service" },
+    errand: { priceUsd: pick(listing.basePrice), priceUnit: "to start" },
+    experience: { priceUsd: pick(listing.privatePricePerPerson, listing.sharedPricePerPerson, listing.price), priceUnit: "a person" },
+  };
+  const option = options[kind];
+  return option.priceUsd > 0 ? option : null;
+}

@@ -1,6 +1,6 @@
 import type { Request } from "express";
 import type { BlogPost, Car, Cook, Errand, Experience, Stay } from "@shared/schema";
-import { getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
+import { hasHelpMamaPricing } from "@shared/errand-pricing";
 import { isHotelStay } from "@shared/hotel-rooms";
 import { isKnownAppPath } from "@shared/app-routes";
 import { staticPageKey, staticPageMetadata } from "@shared/page-metadata";
@@ -14,7 +14,6 @@ import { storage } from "./storage";
 
 type ListingKind = "stay" | "car" | "cook" | "errand" | "experience";
 type ParsedListingRoute = { kind: ListingKind; id: string; isShortLink?: boolean; publicPath?: boolean };
-type ShareCurrency = "USD" | "KES";
 
 type ShareMetadata = {
   title: string;
@@ -45,7 +44,6 @@ const defaultDescription =
   "Book curated stays, cars, private chefs, errands, and experiences across Kenya with Tembea Bila Matata.";
 // The branded link preview (1200 x 630) for pages without a photo of their own.
 const defaultImagePath = "/images/share-card.jpg";
-const sharePreviewUsdToKes = 130;
 
 function isPublicListing<T extends { isPublic: boolean; managerUserId?: string | null }>(
   listing: T | null | undefined,
@@ -116,42 +114,22 @@ function getListingImage(
   return toAbsoluteUrl(listing.mediaType === "video" ? firstImage : (firstImage ?? listing.imageUrl), baseUrl);
 }
 
-function getShareCurrency(req: Request): ShareCurrency {
-  const value = Array.isArray(req.query.currency) ? req.query.currency[0] : req.query.currency;
-  return value === "KES" ? "KES" : "USD";
-}
-
-function formatShareAmount(amount: number | null | undefined, suffix: string, currency: ShareCurrency) {
-  if (!amount || amount <= 0) {
-    return null;
-  }
-
-  if (currency === "KES") {
-    return `KSh ${Math.round(amount * sharePreviewUsdToKes).toLocaleString("en-KE")}${suffix}`;
-  }
-
-  return `$${amount.toLocaleString("en-US")}${suffix}`;
-}
-
 function joinDetails(parts: Array<string | null | undefined>) {
   return parts.filter((part): part is string => Boolean(part?.trim())).join(" · ");
 }
 
-function buildStayMetadata(stay: Stay, baseUrl: string, canonicalUrl: string, currency: ShareCurrency): ShareMetadata {
+function buildStayMetadata(stay: Stay, baseUrl: string, canonicalUrl: string): ShareMetadata {
   const location = formatSeoLocation(stay.location);
-  // A hotel's price is its lowest room rate, and its bedrooms are its rooms.
-  const fromPrice = formatShareAmount(stay.price, " per room per night", currency);
+  // A hotel's bedrooms are its rooms.
   const details = isHotelStay(stay)
     ? joinDetails([
       location,
       stay.starRating ? `${stay.starRating}-star hotel` : "Hotel",
       stay.bedrooms > 0 ? `${stay.bedrooms} room${stay.bedrooms === 1 ? "" : "s"}` : null,
-      fromPrice ? `from ${fromPrice}` : null,
     ])
     : joinDetails([
       location,
       `${stay.bedrooms}-bedroom accommodation with ${stay.bathrooms} bathrooms`,
-      formatShareAmount(stay.price, " per night", currency),
       `up to ${stay.maxOccupancy} guest${stay.maxOccupancy === 1 ? "" : "s"}`,
     ]);
 
@@ -164,13 +142,11 @@ function buildStayMetadata(stay: Stay, baseUrl: string, canonicalUrl: string, cu
   };
 }
 
-function buildCarMetadata(car: Car, baseUrl: string, canonicalUrl: string, currency: ShareCurrency): ShareMetadata {
+function buildCarMetadata(car: Car, baseUrl: string, canonicalUrl: string): ShareMetadata {
   const location = formatSeoLocation(car.location);
   const details = joinDetails([
     location,
     "car hire",
-    formatShareAmount(car.priceWithDriverHourly, "/hour chauffeur", currency),
-    formatShareAmount(car.pricePerDay, "/day self-drive", currency),
     `${car.seats} seats`,
     car.transmission,
   ]);
@@ -184,13 +160,12 @@ function buildCarMetadata(car: Car, baseUrl: string, canonicalUrl: string, curre
   };
 }
 
-function buildCookMetadata(cook: Cook, baseUrl: string, canonicalUrl: string, currency: ShareCurrency): ShareMetadata {
+function buildCookMetadata(cook: Cook, baseUrl: string, canonicalUrl: string): ShareMetadata {
   const location = formatSeoLocation(cook.location);
   const details = joinDetails([
     location,
     cook.serviceType,
     cook.speciality,
-    formatShareAmount(cook.serviceFee || cook.pricePerSession, " service fee", currency),
     `up to ${cook.maxGuests} guests`,
   ]);
 
@@ -203,7 +178,7 @@ function buildCookMetadata(cook: Cook, baseUrl: string, canonicalUrl: string, cu
   };
 }
 
-function buildErrandMetadata(errand: Errand, baseUrl: string, canonicalUrl: string, currency: ShareCurrency): ShareMetadata {
+function buildErrandMetadata(errand: Errand, baseUrl: string, canonicalUrl: string): ShareMetadata {
   const location = formatSeoLocation(errand.location);
   const services = [
     errand.shoppingEnabled ? "shopping" : null,
@@ -212,9 +187,7 @@ function buildErrandMetadata(errand: Errand, baseUrl: string, canonicalUrl: stri
   ];
   const details = joinDetails([
     location,
-    hasHelpMamaPricing(errand)
-      ? formatShareAmount(getHelpMamaStartingPrice(errand.helpMamaPricing), " starting Help Mama rate", currency)
-      : formatShareAmount(errand.basePrice, " base fee", currency),
+    hasHelpMamaPricing(errand) ? "childcare" : null,
     ...services,
   ]);
 
@@ -227,12 +200,11 @@ function buildErrandMetadata(errand: Errand, baseUrl: string, canonicalUrl: stri
   };
 }
 
-function buildExperienceMetadata(experience: Experience, baseUrl: string, canonicalUrl: string, currency: ShareCurrency): ShareMetadata {
+function buildExperienceMetadata(experience: Experience, baseUrl: string, canonicalUrl: string): ShareMetadata {
   const location = formatSeoLocation(experience.experienceLocation || experience.location);
   const details = joinDetails([
     location,
     experience.experienceType,
-    formatShareAmount(experience.privatePricePerPerson || experience.price, " per person", currency),
     `${experience.durationHours} hour${experience.durationHours === 1 ? "" : "s"}`,
   ]);
 
@@ -472,6 +444,20 @@ async function resolveListing(route: ParsedListingRoute) {
   return (await storage.getExperiences()).find((experience) => experience.id.toLowerCase().startsWith(normalizedId));
 }
 
+// An old short share link (/b/s/1a2b3c4d) as its listing's public page, or null
+// when no public listing matches.
+export async function resolveShortLinkPath(pathname: string): Promise<string | null> {
+  const route = parseListingRoute(pathname);
+  if (!route?.isShortLink) {
+    return null;
+  }
+  const listing = await resolveListing(route);
+  if (!isPublicListing(listing)) {
+    return null;
+  }
+  return getPublicListingPath(route.kind, listing.id, getListingName(route.kind, listing));
+}
+
 function getRobotsForPath(pathname: string) {
   if (/^\/(?:book(?:ings)?|b\/|auth(?:\/|$)|admin(?:\/|$)|provider(?:\/|$)|inbox(?:\/|$))/.test(pathname)) {
     return "noindex,follow";
@@ -553,7 +539,6 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
   }
 
   const baseUrl = getRequestBaseUrl(req);
-  const currency = getShareCurrency(req);
 
   try {
     if (route.kind === "stay") {
@@ -562,7 +547,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
         return notFoundMetadata(fallback);
       }
       const canonicalUrl = `${baseUrl}${getPublicListingPath("stay", stay.id, stay.title)}`;
-      const metadata = buildStayMetadata(stay, baseUrl, canonicalUrl, currency);
+      const metadata = buildStayMetadata(stay, baseUrl, canonicalUrl);
       metadata.robots = route.publicPath ? "index,follow" : "noindex,follow";
       metadata.structuredData = getListingStructuredData("stay", stay, canonicalUrl);
       return metadata;
@@ -574,7 +559,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
         return notFoundMetadata(fallback);
       }
       const canonicalUrl = `${baseUrl}${getPublicListingPath("car", car.id, getListingName("car", car))}`;
-      const metadata = buildCarMetadata(car, baseUrl, canonicalUrl, currency);
+      const metadata = buildCarMetadata(car, baseUrl, canonicalUrl);
       metadata.robots = route.publicPath ? "index,follow" : "noindex,follow";
       metadata.structuredData = getListingStructuredData("car", car, canonicalUrl);
       return metadata;
@@ -586,7 +571,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
         return notFoundMetadata(fallback);
       }
       const canonicalUrl = `${baseUrl}${getPublicListingPath("cook", cook.id, cook.title)}`;
-      const metadata = buildCookMetadata(cook, baseUrl, canonicalUrl, currency);
+      const metadata = buildCookMetadata(cook, baseUrl, canonicalUrl);
       metadata.robots = route.publicPath ? "index,follow" : "noindex,follow";
       metadata.structuredData = getListingStructuredData("cook", cook, canonicalUrl);
       return metadata;
@@ -598,7 +583,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
         return notFoundMetadata(fallback);
       }
       const canonicalUrl = `${baseUrl}${getPublicListingPath("errand", errand.id, errand.serviceName)}`;
-      const metadata = buildErrandMetadata(errand, baseUrl, canonicalUrl, currency);
+      const metadata = buildErrandMetadata(errand, baseUrl, canonicalUrl);
       metadata.robots = route.publicPath ? "index,follow" : "noindex,follow";
       metadata.structuredData = getListingStructuredData("errand", errand, canonicalUrl);
       return metadata;
@@ -609,7 +594,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
       return notFoundMetadata(fallback);
     }
     const canonicalUrl = `${baseUrl}${getPublicListingPath("experience", experience.id, experience.title)}`;
-    const metadata = buildExperienceMetadata(experience, baseUrl, canonicalUrl, currency);
+    const metadata = buildExperienceMetadata(experience, baseUrl, canonicalUrl);
     metadata.robots = route.publicPath ? "index,follow" : "noindex,follow";
     metadata.structuredData = getListingStructuredData("experience", experience, canonicalUrl);
     return metadata;

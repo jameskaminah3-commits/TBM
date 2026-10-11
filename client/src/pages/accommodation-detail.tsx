@@ -48,6 +48,10 @@ import { bookingDepositPercent, calculateBookingDepositAmount } from "@shared/bo
 import { useCurrency } from "@/lib/currency";
 import { openZaina } from "@/lib/zaina";
 import { cn } from "@/lib/utils";
+import { ListingShareSheet } from "@/components/listing-share-sheet";
+import { useOwnsListing } from "@/hooks/use-owns-listing";
+import { getListingSharePrice } from "@shared/listing-share";
+import { ListingUnavailable } from "@/components/listing-unavailable";
 
 type StayAvailability = {
   propertyType?: "hotel" | "entire_place";
@@ -112,6 +116,7 @@ export default function AccommodationDetail() {
       return response.json();
     },
   });
+  const ownsListing = useOwnsListing("stay", accommodation?.id);
 
   const { data: availability } = useQuery<StayAvailability>({
     queryKey: ["/api/stays", id, "availability"],
@@ -224,14 +229,9 @@ export default function AccommodationDetail() {
 
   if (!accommodation) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <SeoHead title="Accommodation not found | Tembea Bila Matata" robots="noindex,follow" canonicalUrl={buildCanonicalUrl("/accommodations")} />
-        <div className="text-center">
-          <h2 className="font-serif text-2xl font-medium mb-2">Accommodation not found</h2>
-          <Button onClick={() => setLocation(`/accommodations${staySearchSuffix}`)} data-testid="button-back">
-            Back to Accommodations
-          </Button>
-        </div>
+      <div className="min-h-screen">
+        <SeoHead title="Stay not available | Tembea Bila Matata" robots="noindex,follow" canonicalUrl={buildCanonicalUrl("/accommodations")} />
+        <ListingUnavailable kind="stay" browseHref={`/accommodations${staySearchSuffix}`} browseLabel="Browse places to stay" />
       </div>
     );
   }
@@ -354,9 +354,21 @@ export default function AccommodationDetail() {
         <div className="flex flex-col gap-5 md:gap-6">
           <header className="order-2 md:order-1">
             <p className="text-sm font-medium text-primary">{kindLine} · {location}</p>
-            <h1 className="mt-1 font-serif text-3xl font-medium leading-tight md:text-4xl" data-testid="text-stay-title">
-              {accommodation.title}
-            </h1>
+            <div className="mt-1 flex items-start justify-between gap-3">
+              <h1 className="min-w-0 font-serif text-3xl font-medium leading-tight md:text-4xl" data-testid="text-stay-title">
+                {accommodation.title}
+              </h1>
+              <ListingShareSheet
+                kind="stay"
+                id={accommodation.id}
+                name={accommodation.title}
+                description={accommodation.description}
+                {...getListingSharePrice("stay", accommodation)}
+                isPublic
+                source={ownsListing ? "provider" : "visitor"}
+                triggerClassName="mt-1 min-h-11 shrink-0"
+              />
+            </div>
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
               {reviewCount > 0 ? (
                 hasWrittenReviews ? (

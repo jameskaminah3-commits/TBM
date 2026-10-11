@@ -17,6 +17,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { insertExperienceSchema, type Experience } from "@shared/schema";
+import { ListingShareSheet } from "@/components/listing-share-sheet";
+import { getListingSharePrice } from "@shared/listing-share";
 
 const featureOptions = [
   "Private",
@@ -170,9 +172,14 @@ export default function ProviderExperienceEdit() {
   return (
     <ProviderLayout>
       <div className="mx-auto max-w-5xl p-8">
-        <div className="mb-8">
-          <h1 className="mb-2 text-3xl font-serif font-semibold">Manage Experience Listing</h1>
-          <p className="text-muted-foreground">Changes go live when you save. TBM reviews partner edits afterwards.</p>
+        <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h1 className="mb-2 text-3xl font-serif font-semibold">Manage Experience Listing</h1>
+            <p className="text-muted-foreground">Changes go live when you save. TBM reviews partner edits afterwards.</p>
+          </div>
+          {experience ? (
+            <ListingShareSheet kind="experience" id={experience.id} name={experience.title} description={experience.description} {...getListingSharePrice("experience", experience)} isPublic={experience.isPublic} source="provider" size="default" triggerLabel="Share listing" />
+          ) : null}
         </div>
         <Card id="details" className="scroll-mt-24">
           <CardHeader>

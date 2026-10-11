@@ -35,7 +35,8 @@ import { useCurrency } from "@/lib/currency";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { awaitsProviderResponse, isAgreedOrder } from "@shared/provider-dashboard";
-import { getShortShareUrl, type ShareServiceType } from "@/lib/share-links";
+import { getListingSharePrice } from "@shared/listing-share";
+import { ListingShareSheet } from "@/components/listing-share-sheet";
 import { getCookExtraGuestInclusivePrice, getCookExtraGuestServiceFee, getCookMinimumGuests } from "@shared/cook-pricing";
 import { HOUSE_CLEANING_BASE_ROOM_LABEL, getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
 import { formatCalendarDate, isCalendarDate } from "@shared/calendar-dates";
@@ -48,74 +49,6 @@ type ProviderAssignments = {
   errands: Errand[];
   experiences: Experience[];
 };
-
-function ShareListingButton({
-  serviceType,
-  id,
-  title,
-  isPublic,
-  className,
-}: {
-  serviceType: ShareServiceType;
-  id: string;
-  title: string;
-  isPublic: boolean;
-  className?: string;
-}) {
-  const { toast } = useToast();
-  const { selectedCurrency } = useCurrency();
-
-  const handleShare = async () => {
-    if (!isPublic) {
-      toast({
-        title: "Listing is not public yet",
-        description: "Share links start working after admin approval.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const url = getShortShareUrl(serviceType, id, undefined, selectedCurrency);
-
-    try {
-      if (navigator.share) {
-        await navigator.share({ title, url });
-        return;
-      }
-
-      await navigator.clipboard.writeText(url);
-      toast({
-        title: "Short link copied",
-        description: url,
-      });
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") {
-        return;
-      }
-
-      toast({
-        title: "Could not share link",
-        description: "Please try copying it again.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  return (
-    <Button
-      type="button"
-      variant="outline"
-      size="sm"
-      className={cn("rounded-full bg-white/80", className)}
-      onClick={handleShare}
-      disabled={!isPublic}
-      title={isPublic ? "Share short booking link" : "Available after admin approval"}
-    >
-      <Share2 className="mr-2 h-4 w-4" />
-      Share
-    </Button>
-  );
-}
 
 function mergeUpdatedAssignment(
   currentAssignments: ProviderBookingAssignmentView[] | undefined,
@@ -1592,7 +1525,7 @@ export default function ProviderDashboard() {
                     <Button asChild variant="outline" size="sm" className="rounded-full bg-white/80">
                       <a href={`/provider/stays/${stay.id}/availability#media`}>Update photo</a>
                     </Button>
-                    <ShareListingButton serviceType="stay" id={stay.id} title={stay.title} isPublic={stay.isPublic} />
+                    <ListingShareSheet kind="stay" id={stay.id} name={stay.title} description={stay.description} {...getListingSharePrice("stay", stay)} isPublic={stay.isPublic} source="provider" triggerClassName="bg-white/80" />
                   </div>
                 </div>
                 <Button asChild className="w-full rounded-full md:min-w-48 md:w-auto">
@@ -1639,7 +1572,7 @@ export default function ProviderDashboard() {
                       <Button asChild variant="outline" size="sm" className="rounded-full bg-white/80">
                         <a href={`/provider/cars/${car.id}/availability#media`}>Update photos</a>
                       </Button>
-                      <ShareListingButton serviceType="car" id={car.id} title={car.model} isPublic={car.isPublic} />
+                      <ListingShareSheet kind="car" id={car.id} name={car.model} description={car.description} {...getListingSharePrice("car", car)} isPublic={car.isPublic} source="provider" triggerClassName="bg-white/80" />
                     </div>
                   </div>
                   <Button asChild variant="outline" size="sm" className="w-full rounded-full sm:w-auto">
@@ -1686,7 +1619,7 @@ export default function ProviderDashboard() {
                       <Button asChild variant="outline" size="sm" className="rounded-full bg-white/80">
                         <a href={`/provider/cooks/${cook.id}/edit#media`}>Update photos</a>
                       </Button>
-                      <ShareListingButton serviceType="cook" id={cook.id} title={`${cook.serviceType} by ${cook.title}`} isPublic={cook.isPublic} />
+                      <ListingShareSheet kind="cook" id={cook.id} name={cook.title} description={cook.description} {...getListingSharePrice("cook", cook)} isPublic={cook.isPublic} source="provider" triggerClassName="bg-white/80" />
                     </div>
                   </div>
                   <Button asChild variant="outline" size="sm" className="w-full rounded-full sm:w-auto">
@@ -1739,7 +1672,7 @@ export default function ProviderDashboard() {
                       <Button asChild variant="outline" size="sm" className="rounded-full bg-white/80">
                         <Link href={`/provider/errands/${errand.id}/edit`}>Adjust add-ons</Link>
                       </Button>
-                      <ShareListingButton serviceType="errand" id={errand.id} title={errand.serviceName} isPublic={errand.isPublic} />
+                      <ListingShareSheet kind="errand" id={errand.id} name={errand.serviceName} description={errand.description} {...getListingSharePrice("errand", errand)} isPublic={errand.isPublic} source="provider" triggerClassName="bg-white/80" />
                     </div>
                   </div>
                   <Button asChild variant="outline" size="sm" className="w-full rounded-full sm:w-auto">
@@ -1785,7 +1718,7 @@ export default function ProviderDashboard() {
                       <Button asChild variant="outline" size="sm" className="rounded-full bg-white/80">
                         <Link href={`/provider/experiences/${experience.id}/edit`}>Adjust guest settings</Link>
                       </Button>
-                      <ShareListingButton serviceType="experience" id={experience.id} title={experience.title} isPublic={experience.isPublic} />
+                      <ListingShareSheet kind="experience" id={experience.id} name={experience.title} description={experience.description} {...getListingSharePrice("experience", experience)} isPublic={experience.isPublic} source="provider" triggerClassName="bg-white/80" />
                     </div>
                   </div>
                   <Button asChild variant="outline" size="sm" className="w-full rounded-full sm:w-auto">
