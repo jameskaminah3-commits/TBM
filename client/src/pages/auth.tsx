@@ -164,7 +164,7 @@ function resolvePostAuthPath(nextPath: string, isAdmin: boolean, role?: string |
     return "/";
   }
 
-  // Partners signing in with no page in mind go straight to Partner Hub.
+  // Providers signing in with no page in mind go straight to Provider Hub.
   if (nextPath === "/" && role === "provider") {
     return "/provider/dashboard";
   }

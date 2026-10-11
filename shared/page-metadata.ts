@@ -41,7 +41,7 @@ export const staticPageMetadata: Record<string, { title: string; description: st
     description: "Can't find it listed? Tell us what you need and your budget. Our team finds it along the Kenyan Coast, checks it, and replies within a few hours, Monday to Saturday.",
   },
   "/partner": {
-    title: "Put Your Vehicle to Work | Partner with Tembea Bila Matata",
+    title: "Put Your Vehicle to Work | List with Tembea Bila Matata",
     description: "Drive or own a car, van or 4x4 on the Kenyan Coast? Join Tembea Bila Matata's fleet network and take bookings from the travellers we look after.",
   },
   "/partner/apply": {

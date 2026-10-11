@@ -63,8 +63,8 @@ export function AdminListingEdits() {
     <Card className="border-amber-200 bg-white shadow-sm" data-testid="admin-listing-edits">
       <CardHeader className="flex flex-col gap-3 space-y-0 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
-          <CardTitle className="text-lg">Partner edits to review ({edits.length})</CardTitle>
-          <CardDescription>Partners' changes are already live. Check them, then mark them reviewed.</CardDescription>
+          <CardTitle className="text-lg">Provider edits to review ({edits.length})</CardTitle>
+          <CardDescription>Providers' changes are already live. Check them, then mark them reviewed.</CardDescription>
         </div>
         <Button
           type="button"

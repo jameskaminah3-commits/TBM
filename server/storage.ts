@@ -332,7 +332,7 @@ function getInboxSenderRoleLabel(role: string | null | undefined) {
   }
 
   if (role === "provider") {
-    return "Partner";
+    return "Provider";
   }
 
   return "Guest";
@@ -1935,7 +1935,7 @@ export class DatabaseStorage implements IStorage {
     return releases.map((release) => ({ ...release, views: views.filter((view) => view.releaseId === release.id) }));
   }
 
-  // Releases a partner can use now: not revoked and not expired.
+  // Releases a provider can use now: not revoked and not expired.
   async getActiveGuestContactReleases(providerUserId: string, bookingId?: string): Promise<GuestContactRelease[]> {
     await this.ensureGuestContactTables();
     const now = new Date().toISOString();
@@ -2026,7 +2026,7 @@ export class DatabaseStorage implements IStorage {
       ON partner_admin_messages (provider_user_id, created_at);
     `);
 
-    // Guest and partner conversations on a booking (migration 0018).
+    // Guest and provider conversations on a booking (migration 0018).
     await pool.query(`
       ALTER TABLE booking_messages ADD COLUMN IF NOT EXISTS audience text NOT NULL DEFAULT 'guest';
       ALTER TABLE booking_messages ADD COLUMN IF NOT EXISTS partner_user_id varchar;
@@ -3305,7 +3305,7 @@ export class DatabaseStorage implements IStorage {
       assignment.providerUserId ? this.getUser(assignment.providerUserId) : Promise.resolve(undefined),
       this.getUsersByRole("admin"),
     ]);
-    const providerName = [provider?.firstName, provider?.lastName].filter(Boolean).join(" ").trim() || provider?.email || "A partner";
+    const providerName = [provider?.firstName, provider?.lastName].filter(Boolean).join(" ").trim() || provider?.email || "A provider";
     const dates = formatCalendarDateRange(booking.checkIn, booking.checkOut && booking.checkOut !== booking.checkIn ? booking.checkOut : booking.checkIn, "en-GB");
     for (const admin of admins) {
       await this.createInboxItem({
@@ -3325,7 +3325,7 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  // TBM shared a guest's contact with a partner: the partner hears what was
+  // TBM shared a guest's contact with a provider: the provider hears what was
   // shared, why and until when, but not the details themselves.
   async notifyPartnerOfGuestContactRelease(release: GuestContactRelease, assignment: BookingServiceAssignment): Promise<void> {
     const shared = [release.shareFullName ? "full name" : null, release.sharePhone ? "phone number" : null, release.shareEmail ? "email" : null]
@@ -3576,8 +3576,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Who hears about a booking message. Guest messages go to TBM, and TBM's
-  // replies to the guest. A partner's messages go to TBM, and TBM's replies to
-  // that partner. Guests and partners are never told about each other's.
+  // replies to the guest. A provider's messages go to TBM, and TBM's replies to
+  // that provider. Guests and providers are never told about each other's.
   private async createBookingMessageInboxItems(message: BookingMessage) {
     const booking = await this.getBooking(message.bookingId);
     if (!booking) {
@@ -3616,7 +3616,7 @@ export class DatabaseStorage implements IStorage {
       }
     } else {
       const title = conversation.audience === "partner"
-        ? `Partner message: ${assignments.find((entry) => entry.providerUserId === conversation.partnerUserId)?.serviceName ?? "booking"}`
+        ? `Provider message: ${assignments.find((entry) => entry.providerUserId === conversation.partnerUserId)?.serviceName ?? "booking"}`
         : `New message from ${getInboxSenderRoleLabel(message.senderRole)}`;
       for (const admin of admins) {
         recipients.set(admin.id, { assignmentId: null, title });
@@ -3663,7 +3663,7 @@ export class DatabaseStorage implements IStorage {
       || getInboxSenderRoleLabel(message.senderRole);
     const providerLabel = [providerUser?.firstName, providerUser?.lastName].filter(Boolean).join(" ").trim()
       || providerUser?.email
-      || "Partner";
+      || "Provider";
     const messageExcerpt = getInboxMessageExcerpt(message.message);
     const recipients = message.senderRole === "admin"
       ? [message.providerUserId]
@@ -3679,7 +3679,7 @@ export class DatabaseStorage implements IStorage {
         type: "partner-admin-message",
         title: message.senderRole === "admin"
           ? "New message from admin"
-          : `Partner message from ${providerLabel}`,
+          : `Provider message from ${providerLabel}`,
         body: `${senderLabel}: ${messageExcerpt}`,
         priority: "normal",
         channels: ["in-app", "push"],

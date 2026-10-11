@@ -150,7 +150,7 @@ export default function ProviderCarAvailability() {
       queryClient.invalidateQueries({ queryKey: ["/api/cars"] });
       toast({
         title: "Listing updated",
-        description: "Your changes are live. TBM reviews partner edits afterwards.",
+        description: "Your changes are live. TBM reviews your edits afterwards.",
       });
     },
     onError: (error: Error) => {
@@ -181,7 +181,7 @@ export default function ProviderCarAvailability() {
           <CardHeader>
             <CardTitle>Listing Details</CardTitle>
             <CardDescription>
-              Changes go live when you save. TBM reviews partner edits afterwards.
+              Changes go live when you save. TBM reviews your edits afterwards.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">

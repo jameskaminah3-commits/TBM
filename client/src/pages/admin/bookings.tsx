@@ -123,7 +123,7 @@ function getCustomRequestQueueLabel(booking: Booking) {
       return "Waiting Client";
     }
 
-    return "Waiting Partner";
+    return "Waiting Provider";
   }
 
   if (booking.serviceMode === "experience-custom-offer") {
@@ -135,7 +135,7 @@ function getCustomRequestQueueLabel(booking: Booking) {
       return "Waiting Client";
     }
 
-    return "Waiting Partner";
+    return "Waiting Provider";
   }
 
   return "Open";
@@ -738,7 +738,7 @@ export default function AdminBookings() {
       return null;
     }
 
-    return <Badge className="bg-blue-600">Partner Requested {getRequestedStatusLabel(status)}</Badge>;
+    return <Badge className="bg-blue-600">Provider Requested {getRequestedStatusLabel(status)}</Badge>;
   };
 
   const getFinalizedWorkflowBadge = (booking: Pick<Booking, "status">) => (
@@ -797,7 +797,7 @@ export default function AdminBookings() {
       case "declined":
         return <Badge variant="destructive">Declined</Badge>;
       default:
-        return <Badge variant="outline">{isAdminManagedCustomServiceBooking(booking) ? "Waiting Approval" : "Waiting Partner"}</Badge>;
+        return <Badge variant="outline">{isAdminManagedCustomServiceBooking(booking) ? "Waiting Approval" : "Waiting Provider"}</Badge>;
     }
   };
 
@@ -834,7 +834,7 @@ export default function AdminBookings() {
       case "declined":
         return "Declined.";
       default:
-        return isAdminManagedCustomServiceBooking(booking) ? "Waiting for admin review." : "Waiting for partner.";
+        return isAdminManagedCustomServiceBooking(booking) ? "Waiting for admin review." : "Waiting for provider.";
     }
   };
 
@@ -1025,7 +1025,7 @@ export default function AdminBookings() {
                 <CardContent className="space-y-4 p-4 pt-4 sm:p-6 sm:pt-4">
                   <div className="grid gap-3 sm:grid-cols-3">
                     <div className="rounded-2xl border border-stone-200/80 bg-stone-50/70 p-4">
-                      <div className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Waiting Partner</div>
+                      <div className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Waiting Provider</div>
                       <div className="mt-2 text-2xl font-semibold text-foreground">{partnerQueueCount}</div>
                     </div>
                     <div className="rounded-2xl border border-stone-200/80 bg-stone-50/70 p-4">
@@ -1543,10 +1543,10 @@ export default function AdminBookings() {
                             {false && booking.experienceCustomOfferStatus === "pending-admin-approval" ? (
                               <div className="text-sm text-muted-foreground">
                                 {booking.experienceCustomOfferAmount
-                                  ? <>Partner submitted full quote: <span className="font-medium text-foreground">{formatAmount(booking.experienceCustomOfferAmount ?? 0)}</span>{booking.experienceCustomOfferMessage ? ` / ${booking.experienceCustomOfferMessage}` : ""}</>
+                                  ? <>Provider submitted full quote: <span className="font-medium text-foreground">{formatAmount(booking.experienceCustomOfferAmount ?? 0)}</span>{booking.experienceCustomOfferMessage ? ` / ${booking.experienceCustomOfferMessage}` : ""}</>
                                   : booking.experienceCustomOfferDeclineReason
-                                    ? <>Partner submitted decline reason: {booking.experienceCustomOfferDeclineReason}</>
-                                    : "A partner response is waiting for your approval."}
+                                    ? <>Provider submitted decline reason: {booking.experienceCustomOfferDeclineReason}</>
+                                    : "A provider response is waiting for your approval."}
                               </div>
                             ) : null}
                             {false && booking.experienceCustomOfferStatus === "declined" && booking.experienceCustomOfferDeclineReason ? (
@@ -1650,7 +1650,7 @@ export default function AdminBookings() {
                           <div className="rounded-lg border border-blue-200 bg-blue-50/80 p-3 space-y-3">
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                               <div>
-                                <div className="text-sm font-medium">Partner Status Request</div>
+                                <div className="text-sm font-medium">Provider Status Request</div>
                                 <div className="text-sm text-muted-foreground">
                                   Requested change: {getRequestedStatusLabel(booking.providerStatusRequest)}
                                 </div>
@@ -1894,7 +1894,7 @@ export default function AdminBookings() {
                           title="Messages with the guest"
                           initialMessage={booking.serviceRequestDetails}
                           initialMessageLabel={getBookingThreadInitialLabel(booking)}
-                          composerPlaceholder="Write to the guest. Partners won't see it."
+                          composerPlaceholder="Write to the guest. Providers won't see it."
                           defaultOpen={pageIntent.openThread && pageIntent.bookingId === booking.id}
                         />
                         <AdminBookingPartners bookingId={booking.id} hasGuestPhone={Boolean(booking.guestPhone)} />

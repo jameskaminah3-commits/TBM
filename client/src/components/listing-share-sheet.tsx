@@ -66,7 +66,7 @@ export function ListingShareSheet({
   const whatsappRef = useRef<HTMLAnchorElement | null>(null);
   const canShareNatively = typeof navigator !== "undefined" && typeof navigator.share === "function";
 
-  // Phase 3: the listing's own partner gets a random share code, so visits and
+  // Phase 3: the listing's own provider gets a random share code, so visits and
   // bookings from this share show in Your shares. Anyone else shares the plain link.
   const [shareCode, setShareCode] = useState<string | null>(null);
   const [codeLoading, setCodeLoading] = useState(false);
@@ -83,7 +83,7 @@ export function ListingShareSheet({
         if (!cancelled) setShareCode(data.code);
       })
       .catch(() => {
-        // Not this partner's listing, or offline: share the plain link.
+        // Not this provider's listing, or offline: share the plain link.
       })
       .finally(() => {
         if (!cancelled) setCodeLoading(false);

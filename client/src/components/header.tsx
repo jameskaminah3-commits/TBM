@@ -119,7 +119,7 @@ export function Header() {
               key={link.href}
               href={link.href}
               className={cn(
-                "inline-flex items-center justify-center whitespace-nowrap rounded-full px-2.5 py-2 text-[0.9rem] font-medium transition-colors 2xl:px-3.5 2xl:text-[0.96rem]",
+                "inline-flex items-center justify-center whitespace-nowrap rounded-full px-2 py-2 text-[0.9rem] font-medium transition-colors 2xl:px-3.5 2xl:text-[0.96rem]",
                 isActive(link.href)
                   ? "bg-primary/10 text-foreground"
                   : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
@@ -192,7 +192,7 @@ export function Header() {
               >
                 <Link href="/provider/dashboard">
                   <BriefcaseBusiness className="h-4 w-4 mr-2" />
-                  Partner
+                  Provider Hub
                 </Link>
               </Button>
             )}
@@ -216,10 +216,12 @@ export function Header() {
                 size="sm"
                 className="min-h-10 rounded-full px-3 text-[0.9rem] text-muted-foreground hover:bg-muted/70 hover:text-foreground"
                 onClick={handleLogout}
+                title="Sign out"
                 data-testid="button-logout"
               >
-                <LogOut className="h-4 w-4 mr-2" />
-                Sign out
+                {/* Icon only on laptops, so the nav keeps room for Bookings beside Provider Hub or Admin. */}
+                <LogOut className="h-4 w-4 2xl:mr-2" aria-hidden="true" />
+                <span className="sr-only 2xl:not-sr-only">Sign out</span>
               </Button>
             )}
           </div>
@@ -373,7 +375,7 @@ export function Header() {
                         >
                           <Link href="/provider/dashboard">
                             <BriefcaseBusiness className="h-4 w-4 mr-2" />
-                            Partner
+                            Provider Hub
                           </Link>
                         </Button>
                       )}

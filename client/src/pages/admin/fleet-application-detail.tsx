@@ -90,7 +90,7 @@ export default function AdminFleetApplicationDetail() {
       queryClient.invalidateQueries({ queryKey: [`/api/admin/fleet-applications/${params.id}`] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/fleet-applications"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/provider-accounts"] });
-      toast({ title: "Fleet partner approved", description: "The provider account and vehicle listing were created." });
+      toast({ title: "Provider approved", description: "The provider account and vehicle listing were created." });
     },
     onError: (error: Error) => {
       toast({
@@ -247,10 +247,10 @@ export default function AdminFleetApplicationDetail() {
       <Dialog open={isApproveOpen} onOpenChange={setIsApproveOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Approve fleet partner</DialogTitle>
+            <DialogTitle>Approve provider</DialogTitle>
             <DialogDescription>
-              This creates a partner account for {application.fullName} ({application.email}) and adds the{" "}
-              {application.make} {application.model} to the fleet as a private listing for you or the partner to
+              This creates a provider account for {application.fullName} ({application.email}) and adds the{" "}
+              {application.make} {application.model} to the fleet as a private listing for you or the provider to
               finish setting up.
             </DialogDescription>
           </DialogHeader>
@@ -261,7 +261,7 @@ export default function AdminFleetApplicationDetail() {
                 name="password"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Set a password for this partner</FormLabel>
+                    <FormLabel>Set a password for this provider</FormLabel>
                     <FormControl>
                       <Input type="password" {...field} />
                     </FormControl>

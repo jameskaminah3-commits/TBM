@@ -206,7 +206,7 @@ function ListingRow({ listing }: { listing: ListingShares }) {
   );
 }
 
-// "Your shares": what the partner's own share links brought in. Counts,
+// "Your shares": what the provider's own share links brought in. Counts,
 // booking references and dates only; no guest details or amounts.
 export function YourShares() {
   const { data, isLoading, isError } = useQuery<{ listings: ListingShares[] }>({

@@ -24,7 +24,7 @@ const exploreLinks = [
   { href: "/verify", label: "Verify a listing" },
   { href: "/request-custom-service", label: "Tell us what you need" },
   { href: "/blog", label: "Concierge articles" },
-  { href: "/partner", label: "Partner with us" },
+  { href: "/partner", label: "Become a provider" },
 ];
 
 const companyLinks = [

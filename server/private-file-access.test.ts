@@ -23,7 +23,7 @@ test("fleet application files are for TBM until the car is approved and its mana
   assert.equal(decidePrivateFileAccess({ id: "admin-1", role: "admin" }, { file: application, ...none }).allowed, true);
 });
 
-test("a guest's attachment: the guest and partners on that booking", () => {
+test("a guest's attachment: the guest and providers on that booking", () => {
   const attachment = { kind: "guest-attachment", ownerUserId: "jane-1" };
   assert.equal(decidePrivateFileAccess({ id: "jane-1", role: "customer" }, { file: attachment, ...none }).reason, "uploader");
   assert.equal(decidePrivateFileAccess({ id: "provider-2", role: "provider" }, { file: attachment, managesReferencingCar: false, bookingAccess: "partner" }).reason, "booking-partner");

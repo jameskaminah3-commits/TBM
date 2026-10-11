@@ -29,7 +29,7 @@ function releaseState(release: GuestContactRelease) {
 
 const when = (value: string) => formatKenyaDateTime(value, undefined, "en-GB");
 
-// TBM's side of a booking with its partners: a conversation with each, and the
+// TBM's side of a booking with its providers: a conversation with each, and the
 // rare, recorded release of the guest's contact to one of them.
 export function AdminBookingPartners({ bookingId, hasGuestPhone }: { bookingId: string; hasGuestPhone: boolean }) {
   const { data: partners = [] } = useQuery<BookingPartner[]>({
@@ -52,7 +52,7 @@ export function AdminBookingPartners({ bookingId, hasGuestPhone }: { bookingId: 
             bookingId={bookingId}
             partnerUserId={partner.providerUserId}
             title={`Messages with ${partner.name}`}
-            composerPlaceholder="Write to this partner. The guest won't see it."
+            composerPlaceholder="Write to this provider. The guest won't see it."
           />
           <GuestContactReleases bookingId={bookingId} partner={partner} hasGuestPhone={hasGuestPhone} />
         </div>
@@ -107,12 +107,12 @@ function GuestContactReleases({ bookingId, partner, hasGuestPhone }: { bookingId
         </span>
         {!formOpen ? (
           <Button type="button" size="sm" variant="outline" onClick={() => setFormOpen(true)} data-testid={`button-share-contact-${partner.providerUserId}`}>
-            Share with this partner
+            Share with this provider
           </Button>
         ) : null}
       </div>
       <p className="text-xs text-muted-foreground">
-        Partners get the guest's first name and initial only, and no contact details. Share more only for an emergency or a real operational need, for as short a time as works.
+        Providers get the guest's first name and initial only, and no contact details. Share more only for an emergency or a real operational need, for as short a time as works.
       </p>
 
       {formOpen ? (
@@ -141,7 +141,7 @@ function GuestContactReleases({ bookingId, partner, hasGuestPhone }: { bookingId
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor={`contact-reason-${partner.providerUserId}`}>Reason (the partner sees this)</Label>
+            <Label htmlFor={`contact-reason-${partner.providerUserId}`}>Reason (the provider sees this)</Label>
             <Textarea
               id={`contact-reason-${partner.providerUserId}`}
               rows={2}

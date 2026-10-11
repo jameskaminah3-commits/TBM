@@ -13,8 +13,8 @@ type Assignments = {
   experiences?: Array<Named & { title: string }>;
 };
 
-// The partner's public listings, each one tap from the share sheet, at the top
-// of Overview: from landing on Partner Hub to WhatsApp in two taps.
+// The provider's public listings, each one tap from the share sheet, at the top
+// of Overview: from landing on Provider Hub to WhatsApp in two taps.
 export function ShareYourListings({ data }: { data?: Assignments }) {
   const listings: Array<{ kind: PublicListingKind; id: string; name: string; isPublic: boolean; description?: string | null; item: object }> = [
     ...(data?.stays ?? []).map((item) => ({ kind: "stay" as const, id: item.id, name: item.title, isPublic: item.isPublic, description: item.description, item })),

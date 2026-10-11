@@ -90,7 +90,7 @@ import { decidePrivateFileAccess } from "./private-file-access";
 import {
   decideBookingShareCredit,
   getAdminShareSummary,
-  getPartnerShares,
+  getProviderShares,
   issueShareLink,
   markShareLinkShared,
   recordShareEvent,
@@ -131,7 +131,7 @@ import {
   sendOpsAlertEmail,
   sendListingVerificationCompletedEmail,
   sendFleetApplicationReceivedEmails,
-  sendPartnerApprovedEmail,
+  sendProviderApprovedEmail,
 } from "./notifications";
 import {
   buildBookingReceiptPdf,
@@ -2136,7 +2136,7 @@ async function updateOwnJobStatusForBooking(req: any, res: any, category?: Provi
 
   const requestedStatus = req.body?.status;
   if (requestedStatus !== "in-progress" && requestedStatus !== "completed") {
-    return res.status(400).json({ error: "Partners can only mark their jobs as in progress or completed." });
+    return res.status(400).json({ error: "Providers can only mark their jobs as in progress or completed." });
   }
 
   if (req.user.claims.role === "admin") {
@@ -2202,7 +2202,7 @@ function assignmentViewForViewer(req: any, view: ProviderBookingAssignmentView) 
   return { assignment: assignmentForViewer(req, view.assignment), booking: bookingForViewer(req, view.booking) };
 }
 
-// A partner's booking lists hold only bookings they have a job on: not unpaid
+// A provider's booking lists hold only bookings they have a job on: not unpaid
 // holds, and not bookings from before the listing was theirs.
 async function ownJobBookings<T extends { id: string }>(req: any, bookings: T[], category: ProviderCategory) {
   if (req.user?.claims?.role === "admin") {
@@ -3001,7 +3001,7 @@ const marketingTrackRateLimit = createRateLimitMiddleware([
   { id: "marketing:track:session", key: (req) => (typeof req.body?.sessionId === "string" ? req.body.sessionId : null), max: 60, windowMs: 10 * 60 * 1000, message: "Too many requests." },
 ]);
 
-// Documents on a car are protected files. A partner may attach only files they
+// Documents on a car are protected files. A provider may attach only files they
 // uploaded themselves (or keep the ones already on the car); TBM may attach any
 // protected file. Public links are refused, so a document can't sit in public storage.
 async function checkCarDocuments(req: any, documents: Array<{ url?: string }> | undefined, current: Array<{ url?: string }> = []) {
@@ -3026,8 +3026,8 @@ async function checkCarDocuments(req: any, documents: Array<{ url?: string }> | 
 }
 
 // Which conversation on a booking the viewer reads or writes. A guest has their
-// conversation with TBM; a partner has theirs. Only TBM chooses, and a partner
-// conversation must belong to a partner on the booking.
+// conversation with TBM; a provider has theirs. Only TBM chooses, and a provider
+// conversation must belong to a provider on the booking.
 async function resolveBookingConversation(
   access: { booking: { id: string }; viewer: "admin" | "guest" | "provider" },
   requestedAudience: unknown,
@@ -3047,7 +3047,7 @@ async function resolveBookingConversation(
   const partnerUserId = typeof requestedPartnerUserId === "string" ? requestedPartnerUserId.trim() : "";
   const assignments = await storage.getBookingServiceAssignmentsByBookingId(access.booking.id);
   if (!partnerUserId || !assignments.some((assignment) => assignment.providerUserId === partnerUserId)) {
-    return { error: { status: 400, body: { error: "Choose a partner on this booking." } } };
+    return { error: { status: 400, body: { error: "Choose a provider on this booking." } } };
   }
   return { conversation: { audience: "partner", partnerUserId } };
 }
@@ -3463,7 +3463,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Only JPG, PNG, and WEBP files are supported." });
       }
 
-      // A guest's photo goes to private storage: TBM, the guest and partners on the booking can open it.
+      // A guest's photo goes to private storage: TBM, the guest and providers on the booking can open it.
       const { url: mediaUrl } = await savePrivateUpload({ dataUrl, mimeType, kind: "guest-attachment", ownerUserId: req.user.claims.sub });
       res.status(201).json({ mediaUrl });
     } catch (error) {
@@ -3568,7 +3568,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   // Protected files: opened only by TBM, the uploader, the car's manager (vehicle
-  // documents) or the guest and partners on the booking (guest attachments).
+  // documents) or the guest and providers on the booking (guest attachments).
   // Every attempt is logged. Refusals don't reveal whether a file exists.
   app.get("/api/files/*", async (req: any, res, next) => {
     const key = String((req.params as { 0?: string })[0] ?? "");
@@ -3646,7 +3646,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Only JPG, PNG, WEBP, and PDF files are supported." });
       }
 
-      // Compliance documents: TBM and the partner managing the car only.
+      // Compliance documents: TBM and the provider managing the car only.
       const { url: uploadUrl } = await savePrivateUpload({ dataUrl, mimeType, kind: "vehicle-document", ownerUserId: (req as any).user.claims.sub });
       res.status(201).json({ uploadUrl });
     } catch (error) {
@@ -3817,8 +3817,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       queueNotificationTask(
-        `partner approved email for ${createdUser.id}`,
-        sendPartnerApprovedEmail({
+        `provider approved email for ${createdUser.id}`,
+        sendProviderApprovedEmail({
           email: normalizedEmail,
           name: existing.fullName,
           vehicle: getCarDisplayName({ make: existing.make, model: existing.model }),
@@ -4824,7 +4824,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await storage.recordMarketingPromoRedemption(promoPreview.promo.promoId, booking.totalPrice);
       }
 
-      // Phase 3: which partner share brought this booking, decided once, here,
+      // Phase 3: which provider share brought this booking, decided once, here,
       // from the server's own records (R9, R13). It never blocks the booking.
       let share: BookingShareCredit | null = null;
       const parsedShareClaim = bookingShareClaimSchema.safeParse(req.body?.shareClaim ?? {});
@@ -5524,7 +5524,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // R1: a share code for the listing's own partner, asked for when the share sheet opens.
+  // R1: a share code for the listing's own provider, asked for when the share sheet opens.
   app.post("/api/provider/share-links", requireProviderOrAdmin, async (req: any, res) => {
     try {
       const { kind, listingId } = z.object({
@@ -5554,19 +5554,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return updated ? res.json({ ok: true }) : res.status(404).json({ error: "Share link not found" });
   });
 
-  // R8: stop a link. Only the partner who made it, or TBM.
+  // R8: stop a link. Only the provider who made it, or TBM.
   app.post("/api/provider/share-links/:code/stop", requireProviderOrAdmin, async (req: any, res) => {
     const stopped = await stopShareLink(req.params.code, req.user.claims.sub, req.user.claims.role === "admin").catch(() => false);
     return stopped ? res.json({ ok: true }) : res.status(404).json({ error: "Share link not found" });
   });
 
-  // "Your shares": the signed-in partner's own links only (R12).
+  // "Your shares": the signed-in provider's own links only (R12).
   app.get("/api/provider/shares", requireProviderOrAdmin, async (req: any, res) => {
     try {
       res.setHeader("Cache-Control", "private, no-store");
-      return res.json(await getPartnerShares(req.user.claims.sub));
+      return res.json(await getProviderShares(req.user.claims.sub));
     } catch (error) {
-      console.error("[SHARES] Failed to load a partner's shares:", error);
+      console.error("[SHARES] Failed to load a provider's shares:", error);
       return res.status(500).json({ error: "Couldn't load your shares" });
     }
   });
@@ -5576,8 +5576,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.setHeader("Cache-Control", "private, no-store");
       return res.json(await getAdminShareSummary());
     } catch (error) {
-      console.error("[ADMIN] Failed to load partner shares:", error);
-      return res.status(500).json({ error: "Couldn't load partner shares" });
+      console.error("[ADMIN] Failed to load provider shares:", error);
+      return res.status(500).json({ error: "Couldn't load provider shares" });
     }
   });
 
@@ -7050,9 +7050,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const editors = await Promise.all(editorIds.map((id) => storage.getUser(id)));
       const editorNames = new Map(editors.filter(Boolean).map((user) => [
         user!.id,
-        [user!.firstName, user!.lastName].filter(Boolean).join(" ").trim() || user!.email || "Partner",
+        [user!.firstName, user!.lastName].filter(Boolean).join(" ").trim() || user!.email || "Provider",
       ]));
-      res.json(edits.map((edit) => ({ ...edit, editorName: editorNames.get(edit.editorUserId) ?? "Partner" })));
+      res.json(edits.map((edit) => ({ ...edit, editorName: editorNames.get(edit.editorUserId) ?? "Provider" })));
     } catch (error) {
       console.error("[ADMIN] Failed to fetch listing edits:", error);
       res.status(500).json({ error: "Failed to fetch listing edits" });
@@ -7072,7 +7072,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Partners on a booking, for TBM's conversation with each and any guest
+  // Providers on a booking, for TBM's conversation with each and any guest
   // contact TBM has shared with them (with who opened it and when).
   app.get("/api/admin/bookings/:id/partners", requireAdmin, async (req: any, res) => {
     try {
@@ -7090,19 +7090,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const user = await storage.getUser(partnerUserId);
         return {
           providerUserId: partnerUserId,
-          name: [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim() || user?.email || "Partner",
+          name: [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim() || user?.email || "Provider",
           services: assignments.filter((assignment) => assignment.providerUserId === partnerUserId).map((assignment) => assignment.serviceName),
           contactReleases: releases.filter((release) => release.providerUserId === partnerUserId),
         };
       }));
       res.json(partners);
     } catch (error) {
-      console.error("[ADMIN] Failed to load booking partners:", error);
-      res.status(500).json({ error: "Failed to load booking partners" });
+      console.error("[ADMIN] Failed to load booking providers:", error);
+      res.status(500).json({ error: "Failed to load booking providers" });
     }
   });
 
-  // Share a guest's contact with one partner on one booking: an exception for an
+  // Share a guest's contact with one provider on one booking: an exception for an
   // emergency or a genuine operational need, limited in time and recorded.
   app.post("/api/admin/bookings/:id/contact-releases", requireAdmin, async (req: any, res) => {
     try {
@@ -7120,7 +7120,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const assignment = (await storage.getBookingServiceAssignmentsByBookingId(booking.id))
         .find((entry) => entry.providerUserId === parsed.data.providerUserId);
       if (!assignment) {
-        return res.status(400).json({ error: "That partner isn't on this booking." });
+        return res.status(400).json({ error: "That provider isn't on this booking." });
       }
       if (parsed.data.sharePhone && !booking.guestPhone) {
         return res.status(400).json({ error: "This booking has no guest phone number." });
@@ -7505,7 +7505,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Guest contact TBM has shared with this partner, without the details: which
+  // Guest contact TBM has shared with this provider, without the details: which
   // bookings, until when and why. The details come one booking at a time.
   app.get("/api/provider/contact-releases", requireProviderOrAdmin, async (req: any, res) => {
     try {
@@ -7525,7 +7525,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // The guest's contact, only while TBM's release is live and the partner is
+  // The guest's contact, only while TBM's release is live and the provider is
   // still on the booking. Every view is recorded.
   app.get("/api/provider/bookings/:id/guest-contact", requireProviderOrAdmin, async (req: any, res) => {
     try {
@@ -7563,7 +7563,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const requestedStatus = req.body?.status;
       if (requestedStatus !== "in-progress" && requestedStatus !== "completed") {
-        return res.status(400).json({ error: "Partners can only mark assignments as in progress or completed." });
+        return res.status(400).json({ error: "Providers can only mark assignments as in progress or completed." });
       }
 
       const result = await applyProviderAssignmentStatusUpdate(access.assignment, access.booking, requestedStatus);
@@ -8251,7 +8251,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "Only stay providers can create stay listings." });
       }
 
-      // Partners list entire places; the team sets up hotels, with their rooms and rates.
+      // Providers list entire places; the team sets up hotels, with their rooms and rates.
       const validatedData = insertStaySchema.parse({
         ...withoutProviderProtectedFields(req.body, req.user.claims.role === "admin"),
         managerUserId: req.user.claims.sub,

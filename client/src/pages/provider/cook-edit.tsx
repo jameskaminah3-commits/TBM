@@ -192,7 +192,7 @@ export default function ProviderCookEdit() {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/cooks"] });
       toast({
         title: "Chef updated",
-        description: "Your changes are live. TBM reviews partner edits afterwards.",
+        description: "Your changes are live. TBM reviews your edits afterwards.",
       });
       setLocation("/provider/dashboard");
     },

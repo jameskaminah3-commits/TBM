@@ -885,7 +885,7 @@ export async function sendProviderAssignmentEmail(args: {
     `Hi ${args.providerName},`,
     "",
     `${args.guestName} has booked ${args.serviceName} for ${dates}.`,
-    "Open your partner dashboard to see the details and accept the booking:",
+    "Open your provider dashboard to see the details and accept the booking:",
     dashboardUrl,
     "",
     `Questions? Call or WhatsApp TBM on ${SUPPORT_PHONE_DISPLAY}.`,
@@ -894,7 +894,7 @@ export async function sendProviderAssignmentEmail(args: {
     '<div style="font-family:Arial,sans-serif;line-height:1.6;color:#0f172a;">',
     `<p>Hi ${escapeHtml(args.providerName)},</p>`,
     `<p>${escapeHtml(args.guestName)} has booked <strong>${escapeHtml(args.serviceName)}</strong> for ${escapeHtml(dates)}.</p>`,
-    `<p><a href="${escapeHtml(dashboardUrl)}">Open your partner dashboard</a> to see the details and accept the booking.</p>`,
+    `<p><a href="${escapeHtml(dashboardUrl)}">Open your provider dashboard</a> to see the details and accept the booking.</p>`,
     `<p>Questions? Call or WhatsApp TBM on ${escapeHtml(SUPPORT_PHONE_DISPLAY)}.</p>`,
     "</div>",
   ].join("");
@@ -957,21 +957,21 @@ export async function sendFleetApplicationReceivedEmails(args: {
   return { teamSent, applicantSent };
 }
 
-// The applicant is now a partner. The password is never emailed: TBM gives it
+// The applicant is now a provider. The password is never emailed: TBM gives it
 // to them directly, or they set their own with "Forgot password?".
-export async function sendPartnerApprovedEmail(args: { email: string; name: string; vehicle: string }) {
+export async function sendProviderApprovedEmail(args: { email: string; name: string; vehicle: string }) {
   const baseUrl = process.env.APP_BASE_URL?.trim() || "https://tembeabilamatata.com";
   const signInUrl = `${baseUrl}/auth?next=${encodeURIComponent("/provider/dashboard")}`;
   const firstName = args.name.trim().split(/\s+/)[0] || "there";
   const text = [
     `Hi ${firstName},`,
     "",
-    `Welcome to Tembea Bila Matata. Your ${args.vehicle} is approved and your partner account is ready.`,
+    `Welcome to Tembea Bila Matata. Your ${args.vehicle} is approved and your provider account is ready.`,
     `Sign in with this email address (${args.email}):`,
     signInUrl,
     "TBM will give you your temporary password, or you can set your own now: on the sign-in page choose \"Forgot password?\".",
     "",
-    "In Partner Hub you can set your prices, keep your documents up to date, share your listing, and see your bookings and earnings.",
+    "In Provider Hub you can set your prices, keep your documents up to date, share your listing, and see your bookings and earnings.",
     "TBM checks your listing before guests can see it.",
     "",
     `Questions? Call or WhatsApp TBM on ${SUPPORT_PHONE_DISPLAY}.`,
@@ -979,15 +979,15 @@ export async function sendPartnerApprovedEmail(args: { email: string; name: stri
   const html = [
     '<div style="font-family:Arial,sans-serif;line-height:1.6;color:#0f172a;">',
     `<p>Hi ${escapeHtml(firstName)},</p>`,
-    `<p>Welcome to Tembea Bila Matata. Your <strong>${escapeHtml(args.vehicle)}</strong> is approved and your partner account is ready.</p>`,
-    `<p><a href="${escapeHtml(signInUrl)}">Sign in to Partner Hub</a> with this email address (${escapeHtml(args.email)}). TBM will give you your temporary password, or you can set your own now: on the sign-in page choose "Forgot password?".</p>`,
-    "<p>In Partner Hub you can set your prices, keep your documents up to date, share your listing, and see your bookings and earnings. TBM checks your listing before guests can see it.</p>",
+    `<p>Welcome to Tembea Bila Matata. Your <strong>${escapeHtml(args.vehicle)}</strong> is approved and your provider account is ready.</p>`,
+    `<p><a href="${escapeHtml(signInUrl)}">Sign in to Provider Hub</a> with this email address (${escapeHtml(args.email)}). TBM will give you your temporary password, or you can set your own now: on the sign-in page choose "Forgot password?".</p>`,
+    "<p>In Provider Hub you can set your prices, keep your documents up to date, share your listing, and see your bookings and earnings. TBM checks your listing before guests can see it.</p>",
     `<p>Questions? Call or WhatsApp TBM on ${escapeHtml(SUPPORT_PHONE_DISPLAY)}.</p>`,
     "</div>",
   ].join("");
   return await sendEmailMessage({
     to: [args.email],
-    subject: "[Tembea Bila Matata] Welcome: your partner account is ready",
+    subject: "[Tembea Bila Matata] Welcome: your provider account is ready",
     text,
     html,
   });

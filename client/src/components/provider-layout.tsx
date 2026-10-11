@@ -31,7 +31,7 @@ function ProviderSidebar() {
   const { user, isAdmin } = useAuth();
   const { unreadCount } = useInbox({ enabled: Boolean(user && (user.role === "provider" || user.role === "admin")) });
   const providerTypes = user?.providerTypes ?? [];
-  // Vehicle pages only for partners with cars; every partner gets the rest.
+  // Vehicle pages only for providers with cars; every provider gets the rest.
   const hasVehicles = isAdmin || providerTypes.includes("cars");
 
   const menuItems = [
@@ -79,7 +79,7 @@ function ProviderSidebar() {
             <BriefcaseBusiness className="h-4 w-4" />
           </div>
           <div className="flex flex-col">
-            <span className="text-sm font-semibold">Partner Hub</span>
+            <span className="text-sm font-semibold">Provider Hub</span>
             <span className="text-xs text-muted-foreground">
               {isAdmin || providerTypes.length === 0 ? "Assigned work" : `${providerTypes.length} workspace${providerTypes.length === 1 ? "" : "s"}`}
             </span>

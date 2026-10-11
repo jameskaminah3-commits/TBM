@@ -396,7 +396,7 @@ export default function AdminStaysEdit() {
                   <p className="mt-2 text-sm text-muted-foreground">
                     {savedAsHotel
                       ? "For rooms the hotel sold elsewhere, maintenance, or days it isn't taking bookings. The second date is the day they open again."
-                      : "Use this for owner stays, maintenance, or partner-held dates."}
+                      : "Use this for owner stays, maintenance, or provider-held dates."}
                   </p>
                 </div>
 
@@ -626,7 +626,7 @@ export default function AdminStaysEdit() {
                           ))}
                         </SelectContent>
                       </Select>
-                      <FormDescription>Only the assigned provider will see this stay in their partner dashboard.</FormDescription>
+                      <FormDescription>Only the assigned provider will see this stay in their provider dashboard.</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}

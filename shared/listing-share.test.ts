@@ -12,7 +12,7 @@ import {
 
 const villa = { kind: "stay" as const, id: "4f1c2d9e-0b7a-4c55-9d1e-3a6b8c0d2e11", name: "Beachfront Villa – Diani" };
 
-test("a partner's share link carries their random code, and nothing else about them", () => {
+test("a provider's share link carries their random code, and nothing else about them", () => {
   const url = new URL(buildListingShareUrl("https://tembeabilamatata.com", villa, { source: "provider", channel: "whatsapp", code: "k7m2x9qa4p" }));
   assert.equal(url.searchParams.get("ref"), "k7m2x9qa4p");
   assert.equal(url.searchParams.get("utm_source"), "provider");

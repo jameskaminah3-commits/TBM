@@ -615,12 +615,12 @@ export const INVENTORY_CATALOG = {
       {
         scenario: "A whole trip doesn't fit the customer's budget: the trip package is still over it after adjusting",
         tier: "proposal",
-        reason: "The team puts together a trip within the budget from partner options. Pass budget_amount and budget_currency as the customer said them.",
+        reason: "The team puts together a trip within the budget from provider options. Pass budget_amount and budget_currency as the customer said them.",
       },
       {
         scenario: "No listed stay, car or service fits the customer's budget or exactly what they want (e.g. no stay at their nightly price in their area)",
         tier: "intake",
-        reason: "The team sources a partner option that fits. Pass budget_amount and budget_currency as the customer said them.",
+        reason: "The team sources a provider option that fits. Pass budget_amount and budget_currency as the customer said them.",
       },
       {
         scenario: "Customer asks for anything Coast-related and legitimate that isn't covered above",
@@ -630,7 +630,7 @@ export const INVENTORY_CATALOG = {
     ],
 
     examples: [
-      "Safaris outside our partner network",
+      "Safaris outside our provider network",
       "Flights and airport transfers beyond Mombasa",
       "Bespoke multi-stop itineraries",
       "Unverified villas found on Facebook / Airbnb (use the listing verification request, not a custom offer)",
@@ -781,7 +781,7 @@ export const INVENTORY_CATALOG = {
     "Never offer to book something the platform doesn't support without going through custom offers.",
     "Never dump a long list of options when 3 well-chosen ones would be better.",
     "Never say 'we can't help' — always offer the custom offer pathway or escalate.",
-    "Never claim that every TBM partner is verified — this is not currently enforced by the database. Say 'our team vets partners before listing' only if the customer asks directly.",
+    "Never claim that every TBM provider is verified — this is not currently enforced by the database. Say 'our team vets providers before listing' only if the customer asks directly.",
     "Never promise a physical verification report will catch every issue — it reflects the property at the time of the visit only.",
     "Never say the team can 'hold' inventory without payment — the platform does not support unpaid reservations.",
   ],

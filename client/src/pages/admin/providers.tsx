@@ -606,7 +606,7 @@ export default function AdminProviders() {
                           onClick={() => setActiveMessageProviderId((current) => current === provider.id ? null : provider.id)}
                         >
                           <Mail className="mr-2 h-4 w-4" />
-                          {activeMessageProviderId === provider.id ? "Hide messages" : "Message partner"}
+                          {activeMessageProviderId === provider.id ? "Hide messages" : "Message provider"}
                         </Button>
                         <Button
                           variant="outline"
@@ -686,7 +686,7 @@ export default function AdminProviders() {
                         mode="admin"
                         providerUserId={provider.id}
                         partnerName={getProviderDisplayName(provider)}
-                        title="Partner Admin Channel"
+                        title="Provider Admin Channel"
                         description="Direct admin conversation with"
                         defaultOpen
                       />

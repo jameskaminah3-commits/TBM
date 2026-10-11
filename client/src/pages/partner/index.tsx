@@ -20,7 +20,7 @@ import iconExecutive from "@assets/generated_images/Fleet_icon_executive_9c3d5f8
 
 const trustPoints = [
   { icon: ShieldCheck, label: "Vehicle verification required" },
-  { icon: Handshake, label: "Professional partnership agreement" },
+  { icon: Handshake, label: "Professional provider agreement" },
   { icon: DollarSign, label: "No joining fee" },
 ];
 
