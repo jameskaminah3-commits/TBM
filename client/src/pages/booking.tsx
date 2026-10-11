@@ -72,6 +72,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   captureMarketingQueryParams,
   clearMarketingAttributionContext,
+  getBookingShareClaim,
   getMarketingAttributionPayload,
   trackMarketingPageView,
 } from "@/lib/marketing-attribution";
@@ -186,6 +187,7 @@ type BookingFormValues = z.infer<typeof bookingFormSchema>;
 type StayBookingSubmission = BookingFormValues & {
   promoCode?: string | null;
   marketingAttribution?: MarketingAttributionPayload;
+  shareClaim?: ReturnType<typeof getBookingShareClaim>;
 };
 
 type BookingCheckoutResponse = {
@@ -398,7 +400,7 @@ export default function Booking() {
   const isBookingFormDirty = form.formState.isDirty;
 
   useEffect(() => {
-    captureMarketingQueryParams();
+    captureMarketingQueryParams({ listingKind: "stay", listingId: id });
     void trackMarketingPageView();
     const savedPromoCode = getMarketingAttributionPayload().promoCode;
     if (savedPromoCode) {
@@ -441,6 +443,8 @@ export default function Booking() {
         landingPath: bookingPath,
         promoCode: nextPromoCode ?? undefined,
       }),
+      // Phase 3: which share link brought the guest; the server checks it.
+      shareClaim: getBookingShareClaim(),
     };
   };
 

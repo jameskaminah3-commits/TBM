@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useLocation, useSearch, Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -50,6 +50,7 @@ import { openZaina } from "@/lib/zaina";
 import { cn } from "@/lib/utils";
 import { ListingShareSheet } from "@/components/listing-share-sheet";
 import { useOwnsListing } from "@/hooks/use-owns-listing";
+import { captureListingVisit, trackShareEvent, withShareRef } from "@/lib/marketing-attribution";
 import { getListingSharePrice } from "@shared/listing-share";
 import { ListingUnavailable } from "@/components/listing-unavailable";
 
@@ -117,6 +118,12 @@ export default function AccommodationDetail() {
     },
   });
   const ownsListing = useOwnsListing("stay", accommodation?.id);
+
+  // Phase 3: a visit from a share link (or another tagged link) is recorded,
+  // once per device per day on the server.
+  useEffect(() => {
+    if (id) captureListingVisit("stay", id);
+  }, [id]);
 
   const { data: availability } = useQuery<StayAvailability>({
     queryKey: ["/api/stays", id, "availability"],
@@ -196,7 +203,8 @@ export default function AccommodationDetail() {
     const params = checkoutParams();
     params.set("room", roomTypeId);
     params.set("plan", mealPlan);
-    setLocation(`/book/${id}?${params.toString()}`);
+    void trackShareEvent("book");
+    setLocation(withShareRef(`/book/${id}?${params.toString()}`));
   };
 
   // From the pinned bar: on a tablet the calendar opens beside the card's
@@ -323,7 +331,10 @@ export default function AccommodationDetail() {
     openZaina(`I'm looking at ${accommodation.title}${dates} for ${guests} guest${guests === 1 ? "" : "s"}. Can you help me plan the rest of the trip?`);
   };
   const scrollToRooms = () => document.getElementById("rooms")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  const reserve = () => setLocation(`/book/${accommodation.id}?${checkoutParams().toString()}`);
+  const reserve = () => {
+    void trackShareEvent("book");
+    setLocation(withShareRef(`/book/${accommodation.id}?${checkoutParams().toString()}`));
+  };
   // Hotels: the room is the decision. Entire places: the dates, then reserve.
   const primaryAction = isHotel
     ? { label: "Choose a room", onClick: scrollToRooms }

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useParams, useSearch } from "wouter";
@@ -52,6 +52,7 @@ import { openZaina } from "@/lib/zaina";
 import { cn } from "@/lib/utils";
 import { ListingShareSheet } from "@/components/listing-share-sheet";
 import { useOwnsListing } from "@/hooks/use-owns-listing";
+import { captureListingVisit, trackShareEvent, withShareRef } from "@/lib/marketing-attribution";
 import { getListingSharePrice } from "@shared/listing-share";
 import { ListingUnavailable } from "@/components/listing-unavailable";
 import {
@@ -300,6 +301,12 @@ export default function PublicListingDetail({ kind }: { kind: ListingKind }) {
   });
   const ownsListing = useOwnsListing(kind, listing?.id);
 
+  // Phase 3: a visit from a share link (or another tagged link) is recorded,
+  // once per device per day on the server.
+  useEffect(() => {
+    if (id) captureListingVisit(kind, id);
+  }, [kind, id]);
+
   // The same reviews the reviews section shows, so the rating at the top agrees with it.
   const { data: reviews } = useQuery<Array<{ rating: number; comment?: string | null }>>({
     queryKey: ["/api/reviews", kind, id],
@@ -352,6 +359,11 @@ export default function PublicListingDetail({ kind }: { kind: ListingKind }) {
   const averageRating = reviews?.length ? reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length : listing.rating;
   const hasWrittenReviews = Boolean(reviews?.some((review) => review.comment?.trim()));
   const bookingHref = `${getBookingPath(kind, listing.id)}${selected?.mode ? `?mode=${selected.mode}` : ""}`;
+  // The Book link carries the share code too, for browsers that block storage (R6).
+  const bookListing = () => {
+    void trackShareEvent("book");
+    setLocation(withShareRef(bookingHref));
+  };
   const kindLine = car
     ? "Car hire"
     : cook
@@ -664,7 +676,7 @@ export default function PublicListingDetail({ kind }: { kind: ListingKind }) {
                 </div>
               ) : null}
               <p className="mt-3 text-sm leading-6 text-muted-foreground">Pick your date{kind === "car" || kind === "cook" ? "s" : ""} and see the total before you pay.</p>
-              <Button className="mt-4 h-12 w-full rounded-full text-base" onClick={() => setLocation(bookingHref)} data-testid="button-book-listing">
+              <Button className="mt-4 h-12 w-full rounded-full text-base" onClick={bookListing} data-testid="button-book-listing">
                 {bookLabelByKind[kind]}
               </Button>
               <Button variant="outline" className="mt-3 h-11 w-full rounded-full" onClick={askZaina} data-testid="button-ask-zaina-listing">
@@ -696,7 +708,7 @@ export default function PublicListingDetail({ kind }: { kind: ListingKind }) {
               <div className="text-sm text-muted-foreground">Ask for a price</div>
             )}
           </div>
-          <Button className="min-h-12 shrink-0 rounded-full px-6" onClick={() => setLocation(bookingHref)} data-testid="button-listing-bar">
+          <Button className="min-h-12 shrink-0 rounded-full px-6" onClick={bookListing} data-testid="button-listing-bar">
             Book
           </Button>
         </div>

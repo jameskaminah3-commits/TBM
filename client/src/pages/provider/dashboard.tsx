@@ -39,6 +39,7 @@ import { cn } from "@/lib/utils";
 import { awaitsProviderResponse, isAgreedOrder } from "@shared/provider-dashboard";
 import { getListingSharePrice } from "@shared/listing-share";
 import { ListingShareSheet } from "@/components/listing-share-sheet";
+import { YourShares } from "@/components/your-shares";
 import { getCookExtraGuestInclusivePrice, getCookExtraGuestServiceFee, getCookMinimumGuests } from "@shared/cook-pricing";
 import { HOUSE_CLEANING_BASE_ROOM_LABEL, getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
 import { formatCalendarDate, isCalendarDate } from "@shared/calendar-dates";
@@ -1492,6 +1493,8 @@ export default function ProviderDashboard() {
               </div>
             ) : null}
           </section>
+
+        <YourShares />
 
         {hasRole("stays") && (
         <Card id="provider-stays" className="border-stone-200/70 bg-white/82 shadow-[0_24px_70px_-42px_rgba(92,73,47,0.34)] scroll-mt-24">

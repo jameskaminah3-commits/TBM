@@ -1,3 +1,5 @@
+import { safeLocalStorage } from "./safe-storage";
+
 const PENDING_BOOKING_STORAGE_KEY = "tembea-pending-booking";
 
 export type PendingBookingDraft = {
@@ -6,10 +8,6 @@ export type PendingBookingDraft = {
   payload: Record<string, unknown>;
   updatedAt?: number;
 };
-
-function canUseStorage() {
-  return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
-}
 
 export function getCurrentBookingPath() {
   if (typeof window === "undefined") {
@@ -51,17 +49,14 @@ export function isPendingBookingPathMatch(savedPath: string, currentPath: string
 }
 
 export function savePendingBookingDraft(draft: PendingBookingDraft) {
-  if (!canUseStorage()) return;
-  window.localStorage.setItem(PENDING_BOOKING_STORAGE_KEY, JSON.stringify({
+  safeLocalStorage.setItem(PENDING_BOOKING_STORAGE_KEY, JSON.stringify({
     ...draft,
     updatedAt: Date.now(),
   }));
 }
 
 export function loadPendingBookingDraft(): PendingBookingDraft | null {
-  if (!canUseStorage()) return null;
-
-  const raw = window.localStorage.getItem(PENDING_BOOKING_STORAGE_KEY);
+  const raw = safeLocalStorage.getItem(PENDING_BOOKING_STORAGE_KEY);
   if (!raw) {
     return null;
   }
@@ -69,12 +64,11 @@ export function loadPendingBookingDraft(): PendingBookingDraft | null {
   try {
     return JSON.parse(raw) as PendingBookingDraft;
   } catch {
-    window.localStorage.removeItem(PENDING_BOOKING_STORAGE_KEY);
+    safeLocalStorage.removeItem(PENDING_BOOKING_STORAGE_KEY);
     return null;
   }
 }
 
 export function clearPendingBookingDraft() {
-  if (!canUseStorage()) return;
-  window.localStorage.removeItem(PENDING_BOOKING_STORAGE_KEY);
+  safeLocalStorage.removeItem(PENDING_BOOKING_STORAGE_KEY);
 }

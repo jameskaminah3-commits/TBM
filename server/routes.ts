@@ -34,6 +34,7 @@ import {
   insertExperienceSchema,
   marketingAttributionEventSchema,
   marketingAttributionPayloadSchema,
+  bookingShareClaimSchema,
   marketingPromoCostAbsorptions,
   providerCategories,
   insertFleetApplicationSchema,
@@ -48,6 +49,7 @@ import {
   type MarketingPromo,
   type MarketingPromoCostAbsorption,
   type BookingAttribution,
+  type BookingShareCredit,
   type ListingEditKind,
   type BookingMarketingSummary,
   type MarketingPromoPreview,
@@ -85,6 +87,17 @@ import {
   savePrivateUpload,
 } from "./private-files";
 import { decidePrivateFileAccess } from "./private-file-access";
+import {
+  decideBookingShareCredit,
+  getAdminShareSummary,
+  getPartnerShares,
+  issueShareLink,
+  markShareLinkShared,
+  recordShareEvent,
+  shareListingKinds,
+  stopShareLink,
+} from "./share-links";
+import { shareChannels } from "@shared/share-attribution";
 import { createRateLimitMiddleware, getRequestIp } from "./middleware/rate-limit";
 import { toPublicListing, withoutProviderProtectedFields } from "./listing-privacy";
 import { partnerGuestName, toPartnerInboxItem, toProviderAssignment, toProviderBooking, toProviderPaymentData } from "./provider-booking-view";
@@ -2974,6 +2987,17 @@ const fleetUploadRateLimit = createRateLimitMiddleware([
   },
 ]);
 
+// R13: share visits and marketing events come from anyone, so each address
+// and each device is limited.
+const shareEventRateLimit = createRateLimitMiddleware([
+  { id: "share:visit:ip", key: (req) => getRequestIp(req), max: 120, windowMs: 10 * 60 * 1000, message: "Too many requests." },
+  { id: "share:visit:device", key: (req) => (typeof req.body?.deviceId === "string" ? req.body.deviceId : null), max: 40, windowMs: 10 * 60 * 1000, message: "Too many requests." },
+]);
+const marketingTrackRateLimit = createRateLimitMiddleware([
+  { id: "marketing:track:ip", key: (req) => getRequestIp(req), max: 120, windowMs: 10 * 60 * 1000, message: "Too many requests." },
+  { id: "marketing:track:session", key: (req) => (typeof req.body?.sessionId === "string" ? req.body.sessionId : null), max: 60, windowMs: 10 * 60 * 1000, message: "Too many requests." },
+]);
+
 // Documents on a car are protected files. A partner may attach only files they
 // uploaded themselves (or keep the ones already on the car); TBM may attach any
 // protected file. Public links are refused, so a document can't sit in public storage.
@@ -4778,7 +4802,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await storage.recordMarketingPromoRedemption(promoPreview.promo.promoId, booking.totalPrice);
       }
 
-      if (marketingAttribution || promoPreview.promo) {
+      // Phase 3: which partner share brought this booking, decided once, here,
+      // from the server's own records (R9, R13). It never blocks the booking.
+      let share: BookingShareCredit | null = null;
+      const parsedShareClaim = bookingShareClaimSchema.safeParse(req.body?.shareClaim ?? {});
+      if (parsedShareClaim.success && (parsedShareClaim.data.code || parsedShareClaim.data.olderLink || parsedShareClaim.data.assistedCodes.length)) {
+        try {
+          const { decision, assistedCodes } = await decideBookingShareCredit({
+            claim: parsedShareClaim.data,
+            deviceId: parsedShareClaim.data.deviceId,
+            ip: getRequestIp(req),
+            bookerUserId: userId,
+            booking,
+          });
+          share = { ...decision, assistedCodes };
+        } catch (error) {
+          console.error("[SHARES] Couldn't decide share credit for booking", booking.id, error);
+        }
+      }
+
+      if (marketingAttribution || promoPreview.promo || share) {
         await storage.createBookingAttribution(booking.id, {
           ...(marketingAttribution ?? {
             sessionId: `booking-${booking.id}`,
@@ -4791,6 +4834,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           originalSubtotal: promoPreview.promo?.originalSubtotal ?? booking.totalPrice,
           discountAmount: promoPreview.promo?.discountAmount ?? 0,
           finalRevenue: booking.totalPrice,
+          share,
         });
       }
 
@@ -5458,7 +5502,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/marketing/track", async (req, res) => {
+  // R1: a share code for the listing's own partner, asked for when the share sheet opens.
+  app.post("/api/provider/share-links", requireProviderOrAdmin, async (req: any, res) => {
+    try {
+      const { kind, listingId } = z.object({
+        kind: z.enum(shareListingKinds),
+        listingId: z.string().trim().min(1).max(120),
+      }).parse(req.body ?? {});
+      const result = await issueShareLink(req.user.claims.sub, kind, listingId);
+      if ("error" in result) {
+        return res.status(403).json({ error: result.error });
+      }
+      return res.status(201).json(result);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: "Choose a listing to share." });
+      }
+      console.error("[SHARES] Failed to issue a share link:", error);
+      return res.status(500).json({ error: "Couldn't make a share link" });
+    }
+  });
+
+  app.post("/api/provider/share-links/:code/shared", requireProviderOrAdmin, async (req: any, res) => {
+    const parsed = z.object({ channel: z.enum(shareChannels) }).safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Unknown share channel" });
+    }
+    const updated = await markShareLinkShared(req.params.code, req.user.claims.sub, parsed.data.channel).catch(() => false);
+    return updated ? res.json({ ok: true }) : res.status(404).json({ error: "Share link not found" });
+  });
+
+  // R8: stop a link. Only the partner who made it, or TBM.
+  app.post("/api/provider/share-links/:code/stop", requireProviderOrAdmin, async (req: any, res) => {
+    const stopped = await stopShareLink(req.params.code, req.user.claims.sub, req.user.claims.role === "admin").catch(() => false);
+    return stopped ? res.json({ ok: true }) : res.status(404).json({ error: "Share link not found" });
+  });
+
+  // "Your shares": the signed-in partner's own links only (R12).
+  app.get("/api/provider/shares", requireProviderOrAdmin, async (req: any, res) => {
+    try {
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.json(await getPartnerShares(req.user.claims.sub));
+    } catch (error) {
+      console.error("[SHARES] Failed to load a partner's shares:", error);
+      return res.status(500).json({ error: "Couldn't load your shares" });
+    }
+  });
+
+  app.get("/api/admin/marketing/shares", requireAdmin, async (_req, res) => {
+    try {
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.json(await getAdminShareSummary());
+    } catch (error) {
+      console.error("[ADMIN] Failed to load partner shares:", error);
+      return res.status(500).json({ error: "Couldn't load partner shares" });
+    }
+  });
+
+  // R2: a visit or Book tap from a share link. No sign-in; rate-limited (R13).
+  // The reply is the same whether or not the code is real.
+  app.post("/api/share-links/visit", shareEventRateLimit, async (req, res) => {
+    const parsed = z.object({
+      code: z.string().regex(/^[a-z0-9]{10}$/),
+      event: z.enum(["visit", "book"]).optional().default("visit"),
+      deviceId: z.string().trim().min(8).max(120).nullable().optional(),
+      channel: z.string().trim().max(20).nullable().optional(),
+    }).safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(204).end();
+    }
+    await recordShareEvent({
+      code: parsed.data.code,
+      eventType: parsed.data.event,
+      deviceId: parsed.data.deviceId ?? null,
+      ip: getRequestIp(req),
+      channel: parsed.data.channel ?? null,
+    }).catch((error) => console.error("[SHARES] Failed to record a share visit:", error));
+    return res.status(204).end();
+  });
+
+  app.post("/api/marketing/track", marketingTrackRateLimit, async (req, res) => {
     try {
       const event = marketingAttributionEventSchema.parse(req.body ?? {});
       const created = await storage.createMarketingAttributionEvent(event);

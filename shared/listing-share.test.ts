@@ -11,6 +11,15 @@ import {
 
 const villa = { kind: "stay" as const, id: "4f1c2d9e-0b7a-4c55-9d1e-3a6b8c0d2e11", name: "Beachfront Villa – Diani" };
 
+test("a partner's share link carries their random code, and nothing else about them", () => {
+  const url = new URL(buildListingShareUrl("https://tembeabilamatata.com", villa, { source: "provider", channel: "whatsapp", code: "k7m2x9qa4p" }));
+  assert.equal(url.searchParams.get("ref"), "k7m2x9qa4p");
+  assert.equal(url.searchParams.get("utm_source"), "provider");
+  assert.equal(url.searchParams.get("utm_medium"), "whatsapp");
+  const plain = new URL(buildListingShareUrl("https://tembeabilamatata.com", villa, { source: "visitor", channel: "copy" }));
+  assert.equal(plain.searchParams.has("ref"), false);
+});
+
 test("a provider's share link is the public listing page, tagged without naming the account", () => {
   const url = new URL(buildListingShareUrl("https://tembeabilamatata.com", villa, { source: "provider", channel: "whatsapp" }));
   assert.equal(url.pathname, "/accommodation/4f1c2d9e-0b7a-4c55-9d1e-3a6b8c0d2e11/beachfront-villa-diani");

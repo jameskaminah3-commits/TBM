@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { safeSessionStorage } from "@/lib/safe-storage";
 import { Link, useLocation, useSearch } from "wouter";
 import * as RadioGroupPrimitive from "@radix-ui/react-radio-group";
 import {
@@ -130,7 +131,7 @@ function categoryFromSearch(search: string): CustomRequestCategory | undefined {
 // to their request rather than an empty form.
 function readDraft(): Partial<CustomRequestForm> | null {
   try {
-    const raw = window.sessionStorage.getItem(draftStorageKey);
+    const raw = safeSessionStorage.getItem(draftStorageKey);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === "object" ? parsed : null;
@@ -141,7 +142,7 @@ function readDraft(): Partial<CustomRequestForm> | null {
 
 function saveDraft(values: CustomRequestForm) {
   try {
-    window.sessionStorage.setItem(draftStorageKey, JSON.stringify(values));
+    safeSessionStorage.setItem(draftStorageKey, JSON.stringify(values));
   } catch {
     // Storage can be off; the guest then types the request again.
   }
@@ -149,7 +150,7 @@ function saveDraft(values: CustomRequestForm) {
 
 function clearDraft() {
   try {
-    window.sessionStorage.removeItem(draftStorageKey);
+    safeSessionStorage.removeItem(draftStorageKey);
   } catch {
     // Nothing was stored.
   }

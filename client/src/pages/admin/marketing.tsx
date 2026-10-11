@@ -38,6 +38,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { AdminPartnerShares } from "@/components/admin-partner-shares";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -1670,6 +1671,8 @@ export default function AdminMarketing() {
                 </CardContent>
               </Card>
             </section>
+
+            <AdminPartnerShares />
 
             <section className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
               <Card className="min-w-0 overflow-hidden border-stone-200/80 bg-white shadow-sm">

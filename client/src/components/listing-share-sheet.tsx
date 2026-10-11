@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 import { useCurrency } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 import {
@@ -65,13 +66,46 @@ export function ListingShareSheet({
   const whatsappRef = useRef<HTMLAnchorElement | null>(null);
   const canShareNatively = typeof navigator !== "undefined" && typeof navigator.share === "function";
 
+  // Phase 3: the listing's own partner gets a random share code, so visits and
+  // bookings from this share show in Your shares. Anyone else shares the plain link.
+  const [shareCode, setShareCode] = useState<string | null>(null);
+  const [codeLoading, setCodeLoading] = useState(false);
+  const wantsCode = source === "provider" && isPublic;
+  useEffect(() => {
+    if (!open || !wantsCode || shareCode) {
+      return;
+    }
+    let cancelled = false;
+    setCodeLoading(true);
+    apiRequest("POST", "/api/provider/share-links", { kind, listingId: id })
+      .then((response) => response.json() as Promise<{ code: string }>)
+      .then((data) => {
+        if (!cancelled) setShareCode(data.code);
+      })
+      .catch(() => {
+        // Not this partner's listing, or offline: share the plain link.
+      })
+      .finally(() => {
+        if (!cancelled) setCodeLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, wantsCode, shareCode, kind, id]);
+
+  const markShared = (channel: "whatsapp" | "copy" | "native") => {
+    if (shareCode) {
+      void apiRequest("POST", `/api/provider/share-links/${shareCode}/shared`, { channel }).catch(() => undefined);
+    }
+  };
+
   const origin = typeof window === "undefined" ? "https://tembeabilamatata.com" : window.location.origin;
   const listing = useMemo(() => ({ kind, id, name }), [kind, id, name]);
   const links = useMemo(() => ({
-    whatsapp: buildListingShareUrl(origin, listing, { source, channel: "whatsapp" }),
-    copy: buildListingShareUrl(origin, listing, { source, channel: "copy" }),
-    native: buildListingShareUrl(origin, listing, { source, channel: "native" }),
-  }), [origin, listing, source]);
+    whatsapp: buildListingShareUrl(origin, listing, { source, channel: "whatsapp", code: shareCode }),
+    copy: buildListingShareUrl(origin, listing, { source, channel: "copy", code: shareCode }),
+    native: buildListingShareUrl(origin, listing, { source, channel: "native", code: shareCode }),
+  }), [origin, listing, source, shareCode]);
   const priceLine = includePrice && priceUsd && priceUsd > 0 ? formatSharePriceLine(priceUsd * usdToKes, priceUnit) : null;
 
   // A fresh message each time the sheet opens or the price choice changes.
@@ -82,6 +116,7 @@ export function ListingShareSheet({
   }, [open, kind, name, description, links.whatsapp, priceLine]);
 
   const copyLink = async () => {
+    markShared("copy");
     try {
       await navigator.clipboard.writeText(links.copy);
       toast({ title: "Link copied", description: "Paste it anywhere to share this listing." });
@@ -98,6 +133,7 @@ export function ListingShareSheet({
         title: name,
         text: message.replace(links.whatsapp, links.native),
       });
+      markShared("native");
     } catch (error) {
       if (!(error instanceof DOMException && error.name === "AbortError")) {
         await copyLink();
@@ -144,6 +180,7 @@ export function ListingShareSheet({
                 id={`share-message-${id}`}
                 rows={7}
                 value={message}
+                disabled={codeLoading}
                 onChange={(event) => setMessage(event.target.value)}
               />
               {priceUsd && priceUsd > 0 ? (
@@ -159,17 +196,26 @@ export function ListingShareSheet({
 
             <div className="grid gap-2 sm:grid-cols-2">
               <Button asChild className="bg-[#1f7a4d] text-white hover:bg-[#19663f] sm:col-span-2">
-                <a ref={whatsappRef} href={buildWhatsAppShareHref(message)} target="_blank" rel="noreferrer" data-testid={`link-share-whatsapp-${id}`}>
+                <a
+                  ref={whatsappRef}
+                  href={buildWhatsAppShareHref(message)}
+                  target="_blank"
+                  rel="noreferrer"
+                  data-testid={`link-share-whatsapp-${id}`}
+                  aria-disabled={codeLoading || undefined}
+                  className={codeLoading ? "pointer-events-none opacity-60" : undefined}
+                  onClick={() => markShared("whatsapp")}
+                >
                   <MessageCircle className="mr-2 h-4 w-4" />
                   Share on WhatsApp
                 </a>
               </Button>
-              <Button type="button" variant="outline" onClick={copyLink} data-testid={`button-copy-link-${id}`}>
+              <Button type="button" variant="outline" onClick={copyLink} disabled={codeLoading} data-testid={`button-copy-link-${id}`}>
                 <Copy className="mr-2 h-4 w-4" />
                 Copy link
               </Button>
               {canShareNatively ? (
-                <Button type="button" variant="outline" onClick={shareNatively}>
+                <Button type="button" variant="outline" onClick={shareNatively} disabled={codeLoading}>
                   <Share2 className="mr-2 h-4 w-4" />
                   More options
                 </Button>
@@ -185,7 +231,10 @@ export function ListingShareSheet({
 
             <div className="space-y-1.5">
               <Label htmlFor={`share-link-${id}`} className="text-xs text-muted-foreground">Link</Label>
-              <Input id={`share-link-${id}`} ref={linkInputRef} readOnly value={links.copy} onFocus={(event) => event.currentTarget.select()} />
+              <Input id={`share-link-${id}`} ref={linkInputRef} readOnly value={links.copy} onFocus={(event) => event.currentTarget.select()} onCopy={() => markShared("copy")} />
+              {shareCode ? (
+                <p className="text-xs text-muted-foreground">Visits and bookings from this link show in Your shares, under Listings.</p>
+              ) : null}
             </div>
 
             {canShareNatively ? (
