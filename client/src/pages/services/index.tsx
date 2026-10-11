@@ -49,7 +49,7 @@ const SERVICES = [
     label: "Verify",
     tagline: "Check a place before you pay",
     description:
-      "Found a villa on Facebook, Jiji or Instagram? Our partner on the ground visits it and checks the host before you send any money.",
+      "Found a villa on Facebook, Jiji or Instagram? Our team visits it and checks the host before you send any money.",
     accent: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
     testId: "service-hub-verify",
   },

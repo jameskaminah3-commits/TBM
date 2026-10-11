@@ -1205,7 +1205,7 @@ async function activateListingVerificationAfterPayment(booking: import("@shared/
         "Source platform": task.sourcePlatform ?? "external",
         Location: location,
         "Verification scope": task.verificationScope,
-        "Next action": "Dispatch an on-ground partner, then upload the report in the admin console.",
+        "Next action": "Send someone from the team, then upload the report in the admin console.",
       },
     });
   } catch (error) {

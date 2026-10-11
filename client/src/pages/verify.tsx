@@ -9,7 +9,7 @@ import { openZaina, whatsAppUrlWithText } from "@/lib/zaina";
 type VerificationFee = { feeKes: number; feeUsd: number };
 
 // What the check does, as Zaina and the operations team describe it: an
-// on-ground partner visits after the fee is paid, and the report reflects
+// on-ground team visits after the fee is paid, and the report reflects
 // the property on the day of the visit.
 const STEPS = [
   {
@@ -25,7 +25,7 @@ const STEPS = [
   {
     icon: MapPin,
     title: "We visit the property",
-    body: "One of our partners on the ground goes there and checks what you asked for: the place, its amenities, the host's documents, or all three.",
+    body: "Someone from our team goes there and checks what you asked for: the place, its amenities, the host's documents, or all three.",
   },
   {
     icon: FileText,
@@ -120,7 +120,7 @@ export default function VerifyPage() {
             </h1>
             <p className="mt-4 max-w-xl text-base leading-7 text-muted-foreground sm:text-lg sm:leading-8">
               A villa on Facebook, Jiji or Instagram can look perfect and still not be what it seems. Send us the advert.
-              One of our partners on the Coast visits the property and checks the host before you send them any money.
+              Someone from our team on the Coast visits the property and checks the host before you send them any money.
             </p>
             <div className="mt-7">
               <StartCheckButtons placement="hero" />

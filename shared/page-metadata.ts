@@ -34,7 +34,7 @@ export const staticPageMetadata: Record<string, { title: string; description: st
   },
   "/verify": {
     title: "Verify a Holiday Rental Before You Pay | Tembea Bila Matata",
-    description: "Found a villa or apartment on Facebook, Jiji, Instagram or Airbnb? Our on-ground partner visits the property in Mombasa, Diani, Watamu or Malindi and checks the host before you pay.",
+    description: "Found a villa or apartment on Facebook, Jiji, Instagram or Airbnb? Our team visits the property in Mombasa, Diani, Watamu or Malindi and checks the host before you pay.",
   },
   "/request-custom-service": {
     title: "Tell Us What You Need | Tembea Bila Matata",
