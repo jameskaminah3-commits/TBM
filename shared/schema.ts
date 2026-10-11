@@ -409,12 +409,16 @@ export const bookings = pgTable("bookings", {
   bookingType: text("booking_type").notNull().default("accommodation"), // "accommodation" or "service"
 });
 
+// Each booking has a conversation between the guest and TBM, and one between
+// TBM and each partner on the booking. Guests and partners never share one.
 export const bookingMessages = pgTable("booking_messages", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   bookingId: varchar("booking_id").notNull(),
   userId: varchar("user_id").notNull(),
   senderRole: text("sender_role").notNull(),
   message: text("message").notNull(),
+  audience: text("audience").notNull().default("guest"),
+  partnerUserId: varchar("partner_user_id"),
   createdAt: text("created_at").notNull(),
 });
 
@@ -442,6 +446,42 @@ export const listingEdits = pgTable("listing_edits", {
   reviewedBy: varchar("reviewed_by"),
 });
 export type ListingEdit = typeof listingEdits.$inferSelect;
+// TBM manages guest communication, so partners don't get guests' contact
+// details. In an emergency or a genuine operational need, TBM can share them
+// with one partner on one booking, for a limited time and a recorded reason.
+// Every time the partner opens them is recorded too.
+export const guestContactReleases = pgTable("guest_contact_releases", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  bookingId: varchar("booking_id").notNull(),
+  providerUserId: varchar("provider_user_id").notNull(),
+  sharePhone: boolean("share_phone").notNull().default(true),
+  shareEmail: boolean("share_email").notNull().default(false),
+  reason: text("reason").notNull(),
+  grantedBy: varchar("granted_by").notNull(),
+  grantedAt: text("granted_at").notNull(),
+  expiresAt: text("expires_at").notNull(),
+  revokedAt: text("revoked_at"),
+  revokedBy: varchar("revoked_by"),
+});
+export type GuestContactRelease = typeof guestContactReleases.$inferSelect;
+
+export const guestContactReleaseViews = pgTable("guest_contact_release_views", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  releaseId: varchar("release_id").notNull(),
+  bookingId: varchar("booking_id").notNull(),
+  providerUserId: varchar("provider_user_id").notNull(),
+  viewedAt: text("viewed_at").notNull(),
+});
+export type GuestContactReleaseView = typeof guestContactReleaseViews.$inferSelect;
+
+export const guestContactReleaseSchema = z.object({
+  providerUserId: z.string().trim().min(1, "Choose the partner"),
+  sharePhone: z.boolean().default(true),
+  shareEmail: z.boolean().default(false),
+  reason: z.string().trim().min(10, "Give the reason in a sentence").max(500, "Keep the reason under 500 characters"),
+  hours: z.number().int().min(1).max(72).default(24),
+}).refine((value) => value.sharePhone || value.shareEmail, { message: "Share the phone, the email or both" });
+
 export const fleetApplicationStatuses = ["pending", "approved", "rejected"] as const;
 export type FleetApplicationStatus = typeof fleetApplicationStatuses[number];
 
@@ -652,6 +692,8 @@ export const insertBookingMessageSchema = createInsertSchema(bookingMessages).om
   createdAt: true,
   userId: true,
   senderRole: true,
+  audience: true,
+  partnerUserId: true,
 }).extend({
   bookingId: z.string(),
   message: z.string().min(1, "Message is required").max(2000, "Message is too long"),
@@ -688,7 +730,7 @@ export type ProviderBookingAssignmentView = {
   assignment: BookingServiceAssignment;
   booking: Booking;
 };
-export const appInboxItemTypes = ["assignment-created", "assignment-reassigned", "assignment-updated", "assignment-declined", "booking-created", "booking-message", "partner-admin-message"] as const;
+export const appInboxItemTypes = ["assignment-created", "assignment-reassigned", "assignment-updated", "assignment-declined", "guest-contact-shared", "booking-created", "booking-message", "partner-admin-message"] as const;
 export type AppInboxItemType = typeof appInboxItemTypes[number];
 export const appInboxPriorities = ["low", "normal", "high", "urgent"] as const;
 export type AppInboxPriority = typeof appInboxPriorities[number];
@@ -1760,6 +1802,19 @@ export type ProviderPaymentData = {
   serviceFeePercents: number[];
   payouts: AdminBookingPayout[];
 };
+
+// What a provider receives from /api/provider/payments: their payouts at their
+// agreed rate, without the guest's price, TBM's fee amount or internal notes.
+export type ProviderPayoutView = Pick<
+  AdminBookingPayout,
+  "id" | "assignmentId" | "bookingId" | "providerCategory" | "serviceId" | "serviceName" | "commissionPercent"
+  | "payoutAmount" | "status" | "dueAt" | "paidAt" | "paymentMethod" | "paymentReference" | "createdAt" | "updatedAt"
+>;
+export type ProviderPaymentView = Pick<
+  ProviderPaymentData,
+  "totalProjectedPayouts" | "totalPendingPayouts" | "totalApprovedPayouts" | "totalPaidOut"
+  | "unpaidPayoutCount" | "paidPayoutCount" | "serviceFeePercents"
+> & { payouts: ProviderPayoutView[] };
 
 // Admin Clients Types
 export type ServiceSummary = {

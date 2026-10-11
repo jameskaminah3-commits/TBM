@@ -7,10 +7,14 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { BookingMessage } from "@shared/schema";
-import { getThreadSenderLabel } from "@shared/booking-thread";
+import { getConversationThreadKey, getThreadSenderLabel, type BookingConversation } from "@shared/booking-thread";
 
 type BookingThreadProps = {
   bookingId: string;
+  /** TBM only: which partner's conversation this is. Guests and partners always get their own. */
+  partnerUserId?: string;
+  /** The reader's own booking, where they are the guest even if they are also a partner. */
+  asGuest?: boolean;
   title?: string;
   initialMessage?: string | null;
   initialMessageLabel?: string;
@@ -20,6 +24,8 @@ type BookingThreadProps = {
 
 export function BookingThread({
   bookingId,
+  partnerUserId,
+  asGuest = false,
   title = "Chat",
   initialMessage,
   initialMessageLabel = "Request",
@@ -42,13 +48,23 @@ export function BookingThread({
     }
   }, [defaultOpen]);
 
+  // The server decides a guest's and a partner's conversation; TBM picks one.
+  const isPartnerView = user?.role === "provider" && !asGuest;
+  const conversation: BookingConversation = partnerUserId
+    ? { audience: "partner", partnerUserId }
+    : isPartnerView && user?.id
+      ? { audience: "partner", partnerUserId: user.id }
+      : { audience: "guest" };
+  const conversationQuery = partnerUserId ? `?audience=partner&partnerUserId=${encodeURIComponent(partnerUserId)}` : "";
+  const messagesKey = ["/api/bookings", bookingId, "messages", partnerUserId ?? "own"];
+
   const { data: messages = [] } = useQuery<BookingMessage[]>({
-    queryKey: ["/api/bookings", bookingId, "messages"],
+    queryKey: messagesKey,
     staleTime: 0,
     refetchInterval: 5000,
     refetchOnWindowFocus: true,
     queryFn: async () => {
-      const response = await fetch(`/api/bookings/${bookingId}/messages`, { credentials: "include" });
+      const response = await fetch(`/api/bookings/${bookingId}/messages${conversationQuery}`, { credentials: "include" });
       if (!response.ok) {
         throw new Error("Failed to load messages");
       }
@@ -58,10 +74,10 @@ export function BookingThread({
 
   const sendMessageMutation = useMutation({
     mutationFn: async (message: string) =>
-      apiRequest("POST", `/api/bookings/${bookingId}/messages`, { message }),
+      apiRequest("POST", `/api/bookings/${bookingId}/messages`, partnerUserId ? { message, audience: "partner", partnerUserId } : { message }),
     onSuccess: () => {
       setDraft("");
-      queryClient.invalidateQueries({ queryKey: ["/api/bookings", bookingId, "messages"] });
+      queryClient.invalidateQueries({ queryKey: messagesKey });
       queryClient.invalidateQueries({ queryKey: ["/api/inbox"] });
     },
     onError: (error: Error) => {
@@ -75,7 +91,7 @@ export function BookingThread({
 
   const markThreadReadMutation = useMutation({
     mutationFn: async () =>
-      apiRequest("POST", "/api/inbox/threads/read", { threadKey: `booking:${bookingId}` }),
+      apiRequest("POST", "/api/inbox/threads/read", { threadKey: getConversationThreadKey(bookingId, conversation) }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/inbox"] });
     },
@@ -104,6 +120,11 @@ export function BookingThread({
       </button>
       {isOpen ? (
         <div className="space-y-2">
+          {isPartnerView && !partnerUserId ? (
+            <p className="text-xs text-muted-foreground" data-testid={`text-partner-thread-note-${bookingId}`}>
+              Only TBM reads these messages. TBM looks after the guest and passes on anything they need to know.
+            </p>
+          ) : null}
           {initialMessage ? (
             <div className="whitespace-pre-wrap break-words rounded-md bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
               <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-foreground/80">{initialMessageLabel}</div>

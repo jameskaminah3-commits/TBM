@@ -12,6 +12,7 @@ import {
 } from "./middleware/auth";
 import {
   insertBookingMessageSchema,
+  guestContactReleaseSchema,
   insertPartnerAdminMessageSchema,
   publicBookingRequestSchema,
   serverBookingSchema,
@@ -58,11 +59,12 @@ import {
 } from "@shared/schema";
 import { listUploads, saveBase64Upload } from "./media";
 import { toPublicListing, withoutProviderProtectedFields } from "./listing-privacy";
-import { toProviderBooking } from "./provider-booking-view";
+import { toProviderAssignment, toProviderBooking, toProviderPaymentData } from "./provider-booking-view";
+import { toPartnerAvailability, toPublicAvailability } from "./availability-view";
 import { diffListingFields } from "./listing-edits";
 import { resolveShortLinkPath } from "./share-metadata";
 import { canRespondToAssignment } from "./provider-policy";
-import { PAYMENT_MESSAGE_ROLE, canSeeThreadMessage } from "@shared/booking-thread";
+import { PAYMENT_MESSAGE_ROLE, canSeeThreadMessage, isInConversation, type BookingConversation } from "@shared/booking-thread";
 import { db } from "./db";
 import { bookings, users, stays, cars, cooks, errands, experiences, listings, blogPosts, customOffers, stayReservations, carReservations, cookReservations } from "@shared/schema";
 import { calculateCookInclusiveTotal, calculateCookServiceTotal, getCookMinimumGuests } from "@shared/cook-pricing";
@@ -1994,6 +1996,41 @@ async function applyProviderBookingStatusUpdate(
   return { booking: await attachBookingMarketingAttribution(decorateBookingWithOperationalStatus(updatedBooking)) } as const;
 }
 
+// Older booking-level status routes. A provider moves their own job forward,
+// never the whole booking, so these act on the provider's job in the booking.
+async function updateOwnJobStatusForBooking(req: any, res: any, category?: ProviderCategory) {
+  const booking = await storage.getBooking(req.params.id);
+  if (!booking) {
+    return res.status(404).json({ error: "Booking not found" });
+  }
+
+  const requestedStatus = req.body?.status;
+  if (requestedStatus !== "in-progress" && requestedStatus !== "completed") {
+    return res.status(400).json({ error: "Partners can only mark their jobs as in progress or completed." });
+  }
+
+  if (req.user.claims.role === "admin") {
+    const result = await applyProviderBookingStatusUpdate(req.params.id, booking, requestedStatus);
+    return "error" in result ? res.status(400).json({ error: result.error }) : res.json(result.booking);
+  }
+
+  const ownJobs = (await storage.getBookingServiceAssignmentsByBookingId(booking.id)).filter((assignment) =>
+    assignment.providerUserId === req.user.claims.sub && (!category || assignment.providerCategory === category),
+  );
+  if (!ownJobs.length) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  if (ownJobs.length > 1) {
+    return res.status(409).json({ error: "Update each job from your dashboard." });
+  }
+
+  const result = await applyProviderAssignmentStatusUpdate(ownJobs[0], booking, requestedStatus);
+  if ("error" in result) {
+    return res.status(400).json({ error: result.error });
+  }
+  return res.json(assignmentViewForViewer(req, result.assignment));
+}
+
 // A provider's edit goes live at once and is logged for TBM to review afterwards.
 async function recordProviderListingEdit(
   req: any,
@@ -2025,6 +2062,27 @@ async function recordProviderListingEdit(
 // The admin sees whole bookings; a provider sees only what the job needs.
 function bookingForViewer(req: any, booking: any) {
   return req.user?.claims?.role === "admin" ? booking : toProviderBooking(booking);
+}
+
+function assignmentForViewer(req: any, assignment: any) {
+  return req.user?.claims?.role === "admin" ? assignment : toProviderAssignment(assignment);
+}
+
+function assignmentViewForViewer(req: any, view: ProviderBookingAssignmentView) {
+  return { assignment: assignmentForViewer(req, view.assignment), booking: bookingForViewer(req, view.booking) };
+}
+
+// The bookings a provider holds a job on: theirs to see by reference.
+async function getProviderBookingIds(providerUserId: string) {
+  const assignments = await storage.getBookingServiceAssignments();
+  return new Set(assignments.filter((assignment) => assignment.providerUserId === providerUserId).map((assignment) => assignment.bookingId));
+}
+
+async function availabilityForViewer<S extends Parameters<typeof toPartnerAvailability>[0]>(req: any, summary: S) {
+  if (req.user?.claims?.role === "admin") {
+    return summary;
+  }
+  return toPartnerAvailability(summary, await getProviderBookingIds(req.user.claims.sub));
 }
 
 function decorateProviderAssignmentView(
@@ -2565,6 +2623,33 @@ async function assertProviderCanAccessExperienceBooking(req: any, bookingId: str
   return access;
 }
 
+// Which conversation on a booking the viewer reads or writes. A guest has their
+// conversation with TBM; a partner has theirs. Only TBM chooses, and a partner
+// conversation must belong to a partner on the booking.
+async function resolveBookingConversation(
+  access: { booking: { id: string }; viewer: "admin" | "guest" | "provider" },
+  requestedAudience: unknown,
+  requestedPartnerUserId: unknown,
+  currentUserId: string,
+): Promise<{ conversation: BookingConversation } | { error: { status: number; body: { error: string } } }> {
+  if (access.viewer === "guest") {
+    return { conversation: { audience: "guest" } };
+  }
+  if (access.viewer === "provider") {
+    return { conversation: { audience: "partner", partnerUserId: currentUserId } };
+  }
+  if (requestedAudience !== "partner") {
+    return { conversation: { audience: "guest" } };
+  }
+
+  const partnerUserId = typeof requestedPartnerUserId === "string" ? requestedPartnerUserId.trim() : "";
+  const assignments = await storage.getBookingServiceAssignmentsByBookingId(access.booking.id);
+  if (!partnerUserId || !assignments.some((assignment) => assignment.providerUserId === partnerUserId)) {
+    return { error: { status: 400, body: { error: "Choose a partner on this booking." } } };
+  }
+  return { conversation: { audience: "partner", partnerUserId } };
+}
+
 async function assertCanAccessBookingThread(req: any, bookingId: string) {
   const booking = await storage.getBooking(bookingId);
   if (!booking) {
@@ -2576,12 +2661,12 @@ async function assertCanAccessBookingThread(req: any, bookingId: string) {
 
   // Admins have full access.
   if (currentUserRole === "admin") {
-    return { booking } as const;
+    return { booking, viewer: "admin" } as const;
   }
 
   // Direct owner.
   if (booking.userId && booking.userId === currentUserId) {
-    return { booking } as const;
+    return { booking, viewer: "guest" } as const;
   }
 
   // Anonymous booking (created via Zaina) — match by *verified* email
@@ -2596,17 +2681,17 @@ async function assertCanAccessBookingThread(req: any, bookingId: string) {
     if (emailIsVerified && userEmail && bookingEmail && userEmail === bookingEmail) {
       try {
         await db.update(bookings).set({ userId: currentUserId }).where(eq(bookings.id, booking.id));
-        return { booking: { ...booking, userId: currentUserId } } as const;
+        return { booking: { ...booking, userId: currentUserId }, viewer: "guest" } as const;
       } catch (err) {
         console.error(`[BOOKING] Failed to claim booking ${booking.id}:`, err);
       }
     }
   }
 
-  // Assigned provider.
+  // Assigned provider: sees the provider view and talks to TBM, not the guest.
   const assignments = await storage.getBookingServiceAssignmentsByBookingId(bookingId);
   if (assignments.some((assignment) => assignment.providerUserId === currentUserId)) {
-    return { booking } as const;
+    return { booking, viewer: "provider" } as const;
   }
 
   return { error: { status: 403, body: { error: "Forbidden" } } } as const;
@@ -3401,7 +3486,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(error.status).json(error.body);
       }
 
-      res.json(await attachBookingMarketingAttribution(decorateBookingWithOperationalStatus(access.booking)));
+      const booking = decorateBookingWithOperationalStatus(access.booking);
+      res.json(access.viewer === "provider" ? toProviderBooking(booking) : await attachBookingMarketingAttribution(booking));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch booking" });
     }
@@ -4565,8 +4651,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(error.status).json(error.body);
       }
 
+      const conversation = await resolveBookingConversation(access, req.query?.audience, req.query?.partnerUserId, req.user.claims.sub);
+      if ("error" in conversation) {
+        return res.status(conversation.error.status).json(conversation.error.body);
+      }
+
       const messages = await storage.getBookingMessages(req.params.id);
-      res.json(messages.filter((message) => canSeeThreadMessage(req.user.claims.role, message)));
+      res.json(messages.filter((message) =>
+        isInConversation(message, conversation.conversation) && canSeeThreadMessage(req.user.claims.role, message),
+      ));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch booking messages" });
     }
@@ -4580,6 +4673,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(error.status).json(error.body);
       }
 
+      const conversation = await resolveBookingConversation(access, req.body?.audience, req.body?.partnerUserId, req.user.claims.sub);
+      if ("error" in conversation) {
+        return res.status(conversation.error.status).json(conversation.error.body);
+      }
+
       const validatedData = insertBookingMessageSchema.parse({
         bookingId: req.params.id,
         message: req.body?.message,
@@ -4588,7 +4686,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const message = await storage.createBookingMessage({
         ...validatedData,
         userId: req.user.claims.sub,
-        senderRole: req.user.claims.role ?? "customer",
+        // A guest who is also a provider writes as the guest on their own booking.
+        senderRole: access.viewer === "guest" ? "customer" : req.user.claims.role ?? "customer",
+        audience: conversation.conversation.audience,
+        partnerUserId: conversation.conversation.audience === "partner" ? conversation.conversation.partnerUserId : null,
       });
       res.status(201).json(message);
     } catch (error) {
@@ -4642,13 +4743,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/inbox", isAuthenticated, async (req: any, res) => {
     try {
       const items = await storage.getUserInbox(req.user.claims.sub);
-      // Alerts about payment updates written before providers stopped receiving them.
+      // A provider's message alerts come from their conversation with TBM. Older
+      // alerts quoted the shared booking chat (guest messages, payment updates).
       res.json(req.user.claims.role === "provider"
-        ? items.filter((item: any) => item.type !== "booking-message"
-          || canSeeThreadMessage("provider", {
-            senderRole: String(item.metadata?.senderRole ?? ""),
-            message: String(item.body ?? "").replace(/^[^:]*:\s*/, ""),
-          }))
+        ? items.filter((item: any) => item.type !== "booking-message" || item.metadata?.audience === "partner")
         : items);
     } catch (error) {
       console.error("[INBOX] Failed to fetch inbox items:", error);
@@ -5412,7 +5510,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ? requestedProviderUserId
         : req.user.claims.sub;
 
-      res.json(await storage.getProviderPaymentData(providerUserId));
+      const paymentData = await storage.getProviderPaymentData(providerUserId);
+      // A provider sees their payouts and agreed rate, not the guest's price or TBM's notes.
+      res.json(req.user.claims.role === "admin" ? paymentData : toProviderPaymentData(paymentData));
     } catch (error) {
       console.error("[PROVIDER] Failed to fetch provider payment data:", error);
       res.status(500).json({ error: "Failed to fetch provider payment data" });
@@ -5513,7 +5613,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if ("error" in access) {
         return res.status(access.error!.status).json(access.error!.body);
       }
-      if (access.booking.serviceMode !== "listing-verification") {
+      if (access.viewer === "provider" || access.booking.serviceMode !== "listing-verification") {
         return res.status(404).json({ error: "Listing verification not found" });
       }
       const task = await storage.getListingVerificationTaskByBookingId(access.booking.id);
@@ -6323,6 +6423,90 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Partners on a booking, for TBM's conversation with each and any guest
+  // contact TBM has shared with them (with who opened it and when).
+  app.get("/api/admin/bookings/:id/partners", requireAdmin, async (req: any, res) => {
+    try {
+      const booking = await storage.getBooking(req.params.id);
+      if (!booking) {
+        return res.status(404).json({ error: "Booking not found" });
+      }
+
+      const [assignments, releases] = await Promise.all([
+        storage.getBookingServiceAssignmentsByBookingId(booking.id),
+        storage.getGuestContactReleasesForBooking(booking.id),
+      ]);
+      const partnerIds = Array.from(new Set(assignments.map((assignment) => assignment.providerUserId).filter((id): id is string => Boolean(id))));
+      const partners = await Promise.all(partnerIds.map(async (partnerUserId) => {
+        const user = await storage.getUser(partnerUserId);
+        return {
+          providerUserId: partnerUserId,
+          name: [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim() || user?.email || "Partner",
+          services: assignments.filter((assignment) => assignment.providerUserId === partnerUserId).map((assignment) => assignment.serviceName),
+          contactReleases: releases.filter((release) => release.providerUserId === partnerUserId),
+        };
+      }));
+      res.json(partners);
+    } catch (error) {
+      console.error("[ADMIN] Failed to load booking partners:", error);
+      res.status(500).json({ error: "Failed to load booking partners" });
+    }
+  });
+
+  // Share a guest's contact with one partner on one booking: an exception for an
+  // emergency or a genuine operational need, limited in time and recorded.
+  app.post("/api/admin/bookings/:id/contact-releases", requireAdmin, async (req: any, res) => {
+    try {
+      const parsed = guestContactReleaseSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Check the details" });
+      }
+      const booking = await storage.getBooking(req.params.id);
+      if (!booking) {
+        return res.status(404).json({ error: "Booking not found" });
+      }
+      if (getBookingOperationalStatus(booking) === "cancelled") {
+        return res.status(409).json({ error: "This booking is cancelled." });
+      }
+      const assignment = (await storage.getBookingServiceAssignmentsByBookingId(booking.id))
+        .find((entry) => entry.providerUserId === parsed.data.providerUserId);
+      if (!assignment) {
+        return res.status(400).json({ error: "That partner isn't on this booking." });
+      }
+      if (parsed.data.sharePhone && !booking.guestPhone) {
+        return res.status(400).json({ error: "This booking has no guest phone number." });
+      }
+
+      const release = await storage.createGuestContactRelease({
+        bookingId: booking.id,
+        providerUserId: parsed.data.providerUserId,
+        sharePhone: parsed.data.sharePhone,
+        shareEmail: parsed.data.shareEmail,
+        reason: parsed.data.reason,
+        grantedBy: req.user.claims.sub,
+        expiresAt: new Date(Date.now() + parsed.data.hours * 60 * 60 * 1000).toISOString(),
+      });
+      queueNotificationTask(`guest contact release ${release.id}`, storage.notifyPartnerOfGuestContactRelease(release, assignment));
+      res.status(201).json(release);
+    } catch (error) {
+      console.error("[ADMIN] Failed to share guest contact:", error);
+      res.status(500).json({ error: "Failed to share guest contact" });
+    }
+  });
+
+  app.post("/api/admin/contact-releases/:id/revoke", requireAdmin, async (req: any, res) => {
+    try {
+      const revoked = await storage.revokeGuestContactRelease(req.params.id, req.user.claims.sub);
+      if (!revoked) {
+        return res.status(404).json({ error: "Nothing to stop: it has already ended or doesn't exist." });
+      }
+      res.json(revoked);
+    } catch (error) {
+      console.error("[ADMIN] Failed to revoke guest contact:", error);
+      res.status(500).json({ error: "Failed to stop sharing guest contact" });
+    }
+  });
+
   app.get("/api/admin/listings", requireAdmin, async (_req, res) => {
     try {
       const listings = await storage.getListings();
@@ -6538,10 +6722,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return a.booking.checkIn.localeCompare(b.booking.checkIn);
         });
 
-      res.json(visibleAssignments.map((entry) => ({ ...entry, booking: bookingForViewer(req, entry.booking) })));
+      res.json(visibleAssignments.map((entry) => assignmentViewForViewer(req, entry)));
     } catch (error) {
       console.error("[PROVIDER] Failed to fetch provider booking assignments:", error);
       res.status(500).json({ error: "Failed to fetch provider booking assignments" });
+    }
+  });
+
+  // Guest contact TBM has shared with this partner, without the details: which
+  // bookings, until when and why. The details come one booking at a time.
+  app.get("/api/provider/contact-releases", requireProviderOrAdmin, async (req: any, res) => {
+    try {
+      const releases = await storage.getActiveGuestContactReleases(req.user.claims.sub);
+      res.json(releases.map((release) => ({
+        id: release.id,
+        bookingId: release.bookingId,
+        sharePhone: release.sharePhone,
+        shareEmail: release.shareEmail,
+        reason: release.reason,
+        expiresAt: release.expiresAt,
+      })));
+    } catch (error) {
+      console.error("[PROVIDER] Failed to load contact releases:", error);
+      res.status(500).json({ error: "Failed to load shared contacts" });
+    }
+  });
+
+  // The guest's contact, only while TBM's release is live and the partner is
+  // still on the booking. Every view is recorded.
+  app.get("/api/provider/bookings/:id/guest-contact", requireProviderOrAdmin, async (req: any, res) => {
+    try {
+      res.setHeader("Cache-Control", "private, no-store");
+      const currentUserId = req.user.claims.sub;
+      const [release] = await storage.getActiveGuestContactReleases(currentUserId, req.params.id);
+      const stillOnBooking = (await storage.getBookingServiceAssignmentsByBookingId(req.params.id))
+        .some((assignment) => assignment.providerUserId === currentUserId);
+      const booking = release && stillOnBooking ? await storage.getBooking(req.params.id) : undefined;
+      if (!release || !booking) {
+        return res.status(404).json({ error: "TBM hasn't shared this guest's contact with you. Message TBM if you need to reach the guest." });
+      }
+
+      await storage.recordGuestContactView(release);
+      res.json({
+        bookingId: booking.id,
+        guestName: booking.guestName,
+        phone: release.sharePhone ? booking.guestPhone ?? null : null,
+        email: release.shareEmail ? booking.guestEmail : null,
+        reason: release.reason,
+        expiresAt: release.expiresAt,
+      });
+    } catch (error) {
+      console.error("[PROVIDER] Failed to load guest contact:", error);
+      res.status(500).json({ error: "Failed to load guest contact" });
     }
   });
 
@@ -6562,7 +6794,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: result.error });
       }
 
-      res.json(result.assignment);
+      res.json(assignmentViewForViewer(req, result.assignment));
     } catch (error) {
       console.error("[PROVIDER] Failed to update provider assignment:", error);
       res.status(500).json({ error: "Failed to update provider assignment" });
@@ -6592,7 +6824,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           storage.notifyAdminsOfDeclinedAssignment(updated, access.booking),
         );
       }
-      res.json(updated);
+      res.json(updated ? assignmentForViewer(req, updated) : updated);
     } catch (error) {
       console.error("[PROVIDER] Failed to update assignment response:", error);
       res.status(500).json({ error: "Failed to update assignment response" });
@@ -6845,22 +7077,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/provider/bookings/:id/status", requireProviderOrAdmin, async (req: any, res) => {
     try {
-      const access = await assertCanAccessBookingThread(req, req.params.id);
-      if ("error" in access) {
-        return res.status(access.error!.status).json(access.error!.body);
-      }
-
-      const requestedStatus = req.body?.status;
-      if (requestedStatus !== "in-progress" && requestedStatus !== "completed") {
-        return res.status(400).json({ error: "Partners can only mark orders as in progress or completed." });
-      }
-
-      const result = await applyProviderBookingStatusUpdate(req.params.id, access.booking, requestedStatus);
-      if ("error" in result) {
-        return res.status(400).json({ error: result.error });
-      }
-
-      res.json(bookingForViewer(req, result.booking));
+      await updateOwnJobStatusForBooking(req, res);
     } catch (error) {
       res.status(500).json({ error: "Failed to update booking status" });
     }
@@ -6868,33 +7085,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/provider/car-bookings/:id/status", requireProviderOrAdmin, async (req: any, res) => {
     try {
-      const booking = await storage.getBooking(req.params.id);
-      if (!booking) {
-        return res.status(404).json({ error: "Booking not found" });
-      }
-
-      const currentUserId = req.user.claims.sub;
-      const currentUserRole = req.user.claims.role;
-      const assignedCars = currentUserRole === "admin"
-        ? await storage.getCars()
-        : (await storage.getCars()).filter((car) => car.managerUserId === currentUserId);
-      const assignedCarIds = new Set(assignedCars.map((car) => car.id));
-      const canAccess = booking.selectedServices.some((serviceId) => assignedCarIds.has(serviceId));
-      if (!canAccess) {
-        return res.status(403).json({ error: "Forbidden" });
-      }
-
-      const status = req.body?.status;
-      if (status !== "in-progress" && status !== "completed") {
-        return res.status(400).json({ error: "Partners can only mark car bookings as in progress or completed." });
-      }
-
-      const result = await applyProviderBookingStatusUpdate(req.params.id, booking, status);
-      if ("error" in result) {
-        return res.status(400).json({ error: result.error });
-      }
-
-      res.json(bookingForViewer(req, result.booking));
+      await updateOwnJobStatusForBooking(req, res, "cars");
     } catch (error) {
       res.status(500).json({ error: "Failed to update booking status" });
     }
@@ -6902,34 +7093,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/provider/cook-bookings/:id/status", requireProviderOrAdmin, async (req: any, res) => {
     try {
-      const booking = await storage.getBooking(req.params.id);
-      if (!booking) {
-        return res.status(404).json({ error: "Booking not found" });
-      }
-
-      const currentUserId = req.user.claims.sub;
-      const currentUserRole = req.user.claims.role;
-      const assignedCooks = currentUserRole === "admin"
-        ? await storage.getCooks()
-        : (await storage.getCooks()).filter((cook) => cook.managerUserId === currentUserId);
-      const assignedCookIds = new Set(assignedCooks.map((cook) => cook.id));
-      const canAccess = booking.selectedServices.some((serviceId) => assignedCookIds.has(serviceId));
-
-      if (!canAccess) {
-        return res.status(403).json({ error: "Forbidden - Cook booking not assigned to this provider" });
-      }
-
-      const requestedStatus = req.body?.status;
-      if (requestedStatus !== "in-progress" && requestedStatus !== "completed") {
-        return res.status(400).json({ error: "Partners can only mark chef bookings as in progress or completed." });
-      }
-
-      const result = await applyProviderBookingStatusUpdate(req.params.id, booking, requestedStatus);
-      if ("error" in result) {
-        return res.status(400).json({ error: result.error });
-      }
-
-      res.json(bookingForViewer(req, result.booking));
+      await updateOwnJobStatusForBooking(req, res, "cooks");
     } catch (error) {
       res.status(500).json({ error: "Failed to update booking status" });
     }
@@ -7488,7 +7652,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(access.error!.status).json(access.error!.body);
       }
 
-      res.json(await getStayAvailabilitySummary(req.params.id));
+      res.json(await availabilityForViewer(req, await getStayAvailabilitySummary(req.params.id)));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch stay availability" });
     }
@@ -7811,7 +7975,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(access.error!.status).json(access.error!.body);
       }
 
-      res.json(await getCarAvailabilitySummary(req.params.id));
+      res.json(await availabilityForViewer(req, await getCarAvailabilitySummary(req.params.id)));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch car availability" });
     }
@@ -7954,7 +8118,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(access.error!.status).json(access.error!.body);
       }
 
-      res.json(await getCookAvailabilitySummary(req.params.id));
+      res.json(await availabilityForViewer(req, await getCookAvailabilitySummary(req.params.id)));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch cook availability" });
     }
@@ -8294,7 +8458,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Stay not found" });
       }
 
-      res.json(await getStayAvailabilitySummary(req.params.id));
+      res.json(toPublicAvailability(await getStayAvailabilitySummary(req.params.id)));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch stay availability" });
     }
@@ -8316,7 +8480,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Car not found" });
       }
 
-      res.json(await getCarAvailabilitySummary(req.params.id));
+      res.json(toPublicAvailability(await getCarAvailabilitySummary(req.params.id)));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch car availability" });
     }
@@ -8341,7 +8505,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Chef not found" });
       }
 
-      res.json(await getCookAvailabilitySummary(req.params.id));
+      res.json(toPublicAvailability(await getCookAvailabilitySummary(req.params.id)));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch cook availability" });
     }
