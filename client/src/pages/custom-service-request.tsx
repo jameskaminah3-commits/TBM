@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
+import { safeSessionStorage } from "@/lib/safe-storage";
 import { useMutation } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";

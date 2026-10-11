@@ -15,6 +15,7 @@ import {
   type BlogPost,
   type InsertBlogPost,
   type BookingAttribution,
+  type BookingShareCredit,
   type BookingMarketingSummary,
   type InsertMarketingAttributionEvent,
   type MarketingAttributionContentSummary,
@@ -1441,6 +1442,7 @@ export interface IStorage {
       originalSubtotal: number;
       discountAmount: number;
       finalRevenue: number;
+      share?: BookingShareCredit | null;
     },
   ): Promise<BookingAttribution>;
   getMarketingAttributionSummary(): Promise<MarketingAttributionSummary>;
@@ -2530,6 +2532,18 @@ export class DatabaseStorage implements IStorage {
     await pool.query(`
       ALTER TABLE booking_attributions
       ADD COLUMN IF NOT EXISTS promo_cost_absorption varchar;
+    `);
+
+    // Phase 3 share credit (migration 0021).
+    await pool.query(`
+      ALTER TABLE booking_attributions
+        ADD COLUMN IF NOT EXISTS share_code varchar,
+        ADD COLUMN IF NOT EXISTS share_listing_kind varchar,
+        ADD COLUMN IF NOT EXISTS share_listing_id varchar,
+        ADD COLUMN IF NOT EXISTS share_credit varchar,
+        ADD COLUMN IF NOT EXISTS share_credit_reason varchar,
+        ADD COLUMN IF NOT EXISTS credited_user_id varchar,
+        ADD COLUMN IF NOT EXISTS assisted_share_codes text[] NOT NULL DEFAULT '{}'::text[];
     `);
 
     this.marketingTablesEnsured = true;
@@ -4308,10 +4322,21 @@ export class DatabaseStorage implements IStorage {
       originalSubtotal: number;
       discountAmount: number;
       finalRevenue: number;
+      share?: BookingShareCredit | null;
     },
   ): Promise<BookingAttribution> {
     await this.ensureMarketingTables();
     const now = new Date().toISOString();
+    const share = attribution.share;
+    const shareFields = share ? {
+      shareCode: share.code,
+      shareListingKind: share.listingKind,
+      shareListingId: share.listingId,
+      shareCredit: share.credit,
+      shareCreditReason: share.reason,
+      creditedUserId: share.creditedUserId,
+      assistedShareCodes: share.assistedCodes,
+    } : {};
     const payload = {
       bookingId,
       sessionId: attribution.sessionId?.trim() || null,
@@ -4339,12 +4364,17 @@ export class DatabaseStorage implements IStorage {
 
     const existing = await db.select().from(bookingAttributions).where(eq(bookingAttributions.bookingId, bookingId)).limit(1);
     if (existing.length > 0) {
-      const [updated] = await db.update(bookingAttributions).set(payload).where(eq(bookingAttributions.bookingId, bookingId)).returning();
+      // A booking's share credit is decided once and never replaced (R9).
+      const [updated] = await db.update(bookingAttributions)
+        .set(existing[0].shareCredit ? payload : { ...payload, ...shareFields })
+        .where(eq(bookingAttributions.bookingId, bookingId))
+        .returning();
       return updated;
     }
 
     const [created] = await db.insert(bookingAttributions).values({
       ...payload,
+      ...shareFields,
       createdAt: now,
     }).returning();
 

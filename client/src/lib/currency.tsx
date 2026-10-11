@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
+import { safeLocalStorage } from "@/lib/safe-storage";
 import { useQuery } from "@tanstack/react-query";
 
 export type CurrencyCode = "USD" | "KES";
@@ -81,7 +82,7 @@ export function CurrencyProvider({ children, preferredCurrency }: CurrencyProvid
       return;
     }
 
-    const storedCurrency = window.localStorage.getItem(CURRENCY_STORAGE_KEY);
+    const storedCurrency = safeLocalStorage.getItem(CURRENCY_STORAGE_KEY);
     if (storedCurrency === "USD" || storedCurrency === "KES") {
       setSelectedCurrencyState(storedCurrency);
       return;
@@ -102,7 +103,7 @@ export function CurrencyProvider({ children, preferredCurrency }: CurrencyProvid
   const setSelectedCurrency = (currency: CurrencyCode) => {
     setSelectedCurrencyState(currency);
     if (typeof window !== "undefined") {
-      window.localStorage.setItem(CURRENCY_STORAGE_KEY, currency);
+      safeLocalStorage.setItem(CURRENCY_STORAGE_KEY, currency);
     }
   };
 

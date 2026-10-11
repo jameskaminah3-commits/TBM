@@ -9,9 +9,13 @@ export type ShareSource = "provider" | "visitor";
 export function buildListingShareUrl(
   origin: string,
   listing: { kind: PublicListingKind; id: string; name: string },
-  options: { source: ShareSource; channel: ShareChannel },
+  // code: the partner's random share code (Phase 3), when they have one.
+  options: { source: ShareSource; channel: ShareChannel; code?: string | null },
 ) {
   const url = new URL(getPublicListingPath(listing.kind, listing.id, listing.name), origin);
+  if (options.code) {
+    url.searchParams.set("ref", options.code);
+  }
   url.searchParams.set("utm_source", options.source === "provider" ? "provider" : "share");
   url.searchParams.set("utm_medium", options.channel);
   url.searchParams.set("utm_campaign", "listing_share");

@@ -4,6 +4,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useFieldArray, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import type { PublicListingKind } from "@shared/seo";
 import { Calendar, Users, CheckCircle2, Car, ChefHat, ShoppingBag, Compass, ArrowLeft, Clock, MapPin, Plus, Trash2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -76,6 +77,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   captureMarketingQueryParams,
   clearMarketingAttributionContext,
+  getBookingShareClaim,
   getMarketingAttributionPayload,
   trackMarketingPageView,
 } from "@/lib/marketing-attribution";
@@ -323,6 +325,7 @@ type ServiceBookingFormValues = z.infer<typeof serviceBookingFormSchema>;
 type ServiceBookingSubmission = ServiceBookingFormValues & {
   promoCode?: string | null;
   marketingAttribution?: MarketingAttributionPayload;
+  shareClaim?: ReturnType<typeof getBookingShareClaim>;
 };
 
 function normalizeOptionalIntegerAmount(value: number | null | undefined) {
@@ -731,7 +734,7 @@ export default function ServiceBooking() {
   }, [id]);
 
   React.useEffect(() => {
-    captureMarketingQueryParams();
+    captureMarketingQueryParams({ listingKind: serviceType as PublicListingKind, listingId: id });
     void trackMarketingPageView();
     const savedPromoCode = getMarketingAttributionPayload().promoCode;
     if (savedPromoCode) {
@@ -1140,6 +1143,8 @@ export default function ServiceBooking() {
         landingPath: getCurrentBookingPath(),
         promoCode: nextPromoCode ?? undefined,
       }),
+      // Phase 3: which share link brought the guest; the server checks it.
+      shareClaim: getBookingShareClaim(),
     };
   };
 

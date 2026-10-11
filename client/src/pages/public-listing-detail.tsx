@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useParams } from "wouter";
@@ -14,6 +14,7 @@ import { SeoHead } from "@/components/seo-head";
 import { buildCanonicalUrl } from "@/lib/canonical-url";
 import { ListingShareSheet } from "@/components/listing-share-sheet";
 import { useOwnsListing } from "@/hooks/use-owns-listing";
+import { captureListingVisit, trackShareEvent, withShareRef } from "@/lib/marketing-attribution";
 import { getListingSharePrice } from "@shared/listing-share";
 import { ListingUnavailable } from "@/components/listing-unavailable";
 import {
@@ -163,6 +164,12 @@ export default function PublicListingDetail({ kind }: { kind: Exclude<PublicList
   });
   const ownsListing = useOwnsListing(kind, listing?.id);
 
+  // Phase 3: a visit from a share link (or another tagged link) is recorded,
+  // once per device per day on the server.
+  useEffect(() => {
+    if (id) captureListingVisit(kind, id);
+  }, [kind, id]);
+
   const listingName = listing ? getListingName(kind, listing) : category.label;
   const canonicalUrl = listing ? buildCanonicalUrl(getPublicListingPath(kind, listing.id, listingName)) : buildCanonicalUrl(`${category.href}/${id || ""}`);
   const description = listing ? getListingDescription(kind, listing) : `Explore ${category.label} with Tembea Bila Matata.`;
@@ -189,6 +196,11 @@ export default function PublicListingDetail({ kind }: { kind: Exclude<PublicList
   const location = getListingLocation(listing);
   const price = getLeadPrice(kind, listing);
   const bookingPath = getBookingPath(kind, listing.id);
+  // The Book link carries the share code too, for browsers that block storage (R6).
+  const bookListing = () => {
+    void trackShareEvent("book");
+    setLocation(withShareRef(bookingPath));
+  };
 
   return (
     <div className="app-shell min-h-screen py-10">
@@ -276,7 +288,7 @@ export default function PublicListingDetail({ kind }: { kind: Exclude<PublicList
               <p className="text-sm text-muted-foreground">{getPriceLabel(kind)}</p>
               <div className="mt-1"><CurrencyAmount amountUsd={price} primaryClassName="text-2xl font-semibold" /></div>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">Confirm dates, guest details and final availability in the secure booking flow.</p>
-              <Button className="mt-5 w-full rounded-full" onClick={() => setLocation(bookingPath)}>Book this service</Button>
+              <Button className="mt-5 w-full rounded-full" onClick={bookListing} data-testid="button-book-listing">Book this service</Button>
               <Link href={category.href}><a className="mt-4 flex items-center justify-center gap-2 text-sm text-primary hover:underline">Browse more services <ArrowRight className="h-4 w-4" /></a></Link>
             </Card>
           </aside>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useLocation, useSearch, Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Star, MapPin, Users, Bed, Bath, Car, ChefHat, ShoppingBag, CheckCircle2, CalendarDays } from "lucide-react";
@@ -30,6 +30,7 @@ import { eachDayOfInterval, format, parseISO, startOfDay } from "date-fns";
 import { parseCalendarDate, todayInKenya } from "@shared/calendar-dates";
 import { ListingShareSheet } from "@/components/listing-share-sheet";
 import { useOwnsListing } from "@/hooks/use-owns-listing";
+import { captureListingVisit, trackShareEvent, withShareRef } from "@/lib/marketing-attribution";
 import { getListingSharePrice } from "@shared/listing-share";
 import { ListingUnavailable } from "@/components/listing-unavailable";
 
@@ -67,6 +68,12 @@ export default function AccommodationDetail() {
     },
   });
   const ownsListing = useOwnsListing("stay", accommodation?.id);
+
+  // Phase 3: a visit from a share link (or another tagged link) is recorded,
+  // once per device per day on the server.
+  useEffect(() => {
+    if (id) captureListingVisit("stay", id);
+  }, [id]);
 
   const { data: availability } = useQuery<StayAvailability>({
     queryKey: ["/api/stays", id, "availability"],
@@ -436,7 +443,10 @@ export default function AccommodationDetail() {
               <Button
                 className="w-full"
                 size="lg"
-                onClick={() => setLocation(`/book/${accommodation.id}${staySearchSuffix}`)}
+                onClick={() => {
+                  void trackShareEvent("book");
+                  setLocation(withShareRef(`/book/${accommodation.id}${staySearchSuffix}`));
+                }}
                 data-testid="button-book-now"
               >
                 Book Now

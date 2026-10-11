@@ -20,6 +20,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ZainaAvatar } from "./ZainaAvatar";
 import { WHATSAPP_URL } from "@/lib/contact-info";
+import { safeLocalStorage, safeSessionStorage } from "@/lib/safe-storage";
 
 type Msg = { role: "user" | "assistant"; content: string };
 type Chip = { emoji: string; label: string };
@@ -77,7 +78,7 @@ const HANDOFF_COPY =
 // reshuffle mid-visit.
 
 function selectChips(): Chip[] {
-  const cached = sessionStorage.getItem(CHIP_SELECTION_KEY);
+  const cached = safeSessionStorage.getItem(CHIP_SELECTION_KEY);
   if (cached) {
     try {
       const parsed = JSON.parse(cached) as Chip[];
@@ -91,7 +92,7 @@ function selectChips(): Chip[] {
   const selection = [...PINNED_CHIPS, ...shuffled.slice(0, 2)];
 
   try {
-    sessionStorage.setItem(CHIP_SELECTION_KEY, JSON.stringify(selection));
+    safeSessionStorage.setItem(CHIP_SELECTION_KEY, JSON.stringify(selection));
   } catch {
     // sessionStorage may be unavailable in some private-browsing modes
   }
@@ -207,8 +208,8 @@ export function ZainaWidget() {
   const [open, setOpen] = useState(false);
   const [msgs, setMsgs] = useState<Msg[]>(() => {
     try {
-      const raw = localStorage.getItem(SESSION_MSGS_KEY);
-      const createdRaw = localStorage.getItem(SESSION_CREATED_KEY);
+      const raw = safeLocalStorage.getItem(SESSION_MSGS_KEY);
+      const createdRaw = safeLocalStorage.getItem(SESSION_CREATED_KEY);
       if (!raw || !createdRaw) return [{ role: "assistant", content: GREETING }];
 
       const createdAt = Number(createdRaw);
@@ -267,11 +268,11 @@ export function ZainaWidget() {
   // ─── Floating tooltip: once per session, 5s delay ────────────
   useEffect(() => {
     if (widgetState !== "ready") return;
-    if (sessionStorage.getItem(TOOLTIP_SEEN_KEY)) return;
+    if (safeSessionStorage.getItem(TOOLTIP_SEEN_KEY)) return;
 
     const showTimer = setTimeout(() => {
       setShowTooltip(true);
-      sessionStorage.setItem(TOOLTIP_SEEN_KEY, "1");
+      safeSessionStorage.setItem(TOOLTIP_SEEN_KEY, "1");
     }, 5000);
 
     const hideTimer = setTimeout(() => setShowTooltip(false), 15000);
@@ -295,9 +296,9 @@ export function ZainaWidget() {
   useEffect(() => {
     try {
       const trimmed = msgs.slice(-MAX_RESTORED_MESSAGES);
-      localStorage.setItem(SESSION_MSGS_KEY, JSON.stringify(trimmed));
+      safeLocalStorage.setItem(SESSION_MSGS_KEY, JSON.stringify(trimmed));
       if (msgs.length > 1) {
-        localStorage.setItem(SESSION_CREATED_KEY, String(Date.now()));
+        safeLocalStorage.setItem(SESSION_CREATED_KEY, String(Date.now()));
       }
     } catch {
       // localStorage can be unavailable in some private-browsing modes
@@ -314,7 +315,7 @@ export function ZainaWidget() {
   useEffect(() => {
     if (widgetState !== "handed_off" || !open) return;
 
-    const sessionId = localStorage.getItem(SESSION_KEY);
+    const sessionId = safeLocalStorage.getItem(SESSION_KEY);
     if (!sessionId) return;
 
     let cancelled = false;
@@ -371,8 +372,8 @@ export function ZainaWidget() {
   // ─── Session ─────────────────────────────────────────────────
   function currentCurrency(): "USD" | "KES" {
     const v =
-      localStorage.getItem("currency") ??
-      localStorage.getItem("display_currency") ??
+      safeLocalStorage.getItem("currency") ??
+      safeLocalStorage.getItem("display_currency") ??
       "USD";
     return v.toUpperCase() === "KES" ? "KES" : "USD";
   }
@@ -380,17 +381,17 @@ export function ZainaWidget() {
   function clearLocalSession() {
     verifiedSessionRef.current = null;
     try {
-      localStorage.removeItem(SESSION_KEY);
-      localStorage.removeItem(SESSION_CREATED_KEY);
-      localStorage.removeItem(SESSION_MSGS_KEY);
+      safeLocalStorage.removeItem(SESSION_KEY);
+      safeLocalStorage.removeItem(SESSION_CREATED_KEY);
+      safeLocalStorage.removeItem(SESSION_MSGS_KEY);
     } catch {
       // ignore
     }
   }
 
   async function getSession(): Promise<string | null> {
-    const cached = localStorage.getItem(SESSION_KEY);
-    const createdRaw = localStorage.getItem(SESSION_CREATED_KEY);
+    const cached = safeLocalStorage.getItem(SESSION_KEY);
+    const createdRaw = safeLocalStorage.getItem(SESSION_CREATED_KEY);
 
     if (cached && createdRaw) {
       const createdAt = Number(createdRaw);
@@ -433,8 +434,8 @@ export function ZainaWidget() {
       if (!res.ok) return null;
       const data = await res.json();
       if (!data.sessionId) return null;
-      localStorage.setItem(SESSION_KEY, data.sessionId);
-      localStorage.setItem(SESSION_CREATED_KEY, String(Date.now()));
+      safeLocalStorage.setItem(SESSION_KEY, data.sessionId);
+      safeLocalStorage.setItem(SESSION_CREATED_KEY, String(Date.now()));
       verifiedSessionRef.current = data.sessionId;
       return data.sessionId;
     } catch {
@@ -688,7 +689,7 @@ export function ZainaWidget() {
                 onClick={() => {
                   clearLocalSession();
                   try {
-                    sessionStorage.removeItem(CHIP_SELECTION_KEY);
+                    safeSessionStorage.removeItem(CHIP_SELECTION_KEY);
                   } catch {
                     // ignore
                   }

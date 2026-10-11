@@ -7,6 +7,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
+import { safeSessionStorage } from "@/lib/safe-storage";
 
 const POLL_INTERVAL_MS = 15000;
 const SOUND_UNLOCK_KEY = "zaina_sound_unlocked";
@@ -101,7 +102,7 @@ export function AdminZainaBubble() {
   useEffect(() => {
     function unlock() {
       try {
-        sessionStorage.setItem(SOUND_UNLOCK_KEY, "1");
+        safeSessionStorage.setItem(SOUND_UNLOCK_KEY, "1");
         if (
           typeof Notification !== "undefined" &&
           Notification.permission === "default"

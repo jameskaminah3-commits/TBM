@@ -1010,9 +1010,44 @@ export const bookingAttributions = pgTable("booking_attributions", {
   originalSubtotal: integer("original_subtotal").notNull().default(0),
   discountAmount: integer("discount_amount").notNull().default(0),
   finalRevenue: integer("final_revenue").notNull().default(0),
+  // Which partner share brought the booking, decided once when it is made
+  // (shared/share-attribution.ts). credited, assisted, unverified or none.
+  shareCode: varchar("share_code"),
+  shareListingKind: varchar("share_listing_kind"),
+  shareListingId: varchar("share_listing_id"),
+  shareCredit: varchar("share_credit"),
+  shareCreditReason: varchar("share_credit_reason"),
+  creditedUserId: varchar("credited_user_id"),
+  assistedShareCodes: text("assisted_share_codes").array().notNull().default(sql`'{}'::text[]`),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
+
+// A partner's share link for one of their listings: a random code, with the
+// channel it went out on. Stopping it ends any further credit.
+export const listingShareLinks = pgTable("listing_share_links", {
+  code: varchar("code").primaryKey(),
+  listingKind: varchar("listing_kind").notNull(),
+  listingId: varchar("listing_id").notNull(),
+  createdByUserId: varchar("created_by_user_id").notNull(),
+  channel: varchar("channel"),
+  createdAt: text("created_at").notNull(),
+  sharedAt: text("shared_at"),
+  stoppedAt: text("stopped_at"),
+  stoppedByUserId: varchar("stopped_by_user_id"),
+}, (table) => [index("listing_share_links_owner_idx").on(table.createdByUserId, table.listingKind, table.listingId)]);
+export type ListingShareLink = typeof listingShareLinks.$inferSelect;
+
+// Visits and Book taps from share links, at most one per device per link per
+// 24 hours. Device and address are kept only as keyed hashes.
+export const listingShareEvents = pgTable("listing_share_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  code: varchar("code").notNull(),
+  eventType: varchar("event_type").notNull(),
+  deviceHash: varchar("device_hash"),
+  ipHash: varchar("ip_hash"),
+  createdAt: text("created_at").notNull(),
+}, (table) => [index("listing_share_events_code_idx").on(table.code, table.eventType, table.createdAt)]);
 
 const optionalTrimmedString = z.preprocess(
   (value) => {
@@ -1254,6 +1289,26 @@ export const marketingAttributionEventSchema = marketingAttributionPayloadSchema
 export type MarketingAttributionPayload = z.infer<typeof marketingAttributionPayloadSchema>;
 export type MarketingAttributionEvent = typeof marketingAttributionEvents.$inferSelect;
 export type BookingAttribution = typeof bookingAttributions.$inferSelect;
+// The share decision stored with a booking (shared/share-attribution.ts).
+export type BookingShareCredit = {
+  code: string | null;
+  listingKind: string | null;
+  listingId: string | null;
+  credit: "credited" | "assisted" | "unverified" | "none";
+  reason: string;
+  creditedUserId: string | null;
+  assistedCodes: string[];
+};
+// What the browser sends with a booking; the server checks every part.
+export const bookingShareClaimSchema = z.object({
+  code: z.string().regex(/^[a-z0-9]{10}$/).nullable().optional().default(null),
+  olderLink: z.object({
+    kind: z.enum(["stay", "car", "cook", "errand", "experience"]),
+    id: z.string().trim().min(1).max(120),
+  }).nullable().optional().default(null),
+  assistedCodes: z.array(z.string().regex(/^[a-z0-9]{10}$/)).max(10).optional().default([]),
+  deviceId: z.string().trim().min(8).max(120).nullable().optional().default(null),
+});
 export type BookingMarketingSummary = {
   promoId: string | null;
   promoName: string | null;
