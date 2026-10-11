@@ -59,6 +59,17 @@ export function formatCalendarDateRange(start: string, end: string | null | unde
   const to = end ? calendarParts(end) : null;
   if (!from) return end ? `${start} – ${end}` : start;
   if (!to || end === start) return formatCalendarDate(start, DEFAULT_DATE_FORMAT, locale);
+  if (locale === "en-GB") {
+    // Day before month, as guests in Kenya write it: "16–20 Nov 2026", "28 Nov – 2 Dec 2026".
+    const dayMonth: Intl.DateTimeFormatOptions = { day: "numeric", month: "short" };
+    if (from[0] === to[0] && from[1] === to[1]) {
+      return `${from[2]}–${formatCalendarDate(end!, DEFAULT_DATE_FORMAT, locale)}`;
+    }
+    if (from[0] === to[0]) {
+      return `${formatCalendarDate(start, dayMonth, locale)} – ${formatCalendarDate(end!, DEFAULT_DATE_FORMAT, locale)}`;
+    }
+    return `${formatCalendarDate(start, DEFAULT_DATE_FORMAT, locale)} – ${formatCalendarDate(end!, DEFAULT_DATE_FORMAT, locale)}`;
+  }
   const monthDay: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
   if (from[0] === to[0] && from[1] === to[1]) {
     return `${formatCalendarDate(start, monthDay, locale)} – ${to[2]}, ${to[0]}`;
