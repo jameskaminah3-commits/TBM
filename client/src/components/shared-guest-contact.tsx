@@ -10,6 +10,7 @@ type ContactRelease = {
   bookingId: string;
   sharePhone: boolean;
   shareEmail: boolean;
+  shareFullName: boolean;
   reason: string;
   expiresAt: string;
 };
@@ -37,7 +38,8 @@ export function SharedGuestContact({ bookingId }: { bookingId: string }) {
     return null;
   }
 
-  const shared = [release.sharePhone ? "phone number" : null, release.shareEmail ? "email" : null].filter(Boolean).join(" and ");
+  const shared = [release.shareFullName ? "full name" : null, release.sharePhone ? "phone number" : null, release.shareEmail ? "email" : null]
+    .filter(Boolean).join(", ").replace(/, ([^,]*)$/, " and $1");
   const open = async () => {
     setLoading(true);
     try {

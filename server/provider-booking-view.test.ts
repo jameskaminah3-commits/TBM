@@ -3,7 +3,10 @@ import test from "node:test";
 import {
   CONTACT_REMOVED,
   getProviderPaymentStage,
+  partnerGuestName,
   removeContactDetails,
+  toPartnerInboxItem,
+  withPartnerGuestName,
   toProviderAssignment,
   toProviderBooking,
   toProviderPaymentData,
@@ -36,7 +39,7 @@ const booking = {
 
 test("a provider sees who is coming, when, and what to deliver", () => {
   const view = toProviderBooking(booking);
-  assert.equal(view.guestName, "Jane Test");
+  assert.equal(view.guestName, "Jane T.", "first name and surname initial only");
   assert.equal(view.checkIn, "2026-11-20");
   assert.equal(view.serviceLocation, "Galu Beach, Diani");
   assert.equal(view.paymentStage, "paid");
@@ -105,8 +108,34 @@ test("a provider's payout statement shows their payouts, not the guest's price, 
   assert.equal(data.totalProjectedPayouts, 850);
   const [payout] = data.payouts as Array<Record<string, unknown>>;
   assert.equal(payout.payoutAmount, 850);
+  assert.equal(payout.serviceValue, 1000, "the service value explains the earnings");
   assert.equal(payout.commissionPercent, 15);
   for (const field of ["grossAmount", "commissionAmount", "guestName", "notes", "providerEmail", "providerName", "marketingAttribution", "providerUserId"]) {
     assert.equal(field in payout, false, `${field} should be hidden`);
   }
+});
+
+test("partners get the guest's first name and surname initial", () => {
+  assert.equal(partnerGuestName("Jane Wanjiru"), "Jane W.");
+  assert.equal(partnerGuestName("  mary anne  njeri kamau "), "mary K.");
+  assert.equal(partnerGuestName("Amina"), "Amina");
+  assert.equal(partnerGuestName(""), "Guest");
+  assert.equal(partnerGuestName(null), "Guest");
+  assert.equal(partnerGuestName("jane@example.com"), "Guest", "an email in the name field isn't passed on");
+  assert.equal(partnerGuestName("0712345678"), "Guest", "nor a phone number");
+});
+
+test("older alerts written with the full name are shortened", () => {
+  assert.equal(withPartnerGuestName("Jane Wanjiru needs Land Cruiser Prado on 2026-11-30.", "Jane Wanjiru"), "Jane W. needs Land Cruiser Prado on 2026-11-30.");
+  assert.equal(withPartnerGuestName("New assignment", null), "New assignment");
+});
+
+test("partner alerts: short names, guest-written contact removed, TBM's own words kept", () => {
+  const assignment = toPartnerInboxItem({ title: "New assignment: Prado", body: "Jane Wanjiru needs Prado on 2026-11-30.", actorRole: null, metadata: { guestName: "Jane Wanjiru" } });
+  assert.equal(assignment.body, "Jane W. needs Prado on 2026-11-30.");
+  assert.equal(assignment.metadata?.guestName, "Jane W.");
+  const fromGuest = toPartnerInboxItem({ title: "New message from Guest", body: "Jane: call me on 0712 345 678", actorRole: "customer", metadata: {} });
+  assert.equal(fromGuest.body, `Jane: call me on ${CONTACT_REMOVED}`);
+  const fromTbm = toPartnerInboxItem({ title: "New message from TBM", body: "TBM team: payout reference 4829104829 sent", actorRole: "admin", metadata: {} });
+  assert.equal(fromTbm.body, "TBM team: payout reference 4829104829 sent");
 });

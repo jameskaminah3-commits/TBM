@@ -455,7 +455,7 @@ export const listingEdits = pgTable("listing_edits", {
 });
 export type ListingEdit = typeof listingEdits.$inferSelect;
 // TBM manages guest communication, so partners don't get guests' contact
-// details. In an emergency or a genuine operational need, TBM can share them
+// details or full names. In an emergency or a genuine operational need, TBM can share them
 // with one partner on one booking, for a limited time and a recorded reason.
 // Every time the partner opens them is recorded too.
 export const guestContactReleases = pgTable("guest_contact_releases", {
@@ -464,6 +464,7 @@ export const guestContactReleases = pgTable("guest_contact_releases", {
   providerUserId: varchar("provider_user_id").notNull(),
   sharePhone: boolean("share_phone").notNull().default(true),
   shareEmail: boolean("share_email").notNull().default(false),
+  shareFullName: boolean("share_full_name").notNull().default(false),
   reason: text("reason").notNull(),
   grantedBy: varchar("granted_by").notNull(),
   grantedAt: text("granted_at").notNull(),
@@ -486,9 +487,10 @@ export const guestContactReleaseSchema = z.object({
   providerUserId: z.string().trim().min(1, "Choose the partner"),
   sharePhone: z.boolean().default(true),
   shareEmail: z.boolean().default(false),
+  shareFullName: z.boolean().default(false),
   reason: z.string().trim().min(10, "Give the reason in a sentence").max(500, "Keep the reason under 500 characters"),
   hours: z.number().int().min(1).max(72).default(24),
-}).refine((value) => value.sharePhone || value.shareEmail, { message: "Share the phone, the email or both" });
+}).refine((value) => value.sharePhone || value.shareEmail || value.shareFullName, { message: "Choose what to share: phone, email or full name" });
 
 export const fleetApplicationStatuses = ["pending", "approved", "rejected"] as const;
 export type FleetApplicationStatus = typeof fleetApplicationStatuses[number];
@@ -1900,13 +1902,14 @@ export type ProviderPaymentData = {
   payouts: AdminBookingPayout[];
 };
 
-// What a provider receives from /api/provider/payments: their payouts at their
-// agreed rate, without the guest's price, TBM's fee amount or internal notes.
+// What a provider receives from /api/provider/payments: their payouts, the
+// service value they come from and their agreed rate, without TBM's fee amount,
+// the guest's payment details or internal notes.
 export type ProviderPayoutView = Pick<
   AdminBookingPayout,
   "id" | "assignmentId" | "bookingId" | "providerCategory" | "serviceId" | "serviceName" | "commissionPercent"
   | "payoutAmount" | "status" | "dueAt" | "paidAt" | "paymentMethod" | "paymentReference" | "createdAt" | "updatedAt"
->;
+> & { serviceValue: number | null };
 export type ProviderPaymentView = Pick<
   ProviderPaymentData,
   "totalProjectedPayouts" | "totalPendingPayouts" | "totalApprovedPayouts" | "totalPaidOut"

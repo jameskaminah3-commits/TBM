@@ -66,6 +66,7 @@ function GuestContactReleases({ bookingId, partner, hasGuestPhone }: { bookingId
   const [formOpen, setFormOpen] = useState(false);
   const [sharePhone, setSharePhone] = useState(hasGuestPhone);
   const [shareEmail, setShareEmail] = useState(false);
+  const [shareFullName, setShareFullName] = useState(false);
   const [hours, setHours] = useState("24");
   const [reason, setReason] = useState("");
   const partnersKey = [`/api/admin/bookings/${bookingId}/partners`];
@@ -75,6 +76,7 @@ function GuestContactReleases({ bookingId, partner, hasGuestPhone }: { bookingId
       providerUserId: partner.providerUserId,
       sharePhone,
       shareEmail,
+      shareFullName,
       hours: Number(hours),
       reason,
     }),
@@ -110,7 +112,7 @@ function GuestContactReleases({ bookingId, partner, hasGuestPhone }: { bookingId
         ) : null}
       </div>
       <p className="text-xs text-muted-foreground">
-        Partners don't get guests' contact details. Share them only for an emergency or a real operational need, for as short a time as works.
+        Partners get the guest's first name and initial only, and no contact details. Share more only for an emergency or a real operational need, for as short a time as works.
       </p>
 
       {formOpen ? (
@@ -123,6 +125,10 @@ function GuestContactReleases({ bookingId, partner, hasGuestPhone }: { bookingId
             <label className="flex items-center gap-2">
               <Checkbox checked={shareEmail} onCheckedChange={(value) => setShareEmail(value === true)} />
               Email
+            </label>
+            <label className="flex items-center gap-2">
+              <Checkbox checked={shareFullName} onCheckedChange={(value) => setShareFullName(value === true)} />
+              Full name
             </label>
           </div>
           <div className="space-y-1.5">
@@ -145,7 +151,7 @@ function GuestContactReleases({ bookingId, partner, hasGuestPhone }: { bookingId
             />
           </div>
           <div className="flex gap-2">
-            <Button type="button" size="sm" onClick={() => share.mutate()} disabled={share.isPending || reason.trim().length < 10 || (!sharePhone && !shareEmail)}>
+            <Button type="button" size="sm" onClick={() => share.mutate()} disabled={share.isPending || reason.trim().length < 10 || (!sharePhone && !shareEmail && !shareFullName)}>
               {share.isPending ? "Sharing..." : "Share contact"}
             </Button>
             <Button type="button" size="sm" variant="ghost" onClick={() => setFormOpen(false)}>Cancel</Button>
@@ -161,7 +167,7 @@ function GuestContactReleases({ bookingId, partner, hasGuestPhone }: { bookingId
               <li key={release.id} className="rounded-lg border bg-background px-3 py-2" data-testid={`contact-release-${release.id}`}>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span>
-                    {[release.sharePhone ? "Phone" : null, release.shareEmail ? "Email" : null].filter(Boolean).join(" and ")} · {release.reason}
+                    {[release.shareFullName ? "Full name" : null, release.sharePhone ? "Phone" : null, release.shareEmail ? "Email" : null].filter(Boolean).join(", ")} · {release.reason}
                   </span>
                   <Badge variant={state === "Active" ? "default" : "outline"}>{state}</Badge>
                 </div>

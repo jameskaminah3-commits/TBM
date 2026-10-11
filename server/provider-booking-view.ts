@@ -2,7 +2,8 @@
 // many guests, and what to deliver. Guests pay TBM and talk to TBM, so the
 // guest's phone, email, payment details, totals and TBM's internal notes stay
 // with TBM. The provider gets a payment stage instead of payment fields, and the
-// guest's name because they meet the guest. Contact details a guest writes into
+// guest's first name and surname initial so they can greet them; TBM shares the
+// full name only through a recorded release. Contact details a guest writes into
 // a request are removed before a provider sees it.
 
 export const providerBookingFields = [
@@ -65,6 +66,25 @@ export function getProviderPaymentStage(booking: PaymentFields): ProviderPayment
   return (booking.paymentAmountPaid ?? 0) > 0 ? "deposit-paid" : "unpaid";
 }
 
+// "Jane Wanjiru" → "Jane W."; one name stays as it is. A name that looks like an
+// email or a phone number is not passed on.
+export function partnerGuestName(name: string | null | undefined): string {
+  const parts = (name ?? "").trim().split(/\s+/).filter(Boolean);
+  if (!parts.length || /@|\d{5,}/.test(parts.join(" "))) {
+    return "Guest";
+  }
+  if (parts.length === 1) {
+    return parts[0];
+  }
+  return `${parts[0]} ${parts[parts.length - 1].charAt(0).toUpperCase()}.`;
+}
+
+// Older alerts were written with the guest's full name.
+export function withPartnerGuestName(text: string, fullName: string | null | undefined) {
+  const name = fullName?.trim();
+  return name ? text.split(name).join(partnerGuestName(name)) : text;
+}
+
 export const CONTACT_REMOVED = "[contact details removed – message TBM]";
 
 const emailPattern = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
@@ -106,6 +126,9 @@ export function toProviderBooking(booking: object): ProviderBooking {
       view[field] = source[field];
     }
   }
+  if ("guestName" in view) {
+    view.guestName = partnerGuestName(view.guestName as string | null);
+  }
   if ("serviceRequestDetails" in view) {
     view.serviceRequestDetails = removeContactDetails(view.serviceRequestDetails as string | null);
   }
@@ -126,9 +149,10 @@ export function toProviderAssignment<T extends { grossAmount?: unknown; serviceC
   return rest;
 }
 
-// A provider's payout statement: what TBM pays them, at their agreed rate, and
-// where each payout stands. Not the guest's price, TBM's fee amount, the
-// guest's details, the provider's own email or TBM's internal notes.
+// A provider's payout statement: what TBM pays them, the value of the service
+// it comes from, their agreed rate, and where each payout stands. Not TBM's fee
+// amount, the guest's payment total or details, the provider's own email or
+// TBM's internal notes.
 export const providerPayoutFields = [
   "id",
   "assignmentId",
@@ -149,7 +173,7 @@ export const providerPayoutFields = [
 
 export type ProviderPayout = Record<(typeof providerPayoutFields)[number], unknown>;
 
-export function toProviderPayout(payout: object): ProviderPayout {
+export function toProviderPayout(payout: object): ProviderPayout & { serviceValue: number | null } {
   const source = payout as Record<string, unknown>;
   const view: Record<string, unknown> = {};
   for (const field of providerPayoutFields) {
@@ -157,7 +181,8 @@ export function toProviderPayout(payout: object): ProviderPayout {
       view[field] = source[field];
     }
   }
-  return view as ProviderPayout;
+  view.serviceValue = typeof source.grossAmount === "number" ? source.grossAmount : null;
+  return view as ProviderPayout & { serviceValue: number | null };
 }
 
 type PaymentData = {
@@ -181,5 +206,23 @@ export function toProviderPaymentData(data: PaymentData) {
     paidPayoutCount: data.paidPayoutCount,
     serviceFeePercents: data.serviceFeePercents,
     payouts: data.payouts.map(toProviderPayout),
+  };
+}
+
+type InboxText = { title: string; body: string; actorRole?: string | null; metadata?: Record<string, unknown> | null };
+
+// An inbox alert as a partner reads it: the guest's short name, and no contact
+// details unless TBM wrote them. Covers alerts written before these rules.
+export function toPartnerInboxItem<T extends InboxText>(item: T): T {
+  const fullName = typeof item.metadata?.guestName === "string" ? item.metadata.guestName : null;
+  const clean = (text: string) => {
+    const named = withPartnerGuestName(text, fullName);
+    return item.actorRole === "admin" ? named : removeContactDetails(named);
+  };
+  return {
+    ...item,
+    title: clean(item.title),
+    body: clean(item.body),
+    metadata: item.metadata && fullName ? { ...item.metadata, guestName: partnerGuestName(fullName) } : item.metadata,
   };
 }
