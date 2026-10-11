@@ -57,6 +57,9 @@ import {
 } from "@shared/schema";
 import { listUploads, saveBase64Upload } from "./media";
 import { toPublicListing, withoutProviderProtectedFields } from "./listing-privacy";
+import { partnerGuestName, removeContactDetails, toPartnerInboxItem, toProviderAssignment, toProviderBooking, toProviderPaymentData } from "./provider-booking-view";
+import { toPartnerAvailability, toPublicAvailability } from "./availability-view";
+import { canSeeThreadMessage } from "@shared/booking-thread";
 import { db } from "./db";
 import { bookings, users, stays, cars, cooks, errands, experiences, listings, blogPosts, customOffers, stayReservations, carReservations, cookReservations } from "@shared/schema";
 import { calculateCookInclusiveTotal, calculateCookServiceTotal, getCookMinimumGuests } from "@shared/cook-pricing";
@@ -1984,6 +1987,55 @@ async function applyProviderBookingStatusUpdate(
   return { booking: await attachBookingMarketingAttribution(decorateBookingWithOperationalStatus(updatedBooking)) } as const;
 }
 
+// Hotfix (partner guest data): what a partner may see of a booking, a job, a
+// calendar and their payouts. Admins keep the full records.
+function bookingForViewer(req: any, booking: any) {
+  return req.user?.claims?.role === "admin" ? booking : toProviderBooking(booking);
+}
+
+function assignmentForViewer(req: any, assignment: any) {
+  return req.user?.claims?.role === "admin" ? assignment : toProviderAssignment(assignment);
+}
+
+function assignmentViewForViewer(req: any, view: ProviderBookingAssignmentView) {
+  return { assignment: assignmentForViewer(req, view.assignment), booking: bookingForViewer(req, view.booking) };
+}
+
+// A partner's booking lists hold only bookings they have a job on: not unpaid
+// holds, and not bookings from before the listing was theirs.
+async function ownJobBookings<T extends { id: string }>(req: any, bookings: T[], category: ProviderCategory) {
+  if (req.user?.claims?.role === "admin") {
+    return bookings;
+  }
+  const jobs = await storage.getBookingServiceAssignments();
+  const bookingIds = new Set(jobs
+    .filter((job) => job.providerUserId === req.user.claims.sub && job.providerCategory === category)
+    .map((job) => job.bookingId));
+  return bookings.filter((booking) => bookingIds.has(booking.id));
+}
+
+// A partner's own calendar: their jobs by booking reference, anyone else's
+// booking as an anonymous hold.
+async function availabilityForViewer<S extends Parameters<typeof toPartnerAvailability>[0]>(req: any, summary: S) {
+  if (req.user?.claims?.role === "admin") {
+    return summary;
+  }
+  const jobs = await storage.getBookingServiceAssignments();
+  const ownBookingIds = new Set(jobs.filter((job) => job.providerUserId === req.user.claims.sub).map((job) => job.bookingId));
+  return toPartnerAvailability(summary, ownBookingIds);
+}
+
+// Booking chat as a partner reads it: payment updates are left out, and contact
+// details the guest typed are removed. TBM's own words are kept.
+function threadMessagesForViewer<T extends { senderRole: string; message: string }>(req: any, messages: T[]): T[] {
+  if (req.user?.claims?.role !== "provider") {
+    return messages;
+  }
+  return messages
+    .filter((message) => canSeeThreadMessage("provider", message))
+    .map((message) => (message.senderRole === "admin" ? message : { ...message, message: removeContactDetails(message.message) }));
+}
+
 function decorateProviderAssignmentView(
   assignment: BookingServiceAssignment,
   booking: any,
@@ -2522,6 +2574,41 @@ async function assertProviderCanAccessExperienceBooking(req: any, bookingId: str
   return access;
 }
 
+// Older booking-level status routes. A partner moves their own job forward,
+// never the whole booking, so these act on the partner's job in the booking.
+async function updateOwnJobStatusForBooking(req: any, res: any, category?: ProviderCategory) {
+  const booking = await storage.getBooking(req.params.id);
+  if (!booking) {
+    return res.status(404).json({ error: "Booking not found" });
+  }
+
+  const requestedStatus = req.body?.status;
+  if (requestedStatus !== "in-progress" && requestedStatus !== "completed") {
+    return res.status(400).json({ error: "Partners can only mark their jobs as in progress or completed." });
+  }
+
+  if (req.user.claims.role === "admin") {
+    const result = await applyProviderBookingStatusUpdate(req.params.id, booking, requestedStatus);
+    return "error" in result ? res.status(400).json({ error: result.error }) : res.json(result.booking);
+  }
+
+  const ownJobs = (await storage.getBookingServiceAssignmentsByBookingId(booking.id)).filter((assignment) =>
+    assignment.providerUserId === req.user.claims.sub && (!category || assignment.providerCategory === category),
+  );
+  if (!ownJobs.length) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  if (ownJobs.length > 1) {
+    return res.status(409).json({ error: "Update each job from your dashboard." });
+  }
+
+  const result = await applyProviderAssignmentStatusUpdate(ownJobs[0], booking, requestedStatus);
+  if ("error" in result) {
+    return res.status(400).json({ error: result.error });
+  }
+  return res.json(assignmentViewForViewer(req, result.assignment));
+}
+
 async function assertCanAccessBookingThread(req: any, bookingId: string) {
   const booking = await storage.getBooking(bookingId);
   if (!booking) {
@@ -2533,12 +2620,12 @@ async function assertCanAccessBookingThread(req: any, bookingId: string) {
 
   // Admins have full access.
   if (currentUserRole === "admin") {
-    return { booking } as const;
+    return { booking, viewer: "admin" } as const;
   }
 
   // Direct owner.
   if (booking.userId && booking.userId === currentUserId) {
-    return { booking } as const;
+    return { booking, viewer: "guest" } as const;
   }
 
   // Anonymous booking (created via Zaina) — match by *verified* email
@@ -2553,7 +2640,7 @@ async function assertCanAccessBookingThread(req: any, bookingId: string) {
     if (emailIsVerified && userEmail && bookingEmail && userEmail === bookingEmail) {
       try {
         await db.update(bookings).set({ userId: currentUserId }).where(eq(bookings.id, booking.id));
-        return { booking: { ...booking, userId: currentUserId } } as const;
+        return { booking: { ...booking, userId: currentUserId }, viewer: "guest" } as const;
       } catch (err) {
         console.error(`[BOOKING] Failed to claim booking ${booking.id}:`, err);
       }
@@ -2563,7 +2650,7 @@ async function assertCanAccessBookingThread(req: any, bookingId: string) {
   // Assigned provider.
   const assignments = await storage.getBookingServiceAssignmentsByBookingId(bookingId);
   if (assignments.some((assignment) => assignment.providerUserId === currentUserId)) {
-    return { booking } as const;
+    return { booking, viewer: "provider" } as const;
   }
 
   return { error: { status: 403, body: { error: "Forbidden" } } } as const;
@@ -3358,7 +3445,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(error.status).json(error.body);
       }
 
-      res.json(await attachBookingMarketingAttribution(decorateBookingWithOperationalStatus(access.booking)));
+      const booking = decorateBookingWithOperationalStatus(access.booking);
+      res.json(access.viewer === "provider" ? toProviderBooking(booking) : await attachBookingMarketingAttribution(booking));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch booking" });
     }
@@ -4522,7 +4610,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(error.status).json(error.body);
       }
 
-      res.json(await storage.getBookingMessages(req.params.id));
+      res.json(threadMessagesForViewer(req, await storage.getBookingMessages(req.params.id)));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch booking messages" });
     }
@@ -4597,7 +4685,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/inbox", isAuthenticated, async (req: any, res) => {
     try {
-      res.json(await storage.getUserInbox(req.user.claims.sub));
+      const items = await storage.getUserInbox(req.user.claims.sub);
+      // Partners: no payment alerts, short guest names, no guest-typed contact details.
+      res.json(req.user.claims.role === "provider"
+        ? items
+          .filter((item: any) => item.type !== "booking-message" || canSeeThreadMessage("provider", {
+            senderRole: String(item.metadata?.senderRole ?? ""),
+            message: String(item.body ?? "").replace(/^[^:]*:\s*/, ""),
+          }))
+          // Older alerts name the guest in full as the sender.
+          .map((item: any) => toPartnerInboxItem(item.type === "booking-message" && !["admin", "provider"].includes(String(item.metadata?.senderRole ?? ""))
+            ? { ...item, metadata: { ...item.metadata, guestName: item.metadata?.senderName, senderName: partnerGuestName(item.metadata?.senderName) } }
+            : item))
+        : items);
     } catch (error) {
       console.error("[INBOX] Failed to fetch inbox items:", error);
       res.status(500).json({ error: "Failed to fetch inbox items" });
@@ -5360,7 +5460,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ? requestedProviderUserId
         : req.user.claims.sub;
 
-      res.json(await storage.getProviderPaymentData(providerUserId));
+      const paymentData = await storage.getProviderPaymentData(providerUserId);
+      // A partner sees their payouts, the service value and agreed rate; not TBM's fee amount or notes.
+      res.json(req.user.claims.role === "admin" ? paymentData : toProviderPaymentData(paymentData));
     } catch (error) {
       console.error("[PROVIDER] Failed to fetch provider payment data:", error);
       res.status(500).json({ error: "Failed to fetch provider payment data" });
@@ -5461,7 +5563,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if ("error" in access) {
         return res.status(access.error!.status).json(access.error!.body);
       }
-      if (access.booking.serviceMode !== "listing-verification") {
+      if (access.viewer === "provider" || access.booking.serviceMode !== "listing-verification") {
         return res.status(404).json({ error: "Listing verification not found" });
       }
       const task = await storage.getListingVerificationTaskByBookingId(access.booking.id);
@@ -6435,7 +6537,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return a.booking.checkIn.localeCompare(b.booking.checkIn);
         });
 
-      res.json(visibleAssignments);
+      res.json(visibleAssignments.map((entry) => assignmentViewForViewer(req, entry)));
     } catch (error) {
       console.error("[PROVIDER] Failed to fetch provider booking assignments:", error);
       res.status(500).json({ error: "Failed to fetch provider booking assignments" });
@@ -6459,7 +6561,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: result.error });
       }
 
-      res.json(result.assignment);
+      res.json(assignmentViewForViewer(req, result.assignment));
     } catch (error) {
       console.error("[PROVIDER] Failed to update provider assignment:", error);
       res.status(500).json({ error: "Failed to update provider assignment" });
@@ -6478,7 +6580,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const updated = await storage.updateBookingServiceAssignmentResponse(req.params.id, response);
-      res.json(updated);
+      res.json(updated ? assignmentForViewer(req, updated) : updated);
     } catch (error) {
       console.error("[PROVIDER] Failed to update assignment response:", error);
       res.status(500).json({ error: "Failed to update assignment response" });
@@ -6519,7 +6621,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           customMenuReviewedByUserId: null,
           customMenuReviewedAt: null,
         });
-        return res.json(updatedBooking);
+        return res.json(bookingForViewer(req, updatedBooking));
       }
 
       if (action === "decline") {
@@ -6540,7 +6642,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           customMenuReviewedByUserId: null,
           customMenuReviewedAt: null,
         });
-        return res.json(updatedBooking);
+        return res.json(bookingForViewer(req, updatedBooking));
       }
 
       return res.status(400).json({ error: "Invalid proposal action." });
@@ -6584,7 +6686,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           experienceCustomOfferReviewedByUserId: null,
           experienceCustomOfferReviewedAt: null,
         });
-        return res.json(updatedBooking);
+        return res.json(bookingForViewer(req, updatedBooking));
       }
 
       if (action === "decline") {
@@ -6603,7 +6705,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           experienceCustomOfferReviewedByUserId: null,
           experienceCustomOfferReviewedAt: null,
         });
-        return res.json(updatedBooking);
+        return res.json(bookingForViewer(req, updatedBooking));
       }
 
       return res.status(400).json({ error: "Invalid custom offer action." });
@@ -6658,7 +6760,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const bookings = (await storage.getBookings()).filter((booking) =>
         booking.accommodationId && stayIds.has(booking.accommodationId),
       );
-      res.json(bookings.map(decorateBookingWithOperationalStatus));
+      res.json((await ownJobBookings(req, bookings, "stays")).map((booking) => bookingForViewer(req, decorateBookingWithOperationalStatus(booking))));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch provider stay bookings" });
     }
@@ -6674,7 +6776,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const bookings = (await storage.getBookings()).filter((booking) =>
         booking.selectedServices.some((serviceId) => carIds.has(serviceId)),
       );
-      res.json(bookings.map(decorateBookingWithOperationalStatus));
+      res.json((await ownJobBookings(req, bookings, "cars")).map((booking) => bookingForViewer(req, decorateBookingWithOperationalStatus(booking))));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch provider car bookings" });
     }
@@ -6690,7 +6792,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const bookings = (await storage.getBookings()).filter((booking) =>
         booking.selectedServices.some((serviceId) => cookIds.has(serviceId)),
       );
-      res.json(bookings.map(decorateBookingWithOperationalStatus));
+      res.json((await ownJobBookings(req, bookings, "cooks")).map((booking) => bookingForViewer(req, decorateBookingWithOperationalStatus(booking))));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch provider cook bookings" });
     }
@@ -6706,7 +6808,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const bookings = (await storage.getBookings()).filter((booking) =>
         booking.selectedServices.some((serviceId) => errandIds.has(serviceId)),
       );
-      res.json(bookings.map(decorateBookingWithOperationalStatus));
+      res.json((await ownJobBookings(req, bookings, "errands")).map((booking) => bookingForViewer(req, decorateBookingWithOperationalStatus(booking))));
     } catch (error) {
       console.error("[PROVIDER] Failed to fetch errand bookings:", error);
       res.status(500).json({ error: "Failed to fetch provider errand bookings" });
@@ -6723,7 +6825,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const bookings = (await storage.getBookings()).filter((booking) =>
         booking.selectedServices.some((serviceId) => experienceIds.has(serviceId)),
       );
-      res.json(bookings.map(decorateBookingWithOperationalStatus));
+      res.json((await ownJobBookings(req, bookings, "experiences")).map((booking) => bookingForViewer(req, decorateBookingWithOperationalStatus(booking))));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch provider experience bookings" });
     }
@@ -6731,22 +6833,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/provider/bookings/:id/status", requireProviderOrAdmin, async (req: any, res) => {
     try {
-      const access = await assertCanAccessBookingThread(req, req.params.id);
-      if ("error" in access) {
-        return res.status(access.error!.status).json(access.error!.body);
-      }
-
-      const requestedStatus = req.body?.status;
-      if (requestedStatus !== "in-progress" && requestedStatus !== "completed") {
-        return res.status(400).json({ error: "Partners can only mark orders as in progress or completed." });
-      }
-
-      const result = await applyProviderBookingStatusUpdate(req.params.id, access.booking, requestedStatus);
-      if ("error" in result) {
-        return res.status(400).json({ error: result.error });
-      }
-
-      res.json(result.booking);
+      await updateOwnJobStatusForBooking(req, res);
     } catch (error) {
       res.status(500).json({ error: "Failed to update booking status" });
     }
@@ -6754,33 +6841,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/provider/car-bookings/:id/status", requireProviderOrAdmin, async (req: any, res) => {
     try {
-      const booking = await storage.getBooking(req.params.id);
-      if (!booking) {
-        return res.status(404).json({ error: "Booking not found" });
-      }
-
-      const currentUserId = req.user.claims.sub;
-      const currentUserRole = req.user.claims.role;
-      const assignedCars = currentUserRole === "admin"
-        ? await storage.getCars()
-        : (await storage.getCars()).filter((car) => car.managerUserId === currentUserId);
-      const assignedCarIds = new Set(assignedCars.map((car) => car.id));
-      const canAccess = booking.selectedServices.some((serviceId) => assignedCarIds.has(serviceId));
-      if (!canAccess) {
-        return res.status(403).json({ error: "Forbidden" });
-      }
-
-      const status = req.body?.status;
-      if (status !== "in-progress" && status !== "completed") {
-        return res.status(400).json({ error: "Partners can only mark car bookings as in progress or completed." });
-      }
-
-      const result = await applyProviderBookingStatusUpdate(req.params.id, booking, status);
-      if ("error" in result) {
-        return res.status(400).json({ error: result.error });
-      }
-
-      res.json(result.booking);
+      await updateOwnJobStatusForBooking(req, res, "cars");
     } catch (error) {
       res.status(500).json({ error: "Failed to update booking status" });
     }
@@ -6788,34 +6849,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/provider/cook-bookings/:id/status", requireProviderOrAdmin, async (req: any, res) => {
     try {
-      const booking = await storage.getBooking(req.params.id);
-      if (!booking) {
-        return res.status(404).json({ error: "Booking not found" });
-      }
-
-      const currentUserId = req.user.claims.sub;
-      const currentUserRole = req.user.claims.role;
-      const assignedCooks = currentUserRole === "admin"
-        ? await storage.getCooks()
-        : (await storage.getCooks()).filter((cook) => cook.managerUserId === currentUserId);
-      const assignedCookIds = new Set(assignedCooks.map((cook) => cook.id));
-      const canAccess = booking.selectedServices.some((serviceId) => assignedCookIds.has(serviceId));
-
-      if (!canAccess) {
-        return res.status(403).json({ error: "Forbidden - Cook booking not assigned to this provider" });
-      }
-
-      const requestedStatus = req.body?.status;
-      if (requestedStatus !== "in-progress" && requestedStatus !== "completed") {
-        return res.status(400).json({ error: "Partners can only mark chef bookings as in progress or completed." });
-      }
-
-      const result = await applyProviderBookingStatusUpdate(req.params.id, booking, requestedStatus);
-      if ("error" in result) {
-        return res.status(400).json({ error: result.error });
-      }
-
-      res.json(result.booking);
+      await updateOwnJobStatusForBooking(req, res, "cooks");
     } catch (error) {
       res.status(500).json({ error: "Failed to update booking status" });
     }
@@ -6854,7 +6888,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           customMenuReviewedByUserId: null,
           customMenuReviewedAt: null,
         });
-        return res.json(updated);
+        return res.json(bookingForViewer(req, updated));
       }
 
       if (action === "decline") {
@@ -6875,7 +6909,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           customMenuReviewedByUserId: null,
           customMenuReviewedAt: null,
         });
-        return res.json(updated);
+        return res.json(bookingForViewer(req, updated));
       }
 
       return res.status(400).json({ error: "Invalid proposal action." });
@@ -6920,7 +6954,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           experienceCustomOfferReviewedByUserId: null,
           experienceCustomOfferReviewedAt: null,
         });
-        return res.json(updated);
+        return res.json(bookingForViewer(req, updated));
       }
 
       if (action === "decline") {
@@ -6939,7 +6973,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           experienceCustomOfferReviewedByUserId: null,
           experienceCustomOfferReviewedAt: null,
         });
-        return res.json(updated);
+        return res.json(bookingForViewer(req, updated));
       }
 
       return res.status(400).json({ error: "Invalid custom offer action." });
@@ -7373,7 +7407,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(access.error!.status).json(access.error!.body);
       }
 
-      res.json(await getStayAvailabilitySummary(req.params.id));
+      res.json(await availabilityForViewer(req, await getStayAvailabilitySummary(req.params.id)));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch stay availability" });
     }
@@ -7696,7 +7730,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(access.error!.status).json(access.error!.body);
       }
 
-      res.json(await getCarAvailabilitySummary(req.params.id));
+      res.json(await availabilityForViewer(req, await getCarAvailabilitySummary(req.params.id)));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch car availability" });
     }
@@ -7839,7 +7873,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(access.error!.status).json(access.error!.body);
       }
 
-      res.json(await getCookAvailabilitySummary(req.params.id));
+      res.json(await availabilityForViewer(req, await getCookAvailabilitySummary(req.params.id)));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch cook availability" });
     }
@@ -8179,7 +8213,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Stay not found" });
       }
 
-      res.json(await getStayAvailabilitySummary(req.params.id));
+      res.json(toPublicAvailability(await getStayAvailabilitySummary(req.params.id)));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch stay availability" });
     }
@@ -8201,7 +8235,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Car not found" });
       }
 
-      res.json(await getCarAvailabilitySummary(req.params.id));
+      res.json(toPublicAvailability(await getCarAvailabilitySummary(req.params.id)));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch car availability" });
     }
@@ -8226,7 +8260,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Chef not found" });
       }
 
-      res.json(await getCookAvailabilitySummary(req.params.id));
+      res.json(toPublicAvailability(await getCookAvailabilitySummary(req.params.id)));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch cook availability" });
     }

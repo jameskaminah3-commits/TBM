@@ -130,6 +130,8 @@ import { getWebPushPublicConfig, sendWebPushNotification } from "./push";
 import { db, pool } from "./db";
 import { sanitizeOptionalUserRecord, sanitizeUserRecord, sanitizeUserRecords } from "./user-sanitizer";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { partnerGuestName, removeContactDetails, toPartnerInboxItem } from "./provider-booking-view";
+import { canSeeThreadMessage } from "@shared/booking-thread";
 
 type DashboardListingCatalog = {
   staysById: Map<string, Stay>;
@@ -3085,12 +3087,12 @@ export class DatabaseStorage implements IStorage {
       assignmentId,
       type,
       title: type === "assignment-reassigned" ? `Reassigned: ${serviceName}` : `New assignment: ${serviceName}`,
-      body: `${booking.guestName} needs ${serviceName} on ${bookingWindow}.`,
+      body: `${partnerGuestName(booking.guestName)} needs ${serviceName} on ${bookingWindow}.`,
       priority: "high",
       channels: ["in-app", "push"],
       metadata: {
         serviceName,
-        guestName: booking.guestName,
+        guestName: partnerGuestName(booking.guestName),
       },
     });
   }
@@ -3262,8 +3264,10 @@ export class DatabaseStorage implements IStorage {
       recipients.set(booking.userId, { assignmentId: null });
     }
 
+    // Payment updates carry the guest's payment details, so partners aren't told about them.
+    const partnersMayRead = canSeeThreadMessage("provider", message);
     for (const assignment of assignments) {
-      if (!assignment.providerUserId || assignment.providerUserId === message.userId) {
+      if (!partnersMayRead || !assignment.providerUserId || assignment.providerUserId === message.userId) {
         continue;
       }
 
@@ -3272,8 +3276,15 @@ export class DatabaseStorage implements IStorage {
       }
     }
 
+    // What a partner's alert (and push) says: the guest's short name, and no
+    // contact details the guest typed.
+    const fromGuest = message.senderRole !== "admin" && message.senderRole !== "provider";
+    const partnerSenderLabel = fromGuest ? partnerGuestName(senderLabel) : senderLabel;
+    const partnerExcerpt = message.senderRole === "admin" ? messageExcerpt : removeContactDetails(messageExcerpt);
+
     const createdItems: AppInboxItem[] = [];
     for (const [recipientUserId, recipientContext] of Array.from(recipients.entries())) {
+      const toPartner = recipientContext.assignmentId !== null;
       createdItems.push(await this.createInboxItem({
         userId: recipientUserId,
         actorUserId: message.userId,
@@ -3283,13 +3294,13 @@ export class DatabaseStorage implements IStorage {
         threadKey,
         type: "booking-message",
         title: `New message from ${getInboxSenderRoleLabel(message.senderRole)}`,
-        body: `${senderLabel}: ${messageExcerpt}`,
+        body: toPartner ? `${partnerSenderLabel}: ${partnerExcerpt}` : `${senderLabel}: ${messageExcerpt}`,
         priority: "normal",
         channels: ["in-app", "push"],
         metadata: {
           bookingId: message.bookingId,
           senderRole: message.senderRole,
-          senderName: senderLabel,
+          senderName: toPartner ? partnerSenderLabel : senderLabel,
         },
       }));
     }
@@ -3797,12 +3808,12 @@ export class DatabaseStorage implements IStorage {
     const inboxItems = await this.getUserInbox(userId);
     return inboxItems
       .filter((item) => item.assignmentId && isAppInboxItemType(item.type) && item.type !== "booking-message")
-      .map(toProviderNotification);
+      .map((item) => toProviderNotification(toPartnerInboxItem(item)));
   }
 
   async markProviderNotificationRead(id: string, userId: string): Promise<ProviderNotification | undefined> {
     const updatedNotification = await this.markInboxItemRead(id, userId);
-    return updatedNotification ? toProviderNotification(updatedNotification) : undefined;
+    return updatedNotification ? toProviderNotification(toPartnerInboxItem(updatedNotification)) : undefined;
   }
 
   // Blog Posts
