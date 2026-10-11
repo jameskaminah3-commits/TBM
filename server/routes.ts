@@ -2175,6 +2175,19 @@ function assignmentViewForViewer(req: any, view: ProviderBookingAssignmentView) 
   return { assignment: assignmentForViewer(req, view.assignment), booking: bookingForViewer(req, view.booking) };
 }
 
+// A partner's booking lists hold only bookings they have a job on: not unpaid
+// holds, and not bookings from before the listing was theirs.
+async function ownJobBookings<T extends { id: string }>(req: any, bookings: T[], category: ProviderCategory) {
+  if (req.user?.claims?.role === "admin") {
+    return bookings;
+  }
+  const jobs = await storage.getBookingServiceAssignments();
+  const bookingIds = new Set(jobs
+    .filter((job) => job.providerUserId === req.user.claims.sub && job.providerCategory === category)
+    .map((job) => job.bookingId));
+  return bookings.filter((booking) => bookingIds.has(booking.id));
+}
+
 // The bookings a provider holds a job on: theirs to see by reference.
 async function getProviderBookingIds(providerUserId: string) {
   const assignments = await storage.getBookingServiceAssignments();
@@ -7508,7 +7521,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const bookings = (await storage.getBookings()).filter((booking) =>
         booking.accommodationId && stayIds.has(booking.accommodationId),
       );
-      res.json(bookings.map((booking) => bookingForViewer(req, decorateBookingWithOperationalStatus(booking))));
+      res.json((await ownJobBookings(req, bookings, "stays")).map((booking) => bookingForViewer(req, decorateBookingWithOperationalStatus(booking))));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch provider stay bookings" });
     }
@@ -7524,7 +7537,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const bookings = (await storage.getBookings()).filter((booking) =>
         booking.selectedServices.some((serviceId) => carIds.has(serviceId)),
       );
-      res.json(bookings.map((booking) => bookingForViewer(req, decorateBookingWithOperationalStatus(booking))));
+      res.json((await ownJobBookings(req, bookings, "cars")).map((booking) => bookingForViewer(req, decorateBookingWithOperationalStatus(booking))));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch provider car bookings" });
     }
@@ -7540,7 +7553,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const bookings = (await storage.getBookings()).filter((booking) =>
         booking.selectedServices.some((serviceId) => cookIds.has(serviceId)),
       );
-      res.json(bookings.map((booking) => bookingForViewer(req, decorateBookingWithOperationalStatus(booking))));
+      res.json((await ownJobBookings(req, bookings, "cooks")).map((booking) => bookingForViewer(req, decorateBookingWithOperationalStatus(booking))));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch provider cook bookings" });
     }
@@ -7556,7 +7569,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const bookings = (await storage.getBookings()).filter((booking) =>
         booking.selectedServices.some((serviceId) => errandIds.has(serviceId)),
       );
-      res.json(bookings.map((booking) => bookingForViewer(req, decorateBookingWithOperationalStatus(booking))));
+      res.json((await ownJobBookings(req, bookings, "errands")).map((booking) => bookingForViewer(req, decorateBookingWithOperationalStatus(booking))));
     } catch (error) {
       console.error("[PROVIDER] Failed to fetch errand bookings:", error);
       res.status(500).json({ error: "Failed to fetch provider errand bookings" });
@@ -7573,7 +7586,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const bookings = (await storage.getBookings()).filter((booking) =>
         booking.selectedServices.some((serviceId) => experienceIds.has(serviceId)),
       );
-      res.json(bookings.map((booking) => bookingForViewer(req, decorateBookingWithOperationalStatus(booking))));
+      res.json((await ownJobBookings(req, bookings, "experiences")).map((booking) => bookingForViewer(req, decorateBookingWithOperationalStatus(booking))));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch provider experience bookings" });
     }
