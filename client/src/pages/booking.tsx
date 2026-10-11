@@ -1683,7 +1683,7 @@ export default function Booking() {
                             );
                           }) : (
                             <p className="text-sm text-muted-foreground text-center py-4">
-                              No partner-backed stay add-ons are available at the moment.
+                              No stay add-ons are available at the moment.
                             </p>
                           )}
                         </div>
