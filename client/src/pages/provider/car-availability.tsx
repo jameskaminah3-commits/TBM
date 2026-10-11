@@ -148,7 +148,7 @@ export default function ProviderCarAvailability() {
       queryClient.invalidateQueries({ queryKey: ["/api/cars"] });
       toast({
         title: "Listing updated",
-        description: "Your changes were saved and the listing is private until admin review.",
+        description: "Your changes are live. TBM reviews partner edits afterwards.",
       });
     },
     onError: (error: Error) => {
@@ -174,7 +174,7 @@ export default function ProviderCarAvailability() {
           <CardHeader>
             <CardTitle>Listing Details</CardTitle>
             <CardDescription>
-              Saving changes sends the listing back to private so admin can review and publish it again.
+              Changes go live when you save. TBM reviews partner edits afterwards.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">

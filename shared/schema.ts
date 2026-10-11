@@ -426,6 +426,22 @@ export const partnerAdminMessages = pgTable("partner_admin_messages", {
   message: text("message").notNull(),
   createdAt: text("created_at").notNull(),
 });
+// A provider's edit to one of their listings. Edits go live at once; TBM reviews
+// them afterwards. `changes` maps each changed field to its value before and after.
+export const listingEditKinds = ["stay", "car", "cook", "errand", "experience"] as const;
+export type ListingEditKind = typeof listingEditKinds[number];
+export const listingEdits = pgTable("listing_edits", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  listingKind: text("listing_kind").notNull(),
+  listingId: varchar("listing_id").notNull(),
+  listingTitle: text("listing_title").notNull(),
+  editorUserId: varchar("editor_user_id").notNull(),
+  changes: jsonb("changes").$type<Record<string, { before: unknown; after: unknown }>>().notNull(),
+  createdAt: text("created_at").notNull(),
+  reviewedAt: text("reviewed_at"),
+  reviewedBy: varchar("reviewed_by"),
+});
+export type ListingEdit = typeof listingEdits.$inferSelect;
 export const fleetApplicationStatuses = ["pending", "approved", "rejected"] as const;
 export type FleetApplicationStatus = typeof fleetApplicationStatuses[number];
 
@@ -672,7 +688,7 @@ export type ProviderBookingAssignmentView = {
   assignment: BookingServiceAssignment;
   booking: Booking;
 };
-export const appInboxItemTypes = ["assignment-created", "assignment-reassigned", "assignment-updated", "booking-created", "booking-message", "partner-admin-message"] as const;
+export const appInboxItemTypes = ["assignment-created", "assignment-reassigned", "assignment-updated", "assignment-declined", "booking-created", "booking-message", "partner-admin-message"] as const;
 export type AppInboxItemType = typeof appInboxItemTypes[number];
 export const appInboxPriorities = ["low", "normal", "high", "urgent"] as const;
 export type AppInboxPriority = typeof appInboxPriorities[number];

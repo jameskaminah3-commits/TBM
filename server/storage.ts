@@ -97,6 +97,8 @@ import {
   bookings,
   bookingMessages,
   partnerAdminMessages,
+  listingEdits,
+  type ListingEdit,
   fleetApplications,
   bookingServiceAssignments,
   bookingAttributions,
@@ -129,7 +131,10 @@ import { buildAppInboxActionUrl, buildInboxWorkspaceUrl } from "@shared/inbox";
 import { getWebPushPublicConfig, sendWebPushNotification } from "./push";
 import { db, pool } from "./db";
 import { sanitizeOptionalUserRecord, sanitizeUserRecord, sanitizeUserRecords } from "./user-sanitizer";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
+import { PAYMENT_MESSAGE_ROLE, canSeeThreadMessage } from "@shared/booking-thread";
+import { queueNotificationTask, sendProviderAssignmentEmail } from "./notifications";
+import { formatCalendarDateRange } from "@shared/calendar-dates";
 
 type DashboardListingCatalog = {
   staysById: Map<string, Stay>;
@@ -309,6 +314,10 @@ function buildPartnerAdminInboxThreadKey(providerUserId: string) {
 function getInboxSenderRoleLabel(role: string | null | undefined) {
   if (role === "admin") {
     return "Admin";
+  }
+
+  if (role === PAYMENT_MESSAGE_ROLE) {
+    return "Payments";
   }
 
   if (role === "provider") {
@@ -548,10 +557,14 @@ function hasAcceptedQuotedBooking(
   );
 }
 
+// Providers see a booking once the guest has paid the deposit (or all of it), or
+// has accepted a custom quote. Their payout stays pending until the job is done.
 function shouldSyncProviderAssignmentsForBooking(
-  booking: Pick<Booking, "paymentStatus" | "serviceMode" | "customMenuClientDecision" | "experienceCustomOfferClientDecision">,
+  booking: Pick<Booking, "paymentStatus" | "paymentAmountPaid" | "serviceMode" | "customMenuClientDecision" | "experienceCustomOfferClientDecision">,
 ) {
-  return isBookingPaymentSettled(booking) || hasAcceptedQuotedBooking(booking);
+  return isBookingPaymentSettled(booking)
+    || (booking.paymentAmountPaid ?? 0) > 0
+    || hasAcceptedQuotedBooking(booking);
 }
 
 function isActiveOperationalStatus(status: string) {
@@ -1332,6 +1345,10 @@ export interface IStorage {
   getBookingMessages(bookingId: string): Promise<BookingMessage[]>;
   createBookingMessage(message: InsertBookingMessage & { userId: string; senderRole: string }): Promise<BookingMessage>;
   getPartnerAdminMessages(providerUserId: string): Promise<PartnerAdminMessage[]>;
+  createListingEdit(edit: Omit<ListingEdit, "id" | "createdAt" | "reviewedAt" | "reviewedBy">): Promise<ListingEdit>;
+  getUnreviewedListingEdits(): Promise<ListingEdit[]>;
+  notifyAdminsOfDeclinedAssignment(assignment: BookingServiceAssignment, booking: Booking): Promise<void>;
+  markListingEditsReviewed(ids: string[], reviewerId: string): Promise<number>;
   createPartnerAdminMessage(message: InsertPartnerAdminMessage & { providerUserId: string; userId: string; senderRole: string }): Promise<PartnerAdminMessage>;
     getFleetApplications(status?: FleetApplicationStatus): Promise<FleetApplication[]>;
   getFleetApplication(id: string): Promise<FleetApplication | undefined>;
@@ -1512,6 +1529,7 @@ export class DatabaseStorage implements IStorage {
   private marketingTablesEnsured = false;
   private providerWorkflowTablesEnsured = false;
   private inboxTablesEnsured = false;
+  private listingEditsTableEnsured = false;
   private pushTablesEnsured = false;
   private listingVerificationTablesEnsured = false;
   private tableColumnsCache = new Map<string, Set<string>>();
@@ -1731,6 +1749,52 @@ export class DatabaseStorage implements IStorage {
       params,
     );
     return result.rows.map((experience) => normalizeManagerScopedRecord(experience));
+  }
+
+  private async ensureListingEditsTable() {
+    if (this.listingEditsTableEnsured) {
+      return;
+    }
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS listing_edits (
+        id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+        listing_kind text NOT NULL,
+        listing_id varchar NOT NULL,
+        listing_title text NOT NULL,
+        editor_user_id varchar NOT NULL,
+        changes jsonb NOT NULL,
+        created_at text NOT NULL,
+        reviewed_at text,
+        reviewed_by varchar
+      );
+      CREATE INDEX IF NOT EXISTS listing_edits_unreviewed_idx
+      ON listing_edits (reviewed_at, created_at);
+    `);
+    this.listingEditsTableEnsured = true;
+  }
+
+  async createListingEdit(edit: Omit<ListingEdit, "id" | "createdAt" | "reviewedAt" | "reviewedBy">): Promise<ListingEdit> {
+    await this.ensureListingEditsTable();
+    const [created] = await db.insert(listingEdits).values({ ...edit, createdAt: new Date().toISOString() }).returning();
+    return created;
+  }
+
+  async getUnreviewedListingEdits(): Promise<ListingEdit[]> {
+    await this.ensureListingEditsTable();
+    return await db.select().from(listingEdits).where(isNull(listingEdits.reviewedAt)).orderBy(desc(listingEdits.createdAt));
+  }
+
+  async markListingEditsReviewed(ids: string[], reviewerId: string): Promise<number> {
+    await this.ensureListingEditsTable();
+    if (!ids.length) {
+      return 0;
+    }
+    const updated = await db.update(listingEdits)
+      .set({ reviewedAt: new Date().toISOString(), reviewedBy: reviewerId })
+      .where(and(inArray(listingEdits.id, ids), isNull(listingEdits.reviewedAt)))
+      .returning({ id: listingEdits.id });
+    return updated.length;
   }
 
   private async ensureInboxTables() {
@@ -3029,6 +3093,32 @@ export class DatabaseStorage implements IStorage {
     return application;
   }
 
+  // A provider turned down work; the team finds someone else or talks to the guest.
+  async notifyAdminsOfDeclinedAssignment(assignment: BookingServiceAssignment, booking: Booking): Promise<void> {
+    const [provider, admins] = await Promise.all([
+      assignment.providerUserId ? this.getUser(assignment.providerUserId) : Promise.resolve(undefined),
+      this.getUsersByRole("admin"),
+    ]);
+    const providerName = [provider?.firstName, provider?.lastName].filter(Boolean).join(" ").trim() || provider?.email || "A partner";
+    const dates = formatCalendarDateRange(booking.checkIn, booking.checkOut && booking.checkOut !== booking.checkIn ? booking.checkOut : booking.checkIn, "en-GB");
+    for (const admin of admins) {
+      await this.createInboxItem({
+        userId: admin.id,
+        actorUserId: assignment.providerUserId ?? null,
+        actorRole: "provider",
+        bookingId: booking.id,
+        assignmentId: assignment.id,
+        threadKey: buildBookingInboxThreadKey(booking.id),
+        type: "assignment-declined",
+        title: `Declined: ${assignment.serviceName}`,
+        body: `${providerName} can't take ${assignment.serviceName} for ${booking.guestName} (${dates}). Find a replacement or contact the guest.`,
+        priority: "high",
+        channels: ["in-app", "push"],
+        metadata: { bookingId: booking.id, assignmentId: assignment.id },
+      });
+    }
+  }
+
   async updateBookingServiceAssignmentResponse(
     id: string,
     response: BookingServiceAssignmentResponse,
@@ -3079,6 +3169,21 @@ export class DatabaseStorage implements IStorage {
     const bookingWindow = booking.checkOut && booking.checkOut !== booking.checkIn
       ? `${booking.checkIn} to ${booking.checkOut}`
       : booking.checkIn;
+    const provider = await this.getUser(userId);
+    if (provider?.email) {
+      queueNotificationTask(
+        `assignment email for ${assignmentId}`,
+        sendProviderAssignmentEmail({
+          providerEmail: provider.email,
+          providerName: provider.firstName?.trim() || "there",
+          serviceName,
+          guestName: booking.guestName,
+          checkIn: booking.checkIn,
+          checkOut: booking.checkOut,
+          reassigned: type === "assignment-reassigned",
+        }),
+      );
+    }
     return await this.createInboxItem({
       userId,
       bookingId: booking.id,
@@ -3262,8 +3367,10 @@ export class DatabaseStorage implements IStorage {
       recipients.set(booking.userId, { assignmentId: null });
     }
 
+    // Payment updates carry the guest's payment details, so providers aren't told about them.
+    const providersMayRead = canSeeThreadMessage("provider", message);
     for (const assignment of assignments) {
-      if (!assignment.providerUserId || assignment.providerUserId === message.userId) {
+      if (!providersMayRead || !assignment.providerUserId || assignment.providerUserId === message.userId) {
         continue;
       }
 

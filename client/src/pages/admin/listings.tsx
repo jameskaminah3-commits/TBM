@@ -20,6 +20,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { AdminLayout } from "@/components/admin-layout";
+import { AdminListingEdits } from "@/components/admin-listing-edits";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -535,6 +536,8 @@ export default function AdminListings() {
             </div>
           </CardContent>
         </Card>
+
+        <AdminListingEdits />
 
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <AdminStatCard

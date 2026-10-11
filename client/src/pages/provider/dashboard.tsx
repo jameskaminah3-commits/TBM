@@ -34,6 +34,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useCurrency } from "@/lib/currency";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { awaitsProviderResponse, isAgreedOrder } from "@shared/provider-dashboard";
 import { getShortShareUrl, type ShareServiceType } from "@/lib/share-links";
 import { getCookExtraGuestInclusivePrice, getCookExtraGuestServiceFee, getCookMinimumGuests } from "@shared/cook-pricing";
 import { HOUSE_CLEANING_BASE_ROOM_LABEL, getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
@@ -568,7 +569,7 @@ function matchesDashboardQuery(
   return values.some((value) => String(value ?? "").toLowerCase().includes(query));
 }
 
-const platformServiceFeeHelpText = "This fee covers platform maintenance, secure payment processing, and 24/7 guest support to ensure your booking runs smoothly.";
+const platformServiceFeeHelpText = "TBM's commission on your bookings. It pays for marketing your listings, secure guest payments and 24/7 guest support.";
 
 function formatServiceFeePercentLabel(serviceFeePercents: number[]) {
   if (serviceFeePercents.length === 0) {
@@ -886,7 +887,9 @@ export default function ProviderDashboard() {
   const requestCount = allProviderBookings.filter((booking) =>
     hasOpenProviderStatusRequest(booking) || hasOpenAdminReviewRequest(booking),
   ).length;
-  const completedBookingCount = allProviderBookings.filter((booking) => getDashboardAssignmentStatus(booking) === "completed" && isConfirmedOrderBooking(booking)).length;
+  const isAgreed = (booking: ProviderBookingAssignmentView) => isAgreedOrder(getAssignmentServiceMode(booking), booking.booking);
+  const completedBookingCount = allProviderBookings.filter((booking) => getDashboardAssignmentStatus(booking) === "completed" && isAgreed(booking)).length;
+  const awaitingResponseCount = allProviderBookings.filter((booking) => awaitsProviderResponse(booking.assignment)).length;
   const averageRating = getAverageListingRating(
     [
       ...(data?.stays ?? []),
@@ -913,9 +916,10 @@ export default function ProviderDashboard() {
   const paidOutAmount = providerPaymentData?.totalPaidOut ?? 0;
   const platformServiceFeeRateLabel = formatServiceFeePercentLabel(providerPaymentData?.serviceFeePercents ?? []);
   const completedNetEarnings = allProviderBookings
-    .filter((booking) => getDashboardAssignmentStatus(booking) === "completed" && isConfirmedOrderBooking(booking))
+    .filter((booking) => getDashboardAssignmentStatus(booking) === "completed" && isAgreed(booking))
     .reduce((sum, booking) => sum + (payoutByAssignmentId.get(booking.assignment.id)?.payoutAmount ?? 0), 0);
-  const actionableQueueCount = pendingReviewCount + customRequestBookings.length + requestCount + unreadNotificationCount;
+  // Things only the provider can move forward. Unread messages have their own count.
+  const actionableQueueCount = pendingReviewCount + customRequestBookings.length + requestCount + awaitingResponseCount;
   const deepLinkedAssignmentId = useMemo(
     () => dashboardIntent.assignmentId
       || allProviderBookings.find((booking) => booking.booking.id === dashboardIntent.bookingId)?.assignment.id
@@ -1166,6 +1170,17 @@ export default function ProviderDashboard() {
     }
   };
 
+  // Bookings show up once the guest pays the deposit; say so until the balance is in.
+  const withPaymentStage = (booking: ProviderBookingAssignmentView, badge: ReactNode) =>
+    (booking.booking as { paymentStage?: string }).paymentStage === "deposit-paid"
+      ? (
+        <span className="flex flex-wrap justify-end gap-1">
+          {badge}
+          <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-900">Deposit paid · balance due</Badge>
+        </span>
+      )
+      : badge;
+
   const getPrimaryBookingStatusBadge = (booking: ProviderBookingAssignmentView) => {
     if (getAssignmentServiceMode(booking) === "cook-custom-menu") {
       return getCustomMenuWorkflowBadge(booking);
@@ -1407,7 +1422,7 @@ export default function ProviderDashboard() {
                   </CardHeader>
                   <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                     <div className="rounded-[1.5rem] border border-amber-200 bg-amber-50/70 p-4"><div className="flex items-center gap-2 text-amber-800"><Star className="h-4 w-4 fill-amber-400 text-amber-400" /><span className="text-xs font-semibold uppercase tracking-[0.18em]">Rating</span></div><div className="mt-3 text-3xl font-semibold tracking-tight text-stone-950">{averageRating ? averageRating.toFixed(1) : "New"}</div><p className="mt-1 text-sm text-stone-600">{totalReviewCount ? `${totalReviewCount} review${totalReviewCount === 1 ? "" : "s"}` : "No reviews"}</p></div>
-                    <div className="rounded-[1.5rem] border border-emerald-200 bg-emerald-50/70 p-4"><div className="flex items-center gap-2 text-emerald-800"><Wallet className="h-4 w-4" /><span className="text-xs font-semibold uppercase tracking-[0.18em]">Projected</span></div><div className="mt-3 text-3xl font-semibold tracking-tight text-stone-950">{formatAmount(projectedNetEarnings)}</div></div>
+                    <div className="rounded-[1.5rem] border border-emerald-200 bg-emerald-50/70 p-4"><div className="flex items-center gap-2 text-emerald-800"><Wallet className="h-4 w-4" /><span className="text-xs font-semibold uppercase tracking-[0.18em]">All payouts</span></div><div className="mt-3 text-3xl font-semibold tracking-tight text-stone-950">{formatAmount(projectedNetEarnings)}</div></div>
                     <div className="rounded-[1.5rem] border border-teal-200 bg-teal-50/70 p-4"><div className="flex items-center gap-2 text-teal-800"><HandCoins className="h-4 w-4" /><span className="text-xs font-semibold uppercase tracking-[0.18em]">Completed</span></div><div className="mt-3 text-3xl font-semibold tracking-tight text-stone-950">{formatAmount(completedNetEarnings)}</div></div>
                     <div className="rounded-[1.5rem] border border-sky-200 bg-sky-50/70 p-4"><div className="flex items-center gap-2 text-sky-800"><CalendarClock className="h-4 w-4" /><span className="text-xs font-semibold uppercase tracking-[0.18em]">Awaiting payout</span></div><div className="mt-3 text-3xl font-semibold tracking-tight text-stone-950">{formatAmount(awaitingPayoutAmount)}</div></div>
                   </CardContent>
@@ -2028,7 +2043,7 @@ export default function ProviderDashboard() {
                         getAssignmentDateRange(booking),
                         bookedOnLabel ? `Booked ${bookedOnLabel}` : null,
                       ])}
-                      statusContent={<Badge variant="outline" className="rounded-full">{getProgressStatusLabel(dashboardStatus)}</Badge>}
+                      statusContent={withPaymentStage(booking, <Badge variant="outline" className="rounded-full">{getProgressStatusLabel(dashboardStatus)}</Badge>)}
                     >
                       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                         <div className="rounded-2xl border border-stone-200 bg-stone-50/70 p-3">
@@ -2108,7 +2123,7 @@ export default function ProviderDashboard() {
                         booking.assignment.serviceConfig.serviceZone ? `Zone ${booking.assignment.serviceConfig.serviceZone}` : null,
                       ])}
                       detail={getCarModeSummary(booking)}
-                      statusContent={<Badge variant="outline">{getProgressStatusLabel(dashboardStatus)}</Badge>}
+                      statusContent={withPaymentStage(booking, <Badge variant="outline">{getProgressStatusLabel(dashboardStatus)}</Badge>)}
                     >
                       <BookingThread
                         bookingId={booking.booking.id}
@@ -2167,7 +2182,7 @@ export default function ProviderDashboard() {
                         getAssignmentGuests(booking) ? `${getAssignmentGuests(booking)} guest${getAssignmentGuests(booking) === 1 ? "" : "s"}` : null,
                       ])}
                       detail={getCookBookingLabel(booking)}
-                      statusContent={getPrimaryBookingStatusBadge(booking)}
+                      statusContent={withPaymentStage(booking, getPrimaryBookingStatusBadge(booking))}
                     >
                     <div>
                       {getAssignmentRequestDetails(booking) ? (
@@ -2328,7 +2343,7 @@ export default function ProviderDashboard() {
                       detail={getAssignmentScheduleSlots(booking).length
                         ? `${getAssignmentScheduleSlots(booking).length} scheduled stop${getAssignmentScheduleSlots(booking).length === 1 ? "" : "s"}`
                         : null}
-                      statusContent={<Badge variant="outline">{getProgressStatusLabel(dashboardStatus)}</Badge>}
+                      statusContent={withPaymentStage(booking, <Badge variant="outline">{getProgressStatusLabel(dashboardStatus)}</Badge>)}
                     >
                     {getAssignmentScheduleSlots(booking).length ? (
                       <div className="space-y-1 text-sm text-muted-foreground">
@@ -2401,7 +2416,7 @@ export default function ProviderDashboard() {
                         getAssignmentGuests(booking) ? `${getAssignmentGuests(booking)} guest${getAssignmentGuests(booking) === 1 ? "" : "s"}` : null,
                       ])}
                       detail={getAssignmentServiceMode(booking) === "experience-custom-offer" ? "Custom offer request" : null}
-                      statusContent={getPrimaryBookingStatusBadge(booking)}
+                      statusContent={withPaymentStage(booking, getPrimaryBookingStatusBadge(booking))}
                     >
                     <div>
                       {getAssignmentRequestDetails(booking) ? (

@@ -865,6 +865,45 @@ export async function sendZainaBookingCreatedEmail(args: {
   return await sendEmailMessage({ to: recipients, subject, text, html });
 }
 
+// A provider has new work: the guest, the dates and where to see it. The email
+// carries no payment details; the dashboard has the rest.
+export async function sendProviderAssignmentEmail(args: {
+  providerEmail: string;
+  providerName: string;
+  serviceName: string;
+  guestName: string;
+  checkIn: string;
+  checkOut?: string | null;
+  reassigned?: boolean;
+}): Promise<boolean> {
+  const dashboardUrl = `${process.env.APP_BASE_URL?.trim() || "https://tembeabilamatata.com"}/provider/dashboard`;
+  const dates = formatCalendarDateRange(args.checkIn, args.checkOut && args.checkOut !== args.checkIn ? args.checkOut : args.checkIn, "en-GB");
+  const headline = args.reassigned ? `${args.serviceName} has been passed to you` : `New booking: ${args.serviceName}`;
+  const text = [
+    `Hi ${args.providerName},`,
+    "",
+    `${args.guestName} has booked ${args.serviceName} for ${dates}.`,
+    "Open your partner dashboard to see the details and accept the booking:",
+    dashboardUrl,
+    "",
+    `Questions? Call or WhatsApp TBM on ${SUPPORT_PHONE_DISPLAY}.`,
+  ].join("\n");
+  const html = [
+    '<div style="font-family:Arial,sans-serif;line-height:1.6;color:#0f172a;">',
+    `<p>Hi ${escapeHtml(args.providerName)},</p>`,
+    `<p>${escapeHtml(args.guestName)} has booked <strong>${escapeHtml(args.serviceName)}</strong> for ${escapeHtml(dates)}.</p>`,
+    `<p><a href="${escapeHtml(dashboardUrl)}">Open your partner dashboard</a> to see the details and accept the booking.</p>`,
+    `<p>Questions? Call or WhatsApp TBM on ${escapeHtml(SUPPORT_PHONE_DISPLAY)}.</p>`,
+    "</div>",
+  ].join("");
+  return await sendEmailMessage({
+    to: [args.providerEmail],
+    subject: `[Tembea Bila Matata] ${headline}`,
+    text,
+    html,
+  });
+}
+
 export async function sendListingVerificationCompletedEmail(args: {
   customerEmail: string;
   customerName: string;

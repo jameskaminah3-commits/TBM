@@ -190,7 +190,7 @@ export default function ProviderCookEdit() {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/cooks"] });
       toast({
         title: "Chef updated",
-        description: "Your chef listing was updated and remains private until admin review.",
+        description: "Your changes are live. TBM reviews partner edits afterwards.",
       });
       setLocation("/provider/dashboard");
     },
@@ -271,13 +271,13 @@ export default function ProviderCookEdit() {
       <div className="p-8 max-w-4xl mx-auto space-y-6">
         <div className="mb-8">
           <h1 className="text-3xl font-serif font-semibold mb-2">Manage Chef Listing</h1>
-          <p className="text-muted-foreground">Update your chef listing. Any edits keep it in private review mode until admin republishes it.</p>
+          <p className="text-muted-foreground">Update your chef listing. Changes go live when you save, and TBM reviews them afterwards.</p>
         </div>
 
         <Card id="details" className="scroll-mt-24">
           <CardHeader>
             <CardTitle>Chef Details</CardTitle>
-            <CardDescription>Keep your curated chef offer fresh for admin review and guest bookings.</CardDescription>
+            <CardDescription>Keep your chef offer up to date for guests.</CardDescription>
           </CardHeader>
           <CardContent>
             {isLoading ? <p>Loading...</p> : (

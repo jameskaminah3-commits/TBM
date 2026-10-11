@@ -4,8 +4,10 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { BookingMessage } from "@shared/schema";
+import { getThreadSenderLabel } from "@shared/booking-thread";
 
 type BookingThreadProps = {
   bookingId: string;
@@ -25,6 +27,7 @@ export function BookingThread({
   defaultOpen = false,
 }: BookingThreadProps) {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [draft, setDraft] = useState("");
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -86,12 +89,6 @@ export function BookingThread({
     markThreadReadMutation.mutate();
   }, [isOpen]);
 
-  const labelForRole = (role: string) => {
-    if (role === "admin") return "Admin";
-    if (role === "provider") return "Partner";
-    return "You";
-  };
-
   return (
     <div ref={containerRef} className="space-y-3">
       <button
@@ -118,7 +115,7 @@ export function BookingThread({
               {messages.map((message) => (
                 <div key={message.id} className="rounded-md border px-3 py-2 text-sm">
                   <div className="mb-1 flex flex-col gap-1 text-[11px] text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-                    <span className="font-medium text-foreground">{labelForRole(message.senderRole)}</span>
+                    <span className="font-medium text-foreground">{getThreadSenderLabel(message, { id: user?.id, role: user?.role })}</span>
                     <span>{new Date(message.createdAt).toLocaleString()}</span>
                   </div>
                   <div className="break-words text-muted-foreground">{message.message}</div>

@@ -143,7 +143,7 @@ export default function ProviderExperienceEdit() {
       queryClient.invalidateQueries({ queryKey: ["/api/provider/experiences", id] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/experiences"] });
       queryClient.invalidateQueries({ queryKey: ["/api/experiences"] });
-      toast({ title: "Experience updated", description: "Your listing remains private until admin review." });
+      toast({ title: "Experience updated", description: "Your changes are live. TBM reviews partner edits afterwards." });
       setLocation("/provider/dashboard");
     },
     onError: (error: Error) => {
@@ -172,7 +172,7 @@ export default function ProviderExperienceEdit() {
       <div className="mx-auto max-w-5xl p-8">
         <div className="mb-8">
           <h1 className="mb-2 text-3xl font-serif font-semibold">Manage Experience Listing</h1>
-          <p className="text-muted-foreground">Any update sends the listing back into private review mode.</p>
+          <p className="text-muted-foreground">Changes go live when you save. TBM reviews partner edits afterwards.</p>
         </div>
         <Card id="details" className="scroll-mt-24">
           <CardHeader>
