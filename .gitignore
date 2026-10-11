@@ -12,3 +12,6 @@ uploads/
 .chrome-profile/
 .codex-qa/
 .codex-dev*.log
+
+# Storage inventory output (production file paths and record IDs): keep private
+storage-inventory-*/
