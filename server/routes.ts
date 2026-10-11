@@ -75,6 +75,17 @@ import {
   type RoomClaim,
 } from "@shared/hotel-rooms";
 import { listUploads, saveBase64Upload } from "./media";
+import {
+  getPrivateFile,
+  getPrivateFileContext,
+  logPrivateFileAccess,
+  openPrivateFile,
+  privateFileKeyFromUrl,
+  publishPrivatePhoto,
+  savePrivateUpload,
+} from "./private-files";
+import { decidePrivateFileAccess } from "./private-file-access";
+import { createRateLimitMiddleware, getRequestIp } from "./middleware/rate-limit";
 import { toPublicListing, withoutProviderProtectedFields } from "./listing-privacy";
 import { partnerGuestName, toPartnerInboxItem, toProviderAssignment, toProviderBooking, toProviderPaymentData } from "./provider-booking-view";
 import { toPartnerAvailability, toPublicAvailability } from "./availability-view";
@@ -2951,6 +2962,42 @@ async function assertProviderCanAccessExperienceBooking(req: any, bookingId: str
   return access;
 }
 
+// Anonymous fleet-application uploads: a few per visitor per hour is plenty for
+// one application (photos and four documents); more is refused.
+const fleetUploadRateLimit = createRateLimitMiddleware([
+  {
+    id: "fleet:upload:ip",
+    key: (req) => getRequestIp(req),
+    max: 30,
+    windowMs: 60 * 60 * 1000,
+    message: "Too many uploads. Please wait a while and try again.",
+  },
+]);
+
+// Documents on a car are protected files. A partner may attach only files they
+// uploaded themselves (or keep the ones already on the car); TBM may attach any
+// protected file. Public links are refused, so a document can't sit in public storage.
+async function checkCarDocuments(req: any, documents: Array<{ url?: string }> | undefined, current: Array<{ url?: string }> = []) {
+  if (!documents) {
+    return null;
+  }
+  const currentUrls = new Set(current.map((entry) => entry.url));
+  for (const document of documents) {
+    if (currentUrls.has(document.url)) {
+      continue;
+    }
+    const key = privateFileKeyFromUrl(document.url);
+    const file = key ? await getPrivateFile(key) : null;
+    if (!file) {
+      return "Upload documents through the Documents page so they're stored privately.";
+    }
+    if (req.user?.claims?.role !== "admin" && file.ownerUserId !== req.user?.claims?.sub) {
+      return "That document isn't yours to attach.";
+    }
+  }
+  return null;
+}
+
 // Which conversation on a booking the viewer reads or writes. A guest has their
 // conversation with TBM; a partner has theirs. Only TBM chooses, and a partner
 // conversation must belong to a partner on the booking.
@@ -3389,7 +3436,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Only JPG, PNG, and WEBP files are supported." });
       }
 
-      const mediaUrl = await saveBase64Upload(dataUrl, mimeType);
+      // A guest's photo goes to private storage: TBM, the guest and partners on the booking can open it.
+      const { url: mediaUrl } = await savePrivateUpload({ dataUrl, mimeType, kind: "guest-attachment", ownerUserId: req.user.claims.sub });
       res.status(201).json({ mediaUrl });
     } catch (error) {
       console.error("[CUSTOM_SERVICE] Upload failed:", error);
@@ -3402,6 +3450,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/custom-service-requests", isAuthenticated, async (req: any, res) => {
     try {
       const payload = customServiceRequestSchema.parse(req.body ?? {});
+      if (payload.attachmentUrl?.trim()) {
+        const key = privateFileKeyFromUrl(payload.attachmentUrl);
+        const file = key ? await getPrivateFile(key) : null;
+        if (!file || file.kind !== "guest-attachment" || file.ownerUserId !== req.user.claims.sub) {
+          return res.status(400).json({ error: "Please attach your photo again." });
+        }
+      }
       normalizeDateOnly(payload.preferredDate);
 
       const accountUser = await storage.getUser(req.user.claims.sub);
@@ -3485,7 +3540,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(500).json({ error: "Failed to create custom service request" });
     }
   });
-  app.post("/api/fleet-applications/upload", async (req, res) => {
+  // Protected files: opened only by TBM, the uploader, the car's manager (vehicle
+  // documents) or the guest and partners on the booking (guest attachments).
+  // Every attempt is logged. Refusals don't reveal whether a file exists.
+  app.get("/api/files/*", async (req: any, res, next) => {
+    const key = String((req.params as { 0?: string })[0] ?? "");
+    res.setHeader("Cache-Control", "private, no-store, max-age=0");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    if (!req.session?.userId) {
+      void logPrivateFileAccess({ key, userId: null, role: null, allowed: false, reason: "signed-out" }).catch(() => undefined);
+      return res.status(401).json({ error: "Sign in to open this file." });
+    }
+    next();
+  }, isAuthenticated, async (req: any, res) => {
+    const key = String((req.params as { 0?: string })[0] ?? "");
+    const viewer = { id: req.user.claims.sub as string, role: (req.user.claims.role as string) ?? null };
+    try {
+      const file = privateFileKeyFromUrl(`/api/files/${key}`) ? await getPrivateFile(key) : null;
+      const context = file ? await getPrivateFileContext(key, viewer.id) : { managesReferencingCar: false, bookingAccess: null };
+      const decision = decidePrivateFileAccess(viewer, { file, ...context });
+      await logPrivateFileAccess({ key, userId: viewer.id, role: viewer.role, allowed: decision.allowed, reason: decision.reason });
+      if (!decision.allowed || !file) {
+        return res.status(404).json({ error: "File not found" });
+      }
+
+      const opened = await openPrivateFile(key);
+      if (opened.type === "redirect") {
+        return res.redirect(302, opened.url);
+      }
+      if (file.mimeType) {
+        res.type(file.mimeType);
+      }
+      res.setHeader("Content-Disposition", "inline");
+      return res.sendFile(opened.filePath, (error) => {
+        if (error && !res.headersSent) {
+          res.status(404).json({ error: "File not found" });
+        }
+      });
+    } catch (error) {
+      console.error("[FILES] Failed to open a protected file:", error);
+      return res.status(500).json({ error: "Couldn't open the file" });
+    }
+  });
+
+  app.post("/api/fleet-applications/upload", fleetUploadRateLimit, async (req, res) => {
     try {
       const { dataUrl, mimeType } = req.body ?? {};
       if (typeof dataUrl !== "string" || typeof mimeType !== "string") {
@@ -3497,7 +3596,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Only JPG, PNG, WEBP, and PDF files are supported." });
       }
 
-      const uploadUrl = await saveBase64Upload(dataUrl, mimeType);
+      // Logbooks, insurance and vehicle photos from applicants are for TBM's review only.
+      const { url: uploadUrl } = await savePrivateUpload({ dataUrl, mimeType, kind: "fleet-application", ownerUserId: null });
       res.status(201).json({ uploadUrl });
     } catch (error) {
       console.error("[FLEET_APPLICATIONS] Upload failed:", error);
@@ -3519,7 +3619,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Only JPG, PNG, WEBP, and PDF files are supported." });
       }
 
-      const uploadUrl = await saveBase64Upload(dataUrl, mimeType);
+      // Compliance documents: TBM and the partner managing the car only.
+      const { url: uploadUrl } = await savePrivateUpload({ dataUrl, mimeType, kind: "vehicle-document", ownerUserId: (req as any).user.claims.sub });
       res.status(201).json({ uploadUrl });
     } catch (error) {
       console.error("[PROVIDER_DOCUMENTS] Upload failed:", error);
@@ -3532,6 +3633,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/fleet-applications", async (req, res) => {
     try {
       const payload = insertFleetApplicationSchema.parse(req.body ?? {});
+      for (const item of [...(payload.photoUrls ?? []), ...(payload.documentUrls ?? [])]) {
+        const key = privateFileKeyFromUrl(item.url);
+        const file = key ? await getPrivateFile(key) : null;
+        if (!file || file.kind !== "fleet-application") {
+          return res.status(400).json({ error: "Please upload your photos and documents again." });
+        }
+      }
       const application = await storage.createFleetApplication({
         ...payload,
         email: payload.email.trim().toLowerCase(),
@@ -3629,7 +3737,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         providerType: "cars",
       }).returning();
 
-      const [frontPhoto, ...restPhotos] = existing.photoUrls;
+      // The vehicle photos become the listing's public photos; the documents stay private.
+      const publishedPhotos = await Promise.all(existing.photoUrls.map(async (photo) => {
+        const key = privateFileKeyFromUrl(photo.url);
+        return { ...photo, url: key ? await publishPrivatePhoto(key) : photo.url };
+      }));
+      const [frontPhoto, ...restPhotos] = publishedPhotos;
       const createdCar = await storage.createCar({
         model: existing.model,
         location: existing.town ? `${existing.town}, ${existing.county}` : existing.county,
@@ -7881,6 +7994,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         managerUserId: req.user.claims.sub,
         isPublic: false,
       });
+      const documentsProblem = await checkCarDocuments(req, validatedData.documents);
+      if (documentsProblem) {
+        return res.status(400).json({ error: documentsProblem });
+      }
       const car = await storage.createCar(validatedData);
       res.status(201).json(car);
     } catch (error) {
@@ -7939,6 +8056,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         availabilityStatus,
         documents,
       } = parsed;
+
+      const documentsProblem = await checkCarDocuments(req, documents, access.car.documents);
+      if (documentsProblem) {
+        return res.status(400).json({ error: documentsProblem });
+      }
 
       const updatedCar = await storage.updateCar(req.params.id, {
         model,
@@ -8318,6 +8440,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         insertCarSchema.parse(req.body),
         req.user?.claims?.sub,
       );
+      const documentsProblem = await checkCarDocuments(req, validatedData.documents);
+      if (documentsProblem) {
+        return res.status(400).json({ error: documentsProblem });
+      }
       const car = await storage.createCar(validatedData);
       res.status(201).json(car);
     } catch (error) {
@@ -8343,6 +8469,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         existingCar.managerUserId,
         req.user?.claims?.sub,
       );
+      const documentsProblem = await checkCarDocuments(req, validatedData.documents, existingCar.documents ?? []);
+      if (documentsProblem) {
+        return res.status(400).json({ error: documentsProblem });
+      }
       const car = await storage.updateCar(req.params.id, validatedData);
       if (car) {
         await syncRelatedServiceBookings("cars", car.id, {

@@ -78,7 +78,7 @@ function sanitizeObjectPath(objectPath: string) {
     .join("/");
 }
 
-function getSupabaseStorageClient() {
+export function getSupabaseStorageClient() {
   if (!supabaseStorageClient) {
     const { supabaseUrl, serviceRoleKey } = getSupabaseMediaStorageConfig();
     supabaseStorageClient = createClient(supabaseUrl, serviceRoleKey, {
@@ -90,6 +90,10 @@ function getSupabaseStorageClient() {
   }
 
   return supabaseStorageClient;
+}
+
+export function getPublicMediaBucket() {
+  return getSupabaseMediaStorageConfig().bucket;
 }
 
 export function usesLocalUploadStorage() {
@@ -339,7 +343,8 @@ export async function listUploads(limit = 200): Promise<Array<{ url: string; typ
   return listSupabaseUploads(limit);
 }
 
-export async function saveBase64Upload(dataUrl: string, mimeType: string) {
+// A base64 upload checked for type, size and real file contents.
+export function decodeUploadPayload(dataUrl: string, mimeType: string) {
   const matches = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
   if (!matches) {
     throw new Error("Invalid upload payload");
@@ -371,6 +376,11 @@ export async function saveBase64Upload(dataUrl: string, mimeType: string) {
     throw new Error("Uploaded file contents do not match the declared media type");
   }
 
+  return { fileBuffer, extension };
+}
+
+export async function saveBase64Upload(dataUrl: string, mimeType: string) {
+  const { fileBuffer, extension } = decodeUploadPayload(dataUrl, mimeType);
   const filename = buildUploadFilename(extension);
   return usesLocalUploadStorage()
     ? saveLocalUpload(fileBuffer, filename)

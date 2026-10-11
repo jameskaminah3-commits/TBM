@@ -492,6 +492,45 @@ export const guestContactReleaseSchema = z.object({
   hours: z.number().int().min(1).max(72).default(24),
 }).refine((value) => value.sharePhone || value.shareEmail || value.shareFullName, { message: "Choose what to share: phone, email or full name" });
 
+// Protected files (vehicle documents, fleet-application files, guests'
+// attachments) live in private storage, never the public media bucket. Each is
+// opened through /api/files/<key>, which checks who is asking and logs it.
+export const privateFileKinds = ["vehicle-document", "fleet-application", "guest-attachment", "quarantine"] as const;
+export type PrivateFileKind = typeof privateFileKinds[number];
+export const privateFiles = pgTable("private_files", {
+  key: varchar("key").primaryKey(),
+  kind: varchar("kind").notNull(),
+  ownerUserId: varchar("owner_user_id"),
+  mimeType: varchar("mime_type"),
+  sizeBytes: integer("size_bytes"),
+  sourcePath: text("source_path"),
+  createdAt: text("created_at").notNull(),
+});
+export type PrivateFile = typeof privateFiles.$inferSelect;
+
+export const privateFileAccess = pgTable("private_file_access", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  fileKey: varchar("file_key").notNull(),
+  userId: varchar("user_id"),
+  role: varchar("role"),
+  allowed: boolean("allowed").notNull(),
+  reason: varchar("reason").notNull(),
+  createdAt: text("created_at").notNull(),
+});
+
+// One row per file moved out of the public bucket, so every move can be
+// checked, audited and reversed.
+export const storageMigrations = pgTable("storage_migrations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  oldPath: text("old_path").notNull().unique(),
+  newKey: varchar("new_key").notNull(),
+  category: varchar("category").notNull(),
+  referencesUpdated: integer("references_updated").notNull().default(0),
+  copiedAt: text("copied_at").notNull(),
+  verifiedAt: text("verified_at"),
+  publicRemovedAt: text("public_removed_at"),
+});
+
 export const fleetApplicationStatuses = ["pending", "approved", "rejected"] as const;
 export type FleetApplicationStatus = typeof fleetApplicationStatuses[number];
 

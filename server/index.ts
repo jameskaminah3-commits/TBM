@@ -1,3 +1,4 @@
+import { ensurePrivateStorage } from "./private-files";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -116,6 +117,11 @@ app.use(express.json({
 app.use(express.urlencoded({ extended: false, limit: urlencodedBodyLimit }));
 
 ensureMediaStorageReady();
+// Protected files need a private store: created private if missing, and a public
+// one is refused. Uploads of protected files fail until this succeeds.
+void ensurePrivateStorage().catch((error) => {
+  console.error("[FILES] Private storage is not ready:", error instanceof Error ? error.message : error);
+});
 if (usesLocalUploadStorage()) {
   ensureUploadDir();
   app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
