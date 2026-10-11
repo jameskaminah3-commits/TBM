@@ -47,6 +47,7 @@ import {
   type MarketingPromo,
   type MarketingPromoCostAbsorption,
   type BookingAttribution,
+  type ListingEditKind,
   type BookingMarketingSummary,
   type MarketingPromoPreview,
   type MarketingPromoPreviewResult,
@@ -74,6 +75,10 @@ import {
 } from "@shared/hotel-rooms";
 import { listUploads, saveBase64Upload } from "./media";
 import { toPublicListing, withoutProviderProtectedFields } from "./listing-privacy";
+import { toProviderBooking } from "./provider-booking-view";
+import { diffListingFields } from "./listing-edits";
+import { canRespondToAssignment } from "./provider-policy";
+import { PAYMENT_MESSAGE_ROLE, canSeeThreadMessage } from "@shared/booking-thread";
 import { db } from "./db";
 import { bookings, users, stays, cars, cooks, errands, experiences, listings, blogPosts, customOffers, stayReservations, carReservations, cookReservations } from "@shared/schema";
 import { calculateCookInclusiveTotal, calculateCookServiceTotal, getCookMinimumGuests } from "@shared/cook-pricing";
@@ -1065,10 +1070,14 @@ async function applyVerifiedBookingPayment(
       );
     }
 
+    // Providers hear about a booking once the deposit is paid, but not about one
+    // whose dates someone else holds.
+    if (updatedBooking && nextAmountPaid > currentAmountPaid && !taken) {
+      await storage.syncBookingServiceAssignments({ bookingIds: [updatedBooking.id], notifyProviders: true });
+    }
+
     if (updatedBooking && isFullySettled) {
-      // Providers aren't told about a booking whose dates someone else holds.
       if (!taken) {
-        await storage.syncBookingServiceAssignments({ bookingIds: [updatedBooking.id], notifyProviders: true });
         await storage.syncBookingPayouts({ bookingIds: [updatedBooking.id] });
       }
       await activateListingVerificationAfterPayment(updatedBooking);
@@ -2085,6 +2094,39 @@ async function applyProviderBookingStatusUpdate(
   }
 
   return { booking: await attachBookingMarketingAttribution(decorateBookingWithOperationalStatus(updatedBooking)) } as const;
+}
+
+// A provider's edit goes live at once and is logged for TBM to review afterwards.
+async function recordProviderListingEdit(
+  req: any,
+  kind: ListingEditKind,
+  before: object | undefined,
+  after: object | undefined,
+  title: string,
+) {
+  if (req.user?.claims?.role === "admin" || !before || !after) {
+    return;
+  }
+  const changes = diffListingFields(before as Record<string, unknown>, after as Record<string, unknown>);
+  if (!Object.keys(changes).length) {
+    return;
+  }
+  try {
+    await storage.createListingEdit({
+      listingKind: kind,
+      listingId: String((after as { id?: unknown }).id ?? ""),
+      listingTitle: title,
+      editorUserId: req.user.claims.sub,
+      changes,
+    });
+  } catch (error) {
+    console.error(`[LISTING_EDITS] Failed to log an edit to ${kind} ${title}:`, error);
+  }
+}
+
+// The admin sees whole bookings; a provider sees only what the job needs.
+function bookingForViewer(req: any, booking: any) {
+  return req.user?.claims?.role === "admin" ? booking : toProviderBooking(booking);
 }
 
 function decorateProviderAssignmentView(
@@ -4724,7 +4766,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.createBookingMessage({
         bookingId: updatedBooking.id,
         userId: currentUserId,
-        senderRole: currentUserRole ?? "customer",
+        senderRole: PAYMENT_MESSAGE_ROLE,
         message: [
           "Customer submitted a temporary manual M-Pesa payment for review.",
           `Expected amount: ${expectedAmount}`,
@@ -4900,7 +4942,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(error.status).json(error.body);
       }
 
-      res.json(await storage.getBookingMessages(req.params.id));
+      const messages = await storage.getBookingMessages(req.params.id);
+      res.json(messages.filter((message) => canSeeThreadMessage(req.user.claims.role, message)));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch booking messages" });
     }
@@ -4975,7 +5018,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/inbox", isAuthenticated, async (req: any, res) => {
     try {
-      res.json(await storage.getUserInbox(req.user.claims.sub));
+      const items = await storage.getUserInbox(req.user.claims.sub);
+      // Alerts about payment updates written before providers stopped receiving them.
+      res.json(req.user.claims.role === "provider"
+        ? items.filter((item: any) => item.type !== "booking-message"
+          || canSeeThreadMessage("provider", {
+            senderRole: String(item.metadata?.senderRole ?? ""),
+            message: String(item.body ?? "").replace(/^[^:]*:\s*/, ""),
+          }))
+        : items);
     } catch (error) {
       console.error("[INBOX] Failed to fetch inbox items:", error);
       res.status(500).json({ error: "Failed to fetch inbox items" });
@@ -6227,8 +6278,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           );
         }
 
-        if (isFullySettled) {
+        // Providers hear about the booking once the deposit is in.
+        if (nextAmountPaid > currentAmountPaid) {
           await storage.syncBookingServiceAssignments({ bookingIds: [updated.id], notifyProviders: true });
+        }
+
+        if (isFullySettled) {
           await storage.syncBookingPayouts({ bookingIds: [updated.id] });
           await activateListingVerificationAfterPayment(updated);
         }
@@ -6240,7 +6295,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               ? isManualMpesa ? "Admin note: temporary M-Pesa deposit confirmed." : "Admin note: cash deposit received."
               : isManualMpesa ? "Admin note: temporary M-Pesa payment confirmed." : "Admin note: cash payment received."}\n\n${note.trim()}`,
             userId: reviewerId ?? "admin",
-            senderRole: "admin",
+            senderRole: PAYMENT_MESSAGE_ROLE,
           });
         }
 
@@ -6598,6 +6653,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin Listings Management
+  // Providers' listing edits since TBM last reviewed them.
+  app.get("/api/admin/listing-edits", requireAdmin, async (_req, res) => {
+    try {
+      const edits = await storage.getUnreviewedListingEdits();
+      const editorIds = Array.from(new Set(edits.map((edit) => edit.editorUserId)));
+      const editors = await Promise.all(editorIds.map((id) => storage.getUser(id)));
+      const editorNames = new Map(editors.filter(Boolean).map((user) => [
+        user!.id,
+        [user!.firstName, user!.lastName].filter(Boolean).join(" ").trim() || user!.email || "Partner",
+      ]));
+      res.json(edits.map((edit) => ({ ...edit, editorName: editorNames.get(edit.editorUserId) ?? "Partner" })));
+    } catch (error) {
+      console.error("[ADMIN] Failed to fetch listing edits:", error);
+      res.status(500).json({ error: "Failed to fetch listing edits" });
+    }
+  });
+
+  app.post("/api/admin/listing-edits/review", requireAdmin, async (req: any, res) => {
+    try {
+      const ids = z.array(z.string().min(1)).min(1).max(500).parse(req.body?.ids);
+      res.json({ reviewed: await storage.markListingEditsReviewed(ids, req.user.claims.sub) });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: "Choose at least one edit to mark as reviewed." });
+      }
+      console.error("[ADMIN] Failed to mark listing edits reviewed:", error);
+      res.status(500).json({ error: "Failed to mark listing edits reviewed" });
+    }
+  });
+
   app.get("/api/admin/listings", requireAdmin, async (_req, res) => {
     try {
       const listings = await storage.getListings();
@@ -6939,7 +7024,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return a.booking.checkIn.localeCompare(b.booking.checkIn);
         });
 
-      res.json(visibleAssignments);
+      res.json(visibleAssignments.map((entry) => ({ ...entry, booking: bookingForViewer(req, entry.booking) })));
     } catch (error) {
       console.error("[PROVIDER] Failed to fetch provider booking assignments:", error);
       res.status(500).json({ error: "Failed to fetch provider booking assignments" });
@@ -6981,7 +7066,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Response must be 'accepted' or 'declined'." });
       }
 
+      const decision = canRespondToAssignment(access.assignment, response);
+      if (!decision.allowed) {
+        return res.status(409).json({ error: decision.reason });
+      }
+
       const updated = await storage.updateBookingServiceAssignmentResponse(req.params.id, response);
+      if (updated && response === "declined" && access.assignment.providerResponse !== "declined") {
+        queueNotificationTask(
+          `declined assignment ${updated.id}`,
+          storage.notifyAdminsOfDeclinedAssignment(updated, access.booking),
+        );
+      }
       res.json(updated);
     } catch (error) {
       console.error("[PROVIDER] Failed to update assignment response:", error);
@@ -7023,7 +7119,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           customMenuReviewedByUserId: null,
           customMenuReviewedAt: null,
         });
-        return res.json(updatedBooking);
+        return res.json(bookingForViewer(req, updatedBooking));
       }
 
       if (action === "decline") {
@@ -7044,7 +7140,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           customMenuReviewedByUserId: null,
           customMenuReviewedAt: null,
         });
-        return res.json(updatedBooking);
+        return res.json(bookingForViewer(req, updatedBooking));
       }
 
       return res.status(400).json({ error: "Invalid proposal action." });
@@ -7088,7 +7184,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           experienceCustomOfferReviewedByUserId: null,
           experienceCustomOfferReviewedAt: null,
         });
-        return res.json(updatedBooking);
+        return res.json(bookingForViewer(req, updatedBooking));
       }
 
       if (action === "decline") {
@@ -7107,7 +7203,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           experienceCustomOfferReviewedByUserId: null,
           experienceCustomOfferReviewedAt: null,
         });
-        return res.json(updatedBooking);
+        return res.json(bookingForViewer(req, updatedBooking));
       }
 
       return res.status(400).json({ error: "Invalid custom offer action." });
@@ -7162,7 +7258,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const bookings = (await storage.getBookings()).filter((booking) =>
         booking.accommodationId && stayIds.has(booking.accommodationId),
       );
-      res.json(bookings.map(decorateBookingWithOperationalStatus));
+      res.json(bookings.map((booking) => bookingForViewer(req, decorateBookingWithOperationalStatus(booking))));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch provider stay bookings" });
     }
@@ -7178,7 +7274,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const bookings = (await storage.getBookings()).filter((booking) =>
         booking.selectedServices.some((serviceId) => carIds.has(serviceId)),
       );
-      res.json(bookings.map(decorateBookingWithOperationalStatus));
+      res.json(bookings.map((booking) => bookingForViewer(req, decorateBookingWithOperationalStatus(booking))));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch provider car bookings" });
     }
@@ -7194,7 +7290,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const bookings = (await storage.getBookings()).filter((booking) =>
         booking.selectedServices.some((serviceId) => cookIds.has(serviceId)),
       );
-      res.json(bookings.map(decorateBookingWithOperationalStatus));
+      res.json(bookings.map((booking) => bookingForViewer(req, decorateBookingWithOperationalStatus(booking))));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch provider cook bookings" });
     }
@@ -7210,7 +7306,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const bookings = (await storage.getBookings()).filter((booking) =>
         booking.selectedServices.some((serviceId) => errandIds.has(serviceId)),
       );
-      res.json(bookings.map(decorateBookingWithOperationalStatus));
+      res.json(bookings.map((booking) => bookingForViewer(req, decorateBookingWithOperationalStatus(booking))));
     } catch (error) {
       console.error("[PROVIDER] Failed to fetch errand bookings:", error);
       res.status(500).json({ error: "Failed to fetch provider errand bookings" });
@@ -7227,7 +7323,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const bookings = (await storage.getBookings()).filter((booking) =>
         booking.selectedServices.some((serviceId) => experienceIds.has(serviceId)),
       );
-      res.json(bookings.map(decorateBookingWithOperationalStatus));
+      res.json(bookings.map((booking) => bookingForViewer(req, decorateBookingWithOperationalStatus(booking))));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch provider experience bookings" });
     }
@@ -7250,7 +7346,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: result.error });
       }
 
-      res.json(result.booking);
+      res.json(bookingForViewer(req, result.booking));
     } catch (error) {
       res.status(500).json({ error: "Failed to update booking status" });
     }
@@ -7284,7 +7380,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: result.error });
       }
 
-      res.json(result.booking);
+      res.json(bookingForViewer(req, result.booking));
     } catch (error) {
       res.status(500).json({ error: "Failed to update booking status" });
     }
@@ -7319,7 +7415,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: result.error });
       }
 
-      res.json(result.booking);
+      res.json(bookingForViewer(req, result.booking));
     } catch (error) {
       res.status(500).json({ error: "Failed to update booking status" });
     }
@@ -7358,7 +7454,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           customMenuReviewedByUserId: null,
           customMenuReviewedAt: null,
         });
-        return res.json(updated);
+        return res.json(bookingForViewer(req, updated));
       }
 
       if (action === "decline") {
@@ -7379,7 +7475,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           customMenuReviewedByUserId: null,
           customMenuReviewedAt: null,
         });
-        return res.json(updated);
+        return res.json(bookingForViewer(req, updated));
       }
 
       return res.status(400).json({ error: "Invalid proposal action." });
@@ -7424,7 +7520,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           experienceCustomOfferReviewedByUserId: null,
           experienceCustomOfferReviewedAt: null,
         });
-        return res.json(updated);
+        return res.json(bookingForViewer(req, updated));
       }
 
       if (action === "decline") {
@@ -7443,7 +7539,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           experienceCustomOfferReviewedByUserId: null,
           experienceCustomOfferReviewedAt: null,
         });
-        return res.json(updated);
+        return res.json(bookingForViewer(req, updated));
       }
 
       return res.status(400).json({ error: "Invalid custom offer action." });
@@ -7505,8 +7601,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const parsed = insertErrandSchema.partial().parse(withoutProviderProtectedFields(req.body, req.user.claims.role === "admin"));
       const updatedErrand = await storage.updateErrand(req.params.id, {
         ...parsed,
-        isPublic: false,
       });
+      await recordProviderListingEdit(req, "errand", errand, updatedErrand, errand.serviceName);
       res.json(updatedErrand);
     } catch (error) {
       if (error instanceof Error) {
@@ -7564,9 +7660,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const validatedData = insertExperienceSchema.partial().parse({
         ...withoutProviderProtectedFields(req.body, req.user.claims.role === "admin"),
-        isPublic: false,
       });
-      res.json(await storage.updateExperience(req.params.id, validatedData));
+      const updatedExperience = await storage.updateExperience(req.params.id, validatedData);
+      await recordProviderListingEdit(req, "experience", experience, updatedExperience, experience.title);
+      res.json(updatedExperience);
     } catch (error) {
       if (error instanceof Error && error.name === "ZodError") {
         res.status(400).json({ error: error.message });
@@ -7671,9 +7768,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         availabilityPreference,
         availabilityStatus,
         documents,
-        isPublic: false,
       });
 
+      await recordProviderListingEdit(req, "car", access.car, updatedCar, access.car.model);
       res.json(updatedCar);
     } catch (error) {
       if (error instanceof Error) {
@@ -7757,9 +7854,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         galleryUrls,
         mediaType,
         features,
-        isPublic: false,
       });
 
+      await recordProviderListingEdit(req, "stay", access.stay, updatedStay, access.stay.title);
       res.json(updatedStay);
     } catch (error) {
       if (error instanceof Error) {
@@ -7861,9 +7958,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         galleryUrls,
         mediaType,
         features,
-        isPublic: false,
       });
 
+      await recordProviderListingEdit(req, "cook", access.cook, updatedCook, access.cook.title);
       res.json(updatedCook);
     } catch (error) {
       if (error instanceof Error) {

@@ -170,7 +170,7 @@ export default function ProviderCookNew() {
         <div className="mb-8">
           <h1 className="text-3xl font-serif font-semibold mb-2">Add Chef Listing</h1>
           <p className="text-muted-foreground">
-            This mirrors the admin chef form. Your listing stays private until an admin reviews and publishes it.
+            Your new listing stays private until TBM has checked it and published it.
           </p>
         </div>
 

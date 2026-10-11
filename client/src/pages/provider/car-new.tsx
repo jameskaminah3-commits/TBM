@@ -143,7 +143,7 @@ export default function ProviderCarNew() {
         <div className="mb-8">
           <h1 className="text-3xl font-serif font-semibold mb-2">Add New Car</h1>
           <p className="text-muted-foreground">
-            This form mirrors the admin car listing form. Your listing stays private until admin review.
+            Your new listing stays private until TBM has checked it and published it.
           </p>
         </div>
 

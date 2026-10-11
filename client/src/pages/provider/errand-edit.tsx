@@ -142,7 +142,7 @@ export default function ProviderErrandEdit() {
       queryClient.invalidateQueries({ queryKey: ["/api/provider/errands", id] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/errands"] });
       queryClient.invalidateQueries({ queryKey: ["/api/errands"] });
-      toast({ title: "Errand updated", description: "Your listing was updated and remains private until admin review." });
+      toast({ title: "Errand updated", description: "Your changes are live. TBM reviews partner edits afterwards." });
       setLocation("/provider/dashboard");
     },
     onError: (error: Error) => {
@@ -176,7 +176,7 @@ export default function ProviderErrandEdit() {
         <Card id="details" className="scroll-mt-24">
           <CardHeader>
             <CardTitle>Errand Details</CardTitle>
-            <CardDescription>Any update sends the listing back into private review mode.</CardDescription>
+            <CardDescription>Changes go live when you save. TBM reviews partner edits afterwards.</CardDescription>
           </CardHeader>
           <CardContent>
             <Form {...form}>

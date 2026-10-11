@@ -141,7 +141,7 @@ export default function ProviderStayAvailability() {
       queryClient.invalidateQueries({ queryKey: ["/api/stays", id] });
       toast({
         title: "Listing updated",
-        description: "Your changes were saved and the listing is now private until an admin reviews it.",
+        description: "Your changes are live. TBM reviews partner edits afterwards.",
       });
     },
     onError: (error: Error) => {
@@ -167,7 +167,7 @@ export default function ProviderStayAvailability() {
           <CardHeader>
             <CardTitle>Listing Details</CardTitle>
             <CardDescription>
-              Saving changes sends the listing back to private so an admin can review and publish it again.
+              Changes go live when you save. TBM reviews partner edits afterwards.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">

@@ -55,7 +55,11 @@ export function normalizeHelpMamaPricing(pricing?: Partial<HelpMamaPricing> | nu
     fullDayPrice: normalizePrice(pricing?.fullDayPrice),
   };
 
-  const ageBands = (pricing?.ageBands?.length ? pricing.ageBands : DEFAULT_HELP_MAMA_AGE_BANDS) as Array<Partial<HelpMamaPricing["ageBands"][number]> & {
+  // A listing saved before age bands has one set of rates. The default bands carry
+  // no rates of their own, so each starts from those rates instead of from zero.
+  const ageBands = (pricing?.ageBands?.length
+    ? pricing.ageBands
+    : DEFAULT_HELP_MAMA_AGE_BANDS.map(({ id, label, price }) => ({ id, label, price }))) as Array<Partial<HelpMamaPricing["ageBands"][number]> & {
     id: string;
     label: string;
   }>;

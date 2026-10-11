@@ -5,20 +5,20 @@ import { CONTACT_EMAIL, CONTACT_PHONE, CONTACT_PHONE_DISPLAY, WHATSAPP_URL } fro
 
 const faqs = [
   {
-    question: "How are service requests assigned?",
-    answer: "Tembea Bila Matata matches guest and corporate requests to available, suitable vehicles in our fleet network. Being part of the network does not guarantee a fixed volume of requests.",
+    question: "How do bookings reach me?",
+    answer: "Guests book your listings through Tembea Bila Matata. Once a guest has paid the deposit, the booking appears in your dashboard and we email you. Being a partner doesn't guarantee a fixed number of bookings.",
   },
   {
-    question: "Can I decline a service request?",
-    answer: "Yes. Use the Accept or Decline buttons on the Service Requests page. Declining doesn't affect future assignments — we simply look for the next suitable vehicle.",
+    question: "Can I decline a booking?",
+    answer: "Yes, before you accept it. Use Accept or Decline on the Service Requests page, and we'll find another option for the guest. After you've accepted, message TBM in the Admin Channel if plans change.",
   },
   {
-    question: "How do I update my documents?",
-    answer: "Visit the Documents page to upload a new insurance certificate, logbook, or inspection certificate at any time.",
+    question: "What happens when I edit a listing?",
+    answer: "Your changes go live as soon as you save. TBM reviews partner edits afterwards and will contact you if something needs changing.",
   },
   {
-    question: "How do I change my vehicle's availability?",
-    answer: "Visit the Availability page and set your vehicle to Available, Busy, Unavailable, or Scheduled Maintenance at any time.",
+    question: "How do I block dates I'm not available?",
+    answer: "Open the listing's manager from the Listings tab and block the dates. Car partners can also set a vehicle's status on the Vehicle Status page.",
   },
 ];
 
@@ -28,7 +28,7 @@ export default function ProviderSupport() {
       <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
         <div className="mb-8">
           <h1 className="font-serif text-2xl font-semibold text-foreground">Support</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Guidance and contacts for Fleet Network partners.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Guidance and contacts for Tembea Bila Matata partners.</p>
         </div>
 
         <div className="space-y-6">
@@ -70,12 +70,12 @@ export default function ProviderSupport() {
                 <ShieldCheck className="h-4 w-4 text-primary" />
                 Guidelines
               </CardTitle>
-              <CardDescription>What we expect from every Fleet Network partner.</CardDescription>
+              <CardDescription>What we expect from every partner.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2 text-sm text-muted-foreground">
-              <p>Maintain your vehicle to the Fleet Standards shared during onboarding.</p>
-              <p>Keep your Availability status accurate so we only assign suitable requests.</p>
-              <p>Respond promptly to Service Requests and honor confirmed assignments.</p>
+              <p>Keep your listings, photos and prices accurate.</p>
+              <p>Block dates you can't take, so guests only book what you can deliver.</p>
+              <p>Answer new bookings promptly and honour the ones you accept.</p>
               <p>Represent Tembea Bila Matata professionally at every guest interaction.</p>
             </CardContent>
           </Card>
