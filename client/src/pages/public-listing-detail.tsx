@@ -53,7 +53,7 @@ import { cn } from "@/lib/utils";
 import { ListingShareSheet } from "@/components/listing-share-sheet";
 import { useOwnsListing } from "@/hooks/use-owns-listing";
 import { captureListingVisit, trackShareEvent, withShareRef } from "@/lib/marketing-attribution";
-import { getListingSharePrice } from "@shared/listing-share";
+import { getCarDisplayName, getListingSharePrice } from "@shared/listing-share";
 import { ListingUnavailable } from "@/components/listing-unavailable";
 import {
   buildListingSeoDescription,
@@ -99,7 +99,7 @@ const helpMamaRateLabels: Record<string, string> = {
 function getListingName(kind: ListingKind, listing: PublicListing) {
   if (kind === "car") {
     const car = listing as CarType;
-    return `${car.make ? `${car.make} ` : ""}${car.model}`.trim();
+    return getCarDisplayName(car);
   }
   if (kind === "cook") return (listing as Cook).title;
   if (kind === "errand") return (listing as Errand).serviceName;

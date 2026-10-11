@@ -37,12 +37,13 @@ import { useCurrency } from "@/lib/currency";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { awaitsProviderResponse, isAgreedOrder } from "@shared/provider-dashboard";
-import { getListingSharePrice } from "@shared/listing-share";
+import { getCarDisplayName, getListingSharePrice } from "@shared/listing-share";
 import { ListingShareSheet } from "@/components/listing-share-sheet";
 import { YourShares } from "@/components/your-shares";
+import { ShareYourListings } from "@/components/share-your-listings";
 import { getCookExtraGuestInclusivePrice, getCookExtraGuestServiceFee, getCookMinimumGuests } from "@shared/cook-pricing";
 import { HOUSE_CLEANING_BASE_ROOM_LABEL, getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
-import { formatCalendarDate, isCalendarDate } from "@shared/calendar-dates";
+import { formatCalendarDate, formatCalendarDateRange, isCalendarDate } from "@shared/calendar-dates";
 import { isHotelStay } from "@shared/hotel-rooms";
 
 type ProviderAssignments = {
@@ -325,7 +326,7 @@ function getRequestPreview(details?: string | null) {
 }
 
 function joinMeta(parts: Array<string | null | undefined | false>) {
-  return parts.filter((part): part is string => Boolean(part && part.trim())).join(" / ");
+  return parts.filter((part): part is string => Boolean(part && part.trim())).join(" · ");
 }
 
 function getAssignmentLocation(assignment: ProviderBookingAssignmentView) {
@@ -357,11 +358,8 @@ function getAssignmentDateRange(assignment: ProviderBookingAssignmentView) {
     return null;
   }
 
-  if (assignment.booking.checkOut && assignment.booking.checkOut !== assignment.booking.checkIn) {
-    return `${assignment.booking.checkIn} to ${assignment.booking.checkOut}`;
-  }
-
-  return assignment.booking.checkIn;
+  // "20–22 Nov 2026", the same in every time zone.
+  return formatCalendarDateRange(assignment.booking.checkIn, assignment.booking.checkOut, "en-GB");
 }
 
 function formatDashboardDate(value: string | null | undefined) {
@@ -460,14 +458,15 @@ function ProviderOrderCollapsible({
         )}
       >
         <CollapsibleTrigger asChild>
-          <button type="button" className="flex w-full items-start gap-4 text-left">
+          <button type="button" className="flex w-full flex-col gap-3 text-left sm:flex-row sm:items-start sm:gap-4">
             <div className="min-w-0 flex-1 space-y-1">
               <div className="font-medium text-foreground">{title}</div>
               {summary ? <div className="text-sm text-muted-foreground">{summary}</div> : null}
               {detail ? <div className="text-sm text-muted-foreground">{detail}</div> : null}
             </div>
-            <div className="flex shrink-0 flex-col items-end gap-2">
-              {statusContent ? <div className="flex max-w-[13rem] flex-wrap justify-end gap-2">{statusContent}</div> : null}
+            {/* On a phone the status sits under the details, so they use the full width. */}
+            <div className="flex shrink-0 flex-wrap items-center gap-2 sm:flex-col sm:items-end">
+              {statusContent ? <div className="flex flex-wrap gap-2 sm:max-w-[13rem] sm:justify-end">{statusContent}</div> : null}
               <span className="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-stone-50 px-3 py-1 text-xs font-semibold text-stone-600">
                 {open ? "Hide details" : "Open details"}
                 <ChevronDown className={cn("h-4 w-4 transition-transform duration-200", open ? "rotate-180" : "")} />
@@ -685,7 +684,7 @@ export default function ProviderDashboard() {
     shouldIncludeListing([stay.title, stay.location, stay.isPublic ? "public" : "pending review"], stay.isPublic),
   );
   const visibleCars = (data?.cars ?? []).filter((car) =>
-    shouldIncludeListing([car.model, car.location, car.isPublic ? "public" : "pending review"], car.isPublic),
+    shouldIncludeListing([getCarDisplayName(car), car.location, car.isPublic ? "public" : "pending review"], car.isPublic),
   );
   const visibleCooks = (data?.cooks ?? []).filter((cook) =>
     shouldIncludeListing(
@@ -856,7 +855,8 @@ export default function ProviderDashboard() {
     .filter((booking) => getDashboardAssignmentStatus(booking) === "completed" && isAgreed(booking))
     .reduce((sum, booking) => sum + (payoutByAssignmentId.get(booking.assignment.id)?.payoutAmount ?? 0), 0);
   // Things only the provider can move forward. Unread messages have their own count.
-  const actionableQueueCount = pendingReviewCount + customRequestBookings.length + requestCount + awaitingResponseCount;
+  // Only what the partner can act on; listings waiting for TBM's check show under Review.
+  const actionableQueueCount = customRequestBookings.length + requestCount + awaitingResponseCount;
   const deepLinkedAssignmentId = useMemo(
     () => dashboardIntent.assignmentId
       || allProviderBookings.find((booking) => booking.booking.id === dashboardIntent.bookingId)?.assignment.id
@@ -1308,6 +1308,7 @@ export default function ProviderDashboard() {
             <DashboardSectionHeader
               title="Overview"
             />
+            <ShareYourListings data={data} />
             <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(19rem,0.85fr)]">
               <div className="space-y-6">
                 <Card className="border-stone-200/70 bg-white/82 shadow-[0_20px_60px_-42px_rgba(92,73,47,0.34)]">
@@ -1556,7 +1557,7 @@ export default function ProviderDashboard() {
               </div>
               {visibleCars.length ? visibleCars.map((car) => (
                 <div key={car.id} className="space-y-3 rounded-[1.5rem] border border-stone-200/80 bg-stone-50/65 p-5">
-                  <div className="font-medium">{car.model}</div>
+                  <div className="font-medium">{getCarDisplayName(car)}</div>
                   <div className="text-sm text-muted-foreground">
                     {car.location} • {car.isPublic ? "Public" : "Private / Pending review"}
                   </div>
@@ -1577,7 +1578,7 @@ export default function ProviderDashboard() {
                       <Button asChild variant="outline" size="sm" className="rounded-full bg-white/80">
                         <a href={`/provider/cars/${car.id}/availability#media`}>Update photos</a>
                       </Button>
-                      <ListingShareSheet kind="car" id={car.id} name={car.model} description={car.description} {...getListingSharePrice("car", car)} isPublic={car.isPublic} source="provider" triggerClassName="bg-white/80" />
+                      <ListingShareSheet kind="car" id={car.id} name={getCarDisplayName(car)} description={car.description} {...getListingSharePrice("car", car)} isPublic={car.isPublic} source="provider" triggerClassName="bg-white/80" />
                     </div>
                   </div>
                   <Button asChild variant="outline" size="sm" className="w-full rounded-full sm:w-auto">
@@ -2056,7 +2057,7 @@ export default function ProviderDashboard() {
                       open={isOpen}
                       onOpenChange={(open) => setAssignmentExpanded(booking.assignment.id, open)}
                       archived={isArchivedBookingStatus(dashboardStatus)}
-                      title={car?.model ?? "Car booking"}
+                      title={car ? getCarDisplayName(car) : "Car booking"}
                       summary={joinMeta([
                         booking.booking.guestName,
                         getAssignmentDateRange(booking),

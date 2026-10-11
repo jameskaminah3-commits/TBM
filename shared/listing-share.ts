@@ -22,6 +22,16 @@ export function buildListingShareUrl(
   return url.toString();
 }
 
+// A car's name as guests see it: make and model ("Toyota Noah"), without
+// repeating the make when the model already starts with it.
+export function getCarDisplayName(car: { make?: string | null; model?: string | null }) {
+  const make = car.make?.trim() ?? "";
+  const model = car.model?.trim() ?? "";
+  if (!model) return make || "Car";
+  if (!make || model.toLowerCase().startsWith(make.toLowerCase())) return model;
+  return `${make} ${model}`;
+}
+
 const kindNoun: Record<PublicListingKind, string> = {
   stay: "stay",
   car: "car",

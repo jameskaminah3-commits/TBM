@@ -98,6 +98,7 @@ import {
   stopShareLink,
 } from "./share-links";
 import { shareChannels } from "@shared/share-attribution";
+import { getCarDisplayName } from "@shared/listing-share";
 import { createRateLimitMiddleware, getRequestIp } from "./middleware/rate-limit";
 import { toPublicListing, withoutProviderProtectedFields } from "./listing-privacy";
 import { partnerGuestName, toPartnerInboxItem, toProviderAssignment, toProviderBooking, toProviderPaymentData } from "./provider-booking-view";
@@ -129,6 +130,8 @@ import {
   sendBookingPaymentNotificationEmails,
   sendOpsAlertEmail,
   sendListingVerificationCompletedEmail,
+  sendFleetApplicationReceivedEmails,
+  sendPartnerApprovedEmail,
 } from "./notifications";
 import {
   buildBookingReceiptPdf,
@@ -3669,6 +3672,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         email: payload.email.trim().toLowerCase(),
         phone: payload.phone.trim(),
       });
+      // TBM's team hears about it at once; the applicant gets a receipt.
+      queueNotificationTask(
+        `fleet application emails for ${application.id}`,
+        sendFleetApplicationReceivedEmails({
+          applicationId: application.id,
+          applicantName: application.fullName,
+          applicantEmail: application.email,
+          vehicle: getCarDisplayName({ make: application.make, model: application.model }),
+          county: application.county,
+        }),
+      );
       res.status(201).json(application);
     } catch (error) {
       if (error instanceof Error) {
@@ -3802,6 +3816,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         reviewedAt: new Date().toISOString(),
       });
 
+      queueNotificationTask(
+        `partner approved email for ${createdUser.id}`,
+        sendPartnerApprovedEmail({
+          email: normalizedEmail,
+          name: existing.fullName,
+          vehicle: getCarDisplayName({ make: existing.make, model: existing.model }),
+        }),
+      );
       res.json({ application: updated, user: sanitizeUserRecord(createdUser), car: createdCar });
     } catch (error) {
       console.error("[FLEET_APPLICATIONS] Approve failed:", error);

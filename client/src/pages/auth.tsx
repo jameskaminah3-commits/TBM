@@ -159,9 +159,14 @@ function formatNextPathLabel(path: string) {
     .join(" / ");
 }
 
-function resolvePostAuthPath(nextPath: string, isAdmin: boolean) {
+function resolvePostAuthPath(nextPath: string, isAdmin: boolean, role?: string | null) {
   if (nextPath.startsWith("/admin") && !isAdmin) {
     return "/";
+  }
+
+  // Partners signing in with no page in mind go straight to Partner Hub.
+  if (nextPath === "/" && role === "provider") {
+    return "/provider/dashboard";
   }
 
   return nextPath;
@@ -268,7 +273,7 @@ export default function AuthPage() {
 
   async function refreshAuthAndRedirect(userRole?: string | null) {
     await queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
-    setLocation(resolvePostAuthPath(nextPath, userRole === "admin"));
+    setLocation(resolvePostAuthPath(nextPath, userRole === "admin", userRole));
   }
 
   async function handleSocialSignIn(provider: SocialProvider) {

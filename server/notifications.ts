@@ -906,6 +906,93 @@ export async function sendProviderAssignmentEmail(args: {
   });
 }
 
+// A vehicle owner applied: TBM's team is told, and the applicant gets a receipt.
+// No documents or links to them go in either email.
+export async function sendFleetApplicationReceivedEmails(args: {
+  applicationId: string;
+  applicantName: string;
+  applicantEmail: string;
+  vehicle: string;
+  county: string;
+}) {
+  const baseUrl = process.env.APP_BASE_URL?.trim() || "https://tembeabilamatata.com";
+  const reviewUrl = `${baseUrl}/admin/fleet-applications/${args.applicationId}`;
+  const firstName = args.applicantName.trim().split(/\s+/)[0] || "there";
+  const teamText = [
+    `New fleet application: ${args.vehicle}`,
+    `From ${args.applicantName}, ${args.county}.`,
+    "Review the photos and documents in Admin:",
+    reviewUrl,
+  ].join("\n");
+  const teamHtml = [
+    '<div style="font-family:Arial,sans-serif;line-height:1.6;color:#0f172a;">',
+    `<p>New fleet application: <strong>${escapeHtml(args.vehicle)}</strong></p>`,
+    `<p>From ${escapeHtml(args.applicantName)}, ${escapeHtml(args.county)}.</p>`,
+    `<p><a href="${escapeHtml(reviewUrl)}">Review the photos and documents in Admin</a>.</p>`,
+    "</div>",
+  ].join("");
+  const applicantText = [
+    `Hi ${firstName},`,
+    "",
+    `Thank you for applying to list your ${args.vehicle} with Tembea Bila Matata.`,
+    "We'll review your application and documents and contact you about the next step.",
+    "",
+    `Questions? Call or WhatsApp TBM on ${SUPPORT_PHONE_DISPLAY}.`,
+  ].join("\n");
+  const applicantHtml = [
+    '<div style="font-family:Arial,sans-serif;line-height:1.6;color:#0f172a;">',
+    `<p>Hi ${escapeHtml(firstName)},</p>`,
+    `<p>Thank you for applying to list your <strong>${escapeHtml(args.vehicle)}</strong> with Tembea Bila Matata.</p>`,
+    "<p>We'll review your application and documents and contact you about the next step.</p>",
+    `<p>Questions? Call or WhatsApp TBM on ${escapeHtml(SUPPORT_PHONE_DISPLAY)}.</p>`,
+    "</div>",
+  ].join("");
+  const team = getNotificationRecipientEmails();
+  const [teamSent, applicantSent] = await Promise.all([
+    team.length
+      ? sendEmailMessage({ to: team, subject: `[Tembea Bila Matata] New fleet application: ${args.vehicle}`, text: teamText, html: teamHtml })
+      : Promise.resolve(false),
+    sendEmailMessage({ to: [args.applicantEmail], subject: "[Tembea Bila Matata] We received your application", text: applicantText, html: applicantHtml }),
+  ]);
+  return { teamSent, applicantSent };
+}
+
+// The applicant is now a partner. The password is never emailed: TBM gives it
+// to them directly, or they set their own with "Forgot password?".
+export async function sendPartnerApprovedEmail(args: { email: string; name: string; vehicle: string }) {
+  const baseUrl = process.env.APP_BASE_URL?.trim() || "https://tembeabilamatata.com";
+  const signInUrl = `${baseUrl}/auth?next=${encodeURIComponent("/provider/dashboard")}`;
+  const firstName = args.name.trim().split(/\s+/)[0] || "there";
+  const text = [
+    `Hi ${firstName},`,
+    "",
+    `Welcome to Tembea Bila Matata. Your ${args.vehicle} is approved and your partner account is ready.`,
+    `Sign in with this email address (${args.email}):`,
+    signInUrl,
+    "TBM will give you your temporary password, or you can set your own now: on the sign-in page choose \"Forgot password?\".",
+    "",
+    "In Partner Hub you can set your prices, keep your documents up to date, share your listing, and see your bookings and earnings.",
+    "TBM checks your listing before guests can see it.",
+    "",
+    `Questions? Call or WhatsApp TBM on ${SUPPORT_PHONE_DISPLAY}.`,
+  ].join("\n");
+  const html = [
+    '<div style="font-family:Arial,sans-serif;line-height:1.6;color:#0f172a;">',
+    `<p>Hi ${escapeHtml(firstName)},</p>`,
+    `<p>Welcome to Tembea Bila Matata. Your <strong>${escapeHtml(args.vehicle)}</strong> is approved and your partner account is ready.</p>`,
+    `<p><a href="${escapeHtml(signInUrl)}">Sign in to Partner Hub</a> with this email address (${escapeHtml(args.email)}). TBM will give you your temporary password, or you can set your own now: on the sign-in page choose "Forgot password?".</p>`,
+    "<p>In Partner Hub you can set your prices, keep your documents up to date, share your listing, and see your bookings and earnings. TBM checks your listing before guests can see it.</p>",
+    `<p>Questions? Call or WhatsApp TBM on ${escapeHtml(SUPPORT_PHONE_DISPLAY)}.</p>`,
+    "</div>",
+  ].join("");
+  return await sendEmailMessage({
+    to: [args.email],
+    subject: "[Tembea Bila Matata] Welcome: your partner account is ready",
+    text,
+    html,
+  });
+}
+
 export async function sendListingVerificationCompletedEmail(args: {
   customerEmail: string;
   customerName: string;
