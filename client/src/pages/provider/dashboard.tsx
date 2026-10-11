@@ -13,7 +13,7 @@ import {
   UserRound,
   Wallet,
 } from "lucide-react";
-import type { Stay, Car, Cook, Errand, Experience, ProviderBookingAssignmentView, ProviderPaymentData } from "@shared/schema";
+import type { Stay, Car, Cook, Errand, Experience, ProviderBookingAssignmentView, ProviderPaymentView } from "@shared/schema";
 import { InboxCenter } from "@/components/inbox-center";
 import { PartnerAdminThread } from "@/components/partner-admin-thread";
 import { ProviderLayout } from "@/components/provider-layout";
@@ -29,6 +29,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { BookingThread } from "@/components/booking-thread";
+import { SharedGuestContact } from "@/components/shared-guest-contact";
 import { RequestBriefAccordion } from "@/components/request-brief-accordion";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useCurrency } from "@/lib/currency";
@@ -636,7 +637,7 @@ export default function ProviderDashboard() {
     queryKey: ["/api/provider/booking-assignments"],
   });
   const { unreadCount: unreadNotificationCount } = useInbox({ enabled: isProvider || isAdmin });
-  const { data: providerPaymentData } = useQuery<ProviderPaymentData>({
+  const { data: providerPaymentData } = useQuery<ProviderPaymentView>({
     queryKey: ["/api/provider/payments"],
     enabled: !isAdmin,
   });
@@ -2001,10 +2002,11 @@ export default function ProviderDashboard() {
                           <div className="mt-2 text-sm font-medium text-foreground">{getProgressStatusLabel(dashboardStatus)}</div>
                         </div>
                       </div>
+                      <SharedGuestContact bookingId={booking.booking.id} />
                       <BookingThread
                         bookingId={booking.booking.id}
-                        title="Booking Chat"
-                        composerPlaceholder="Reply inside this booking thread..."
+                        title="Messages with TBM"
+                        composerPlaceholder="Ask TBM a question or send an update about this booking..."
                         defaultOpen={dashboardIntent.openThread && dashboardIntent.bookingId === booking.booking.id}
                       />
 
@@ -2061,12 +2063,13 @@ export default function ProviderDashboard() {
                       detail={getCarModeSummary(booking)}
                       statusContent={withPaymentStage(booking, <Badge variant="outline">{getProgressStatusLabel(dashboardStatus)}</Badge>)}
                     >
+                      <SharedGuestContact bookingId={booking.booking.id} />
                       <BookingThread
                         bookingId={booking.booking.id}
-                        title="Booking Chat"
+                        title="Messages with TBM"
                         initialMessage={getAssignmentRequestDetails(booking)}
                         initialMessageLabel={getBookingThreadInitialLabel(booking)}
-                        composerPlaceholder="Reply inside this booking thread..."
+                        composerPlaceholder="Ask TBM a question or send an update about this booking..."
                         defaultOpen={dashboardIntent.openThread && dashboardIntent.bookingId === booking.booking.id}
                       />
                       {statusAction ? (
@@ -2222,12 +2225,13 @@ export default function ProviderDashboard() {
                         </div>
                       ) : null}
                     </div>
+                      <SharedGuestContact bookingId={booking.booking.id} />
                       <BookingThread
                         bookingId={booking.booking.id}
-                        title="Booking Chat"
+                        title="Messages with TBM"
                         initialMessage={getAssignmentRequestDetails(booking)}
                         initialMessageLabel={getBookingThreadInitialLabel(booking)}
-                        composerPlaceholder="Reply inside this booking thread..."
+                        composerPlaceholder="Ask TBM a question or send an update about this booking..."
                         defaultOpen={dashboardIntent.openThread && dashboardIntent.bookingId === booking.booking.id}
                       />
                       {statusAction ? (
@@ -2295,12 +2299,13 @@ export default function ProviderDashboard() {
                         Estimated receipt value: <span className="font-medium text-foreground">{formatAmount(getAssignmentBudgetAmount(booking) ?? 0)}</span>
                       </div>
                     ) : null}
+                      <SharedGuestContact bookingId={booking.booking.id} />
                       <BookingThread
                         bookingId={booking.booking.id}
-                        title="Booking Chat"
+                        title="Messages with TBM"
                         initialMessage={getAssignmentRequestDetails(booking)}
                         initialMessageLabel={getBookingThreadInitialLabel(booking)}
-                        composerPlaceholder="Reply inside this request thread..."
+                        composerPlaceholder="Ask TBM a question or send an update about this request..."
                         defaultOpen={dashboardIntent.openThread && dashboardIntent.bookingId === booking.booking.id}
                       />
                       {statusAction ? (
@@ -2475,12 +2480,13 @@ export default function ProviderDashboard() {
                         </div> : null}
                       </div>
                     ) : null}
+                      <SharedGuestContact bookingId={booking.booking.id} />
                       <BookingThread
                         bookingId={booking.booking.id}
-                        title="Booking Chat"
+                        title="Messages with TBM"
                         initialMessage={getAssignmentRequestDetails(booking)}
                         initialMessageLabel={getBookingThreadInitialLabel(booking)}
-                        composerPlaceholder="Reply inside this booking thread..."
+                        composerPlaceholder="Ask TBM a question or send an update about this booking..."
                         defaultOpen={dashboardIntent.openThread && dashboardIntent.bookingId === booking.booking.id}
                       />
                       {statusAction ? (

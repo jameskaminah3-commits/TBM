@@ -21,6 +21,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useCurrency } from "@/lib/currency";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { BookingThread } from "@/components/booking-thread";
+import { AdminBookingPartners } from "@/components/admin-booking-partners";
 import { BookingServiceDetails } from "@/components/booking-service-details";
 import { RequestBriefAccordion } from "@/components/request-brief-accordion";
 import { calculateBookingDepositAmount, getBookingAmountPaid, getBookingCheckoutAmount, getBookingOutstandingAmount, hasActiveAdminLock, hasLockedInBookingDeposit, isBookingFullyPaid, isFullPaymentOnlyBooking, supportsBookingDeposit } from "@shared/booking-payments";
@@ -1890,12 +1891,13 @@ export default function AdminBookings() {
                         </div>
                         <BookingThread
                           bookingId={booking.id}
-                          title="Booking Chat"
+                          title="Messages with the guest"
                           initialMessage={booking.serviceRequestDetails}
                           initialMessageLabel={getBookingThreadInitialLabel(booking)}
-                          composerPlaceholder="Reply to the customer or assigned partner..."
+                          composerPlaceholder="Write to the guest. Partners won't see it."
                           defaultOpen={pageIntent.openThread && pageIntent.bookingId === booking.id}
                         />
+                        <AdminBookingPartners bookingId={booking.id} hasGuestPhone={Boolean(booking.guestPhone)} />
                       </div>
                     </div>
                     </AccordionContent>

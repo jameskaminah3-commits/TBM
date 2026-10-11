@@ -1256,7 +1256,8 @@ export default function Bookings() {
             />
             <BookingThread
               bookingId={booking.id}
-              title="Messages"
+              asGuest
+              title="Messages with TBM"
               initialMessage={showStandaloneRequestBrief || isCustomFlow ? null : booking.serviceRequestDetails}
               initialMessageLabel={getBookingThreadInitialLabel(booking)}
               composerPlaceholder="Send a message..."

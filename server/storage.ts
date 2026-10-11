@@ -101,6 +101,10 @@ import {
   partnerAdminMessages,
   listingEdits,
   type ListingEdit,
+  guestContactReleases,
+  guestContactReleaseViews,
+  type GuestContactRelease,
+  type GuestContactReleaseView,
   fleetApplications,
   bookingServiceAssignments,
   bookingAttributions,
@@ -135,10 +139,10 @@ import { buildAppInboxActionUrl, buildInboxWorkspaceUrl } from "@shared/inbox";
 import { getWebPushPublicConfig, sendWebPushNotification } from "./push";
 import { db, pool } from "./db";
 import { sanitizeOptionalUserRecord, sanitizeUserRecord, sanitizeUserRecords } from "./user-sanitizer";
-import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
-import { PAYMENT_MESSAGE_ROLE, canSeeThreadMessage } from "@shared/booking-thread";
+import { and, asc, desc, eq, gt, inArray, isNull } from "drizzle-orm";
+import { PAYMENT_MESSAGE_ROLE, getConversationThreadKey, getMessageAudience, isPaymentThreadMessage, type BookingConversation } from "@shared/booking-thread";
 import { queueNotificationTask, sendProviderAssignmentEmail } from "./notifications";
-import { formatCalendarDateRange } from "@shared/calendar-dates";
+import { formatCalendarDateRange, formatKenyaDateTime } from "@shared/calendar-dates";
 
 type DashboardListingCatalog = {
   staysById: Map<string, Stay>;
@@ -1546,6 +1550,7 @@ export class DatabaseStorage implements IStorage {
   private providerWorkflowTablesEnsured = false;
   private inboxTablesEnsured = false;
   private listingEditsTableEnsured = false;
+  private guestContactTablesEnsured = false;
   private pushTablesEnsured = false;
   private listingVerificationTablesEnsured = false;
   private hotelTablesEnsured = false;
@@ -1867,6 +1872,94 @@ export class DatabaseStorage implements IStorage {
     return updated.length;
   }
 
+  private async ensureGuestContactTables() {
+    if (this.guestContactTablesEnsured) {
+      return;
+    }
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS guest_contact_releases (
+        id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+        booking_id varchar NOT NULL,
+        provider_user_id varchar NOT NULL,
+        share_phone boolean NOT NULL DEFAULT true,
+        share_email boolean NOT NULL DEFAULT false,
+        reason text NOT NULL,
+        granted_by varchar NOT NULL,
+        granted_at text NOT NULL,
+        expires_at text NOT NULL,
+        revoked_at text,
+        revoked_by varchar
+      );
+      CREATE INDEX IF NOT EXISTS guest_contact_releases_booking_idx
+        ON guest_contact_releases (booking_id, provider_user_id, expires_at);
+      CREATE TABLE IF NOT EXISTS guest_contact_release_views (
+        id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+        release_id varchar NOT NULL,
+        booking_id varchar NOT NULL,
+        provider_user_id varchar NOT NULL,
+        viewed_at text NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS guest_contact_release_views_release_idx
+        ON guest_contact_release_views (release_id, viewed_at);
+    `);
+
+    this.guestContactTablesEnsured = true;
+  }
+
+  async createGuestContactRelease(
+    release: Omit<GuestContactRelease, "id" | "grantedAt" | "revokedAt" | "revokedBy">,
+  ): Promise<GuestContactRelease> {
+    await this.ensureGuestContactTables();
+    const [created] = await db.insert(guestContactReleases).values({ ...release, grantedAt: new Date().toISOString() }).returning();
+    return created;
+  }
+
+  async getGuestContactReleasesForBooking(bookingId: string): Promise<Array<GuestContactRelease & { views: GuestContactReleaseView[] }>> {
+    await this.ensureGuestContactTables();
+    const releases = await db.select().from(guestContactReleases)
+      .where(eq(guestContactReleases.bookingId, bookingId))
+      .orderBy(desc(guestContactReleases.grantedAt));
+    if (!releases.length) {
+      return [];
+    }
+    const views = await db.select().from(guestContactReleaseViews)
+      .where(inArray(guestContactReleaseViews.releaseId, releases.map((release) => release.id)))
+      .orderBy(desc(guestContactReleaseViews.viewedAt));
+    return releases.map((release) => ({ ...release, views: views.filter((view) => view.releaseId === release.id) }));
+  }
+
+  // Releases a partner can use now: not revoked and not expired.
+  async getActiveGuestContactReleases(providerUserId: string, bookingId?: string): Promise<GuestContactRelease[]> {
+    await this.ensureGuestContactTables();
+    const now = new Date().toISOString();
+    return await db.select().from(guestContactReleases).where(and(
+      eq(guestContactReleases.providerUserId, providerUserId),
+      bookingId ? eq(guestContactReleases.bookingId, bookingId) : undefined,
+      isNull(guestContactReleases.revokedAt),
+      gt(guestContactReleases.expiresAt, now),
+    )).orderBy(desc(guestContactReleases.grantedAt));
+  }
+
+  async revokeGuestContactRelease(id: string, adminUserId: string): Promise<GuestContactRelease | undefined> {
+    await this.ensureGuestContactTables();
+    const [updated] = await db.update(guestContactReleases)
+      .set({ revokedAt: new Date().toISOString(), revokedBy: adminUserId })
+      .where(and(eq(guestContactReleases.id, id), isNull(guestContactReleases.revokedAt)))
+      .returning();
+    return updated;
+  }
+
+  async recordGuestContactView(release: GuestContactRelease): Promise<void> {
+    await this.ensureGuestContactTables();
+    await db.insert(guestContactReleaseViews).values({
+      releaseId: release.id,
+      bookingId: release.bookingId,
+      providerUserId: release.providerUserId,
+      viewedAt: new Date().toISOString(),
+    });
+  }
+
   private async ensureInboxTables() {
     if (this.inboxTablesEnsured) {
       return;
@@ -1925,6 +2018,12 @@ export class DatabaseStorage implements IStorage {
     await pool.query(`
       CREATE INDEX IF NOT EXISTS partner_admin_messages_provider_idx
       ON partner_admin_messages (provider_user_id, created_at);
+    `);
+
+    // Guest and partner conversations on a booking (migration 0018).
+    await pool.query(`
+      ALTER TABLE booking_messages ADD COLUMN IF NOT EXISTS audience text NOT NULL DEFAULT 'guest';
+      ALTER TABLE booking_messages ADD COLUMN IF NOT EXISTS partner_user_id varchar;
     `);
 
     this.inboxTablesEnsured = true;
@@ -3113,6 +3212,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getBookingMessages(bookingId: string): Promise<BookingMessage[]> {
+    await this.ensureInboxTables();
     return await db
       .select()
       .from(bookingMessages)
@@ -3120,7 +3220,9 @@ export class DatabaseStorage implements IStorage {
       .orderBy(asc(bookingMessages.createdAt));
   }
 
-  async createBookingMessage(data: InsertBookingMessage & { userId: string; senderRole: string }): Promise<BookingMessage> {
+  async createBookingMessage(
+    data: InsertBookingMessage & { userId: string; senderRole: string; audience?: "guest" | "partner"; partnerUserId?: string | null },
+  ): Promise<BookingMessage> {
     await this.ensureInboxTables();
     const now = new Date().toISOString();
     const [message] = await db.insert(bookingMessages).values({ ...data, createdAt: now }).returning();
@@ -3203,6 +3305,26 @@ export class DatabaseStorage implements IStorage {
         metadata: { bookingId: booking.id, assignmentId: assignment.id },
       });
     }
+  }
+
+  // TBM shared a guest's contact with a partner: the partner hears what was
+  // shared, why and until when, but not the details themselves.
+  async notifyPartnerOfGuestContactRelease(release: GuestContactRelease, assignment: BookingServiceAssignment): Promise<void> {
+    const shared = [release.sharePhone ? "phone number" : null, release.shareEmail ? "email" : null].filter(Boolean).join(" and ");
+    await this.createInboxItem({
+      userId: release.providerUserId,
+      actorUserId: release.grantedBy,
+      actorRole: "admin",
+      bookingId: release.bookingId,
+      assignmentId: assignment.id,
+      threadKey: getConversationThreadKey(release.bookingId, { audience: "partner", partnerUserId: release.providerUserId }),
+      type: "guest-contact-shared",
+      title: `Guest contact shared: ${assignment.serviceName}`,
+      body: `TBM shared the guest's ${shared} for this booking until ${formatKenyaDateTime(release.expiresAt, undefined, "en-GB")}. Reason: ${release.reason}`,
+      priority: "high",
+      channels: ["in-app", "push"],
+      metadata: { bookingId: release.bookingId, assignmentId: assignment.id, releaseId: release.id },
+    });
   }
 
   async updateBookingServiceAssignmentResponse(
@@ -3434,36 +3556,54 @@ export class DatabaseStorage implements IStorage {
     return await this.deliverPushForInboxItem(item);
   }
 
+  // Who hears about a booking message. Guest messages go to TBM, and TBM's
+  // replies to the guest. A partner's messages go to TBM, and TBM's replies to
+  // that partner. Guests and partners are never told about each other's.
   private async createBookingMessageInboxItems(message: BookingMessage) {
     const booking = await this.getBooking(message.bookingId);
     if (!booking) {
       return [];
     }
 
-    const [assignments, sender] = await Promise.all([
+    const conversation: BookingConversation = getMessageAudience(message) === "partner" && message.partnerUserId
+      ? { audience: "partner", partnerUserId: message.partnerUserId }
+      : { audience: "guest" };
+    if (conversation.audience === "partner" && isPaymentThreadMessage(message)) {
+      return [];
+    }
+
+    const [assignments, sender, admins] = await Promise.all([
       this.getBookingServiceAssignmentsByBookingId(message.bookingId),
       this.getUser(message.userId),
+      this.getUsersByRole("admin"),
     ]);
-    const threadKey = buildBookingInboxThreadKey(message.bookingId);
-    const senderLabel = [sender?.firstName, sender?.lastName].filter(Boolean).join(" ").trim() || getInboxSenderRoleLabel(message.senderRole);
+    const threadKey = getConversationThreadKey(message.bookingId, conversation);
+    const fromTbm = message.senderRole === "admin";
+    const senderLabel = fromTbm
+      ? "TBM team"
+      : [sender?.firstName, sender?.lastName].filter(Boolean).join(" ").trim() || getInboxSenderRoleLabel(message.senderRole);
     const messageExcerpt = getInboxMessageExcerpt(message.message);
-    const recipients = new Map<string, { assignmentId: string | null }>();
+    const recipients = new Map<string, { assignmentId: string | null; title: string }>();
 
-    if (booking.userId && booking.userId !== message.userId) {
-      recipients.set(booking.userId, { assignmentId: null });
-    }
-
-    // Payment updates carry the guest's payment details, so providers aren't told about them.
-    const providersMayRead = canSeeThreadMessage("provider", message);
-    for (const assignment of assignments) {
-      if (!providersMayRead || !assignment.providerUserId || assignment.providerUserId === message.userId) {
-        continue;
+    if (fromTbm) {
+      if (conversation.audience === "guest" && booking.userId) {
+        recipients.set(booking.userId, { assignmentId: null, title: "New message from TBM" });
       }
-
-      if (!recipients.has(assignment.providerUserId)) {
-        recipients.set(assignment.providerUserId, { assignmentId: assignment.id });
+      if (conversation.audience === "partner") {
+        const assignment = assignments.find((entry) => entry.providerUserId === conversation.partnerUserId);
+        if (assignment) {
+          recipients.set(conversation.partnerUserId, { assignmentId: assignment.id, title: "New message from TBM" });
+        }
+      }
+    } else {
+      const title = conversation.audience === "partner"
+        ? `Partner message: ${assignments.find((entry) => entry.providerUserId === conversation.partnerUserId)?.serviceName ?? "booking"}`
+        : `New message from ${getInboxSenderRoleLabel(message.senderRole)}`;
+      for (const admin of admins) {
+        recipients.set(admin.id, { assignmentId: null, title });
       }
     }
+    recipients.delete(message.userId);
 
     const createdItems: AppInboxItem[] = [];
     for (const [recipientUserId, recipientContext] of Array.from(recipients.entries())) {
@@ -3475,7 +3615,7 @@ export class DatabaseStorage implements IStorage {
         assignmentId: recipientContext.assignmentId,
         threadKey,
         type: "booking-message",
-        title: `New message from ${getInboxSenderRoleLabel(message.senderRole)}`,
+        title: recipientContext.title,
         body: `${senderLabel}: ${messageExcerpt}`,
         priority: "normal",
         channels: ["in-app", "push"],
@@ -3483,6 +3623,8 @@ export class DatabaseStorage implements IStorage {
           bookingId: message.bookingId,
           senderRole: message.senderRole,
           senderName: senderLabel,
+          audience: conversation.audience,
+          partnerUserId: conversation.audience === "partner" ? conversation.partnerUserId : null,
         },
       }));
     }
@@ -4837,6 +4979,7 @@ export class DatabaseStorage implements IStorage {
 
   // Analytics
   async getDashboardMetrics(): Promise<DashboardMetrics> {
+    await this.ensureInboxTables();
     const [allBookings, allStays, allCars, allCooks, allErrands, allExperiences, allMessages] = await Promise.all([
       this.getBookingAnalyticsRows(),
       this.getStays(),
