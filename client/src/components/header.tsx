@@ -211,11 +211,12 @@ export function Header() {
                 size="sm"
                 className="min-h-10 rounded-full px-3 text-[0.9rem] text-muted-foreground hover:bg-muted/70 hover:text-foreground"
                 onClick={handleLogout}
-                title="Sign out"
+                title="Log out"
                 data-testid="button-logout"
               >
-                <LogOut className="h-4 w-4 mr-2" />
-                Log Out
+                {/* Icon only on laptops, so the nav keeps room for Bookings beside Provider Hub or Admin. */}
+                <LogOut className="h-4 w-4 2xl:mr-2" aria-hidden="true" />
+                <span className="sr-only 2xl:not-sr-only">Log Out</span>
               </Button>
             )}
           </div>
