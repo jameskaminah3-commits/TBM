@@ -8,6 +8,7 @@ import {
   getPublicListingPath,
 } from "@shared/seo";
 import { storage } from "./storage";
+import { getCarDisplayName } from "@shared/listing-share";
 
 type ListingKind = "stay" | "car" | "cook" | "errand" | "experience";
 type ParsedListingRoute = { kind: ListingKind; id: string; isShortLink?: boolean; publicPath?: boolean };
@@ -132,7 +133,7 @@ function buildCarMetadata(car: Car, baseUrl: string, canonicalUrl: string): Shar
   ]);
 
   return {
-    title: getListingSeoTitle("car", `${car.make ? `${car.make} ` : ""}${car.model}`, car.location),
+    title: getListingSeoTitle("car", getCarDisplayName(car), car.location),
     description: buildListingSeoDescription([details, car.description]),
     imageUrl: getListingImage(car, baseUrl),
     canonicalUrl,
@@ -201,7 +202,7 @@ function getListingName(kind: ListingKind, listing: Stay | Car | Cook | Errand |
   if (kind === "stay") return (listing as Stay).title;
   if (kind === "car") {
     const car = listing as Car;
-    return `${car.make ? `${car.make} ` : ""}${car.model}`.trim();
+    return getCarDisplayName(car);
   }
   if (kind === "cook") return (listing as Cook).title;
   if (kind === "errand") return (listing as Errand).serviceName;

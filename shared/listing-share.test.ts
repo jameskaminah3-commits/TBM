@@ -4,6 +4,7 @@ import {
   buildListingShareMessage,
   buildListingShareUrl,
   buildWhatsAppShareHref,
+  getCarDisplayName,
   formatSharePriceLine,
   getListingSharePrice,
   shortShareDescription,
@@ -76,4 +77,11 @@ test("each kind of listing offers its own starting price", () => {
   assert.deepEqual(getListingSharePrice("car", { pricePerDay: 0, priceWithDriver: 140 }), { priceUsd: 140, priceUnit: "a day with a driver" });
   assert.deepEqual(getListingSharePrice("experience", { privatePricePerPerson: 0, sharedPricePerPerson: 45 }), { priceUsd: 45, priceUnit: "a person" });
   assert.equal(getListingSharePrice("errand", { basePrice: 0 }), null);
+});
+
+test("a car is named by make and model, as on its public page", () => {
+  assert.equal(getCarDisplayName({ make: "Toyota", model: "Noah" }), "Toyota Noah");
+  assert.equal(getCarDisplayName({ make: "Toyota", model: "Toyota Noah" }), "Toyota Noah");
+  assert.equal(getCarDisplayName({ make: null, model: "Noah – 7 Seater" }), "Noah – 7 Seater");
+  assert.equal(getCarDisplayName({ make: "Nissan", model: "" }), "Nissan");
 });

@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/select";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { getCarDisplayName } from "@shared/listing-share";
 
 const statusLabels: Record<(typeof vehicleAvailabilityStatuses)[number], string> = {
   available: "Available",
@@ -79,7 +80,7 @@ export default function ProviderAvailability() {
               <Card key={car.id}>
                 <CardHeader className="flex flex-row items-center justify-between gap-4">
                   <div>
-                    <CardTitle className="text-base">{car.model}</CardTitle>
+                    <CardTitle className="text-base">{getCarDisplayName(car)}</CardTitle>
                     <CardDescription>{car.registrationNumber ?? car.location}</CardDescription>
                   </div>
                   <Select

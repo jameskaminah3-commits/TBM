@@ -15,7 +15,7 @@ import { buildCanonicalUrl } from "@/lib/canonical-url";
 import { ListingShareSheet } from "@/components/listing-share-sheet";
 import { useOwnsListing } from "@/hooks/use-owns-listing";
 import { captureListingVisit, trackShareEvent, withShareRef } from "@/lib/marketing-attribution";
-import { getListingSharePrice } from "@shared/listing-share";
+import { getCarDisplayName, getListingSharePrice } from "@shared/listing-share";
 import { ListingUnavailable } from "@/components/listing-unavailable";
 import {
   buildListingSeoDescription,
@@ -44,7 +44,7 @@ const categoryByKind: Record<Exclude<PublicListingKind, "stay">, { href: string;
 function getListingName(kind: Exclude<PublicListingKind, "stay">, listing: PublicListing) {
   if (kind === "car") {
     const car = listing as CarType;
-    return `${car.make ? `${car.make} ` : ""}${car.model}`.trim();
+    return getCarDisplayName(car);
   }
   if (kind === "cook") return (listing as Cook).title;
   if (kind === "errand") return (listing as Errand).serviceName;

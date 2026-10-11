@@ -16,6 +16,7 @@ import {
   type ShareCreditDecision,
 } from "@shared/share-attribution";
 import { getPublicListingPath, type PublicListingKind } from "@shared/seo";
+import { getCarDisplayName } from "@shared/listing-share";
 
 export const shareListingKinds = ["stay", "car", "cook", "errand", "experience"] as const satisfies readonly PublicListingKind[];
 
@@ -78,11 +79,12 @@ export async function getShareListing(kind: PublicListingKind, id: string): Prom
   const config = listingTables[kind];
   if (!config) return null;
   const { rows } = await pool.query(
-    `SELECT id, ${config.name} AS name, is_public, manager_user_id FROM ${config.table} WHERE id = $1`,
+    `SELECT id, ${config.name} AS name, ${kind === "car" ? "make" : "NULL"} AS make, is_public, manager_user_id FROM ${config.table} WHERE id = $1`,
     [id],
   );
   const row = rows[0];
-  return row ? { kind, id: row.id, name: row.name ?? "Listing", isPublic: Boolean(row.is_public), managerUserId: row.manager_user_id ?? null } : null;
+  const name = kind === "car" ? getCarDisplayName({ make: row?.make, model: row?.name }) : row?.name;
+  return row ? { kind, id: row.id, name: name ?? "Listing", isPublic: Boolean(row.is_public), managerUserId: row.manager_user_id ?? null } : null;
 }
 
 type ShareLinkRow = {

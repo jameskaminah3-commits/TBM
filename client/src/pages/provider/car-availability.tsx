@@ -14,7 +14,7 @@ import { AdminMediaField } from "@/components/admin-media-field";
 import { CarZonePricingEditor } from "@/components/car-zone-pricing-editor";
 import type { Car, CarZoneRate } from "@shared/schema";
 import { ListingShareSheet } from "@/components/listing-share-sheet";
-import { getListingSharePrice } from "@shared/listing-share";
+import { getCarDisplayName, getListingSharePrice } from "@shared/listing-share";
 
 type CarAvailability = {
   blockedRanges: Array<{
@@ -167,13 +167,13 @@ export default function ProviderCarAvailability() {
       <div className="container mx-auto p-6 space-y-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h1 className="text-3xl font-semibold tracking-tight">{car?.model ?? "Car Listing"}</h1>
+            <h1 className="text-3xl font-semibold tracking-tight">{car ? getCarDisplayName(car) : "Car Listing"}</h1>
             <p className="text-muted-foreground mt-1">
               Next available date: {availability?.availableFrom ?? "Loading..."}
             </p>
           </div>
           {car ? (
-            <ListingShareSheet kind="car" id={car.id} name={car.model} description={car.description} {...getListingSharePrice("car", car)} isPublic={car.isPublic} source="provider" size="default" triggerLabel="Share listing" />
+            <ListingShareSheet kind="car" id={car.id} name={getCarDisplayName(car)} description={car.description} {...getListingSharePrice("car", car)} isPublic={car.isPublic} source="provider" size="default" triggerLabel="Share listing" />
           ) : null}
         </div>
 

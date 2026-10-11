@@ -128,6 +128,7 @@ import {
   listingVerificationTasks,
   users,
 } from "@shared/schema";
+import { getCarDisplayName } from "@shared/listing-share";
 import { hasLockedInBookingDeposit } from "@shared/booking-payments";
 import { kenyaClockMinutes, todayInKenya } from "@shared/calendar-dates";
 import { calculateCookInclusiveTotal, calculateCookServiceTotal } from "@shared/cook-pricing";
@@ -770,7 +771,7 @@ function getStaySelectionAllocation(
     return {
       category: "cars",
       serviceId: selection.serviceId,
-      serviceName: car?.model || "Car service",
+      serviceName: car ? getCarDisplayName(car) : "Car service",
       revenue,
     };
   }
@@ -1042,7 +1043,7 @@ function getDesiredStandaloneBookingAssignment(
       providerCategory: "cars",
       providerUserId: normalizeOptionalUserId(car.managerUserId),
       serviceId: car.id,
-      serviceName: car.model,
+      serviceName: getCarDisplayName(car),
       serviceConfig: buildStandaloneAssignmentConfig(booking, car.id, "cars"),
       revenue: getBookingGrossRevenue(booking),
       grossAmount: 0,
@@ -5762,7 +5763,7 @@ export class DatabaseStorage implements IStorage {
         ? db.select({ id: stays.id, title: stays.title }).from(stays).where(inArray(stays.id, accommodationIds))
         : Promise.resolve([]),
       selectedServiceIds.length > 0
-        ? db.select({ id: cars.id, model: cars.model }).from(cars).where(inArray(cars.id, selectedServiceIds))
+        ? db.select({ id: cars.id, model: cars.model, make: cars.make }).from(cars).where(inArray(cars.id, selectedServiceIds))
         : Promise.resolve([]),
       selectedServiceIds.length > 0
         ? db.select({ id: cooks.id, title: cooks.title }).from(cooks).where(inArray(cooks.id, selectedServiceIds))
@@ -5804,7 +5805,7 @@ export class DatabaseStorage implements IStorage {
           serviceSummaries.push({
             type: "car",
             id: car.id,
-            title: car.model,
+            title: getCarDisplayName(car),
           });
           return;
         }
@@ -5952,7 +5953,7 @@ export class DatabaseStorage implements IStorage {
         assignedStayIds: assignedStays.map((stay) => stay.id),
         assignedStayTitles: assignedStays.map((stay) => stay.title),
         assignedCarIds: assignedCars.map((car) => car.id),
-        assignedCarTitles: assignedCars.map((car) => car.model),
+        assignedCarTitles: assignedCars.map((car) => getCarDisplayName(car)),
         assignedCookIds: assignedCooks.map((cook) => cook.id),
         assignedCookTitles: assignedCooks.map((cook) => cook.title),
         assignedErrandIds: assignedErrands.map((errand) => errand.id),
