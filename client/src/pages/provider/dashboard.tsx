@@ -30,6 +30,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { BookingThread } from "@/components/booking-thread";
 import { SharedGuestContact } from "@/components/shared-guest-contact";
+import { JobEarnings } from "@/components/job-earnings";
 import { RequestBriefAccordion } from "@/components/request-brief-accordion";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useCurrency } from "@/lib/currency";
@@ -1999,6 +2000,7 @@ export default function ProviderDashboard() {
                           <div className="mt-2 text-sm font-medium text-foreground">{getProgressStatusLabel(dashboardStatus)}</div>
                         </div>
                       </div>
+                      <JobEarnings assignmentId={booking.assignment.id} />
                       <SharedGuestContact bookingId={booking.booking.id} />
                       <BookingThread
                         bookingId={booking.booking.id}
@@ -2060,6 +2062,7 @@ export default function ProviderDashboard() {
                       detail={getCarModeSummary(booking)}
                       statusContent={withPaymentStage(booking, <Badge variant="outline">{getProgressStatusLabel(dashboardStatus)}</Badge>)}
                     >
+                      <JobEarnings assignmentId={booking.assignment.id} />
                       <SharedGuestContact bookingId={booking.booking.id} />
                       <BookingThread
                         bookingId={booking.booking.id}
@@ -2222,6 +2225,7 @@ export default function ProviderDashboard() {
                         </div>
                       ) : null}
                     </div>
+                      <JobEarnings assignmentId={booking.assignment.id} />
                       <SharedGuestContact bookingId={booking.booking.id} />
                       <BookingThread
                         bookingId={booking.booking.id}
@@ -2296,6 +2300,7 @@ export default function ProviderDashboard() {
                         Estimated receipt value: <span className="font-medium text-foreground">{formatAmount(getAssignmentBudgetAmount(booking) ?? 0)}</span>
                       </div>
                     ) : null}
+                      <JobEarnings assignmentId={booking.assignment.id} />
                       <SharedGuestContact bookingId={booking.booking.id} />
                       <BookingThread
                         bookingId={booking.booking.id}
@@ -2477,6 +2482,7 @@ export default function ProviderDashboard() {
                         </div> : null}
                       </div>
                     ) : null}
+                      <JobEarnings assignmentId={booking.assignment.id} />
                       <SharedGuestContact bookingId={booking.booking.id} />
                       <BookingThread
                         bookingId={booking.booking.id}

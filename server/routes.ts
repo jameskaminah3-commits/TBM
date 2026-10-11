@@ -59,7 +59,7 @@ import {
 } from "@shared/schema";
 import { listUploads, saveBase64Upload } from "./media";
 import { toPublicListing, withoutProviderProtectedFields } from "./listing-privacy";
-import { toProviderAssignment, toProviderBooking, toProviderPaymentData } from "./provider-booking-view";
+import { partnerGuestName, toPartnerInboxItem, toProviderAssignment, toProviderBooking, toProviderPaymentData } from "./provider-booking-view";
 import { toPartnerAvailability, toPublicAvailability } from "./availability-view";
 import { diffListingFields } from "./listing-edits";
 import { resolveShortLinkPath } from "./share-metadata";
@@ -4759,7 +4759,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // A provider's message alerts come from their conversation with TBM. Older
       // alerts quoted the shared booking chat (guest messages, payment updates).
       res.json(req.user.claims.role === "provider"
-        ? items.filter((item: any) => item.type !== "booking-message" || item.metadata?.audience === "partner")
+        ? items.filter((item: any) => item.type !== "booking-message" || item.metadata?.audience === "partner").map(toPartnerInboxItem)
         : items);
     } catch (error) {
       console.error("[INBOX] Failed to fetch inbox items:", error);
@@ -6495,6 +6495,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         providerUserId: parsed.data.providerUserId,
         sharePhone: parsed.data.sharePhone,
         shareEmail: parsed.data.shareEmail,
+        shareFullName: parsed.data.shareFullName,
         reason: parsed.data.reason,
         grantedBy: req.user.claims.sub,
         expiresAt: new Date(Date.now() + parsed.data.hours * 60 * 60 * 1000).toISOString(),
@@ -6752,6 +6753,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         bookingId: release.bookingId,
         sharePhone: release.sharePhone,
         shareEmail: release.shareEmail,
+        shareFullName: release.shareFullName,
         reason: release.reason,
         expiresAt: release.expiresAt,
       })));
@@ -6778,7 +6780,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.recordGuestContactView(release);
       res.json({
         bookingId: booking.id,
-        guestName: booking.guestName,
+        guestName: release.shareFullName ? booking.guestName : partnerGuestName(booking.guestName),
         phone: release.sharePhone ? booking.guestPhone ?? null : null,
         email: release.shareEmail ? booking.guestEmail : null,
         reason: release.reason,

@@ -136,6 +136,7 @@ import { getWebPushPublicConfig, sendWebPushNotification } from "./push";
 import { db, pool } from "./db";
 import { sanitizeOptionalUserRecord, sanitizeUserRecord, sanitizeUserRecords } from "./user-sanitizer";
 import { and, asc, desc, eq, gt, inArray, isNull } from "drizzle-orm";
+import { partnerGuestName, toPartnerInboxItem } from "./provider-booking-view";
 import { PAYMENT_MESSAGE_ROLE, getConversationThreadKey, getMessageAudience, isPaymentThreadMessage, type BookingConversation } from "@shared/booking-thread";
 import { queueNotificationTask, sendProviderAssignmentEmail } from "./notifications";
 import { formatCalendarDateRange, formatKenyaDateTime } from "@shared/calendar-dates";
@@ -1814,6 +1815,7 @@ export class DatabaseStorage implements IStorage {
         provider_user_id varchar NOT NULL,
         share_phone boolean NOT NULL DEFAULT true,
         share_email boolean NOT NULL DEFAULT false,
+        share_full_name boolean NOT NULL DEFAULT false,
         reason text NOT NULL,
         granted_by varchar NOT NULL,
         granted_at text NOT NULL,
@@ -1821,6 +1823,7 @@ export class DatabaseStorage implements IStorage {
         revoked_at text,
         revoked_by varchar
       );
+      ALTER TABLE guest_contact_releases ADD COLUMN IF NOT EXISTS share_full_name boolean NOT NULL DEFAULT false;
       CREATE INDEX IF NOT EXISTS guest_contact_releases_booking_idx
         ON guest_contact_releases (booking_id, provider_user_id, expires_at);
       CREATE TABLE IF NOT EXISTS guest_contact_release_views (
@@ -3224,7 +3227,8 @@ export class DatabaseStorage implements IStorage {
   // TBM shared a guest's contact with a partner: the partner hears what was
   // shared, why and until when, but not the details themselves.
   async notifyPartnerOfGuestContactRelease(release: GuestContactRelease, assignment: BookingServiceAssignment): Promise<void> {
-    const shared = [release.sharePhone ? "phone number" : null, release.shareEmail ? "email" : null].filter(Boolean).join(" and ");
+    const shared = [release.shareFullName ? "full name" : null, release.sharePhone ? "phone number" : null, release.shareEmail ? "email" : null]
+      .filter(Boolean).join(", ").replace(/, ([^,]*)$/, " and $1");
     await this.createInboxItem({
       userId: release.providerUserId,
       actorUserId: release.grantedBy,
@@ -3299,7 +3303,7 @@ export class DatabaseStorage implements IStorage {
           providerEmail: provider.email,
           providerName: provider.firstName?.trim() || "there",
           serviceName,
-          guestName: booking.guestName,
+          guestName: partnerGuestName(booking.guestName),
           checkIn: booking.checkIn,
           checkOut: booking.checkOut,
           reassigned: type === "assignment-reassigned",
@@ -3312,12 +3316,12 @@ export class DatabaseStorage implements IStorage {
       assignmentId,
       type,
       title: type === "assignment-reassigned" ? `Reassigned: ${serviceName}` : `New assignment: ${serviceName}`,
-      body: `${booking.guestName} needs ${serviceName} on ${bookingWindow}.`,
+      body: `${partnerGuestName(booking.guestName)} needs ${serviceName} on ${bookingWindow}.`,
       priority: "high",
       channels: ["in-app", "push"],
       metadata: {
         serviceName,
-        guestName: booking.guestName,
+        guestName: partnerGuestName(booking.guestName),
       },
     });
   }
@@ -4046,7 +4050,7 @@ export class DatabaseStorage implements IStorage {
     const inboxItems = await this.getUserInbox(userId);
     return inboxItems
       .filter((item) => item.assignmentId && isAppInboxItemType(item.type) && item.type !== "booking-message")
-      .map(toProviderNotification);
+      .map((item) => toProviderNotification(toPartnerInboxItem(item)));
   }
 
   async markProviderNotificationRead(id: string, userId: string): Promise<ProviderNotification | undefined> {
