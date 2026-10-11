@@ -15,3 +15,6 @@ uploads/
 
 # Storage inventory output (production file paths and record IDs): keep private
 storage-inventory-*/
+
+# Protected files stored locally in development (never served publicly)
+private-uploads/

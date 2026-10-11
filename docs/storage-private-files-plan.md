@@ -1,118 +1,219 @@
 # Making vehicle documents and fleet-application files private
 
-Status: **plan for review (11 Oct 2026). Nothing in production has been changed.** The inventory tools are read-only. Every step that changes production storage or data needs the owner's approval, and is run by someone authorised to hold production credentials.
+Status (11 Oct 2026):
+- **Built and tested on the dev branch only.** It is not released. Production storage and data are unchanged.
+- Tested against a local database and a local stand-in for Supabase Storage. It has not been run against a real Supabase project.
+- Releasing it, and moving existing files, each need the owner's approval. They are run by someone authorised to hold production credentials.
 
-## How files are stored today (from the code)
+The rule: **customers see listings and their photos, and nothing else.**
+- Logbooks, insurance and inspection certificates, licences and registration papers are for compliance. Only TBM and the partner who manages the vehicle can open them.
+- An applicant's files are for TBM's review only.
+- A guest's request photo is for TBM, that guest and the partners working on that booking.
 
-- **One bucket for everything.** Every upload (listing photos, vehicle documents, fleet-application documents and photos, custom-request photos, blog images) goes into one Supabase bucket, `SUPABASE_MEDIA_BUCKET` (`server/media.ts`).
-- **Permanent public links.** Each upload is saved as `YYYY-MM-DD/<timestamp>-<12 hex>.<ext>`, and the app stores its permanent public URL (`getPublicUrl`). Anyone holding a link can open the file; no sign-in is involved. Files are served with `Cache-Control: max-age=3600`.
-- **Old local uploads.** `/uploads/<file>` links redirect to `legacy/<file>` in the same bucket.
-- **Document types.**
-  - Vehicle documents are uploaded through `POST /api/provider/documents/upload` (partners and admins) and stored as links in `cars.documents`.
-  - Fleet-application files are uploaded through `POST /api/fleet-applications/upload`, **with no sign-in**, before the application is submitted, and stored as links in `fleet_applications.document_urls` and `photo_urls`.
-  - The application form asks for the registration logbook, insurance certificate, inspection certificate and tourism licence. When an application is approved, its document links are copied into the new car's `documents`.
-  - Custom-request photos (`POST /api/custom-service-requests/upload`, signed-in guests) are written into the booking's request text as `Attachment: <link>`.
-- **Orphaned uploads.** An application that was started and abandoned, or an anonymous upload, leaves files in the bucket that no record points at.
+## How files were stored before this change
+
+- **One public bucket for everything.** Every upload went into `SUPABASE_MEDIA_BUCKET` (`server/media.ts`). That covered listing photos, vehicle documents, fleet-application documents and photos, custom-request photos and blog images.
+- **Permanent public links.** Each upload was saved as `YYYY-MM-DD/<timestamp>-<12 hex>.<ext>`, and the app stored its permanent public URL.
+  - Anyone holding a link could open the file without signing in.
+  - Files are served with `Cache-Control: max-age=3600`.
+  - `/uploads/<file>` links redirect to `legacy/<file>` in the same bucket.
+- **Where links were kept.**
+  - Vehicle documents: `cars.documents`.
+  - Fleet-application files: `fleet_applications.document_urls` and `photo_urls`. These were uploaded **with no sign-in**, before the application was submitted.
+  - When an application was approved, its document links were copied into the new car's `documents`.
+  - Custom-request photos: written into the booking's request text as `Attachment: <link>`.
+- **Orphaned uploads.** Abandoned applications left files in the bucket that no record points at.
 - **Who had links.**
-  - Until `eb97639` (pushed to `main` on 11 Oct, live deploy unverified), `GET /api/cars` and `/api/cars/:id` gave every car's document links to anyone.
-  - Until the same fix, the media library (`GET /api/admin/media`) listed the newest 200 bucket files to every partner, including other partners' and applicants' files.
+  - Until `eb97639`, `GET /api/cars` and `/api/cars/:id` gave every car's document links to anyone. That fix is on `main`; whether it is live is unverified.
+  - Until the same fix, the media library (`GET /api/admin/media`) listed the newest 200 bucket files to every partner.
   - Links may also have been copied into emails, chats or browser histories.
-- **The public key.** The browser app ships the Supabase public (anon) key. Whether that key can list the bucket depends on the storage policies, which are not in this repository. Query A2 below shows them.
 
-## Step 1: inventory (read-only, run now)
+## What is built on dev
 
-1. In the Supabase SQL editor, run sections A and B of `docs/storage-and-exposure-queries.sql`. They show:
-   - whether the bucket is public;
-   - which policies let the public list it;
-   - how many files of each type and month it holds;
-   - how many document links cars and fleet applications have, by document type.
-2. From a trusted machine with production credentials, run:
-   ```
-   npx tsx scripts/storage-inventory.ts --out ./storage-inventory-private
-   ```
-   It writes:
-   - `objects.csv`: every file, its category, whether it should be private, its size, type and date, and which records point at it;
-   - `missing-files.csv`: records pointing at files that no longer exist;
-   - `summary.json`: counts per category, date ranges, whether the bucket is public, whether the public key can list it, and the HTTP status of a HEAD request (headers only) for three files that should be private.
-   
-   It never downloads, changes or deletes a file. Keep the output private.
-3. Decide from the counts. If there are no vehicle or application documents and no orphaned PDFs, step 3 is short. If there are, step 3 handles every one of them, including the orphans.
+### Private storage
 
-Categories the script uses:
+- **A private bucket.**
+  - Name: `SUPABASE_PRIVATE_BUCKET`, default `tbm-private-files`.
+  - On start-up the server creates it as private if it is missing.
+  - If the bucket exists but is public, or has the same name as the media bucket, the server refuses to use it and logs an error. Uploads of protected files then fail rather than go public.
+- **Local-disk setup.** Files go to `private-uploads/`, which is never served as static files and is ignored by git.
+- **Opaque names.** Files are stored as `<kind>/<YYYY-MM>/<32 random hex>.<ext>`. The kinds are `vehicle-document`, `fleet-application`, `guest-attachment` and `quarantine`.
+- **What the database holds.** Records hold `/api/files/<key>`, a link to the app itself, not to storage. The link is useless without a signed-in account that is allowed to open the file.
+- **New tables** (migration `0020_private_files.sql`; the server also creates them if missing):
+  - `private_files`: one row per protected file (kind, uploader, type, size).
+  - `private_file_access`: every attempt to open one, allowed or not, with the user, role, reason and time.
+  - `storage_migrations`: one row per file moved from the public bucket.
 
-| Category | From | Should be private |
+### Who can open a file: `GET /api/files/<key>`
+
+| Who | Vehicle documents | Application files | Guest request photos | Quarantined files |
+|---|---|---|---|---|
+| Signed out | No (401) | No (401) | No (401) | No (401) |
+| TBM admin | Yes | Yes | Yes | Yes |
+| The partner who uploaded it | Yes | n/a (applicants upload without an account) | n/a | No |
+| The partner managing a car whose documents list it | Yes | n/a | n/a | No |
+| The guest who made the request | n/a | n/a | Yes | No |
+| A partner working on that booking | n/a | n/a | Yes | No |
+| Anyone else | No (404) | No (404) | No (404) | No (404) |
+
+How the route works:
+- A refusal to a signed-in user is a 404, so it doesn't confirm that the file exists.
+- **Every attempt is logged**, including signed-out ones and refusals.
+- Allowed requests are redirected to a signed storage link issued for **5 minutes**. On the local-disk setup, the file is sent directly.
+- Responses carry `Cache-Control: private, no-store`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`.
+- Paths with `..`, `.` or empty segments, and unknown kinds, are refused.
+
+### Uploads
+
+| Endpoint | Before | Now |
 |---|---|---|
-| `vehicle-document` | `cars.documents` | Yes |
-| `fleet-application-document` | `fleet_applications.document_urls` | Yes |
-| `fleet-application-photo` | `fleet_applications.photo_urls` | Yes, until approved (then the listing's chosen photos are public) |
-| `guest-attachment` | `Attachment:` links in bookings | Yes |
-| `unreferenced-pdf` | No record points at it | Yes, as likely abandoned application documents |
-| `listing-photo`, `blog-image` | Listing and blog image fields | No, they are meant to be public |
-| `unreferenced-media` | No record points at it | Review; usually abandoned photo uploads |
+| `POST /api/provider/documents/upload` | public bucket | private, kind `vehicle-document`, uploader recorded |
+| `POST /api/fleet-applications/upload` (no sign-in) | public bucket, no limit | private, kind `fleet-application`; **30 uploads per IP per hour** |
+| `POST /api/custom-service-requests/upload` | public bucket | private, kind `guest-attachment`, uploader recorded |
 
-## Step 2: stop new sensitive files going public (code, needs a release)
+The existing type, size and file-signature checks are unchanged. The response field names are also unchanged, so the pages didn't need to change.
 
-Built on the dev branch, released only with approval:
+### Records that refuse public links
 
-- **A private bucket.** For example `tbm-private-documents`, with `public = false` and no anon or authenticated policies. Only the server's service role reaches it.
-- **Private document uploads.** Vehicle documents, fleet-application files and custom-request attachments are stored there under an opaque key, such as `documents/<random>`. The database stores the key, not a URL.
-- **An authorised file route.** `GET /api/files/:key` checks who is asking:
-  - admins: any file;
-  - the partner who manages the car: that car's documents;
-  - the guest who owns the booking: their own attachment.
-  
-  It then redirects to a signed URL that expires in 5 minutes, with `Cache-Control: private, no-store`. Each access is logged, as for contact releases.
-- **A protected application upload.** `POST /api/fleet-applications/upload` keeps working for applicants without an account, but:
-  - it needs a short-lived upload token issued with the application form (signed by the server, valid for about an hour, limited to a few files);
-  - it is rate-limited per IP;
-  - it keeps the existing type, size and file-signature checks;
-  - files go to the private bucket.
-- **Screens.** Admin › Fleet applications and the car document lists open files through the authorised route.
+- **Saving a car's documents** (`POST`/`PATCH` on `/api/provider/cars` and `/api/admin/cars`):
+  - each new document must be a protected file;
+  - a partner can only add files they uploaded;
+  - TBM can add any protected file, but not a public link;
+  - documents already on the car are kept as they are.
+- **Submitting a fleet application** (`POST /api/fleet-applications`): every photo and document must be a protected application file. Otherwise the applicant sees "Please upload your photos and documents again."
+- **Submitting a custom request** (`POST /api/custom-service-requests`): the attachment must be the requester's own protected photo. Otherwise they see "Please attach your photo again."
 
-This protects **new** files only. Every file already in the public bucket stays public until step 3.
+### Approving an application
 
-## Step 3: existing files and old links (one-off migration, needs approval)
+- **Documents** go to the new car and stay private.
+- **Vehicle photos** are copied into the public bucket at that moment, because they become the listing's photos.
+- The new car starts **hidden** (`isPublic: false`), so TBM sees the photos before customers do.
+- Front and rear photos may show the number plate, which is otherwise a protected field. Check or crop them before making the car public.
 
-Run as a script in two passes, `--dry-run` first, reviewed before the real run:
+### Not changed
 
-1. **Copy.** For each object the inventory marks private, copy it server-side into the private bucket. The service role does this inside Supabase, and contents don't leave it.
-2. **Repoint.** Update each referring record (`cars.documents`, `fleet_applications.document_urls`/`photo_urls`, the booking's attachment link) to the new key, in a transaction.
-3. **Record.** Write each move to a mapping table: old path, new key, record, time. This is the audit trail and the way back.
-4. **Verify.** Each new key opens through the authorised route, and every referring record now points at a key.
-5. **Remove the public copy.** Delete it from the public bucket only after verification. Old public links then return an error from Supabase instead of the file.
-6. **Orphans.** Don't delete them. Move them to a private quarantine prefix, because the legal adviser may want them preserved as evidence (see the incident fact sheet). Decide retention with the adviser.
-7. **Check old links are dead.** Re-run the inventory: the public bucket holds no private-category objects, and a HEAD request on a sample of old document links returns 400 or 404.
-8. **Allow for caching.** Supabase's CDN may serve a cached copy for up to the `max-age` (1 hour) after deletion. If `SUPABASE_MEDIA_PUBLIC_BASE_URL` points at another CDN, purge it there too. Re-test after the cache window.
+- Listing photos, blog images and the media library stay public, as intended.
+- Public listing endpoints already leave out `documents`, registration number and other protected fields (`server/listing-privacy.ts`).
+- A partner could still upload a document photo as a listing photo by mistake. TBM's review of listing changes is the check for that.
+
+### A change from the earlier plan
+
+The earlier plan suggested a short-lived upload token for the application form. It was not built, because anyone can load the form and get a token, so it adds little. What protects the files now:
+- uploads land in private storage, so the endpoint can't be used to publish files;
+- the per-IP limit caps abuse;
+- an application only accepts application files.
+
+## Existing files: the one-off move
+
+New uploads being private **does not protect files already in the public bucket.** They stay public until they are moved.
+
+The tool is `scripts/migrate-private-files.ts` (logic in `server/private-files-migration.ts`). It uses the same classification as the inventory (`server/storage-inventory.ts`):
+
+| Category | Moved to |
+|---|---|
+| `vehicle-document` (in `cars.documents`) | `vehicle-document/migrated/<old path>` |
+| `fleet-application-document`, `fleet-application-photo` | `fleet-application/migrated/<old path>` |
+| `guest-attachment` (`Attachment:` links in bookings) | `guest-attachment/migrated/<old path>` |
+| `unreferenced-pdf` (no record points at it) | `quarantine/migrated/<old path>`: TBM only, kept as possible evidence |
+| `listing-photo`, `blog-image`, `unreferenced-media` | not moved |
+
+A photo used by both an application and a listing counts as a listing photo, so a live listing never loses its pictures.
+
+The steps are separate and each one is run on purpose:
+
+1. **Dry run** (the default): lists what would move, by category, with record IDs. Changes nothing.
+2. **`--apply`**: for each file:
+   - copies it into the private bucket, server-side;
+   - in one transaction, points every record that used it at the private link and logs the move;
+   - checks the private copy exists.
+   
+   **The public copy stays**, so this step can be undone.
+3. **`--remove-public`**: deletes the public copies of checked moves, then sends a header-only request to up to five old links to confirm they fail.
+4. **`--restore-references`** (only before step 3): points records back at the public copies and forgets those moves. The private copies are kept.
+
+The output has file paths and record IDs only, with no names or contact details. Running it again moves nothing twice.
+
+## Runbook (needs approval for each step)
+
+**Before the release**
+1. Export Supabase's storage logs for as far back as they go. They are the only record of who opened public links before. See the incident fact sheet.
+2. Run the read-only inventory: sections A and B of `docs/storage-and-exposure-queries.sql`, and `npx tsx scripts/storage-inventory.ts --out ./storage-inventory-private`. Keep the output private.
+
+**Release (needs approval)**
+3. Optional: set `SUPABASE_PRIVATE_BUCKET`. The default is `tbm-private-files`. No new secret is needed; the existing service-role key is used.
+4. Deploy. The predeploy step creates the three new tables. Migration `0020_private_files.sql` does the same if run by hand.
+5. Check the server log for `[private-files]` errors. In Supabase, confirm the private bucket exists and **Public** is off.
+6. Smoke test:
+   - upload a vehicle document as a test partner and open it from their documents page;
+   - open the same link signed out (expect 401) and as another partner (expect 404).
+
+**Existing files (needs approval)**
+7. Run `npx tsx scripts/migrate-private-files.ts` (the dry run). Check that the counts match the inventory.
+8. Run `--apply`. Expect `failed: 0` and `verified` equal to `moved`. Spot-check in the app:
+   - a car's documents open for its partner;
+   - an application's files open for an admin;
+   - a booking's request photo opens for the guest.
+9. Run `--remove-public`. Old public links stop working.
+   - The CDN can still serve a cached copy for up to **1 hour**.
+   - If `SUPABASE_MEDIA_PUBLIC_BASE_URL` points at another CDN, purge it there.
+   - Re-test a few old links after the hour.
+10. Re-run the inventory. Expect zero files in protected categories in the public bucket.
+11. Record what was done, when and by whom, for the incident file.
+
+**Rollback**
+- **Code:** redeploy the previous release.
+  - New protected files stay in the private bucket, but their links would no longer open.
+  - So only roll back code before `--remove-public`, and run `--restore-references` first.
+- **Step 8 (`--apply`):** `--restore-references` points records back at the public copies.
+- **After step 9:** the private copies remain and the records already point at them. There is nothing to restore. Re-publishing the files is possible, but not advised.
 
 What this cannot do:
 - recall copies already downloaded, forwarded, or kept in someone's browser cache or chat app;
-- prove who opened a link in the past, unless Supabase's storage logs for that period still exist. They are kept for a limited time that depends on the plan, so check and export them now.
+- show who opened a public link in the past, unless Supabase's storage logs for that period still exist.
 
-### Rollback for step 3
+## Still to do after the move
 
-- **Before deleting public copies:** reverse by repointing records to the old paths from the mapping table.
-- **After deleting:** the private copies remain; repoint the records and serve them through the authorised route. Re-publishing them is possible from the private copies, but not advised.
+- Turn off listing for the public key on the media bucket, if query A2 shows a policy that allows it.
+- Add the inventory to a monthly check: zero protected files in the public bucket.
+- Decide, with the legal adviser, how long quarantined files are kept.
 
-## Step 4: tidy up and prevent recurrence
+## Tests run on dev (local data and a local storage stand-in; not live)
 
-- Turn off listing for the public key on the media bucket, if A2 shows a policy that allows it.
-- Keep `/api/admin/media` admin-only for documents (done in `eb97639` for non-admins), and exclude document categories from the media library entirely.
-- Add the inventory to a monthly check: zero private-category objects in the public bucket.
-- Record what was done, when and by whom, for the incident file.
+- **`server/private-file-access.test.ts`:** the access rules (5 tests).
+- **`server/storage-inventory.test.ts`:** classification, including a shared photo staying public.
+- **Full unit suite:** 175/175 pass. Type check, client build and server bundle are clean.
 
-## Tests before each step is called done
+**Protected files end to end, with the Supabase stand-in: 37/37.**
+- Every upload lands in the private bucket and never in the public one.
+- Each is opened by exactly the people in the table above, through a signed link marked not to be cached.
+- Path tricks such as `..` and encoded `..` are refused.
+- The per-IP upload limit applies.
+- Applications, car documents and request photos refuse public links.
+- Approval publishes the photos and keeps the documents private.
+- Each attempt is logged, including refusals and signed-out attempts.
 
-- **Step 1:** inventory output reviewed; counts reconcile with queries A and B.
-- **Step 2:**
-  - an upload lands in the private bucket;
-  - the stored value is a key, not a URL;
-  - the authorised route returns 302 to a signed link for the admin and the owning partner, and 403 or 404 for another partner, a guest and a signed-out visitor;
-  - the signed link expires;
-  - the upload endpoint refuses requests without a valid token, and over its rate limit.
-- **Step 3:**
-  - the dry run lists every expected object;
-  - the real run reports zero failures;
-  - the post-migration inventory shows zero private-category objects in the public bucket;
-  - old links return 400 or 404 after the cache window;
-  - every referring record opens through the authorised route.
-- **Live:** each of these is repeated against production after release. Results run against a local copy are labelled as such and don't count as verified on live.
+Not covered by a test:
+- the 5-minute expiry of signed links. It is set in code (`signedUrlSeconds`) and enforced by Supabase.
+- the approved car starting hidden. That behaviour already existed and is unchanged.
+
+**A public "private" bucket is refused.** With the private bucket set to public, start-up refuses it, uploads fail, and nothing is stored.
+
+**Moving existing files: 22/22.**
+- The dry run lists exactly the protected files, leaves listing photos out and changes nothing.
+- `--apply` repoints the car, the application and the booking. The right people can open the moved files and others can't.
+- Orphans are quarantined.
+- Running it again moves nothing.
+- `--remove-public` makes old links fail and leaves listing photos untouched. Every move is recorded.
+- `--restore-references` undoes a move whose public copy still exists.
+
+**Local-disk setup: 5/5.** Files are stored outside the public uploads folder and opened only by the right people.
+
+**TBM's car routes: 4/4.** An admin edit keeps a car's existing documents, can add a protected document, and can't add a public link when editing or creating a car.
+
+**Regression suites still pass:**
+- partner privacy API checks: 106/106;
+- messaging screens: 17/17;
+- listing sharing: 17/17;
+- public listing fields: 22/22.
+
+**Live:** none of this is verified on the live site. Repeat the smoke test and runbook checks against production after release.

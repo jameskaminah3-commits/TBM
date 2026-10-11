@@ -25,13 +25,15 @@ export type StorageCategory =
   | "unreferenced-media";
 
 // The more sensitive a source, the earlier it comes: an object referenced as a
-// vehicle document and as a listing photo is treated as a document.
+// vehicle document and as a listing photo is treated as a document. A listing
+// photo outranks an application photo: when an approved application's photo
+// became the car's listing photo, it is meant to be public.
 const sourcePriority: FileReferenceSource[] = [
   "car-document",
   "fleet-application-document",
   "guest-attachment",
-  "fleet-application-photo",
   "listing-photo",
+  "fleet-application-photo",
   "blog-image",
   "other",
 ];

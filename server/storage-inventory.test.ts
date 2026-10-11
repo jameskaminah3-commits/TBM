@@ -35,6 +35,9 @@ test("an object is classed by the most sensitive record pointing at it", () => {
   assert.equal(classifyObject("d/2.jpg", [photo], "image/jpeg"), "listing-photo");
   assert.equal(classifyObject("d/3.pdf", [], "application/pdf"), "unreferenced-pdf", "a PDF nobody points at may be an abandoned application's document");
   assert.equal(classifyObject("d/4.jpg", [], "image/jpeg"), "unreferenced-media");
+  const applicationPhoto: FileReference = { source: "fleet-application-photo", table: "fleet_applications", recordId: "f1" };
+  assert.equal(classifyObject("d/5.jpg", [applicationPhoto], "image/jpeg"), "fleet-application-photo", "an application photo stays private");
+  assert.equal(classifyObject("d/5.jpg", [applicationPhoto, photo], "image/jpeg"), "listing-photo", "once it is the car's listing photo, it is public");
 });
 
 test("the inventory lists every object, missing files, and what should be private", () => {
