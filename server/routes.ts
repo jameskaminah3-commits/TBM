@@ -73,6 +73,7 @@ import {
   type RoomClaim,
 } from "@shared/hotel-rooms";
 import { listUploads, saveBase64Upload } from "./media";
+import { toPublicListing, withoutProviderProtectedFields } from "./listing-privacy";
 import { db } from "./db";
 import { bookings, users, stays, cars, cooks, errands, experiences, listings, blogPosts, customOffers, stayReservations, carReservations, cookReservations } from "@shared/schema";
 import { calculateCookInclusiveTotal, calculateCookServiceTotal, getCookMinimumGuests } from "@shared/cook-pricing";
@@ -3129,8 +3130,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/admin/media", requireProviderOrAdmin, async (_req, res) => {
+  app.get("/api/admin/media", requireProviderOrAdmin, async (req: any, res) => {
     try {
+      // A provider's library holds only the photos on their own listings. The shared
+      // bucket also holds other providers' photos and documents, and applicants' files.
+      if (req.user.claims.role !== "admin") {
+        const ownerId = req.user.claims.sub;
+        const ownRows = await Promise.all([
+          db.select({ imageUrl: stays.imageUrl, galleryUrls: stays.galleryUrls }).from(stays).where(eq(stays.managerUserId, ownerId)),
+          db.select({ imageUrl: cars.imageUrl, galleryUrls: cars.galleryUrls }).from(cars).where(eq(cars.managerUserId, ownerId)),
+          db.select({ imageUrl: cooks.imageUrl, galleryUrls: cooks.galleryUrls }).from(cooks).where(eq(cooks.managerUserId, ownerId)),
+          db.select({ imageUrl: errands.imageUrl, galleryUrls: errands.galleryUrls }).from(errands).where(eq(errands.managerUserId, ownerId)),
+          db.select({ imageUrl: experiences.imageUrl, galleryUrls: experiences.galleryUrls }).from(experiences).where(eq(experiences.managerUserId, ownerId)),
+        ]);
+        const ownUrls = new Set<string>();
+        for (const row of ownRows.flat()) {
+          for (const url of [row.imageUrl, ...(row.galleryUrls ?? [])]) {
+            if (url && !url.includes("unsplash.com")) ownUrls.add(url);
+          }
+        }
+        return res.json({
+          items: Array.from(ownUrls).map((url) => ({ url, type: "image" as const, uploadedAt: new Date(0).toISOString() })),
+        });
+      }
+
       const [stayRows, carRows, cookRows, errandRows, experienceRows, listingRows, blogRows] = await Promise.all([
         db.select({ imageUrl: stays.imageUrl, galleryUrls: stays.galleryUrls }).from(stays),
         db.select({ imageUrl: cars.imageUrl, galleryUrls: cars.galleryUrls }).from(cars),
@@ -7439,7 +7462,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const validatedData = insertErrandSchema.parse({
-        ...req.body,
+        ...withoutProviderProtectedFields(req.body, req.user.claims.role === "admin"),
         managerUserId: req.user.claims.sub,
         isPublic: false,
       });
@@ -7479,7 +7502,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "Forbidden" });
       }
 
-      const parsed = insertErrandSchema.partial().parse(req.body);
+      const parsed = insertErrandSchema.partial().parse(withoutProviderProtectedFields(req.body, req.user.claims.role === "admin"));
       const updatedErrand = await storage.updateErrand(req.params.id, {
         ...parsed,
         isPublic: false,
@@ -7501,7 +7524,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const validatedData = insertExperienceSchema.parse({
-        ...req.body,
+        ...withoutProviderProtectedFields(req.body, req.user.claims.role === "admin"),
         managerUserId: req.user.claims.sub,
         isPublic: false,
       });
@@ -7540,7 +7563,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "Forbidden" });
       }
       const validatedData = insertExperienceSchema.partial().parse({
-        ...req.body,
+        ...withoutProviderProtectedFields(req.body, req.user.claims.role === "admin"),
         isPublic: false,
       });
       res.json(await storage.updateExperience(req.params.id, validatedData));
@@ -7560,7 +7583,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const validatedData = insertCarSchema.parse({
-        ...req.body,
+        ...withoutProviderProtectedFields(req.body, req.user.claims.role === "admin"),
         managerUserId: req.user.claims.sub,
         isPublic: false,
       });
@@ -7595,7 +7618,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(access.error!.status).json(access.error!.body);
       }
 
-      const parsed = insertCarSchema.partial().parse(req.body);
+      const parsed = insertCarSchema.partial().parse(withoutProviderProtectedFields(req.body, req.user.claims.role === "admin"));
       const {
         model,
         location,
@@ -7669,7 +7692,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Partners list entire places; the team sets up hotels, with their rooms and rates.
       const validatedData = insertStaySchema.parse({
-        ...req.body,
+        ...withoutProviderProtectedFields(req.body, req.user.claims.role === "admin"),
         managerUserId: req.user.claims.sub,
         isPublic: false,
         propertyType: "entire_place",
@@ -7705,7 +7728,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(access.error!.status).json(access.error!.body);
       }
 
-      const parsed = insertStaySchema.partial().parse(req.body);
+      const parsed = insertStaySchema.partial().parse(withoutProviderProtectedFields(req.body, req.user.claims.role === "admin"));
       const {
         title,
         location,
@@ -7754,7 +7777,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const validatedData = insertCookSchema.parse({
-        ...req.body,
+        ...withoutProviderProtectedFields(req.body, req.user.claims.role === "admin"),
         managerUserId: req.user.claims.sub,
         isPublic: false,
       });
@@ -7789,7 +7812,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(access.error!.status).json(access.error!.body);
       }
 
-      const parsed = insertCookSchema.partial().parse(req.body);
+      const parsed = insertCookSchema.partial().parse(withoutProviderProtectedFields(req.body, req.user.claims.role === "admin"));
       const {
         title,
         location,
@@ -8589,7 +8612,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const stays = await storage.getStays();
       const visibleStays = stays.filter((stay: any) => isBookablePublicListing(stay));
-      res.json(await withHotelRooms(visibleStays, "public"));
+      res.json((await withHotelRooms(visibleStays, "public")).map(toPublicListing));
     } catch (error) {
       sendPublicCatalogFailure("stays", res, error);
     }
@@ -8605,7 +8628,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!visible) {
         return res.status(404).json({ error: "Stay not found" });
       }
-      res.json(visible);
+      res.json(toPublicListing(visible));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch stay" });
     }
@@ -8650,7 +8673,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/cars", async (_req, res) => {
     try {
       const cars = await storage.getCars();
-      res.json(cars.filter((car: any) => isBookablePublicListing(car)));
+      res.json(cars.filter((car: any) => isBookablePublicListing(car)).map(toPublicListing));
     } catch (error) {
       sendPublicCatalogFailure("cars", res, error);
     }
@@ -8675,7 +8698,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!isBookablePublicListing(car)) {
         return res.status(404).json({ error: "Car not found" });
       }
-      res.json(car);
+      res.json(toPublicListing(car!));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch car" });
     }
@@ -8744,7 +8767,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/cooks", async (_req, res) => {
     try {
       const cooks = await storage.getCooks();
-      res.json(cooks.filter((cook: any) => isBookablePublicListing(cook)));
+      res.json(cooks.filter((cook: any) => isBookablePublicListing(cook)).map(toPublicListing));
     } catch (error) {
       sendPublicCatalogFailure("cooks", res, error);
     }
@@ -8756,7 +8779,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!isBookablePublicListing(cook)) {
         return res.status(404).json({ error: "Chef not found" });
       }
-      res.json(cook);
+      res.json(toPublicListing(cook!));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch chef" });
     }
@@ -8765,7 +8788,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/errands", async (_req, res) => {
     try {
       const errands = await storage.getErrands();
-      res.json(errands.filter((errand: any) => isBookablePublicListing(errand)));
+      res.json(errands.filter((errand: any) => isBookablePublicListing(errand)).map(toPublicListing));
     } catch (error) {
       sendPublicCatalogFailure("errands", res, error);
     }
@@ -8777,7 +8800,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!isBookablePublicListing(errand)) {
         return res.status(404).json({ error: "Errand service not found" });
       }
-      res.json(errand);
+      res.json(toPublicListing(errand!));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch errand service" });
     }
@@ -8786,7 +8809,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/experiences", async (_req, res) => {
     try {
       const experiences = await storage.getExperiences();
-      res.json(experiences.filter((experience: any) => isBookablePublicListing(experience)));
+      res.json(experiences.filter((experience: any) => isBookablePublicListing(experience)).map(toPublicListing));
     } catch (error) {
       sendPublicCatalogFailure("experiences", res, error);
     }
@@ -8798,7 +8821,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!isBookablePublicListing(experience)) {
         return res.status(404).json({ error: "Experience not found" });
       }
-      res.json(experience);
+      res.json(toPublicListing(experience!));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch experience" });
     }
