@@ -1,8 +1,8 @@
 // Booking chat: who sees which messages, and how each sender is named.
 //
 // Guests pay TBM and talk to TBM. Each booking has a guest conversation (the
-// guest and TBM) and, for every partner on the booking, a partner conversation
-// (that partner and TBM). TBM reads all of them and passes on what each side
+// guest and TBM) and, for every provider on the booking, a provider conversation
+// (that provider and TBM). TBM reads all of them and passes on what each side
 // needs. Messages written before this split stay in the guest conversation.
 
 export const bookingMessageAudiences = ["guest", "partner"] as const;
@@ -66,6 +66,6 @@ export function getThreadSenderLabel(message: ThreadMessage, viewer: { id?: stri
   if (isPaymentThreadMessage(message)) return "Payment update";
   if (viewer.id && message.userId === viewer.id) return "You";
   if (message.senderRole === "admin") return "TBM team";
-  if (message.senderRole === "provider") return "Partner";
+  if (message.senderRole === "provider") return "Provider";
   return "Guest";
 }

@@ -1,5 +1,5 @@
-// Partner share links: issuing codes, recording visits and Book taps, deciding
-// a booking's credit once when it is made, and the numbers partners and TBM see.
+// Provider share links: issuing codes, recording visits and Book taps, deciding
+// a booking's credit once when it is made, and the numbers providers and TBM see.
 // The rules themselves are in shared/share-attribution.ts.
 import crypto from "node:crypto";
 import { pool } from "./db";
@@ -105,13 +105,13 @@ async function getShareLink(code: string): Promise<ShareLinkRow | null> {
   return rows[0] ?? null;
 }
 
-// R1: a code for the listing's own partner. An unused code from the last day
+// R1: a code for the listing's own provider. An unused code from the last day
 // is handed back instead of making another, so opening the sheet twice
 // doesn't fill the list.
 export async function issueShareLink(userId: string, kind: PublicListingKind, listingId: string) {
   const listing = await getShareListing(kind, listingId);
   if (!listing || listing.managerUserId !== userId) {
-    return { error: "Only the listing's partner gets a tracked link." as const };
+    return { error: "Only the listing's provider gets a tracked link." as const };
   }
   if (!listing.isPublic) {
     return { error: "This listing isn't public yet." as const };
@@ -139,7 +139,7 @@ export async function issueShareLink(userId: string, kind: PublicListingKind, li
   throw new Error("Couldn't make a share link.");
 }
 
-// The partner sent it: WhatsApp, Copy link or the phone's share menu.
+// The provider sent it: WhatsApp, Copy link or the phone's share menu.
 export async function markShareLinkShared(code: string, userId: string, channel: ShareChannel) {
   const link = await getShareLink(code);
   if (!link || link.created_by_user_id !== userId) return false;
@@ -150,7 +150,7 @@ export async function markShareLinkShared(code: string, userId: string, channel:
   return true;
 }
 
-// R8: a stopped link earns nothing more. Its partner or TBM can stop it.
+// R8: a stopped link earns nothing more. Its provider or TBM can stop it.
 export async function stopShareLink(code: string, userId: string, isAdmin: boolean) {
   const link = await getShareLink(code);
   if (!link || (!isAdmin && link.created_by_user_id !== userId)) return false;
@@ -186,7 +186,7 @@ export async function recordShareEvent(args: { code: string; eventType: "visit" 
       [link.code, args.eventType, deviceHash, ipHash, now.toISOString()],
     );
   }
-  // A link opened before the partner tapped a share button was still shared.
+  // A link opened before the provider tapped a share button was still shared.
   if (!link.shared_at) {
     const channel = shareChannels.includes(args.channel as ShareChannel) ? args.channel : "copy";
     await pool.query("UPDATE listing_share_links SET shared_at = $2, channel = COALESCE(channel, $3) WHERE code = $1", [link.code, now.toISOString(), channel]);
@@ -424,13 +424,13 @@ export async function getShareSummaries(ownerUserIds: string[] | null) {
   return result.sort((left, right) => (right.lastActivityAt ?? "").localeCompare(left.lastActivityAt ?? ""));
 }
 
-// "Your shares": only the signed-in partner's own links and credit (R12).
-export async function getPartnerShares(userId: string) {
+// "Your shares": only the signed-in provider's own links and credit (R12).
+export async function getProviderShares(userId: string) {
   const listings = await getShareSummaries([userId]);
   return { listings: listings.map(({ ownerUserId: _owner, ...listing }) => listing) };
 }
 
-// TBM's view: every partner's shares, with the partner's name.
+// TBM's view: every provider's shares, with the provider's name.
 export async function getAdminShareSummary() {
   const listings = await getShareSummaries(null);
   const ownerIds = Array.from(new Set(listings.map((listing) => listing.ownerUserId)));
@@ -440,11 +440,11 @@ export async function getAdminShareSummary() {
       [ownerIds],
     )).rows
     : [];
-  const nameById = new Map(names.map((row) => [row.id, row.name || "Partner"]));
+  const nameById = new Map(names.map((row) => [row.id, row.name || "Provider"]));
   return {
     rows: listings.map(({ links, creditedBookings, ownerUserId, ...listing }) => ({
       ...listing,
-      partnerName: nameById.get(ownerUserId) ?? "Partner",
+      providerName: nameById.get(ownerUserId) ?? "Provider",
       linkCount: links.length,
       stoppedLinks: links.filter((link) => link.stoppedAt).length,
       bookingCount: creditedBookings.length,

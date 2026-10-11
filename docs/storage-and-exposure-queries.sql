@@ -74,22 +74,22 @@ WHERE service_request_details LIKE '%Attachment:%';
 -- C. Scale of the booking-data exposure (counts only)
 -------------------------------------------------------------------------------
 
--- C1. Partner accounts, and how many have had at least one job.
-SELECT count(*) FILTER (WHERE role = 'provider') AS partner_accounts,
-       (SELECT count(DISTINCT provider_user_id) FROM booking_service_assignments WHERE provider_user_id IS NOT NULL) AS partners_with_jobs
+-- C1. Provider accounts, and how many have had at least one job.
+SELECT count(*) FILTER (WHERE role = 'provider') AS provider_accounts,
+       (SELECT count(DISTINCT provider_user_id) FROM booking_service_assignments WHERE provider_user_id IS NOT NULL) AS providers_with_jobs
 FROM users;
 
--- C2. Bookings a partner had a job on (each was readable in full by that
--- partner), with the earliest and latest booking dates.
-SELECT count(DISTINCT a.booking_id) AS bookings_with_partner_jobs,
+-- C2. Bookings a provider had a job on (each was readable in full by that
+-- provider), with the earliest and latest booking dates.
+SELECT count(DISTINCT a.booking_id) AS bookings_with_provider_jobs,
        count(DISTINCT a.booking_id) FILTER (WHERE b.guest_phone IS NOT NULL AND b.guest_phone <> '') AS with_guest_phone,
        count(DISTINCT a.booking_id) FILTER (WHERE b.payment_reference IS NOT NULL AND b.payment_reference <> '') AS with_payment_reference,
        min(b.created_at) AS earliest_booking, max(b.created_at) AS latest_booking
 FROM booking_service_assignments a
 JOIN bookings b ON b.id = a.booking_id;
 
--- C3. Bookings on partner listings that had NO job for that partner (unpaid
--- holds, or bookings before the listing was theirs). The per-type partner
+-- C3. Bookings on provider listings that had NO job for that provider (unpaid
+-- holds, or bookings before the listing was theirs). The per-type provider
 -- lists also showed these, to whoever managed the listing.
 SELECT count(*) AS bookings_on_listings_without_a_job
 FROM bookings b
@@ -109,7 +109,7 @@ WHERE status <> 'cancelled'
 GROUP BY booking_type;
 
 -- C5. Payment messages in booking chats (M-Pesa codes, cash notes) on bookings
--- that had a partner job.
+-- that had a provider job.
 SELECT count(*) AS payment_messages, min(m.created_at), max(m.created_at)
 FROM booking_messages m
 WHERE (m.message LIKE 'Customer submitted a temporary manual M-Pesa payment%'
@@ -117,9 +117,9 @@ WHERE (m.message LIKE 'Customer submitted a temporary manual M-Pesa payment%'
     OR m.message LIKE 'Admin note: cash %')
   AND EXISTS (SELECT 1 FROM booking_service_assignments a WHERE a.booking_id = m.booking_id);
 
--- C6. In-app and push alerts sent to partners about booking messages, and how
+-- C6. In-app and push alerts sent to providers about booking messages, and how
 -- many push notifications were delivered to their devices.
-SELECT count(*) AS alerts_to_partners,
+SELECT count(*) AS alerts_to_providers,
        count(*) FILTER (WHERE i.delivery_state->'push'->>'status' = 'delivered') AS pushes_delivered,
        count(*) FILTER (WHERE i.body ILIKE '%M-Pesa%') AS mentioning_mpesa,
        min(i.created_at), max(i.created_at)
@@ -127,7 +127,7 @@ FROM app_inbox_items i
 JOIN users u ON u.id = i.user_id AND u.role = 'provider'
 WHERE i.type = 'booking-message';
 
--- C7. Payouts that carried TBM's internal notes to the partner.
+-- C7. Payouts that carried TBM's internal notes to the provider.
 SELECT count(*) FILTER (WHERE notes IS NOT NULL AND notes <> '') AS payouts_with_internal_notes,
        count(*) AS payouts
 FROM booking_payouts;

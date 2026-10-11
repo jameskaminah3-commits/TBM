@@ -6,7 +6,7 @@ import { CONTACT_EMAIL, CONTACT_PHONE, CONTACT_PHONE_DISPLAY, WHATSAPP_URL } fro
 const faqs = [
   {
     question: "How do bookings reach me?",
-    answer: "Guests book your listings through Tembea Bila Matata. Once a guest has paid the deposit, the booking appears in your dashboard and we email you. Being a partner doesn't guarantee a fixed number of bookings.",
+    answer: "Guests book your listings through Tembea Bila Matata. Once a guest has paid the deposit, the booking appears in your dashboard and we email you. Being a provider doesn't guarantee a fixed number of bookings.",
   },
   {
     question: "Can I decline a booking?",
@@ -14,11 +14,11 @@ const faqs = [
   },
   {
     question: "What happens when I edit a listing?",
-    answer: "Your changes go live as soon as you save. TBM reviews partner edits afterwards and will contact you if something needs changing.",
+    answer: "Your changes go live as soon as you save. TBM reviews your edits afterwards and will contact you if something needs changing.",
   },
   {
     question: "How do I block dates I'm not available?",
-    answer: "Open the listing's manager from the Listings tab and block the dates. Car partners can also set a vehicle's status on the Vehicle Status page.",
+    answer: "Open the listing's manager from the Listings tab and block the dates. Car owners can also set a vehicle's status on the Vehicle Status page.",
   },
 ];
 
@@ -28,7 +28,7 @@ export default function ProviderSupport() {
       <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
         <div className="mb-8">
           <h1 className="font-serif text-2xl font-semibold text-foreground">Support</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Guidance and contacts for Tembea Bila Matata partners.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Guidance and contacts for Tembea Bila Matata providers.</p>
         </div>
 
         <div className="space-y-6">
@@ -36,9 +36,9 @@ export default function ProviderSupport() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <Phone className="h-4 w-4 text-primary" />
-                Partner Support
+                Provider Support
               </CardTitle>
-              <CardDescription>Reach the partnerships team directly.</CardDescription>
+              <CardDescription>Reach the provider team directly.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2 text-sm">
               <p>
@@ -70,7 +70,7 @@ export default function ProviderSupport() {
                 <ShieldCheck className="h-4 w-4 text-primary" />
                 Guidelines
               </CardTitle>
-              <CardDescription>What we expect from every partner.</CardDescription>
+              <CardDescription>What we expect from every provider.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2 text-sm text-muted-foreground">
               <p>Keep your listings, photos and prices accurate.</p>
@@ -86,10 +86,10 @@ export default function ProviderSupport() {
                 <FileText className="h-4 w-4 text-primary" />
                 Commercial Agreements
               </CardTitle>
-              <CardDescription>Your partnership terms.</CardDescription>
+              <CardDescription>Your provider terms.</CardDescription>
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground">
-              Rates, commission, and payout terms are confirmed directly with the partnerships team. Contact support
+              Rates, commission, and payout terms are confirmed directly with the provider team. Contact support
               above for a copy of your current agreement.
             </CardContent>
           </Card>

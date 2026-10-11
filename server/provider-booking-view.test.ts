@@ -115,7 +115,7 @@ test("a provider's payout statement shows their payouts, not the guest's price, 
   }
 });
 
-test("partners get the guest's first name and surname initial", () => {
+test("providers get the guest's first name and surname initial", () => {
   assert.equal(partnerGuestName("Jane Wanjiru"), "Jane W.");
   assert.equal(partnerGuestName("  mary anne  njeri kamau "), "mary K.");
   assert.equal(partnerGuestName("Amina"), "Amina");
@@ -130,7 +130,7 @@ test("older alerts written with the full name are shortened", () => {
   assert.equal(withPartnerGuestName("New assignment", null), "New assignment");
 });
 
-test("partner alerts: short names, guest-written contact removed, TBM's own words kept", () => {
+test("provider alerts: short names, guest-written contact removed, TBM's own words kept", () => {
   const assignment = toPartnerInboxItem({ title: "New assignment: Prado", body: "Jane Wanjiru needs Prado on 2026-11-30.", actorRole: null, metadata: { guestName: "Jane Wanjiru" } });
   assert.equal(assignment.body, "Jane W. needs Prado on 2026-11-30.");
   assert.equal(assignment.metadata?.guestName, "Jane W.");

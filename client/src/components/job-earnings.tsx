@@ -9,7 +9,7 @@ const payoutStatusLabels: Record<string, string> = {
   cancelled: "Cancelled",
 };
 
-// What the partner earns from this job and where the payout stands. The service
+// What the provider earns from this job and where the payout stands. The service
 // value and agreed rate explain the figure; TBM's fee amount isn't shown.
 export function JobEarnings({ assignmentId }: { assignmentId: string }) {
   const { formatAmount } = useCurrency();

@@ -34,7 +34,7 @@ test("the reader is You; others are named by their part in the booking", () => {
 
   const guest = { id: "jane-1", role: "customer" };
   assert.equal(getThreadSenderLabel(guestMessage, guest), "You");
-  assert.equal(getThreadSenderLabel(partnerMessage, guest), "Partner");
+  assert.equal(getThreadSenderLabel(partnerMessage, guest), "Provider");
 
   const admin = { id: "admin-1", role: "admin" };
   assert.equal(getThreadSenderLabel(guestMessage, admin), "Guest");
@@ -42,7 +42,7 @@ test("the reader is You; others are named by their part in the booking", () => {
   assert.equal(getThreadSenderLabel(paymentMessage, admin), "Payment update");
 });
 
-test("guests and each partner have their own conversation with TBM", () => {
+test("guests and each provider have their own conversation with TBM", () => {
   const toGuest = { ...adminMessage, audience: "guest" };
   const fromPartner = { ...partnerMessage, audience: "partner", partnerUserId: "provider-1" };
   const toPartner = { ...adminMessage, audience: "partner", partnerUserId: "provider-1" };

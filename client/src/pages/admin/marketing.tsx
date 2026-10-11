@@ -38,7 +38,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { AdminPartnerShares } from "@/components/admin-partner-shares";
+import { AdminProviderShares } from "@/components/admin-provider-shares";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -93,14 +93,14 @@ const promoChannelLabels: Record<MarketingPromoChannel, string> = {
 
 const promoCostAbsorptionLabels: Record<MarketingPromoCostAbsorption, string> = {
   shared: "Shared",
-  partner: "Partner only",
+  partner: "Provider only",
   platform: "Platform only",
 };
 
 const promoCostAbsorptionDescriptions: Record<MarketingPromoCostAbsorption, string> = {
-  shared: "Discount reduces both platform commission and partner payout proportionally.",
-  partner: "Partner absorbs the discount and the platform commission stays protected where booking revenue allows.",
-  platform: "Platform absorbs the discount and partner payout stays protected, even if platform net drops.",
+  shared: "Discount reduces both platform commission and provider payout proportionally.",
+  partner: "Provider absorbs the discount and the platform commission stays protected where booking revenue allows.",
+  platform: "Platform absorbs the discount and provider payout stays protected, even if platform net drops.",
 };
 
 const providerCategoryLabels: Record<ProviderCategory, string> = {
@@ -1672,7 +1672,7 @@ export default function AdminMarketing() {
               </Card>
             </section>
 
-            <AdminPartnerShares />
+            <AdminProviderShares />
 
             <section className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
               <Card className="min-w-0 overflow-hidden border-stone-200/80 bg-white shadow-sm">

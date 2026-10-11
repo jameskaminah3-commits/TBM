@@ -854,7 +854,7 @@ export default function ProviderDashboard() {
     .filter((booking) => getDashboardAssignmentStatus(booking) === "completed" && isAgreed(booking))
     .reduce((sum, booking) => sum + (payoutByAssignmentId.get(booking.assignment.id)?.payoutAmount ?? 0), 0);
   // Things only the provider can move forward. Unread messages have their own count.
-  // Only what the partner can act on; listings waiting for TBM's check show under Review.
+  // Only what the provider can act on; listings waiting for TBM's check show under Review.
   const actionableQueueCount = customRequestBookings.length + requestCount + awaitingResponseCount;
   const deepLinkedAssignmentId = useMemo(
     () => dashboardIntent.assignmentId
@@ -1213,7 +1213,7 @@ export default function ProviderDashboard() {
                       {providerTypes.length ? `${providerTypes.length} workspace${providerTypes.length === 1 ? "" : "s"}` : "Assigned work"}
                     </div>
                     <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl md:text-4xl">
-                      Partner dashboard
+                      Provider dashboard
                     </h1>
                     <p className="max-w-2xl text-sm text-muted-foreground sm:text-base">
                       Manage listings, requests, and bookings in one place.

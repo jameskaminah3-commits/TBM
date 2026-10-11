@@ -410,7 +410,7 @@ export const bookings = pgTable("bookings", {
 });
 
 // Each booking has a conversation between the guest and TBM, and one between
-// TBM and each partner on the booking. Guests and partners never share one.
+// TBM and each provider on the booking. Guests and providers never share one.
 export const bookingMessages = pgTable("booking_messages", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   bookingId: varchar("booking_id").notNull(),
@@ -446,10 +446,10 @@ export const listingEdits = pgTable("listing_edits", {
   reviewedBy: varchar("reviewed_by"),
 });
 export type ListingEdit = typeof listingEdits.$inferSelect;
-// TBM manages guest communication, so partners don't get guests' contact
+// TBM manages guest communication, so providers don't get guests' contact
 // details or full names. In an emergency or a genuine operational need, TBM can share them
-// with one partner on one booking, for a limited time and a recorded reason.
-// Every time the partner opens them is recorded too.
+// with one provider on one booking, for a limited time and a recorded reason.
+// Every time the provider opens them is recorded too.
 export const guestContactReleases = pgTable("guest_contact_releases", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   bookingId: varchar("booking_id").notNull(),
@@ -476,7 +476,7 @@ export const guestContactReleaseViews = pgTable("guest_contact_release_views", {
 export type GuestContactReleaseView = typeof guestContactReleaseViews.$inferSelect;
 
 export const guestContactReleaseSchema = z.object({
-  providerUserId: z.string().trim().min(1, "Choose the partner"),
+  providerUserId: z.string().trim().min(1, "Choose the provider"),
   sharePhone: z.boolean().default(true),
   shareEmail: z.boolean().default(false),
   shareFullName: z.boolean().default(false),
@@ -621,7 +621,7 @@ export const insertFleetApplicationSchema = createInsertSchema(fleetApplications
   photoUrls: z.array(fleetMediaItemSchema).optional().default([]),
   documentUrls: z.array(fleetMediaItemSchema).optional().default([]),
   agreementAccepted: z.literal(true, {
-    message: "You must accept the partnership agreement",
+    message: "You must accept the provider agreement",
   }),
 });
 
@@ -1010,7 +1010,7 @@ export const bookingAttributions = pgTable("booking_attributions", {
   originalSubtotal: integer("original_subtotal").notNull().default(0),
   discountAmount: integer("discount_amount").notNull().default(0),
   finalRevenue: integer("final_revenue").notNull().default(0),
-  // Which partner share brought the booking, decided once when it is made
+  // Which provider share brought the booking, decided once when it is made
   // (shared/share-attribution.ts). credited, assisted, unverified or none.
   shareCode: varchar("share_code"),
   shareListingKind: varchar("share_listing_kind"),
@@ -1023,7 +1023,7 @@ export const bookingAttributions = pgTable("booking_attributions", {
   updatedAt: text("updated_at").notNull(),
 });
 
-// A partner's share link for one of their listings: a random code, with the
+// A provider's share link for one of their listings: a random code, with the
 // channel it went out on. Stopping it ends any further credit.
 export const listingShareLinks = pgTable("listing_share_links", {
   code: varchar("code").primaryKey(),

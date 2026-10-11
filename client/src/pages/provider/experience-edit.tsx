@@ -145,7 +145,7 @@ export default function ProviderExperienceEdit() {
       queryClient.invalidateQueries({ queryKey: ["/api/provider/experiences", id] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/experiences"] });
       queryClient.invalidateQueries({ queryKey: ["/api/experiences"] });
-      toast({ title: "Experience updated", description: "Your changes are live. TBM reviews partner edits afterwards." });
+      toast({ title: "Experience updated", description: "Your changes are live. TBM reviews your edits afterwards." });
       setLocation("/provider/dashboard");
     },
     onError: (error: Error) => {
@@ -175,7 +175,7 @@ export default function ProviderExperienceEdit() {
         <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="mb-2 text-3xl font-serif font-semibold">Manage Experience Listing</h1>
-            <p className="text-muted-foreground">Changes go live when you save. TBM reviews partner edits afterwards.</p>
+            <p className="text-muted-foreground">Changes go live when you save. TBM reviews your edits afterwards.</p>
           </div>
           {experience ? (
             <ListingShareSheet kind="experience" id={experience.id} name={experience.title} description={experience.description} {...getListingSharePrice("experience", experience)} isPublic={experience.isPublic} source="provider" size="default" triggerLabel="Share listing" />

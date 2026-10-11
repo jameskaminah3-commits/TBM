@@ -296,7 +296,7 @@ export default function AdminStaysNew() {
                           ))}
                         </SelectContent>
                       </Select>
-                      <FormDescription>Only the assigned provider will see this stay in their partner dashboard.</FormDescription>
+                      <FormDescription>Only the assigned provider will see this stay in their provider dashboard.</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}

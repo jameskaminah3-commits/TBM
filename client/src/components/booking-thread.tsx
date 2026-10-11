@@ -11,9 +11,9 @@ import { getConversationThreadKey, getThreadSenderLabel, type BookingConversatio
 
 type BookingThreadProps = {
   bookingId: string;
-  /** TBM only: which partner's conversation this is. Guests and partners always get their own. */
+  /** TBM only: which provider's conversation this is. Guests and providers always get their own. */
   partnerUserId?: string;
-  /** The reader's own booking, where they are the guest even if they are also a partner. */
+  /** The reader's own booking, where they are the guest even if they are also a provider. */
   asGuest?: boolean;
   title?: string;
   initialMessage?: string | null;
@@ -48,7 +48,7 @@ export function BookingThread({
     }
   }, [defaultOpen]);
 
-  // The server decides a guest's and a partner's conversation; TBM picks one.
+  // The server decides a guest's and a provider's conversation; TBM picks one.
   const isPartnerView = user?.role === "provider" && !asGuest;
   const conversation: BookingConversation = partnerUserId
     ? { audience: "partner", partnerUserId }

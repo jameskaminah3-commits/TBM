@@ -101,7 +101,7 @@ const applyFormSchema = z.object({
   suitableServices: z.array(z.enum(fleetSuitableServices)).min(1, "Choose at least one service"),
   chauffeurArrangement: z.enum(fleetChauffeurArrangements, { message: "Choose an option" }),
   agreementAccepted: z.boolean().refine((value) => value === true, {
-    message: "You must accept the partnership agreement to continue",
+    message: "You must accept the provider agreement to continue",
   }),
 });
 

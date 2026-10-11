@@ -29,7 +29,7 @@ function getThreadEndpoint(mode: PartnerAdminThreadProps["mode"], providerUserId
 
 function getMessageRoleLabel(role: string) {
   if (role === "admin") return "Admin";
-  if (role === "provider") return "Partner";
+  if (role === "provider") return "Provider";
   return "User";
 }
 
@@ -42,7 +42,7 @@ export function PartnerAdminThread({
   providerUserId,
   partnerName,
   title = "Admin Channel",
-  description = "Direct messages between partner and admin.",
+  description = "Direct messages between provider and admin.",
   enabled = true,
   defaultOpen = false,
   className,
@@ -189,7 +189,7 @@ export function PartnerAdminThread({
             rows={3}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            placeholder={mode === "admin" ? "Write to this partner..." : "Write to admin..."}
+            placeholder={mode === "admin" ? "Write to this provider..." : "Write to admin..."}
             className="bg-white"
           />
           <Button

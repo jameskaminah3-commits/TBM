@@ -1,5 +1,5 @@
 // Who may open a protected file. Everyone else, including signed-out visitors
-// and other partners, is refused.
+// and other providers, is refused.
 export type PrivateFileViewer = { id: string | null; role: string | null };
 export type PrivateFileFacts = {
   file: { kind: string; ownerUserId: string | null } | null;

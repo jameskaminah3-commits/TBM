@@ -1,4 +1,4 @@
-// Crediting bookings to the partner whose share link brought the guest.
+// Crediting bookings to the provider whose share link brought the guest.
 // The rules (R1 to R13 in the provider audit), as plain functions so the
 // browser and the server agree and each rule can be tested on its own.
 import type { PublicListingKind } from "./seo.ts";
@@ -103,8 +103,8 @@ export function currentTouch(touches: AttributionTouch[], now: number): Attribut
   return live.length ? live[live.length - 1] : null;
 }
 
-// An older share link sent before codes existed: the listing's partner tagged
-// it, but it carries no code. R1: credited to the listing's partner, unverified.
+// An older share link sent before codes existed: the listing's provider tagged
+// it, but it carries no code. R1: credited to the listing's provider, unverified.
 export function isOlderProviderShare(touch: AttributionTouch) {
   return !touch.shareCode && touch.utmSource === "provider" && touch.utmCampaign === "listing_share" && Boolean(touch.listingKind && touch.listingId);
 }

@@ -21,12 +21,12 @@ const visit = (touches: AttributionTouch[], query: string | URLSearchParams, at:
   return touch ? addTouch(touches, touch, at) : touches;
 };
 
-const link = { code: "k7m2x9qa4p", listingKind: "stay" as const, listingId: "ux-villa-diani", createdByUserId: "partner-kassim", stoppedAt: null };
+const link = { code: "k7m2x9qa4p", listingKind: "stay" as const, listingId: "ux-villa-diani", createdByUserId: "provider-kassim", stoppedAt: null };
 const villaBooking = { bookingType: "accommodation", accommodationId: "ux-villa-diani", selectedServices: [] };
 const decide = (overrides: Partial<Parameters<typeof decideShareCredit>[0]> = {}) => decideShareCredit({
   claim: { code: link.code, olderLink: null, assistedCodes: [] },
   link,
-  listing: { isPublic: true, managerUserId: "partner-kassim" },
+  listing: { isPublic: true, managerUserId: "provider-kassim" },
   lastVisitAt: new Date(start).toISOString(),
   bookerUserId: "guest-jane",
   booking: villaBooking,
@@ -44,13 +44,13 @@ test("R1: share codes are 10 random lowercase letters and digits, nothing else",
   assert.equal(touch?.shareCode, null);
 });
 
-test("R1: an older share link without a code is credited to the listing's partner, unverified", () => {
+test("R1: an older share link without a code is credited to the listing's provider, unverified", () => {
   const touches = visit([], "utm_source=provider&utm_medium=copy&utm_campaign=listing_share", start);
   const claim = getShareClaim(touches, start + day);
   assert.deepEqual(claim.olderLink, { kind: "stay", id: "ux-villa-diani" });
   const decision = decide({ claim, link: null, lastVisitAt: null });
   assert.equal(decision.credit, "unverified");
-  assert.equal(decision.creditedUserId, "partner-kassim");
+  assert.equal(decision.creditedUserId, "provider-kassim");
   // A guest's own share (utm_source=share) is a tagged visit with no credit.
   const guestShare = getShareClaim(visit([], "utm_source=share&utm_medium=copy&utm_campaign=listing_share", start), start);
   assert.equal(guestShare.code, null);
@@ -112,7 +112,7 @@ test("R7: another device has no visit on record, so no credit", () => {
 
 test("R8: no credit for a stopped link, or a listing that isn't public", () => {
   assert.equal(decide({ link: { ...link, stoppedAt: new Date(start + day).toISOString() } }).reason, "stopped");
-  assert.equal(decide({ listing: { isPublic: false, managerUserId: "partner-kassim" } }).reason, "not-public");
+  assert.equal(decide({ listing: { isPublic: false, managerUserId: "provider-kassim" } }).reason, "not-public");
   assert.equal(decide({ link: null }).reason, "unknown-link");
 });
 
@@ -129,9 +129,9 @@ test("R9: the shared listing must be in the booking; another listing counts as a
 test("R10: the person who created the link gets the credit, but not for their own booking", () => {
   const decision = decide();
   assert.equal(decision.credit, "credited");
-  assert.equal(decision.creditedUserId, "partner-kassim");
-  assert.equal(decide({ bookerUserId: "partner-kassim" }).reason, "own-link");
-  const older = decide({ claim: { code: null, olderLink: { kind: "stay", id: "ux-villa-diani" }, assistedCodes: [] }, link: null, bookerUserId: "partner-kassim" });
+  assert.equal(decision.creditedUserId, "provider-kassim");
+  assert.equal(decide({ bookerUserId: "provider-kassim" }).reason, "own-link");
+  const older = decide({ claim: { code: null, olderLink: { kind: "stay", id: "ux-villa-diani" }, assistedCodes: [] }, link: null, bookerUserId: "provider-kassim" });
   assert.equal(older.reason, "own-link");
 });
 

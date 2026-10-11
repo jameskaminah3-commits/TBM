@@ -184,7 +184,7 @@ function BookingTimeline({ booking }: { booking: Booking }) {
               ? "Offer ready"
               : booking.experienceCustomOfferStatus === "pending-admin-approval"
                 ? "Under admin review"
-                : "Waiting for partner response"
+                : "Waiting for provider response"
             : "Confirmed",
       active:
         booking.serviceMode === "cook-custom-menu"

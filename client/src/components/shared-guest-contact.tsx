@@ -22,8 +22,8 @@ type GuestContact = {
   expiresAt: string;
 };
 
-// TBM looks after guests. When TBM shares a guest's contact with a partner for a
-// specific reason, the partner can open it here until it expires. Each opening
+// TBM looks after guests. When TBM shares a guest's contact with a provider for a
+// specific reason, the provider can open it here until it expires. Each opening
 // is recorded.
 export function SharedGuestContact({ bookingId }: { bookingId: string }) {
   const { toast } = useToast();

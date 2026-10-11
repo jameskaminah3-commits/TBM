@@ -255,7 +255,7 @@ export async function publishPrivatePhoto(key: string) {
 }
 
 // Who else may open a file: the manager of a car whose documents list it, and
-// the guest or a partner with a job on a booking whose request attaches it.
+// the guest or a provider with a job on a booking whose request attaches it.
 export async function getPrivateFileContext(key: string, userId: string) {
   const url = privateFileUrl(key);
   const [cars, bookings] = await Promise.all([

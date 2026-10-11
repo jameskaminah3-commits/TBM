@@ -9,7 +9,7 @@ export type ShareSource = "provider" | "visitor";
 export function buildListingShareUrl(
   origin: string,
   listing: { kind: PublicListingKind; id: string; name: string },
-  // code: the partner's random share code (Phase 3), when they have one.
+  // code: the provider's random share code (Phase 3), when they have one.
   options: { source: ShareSource; channel: ShareChannel; code?: string | null },
 ) {
   const url = new URL(getPublicListingPath(listing.kind, listing.id, listing.name), origin);

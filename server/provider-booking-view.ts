@@ -211,7 +211,7 @@ export function toProviderPaymentData(data: PaymentData) {
 
 type InboxText = { title: string; body: string; actorRole?: string | null; metadata?: Record<string, unknown> | null };
 
-// An inbox alert as a partner reads it: the guest's short name, and no contact
+// An inbox alert as a provider reads it: the guest's short name, and no contact
 // details unless TBM wrote them. Covers alerts written before these rules.
 export function toPartnerInboxItem<T extends InboxText>(item: T): T {
   const fullName = typeof item.metadata?.guestName === "string" ? item.metadata.guestName : null;

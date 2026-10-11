@@ -6,9 +6,9 @@ Status (11 Oct 2026):
 - Releasing it, and moving existing files, each need the owner's approval. They are run by someone authorised to hold production credentials.
 
 The rule: **customers see listings and their photos, and nothing else.**
-- Logbooks, insurance and inspection certificates, licences and registration papers are for compliance. Only TBM and the partner who manages the vehicle can open them.
+- Logbooks, insurance and inspection certificates, licences and registration papers are for compliance. Only TBM and the provider who manages the vehicle can open them.
 - An applicant's files are for TBM's review only.
-- A guest's request photo is for TBM, that guest and the partners working on that booking.
+- A guest's request photo is for TBM, that guest and the providers working on that booking.
 
 ## How files were stored before this change
 
@@ -25,7 +25,7 @@ The rule: **customers see listings and their photos, and nothing else.**
 - **Orphaned uploads.** Abandoned applications left files in the bucket that no record points at.
 - **Who had links.**
   - Until `eb97639`, `GET /api/cars` and `/api/cars/:id` gave every car's document links to anyone. That fix is on `main`; whether it is live is unverified.
-  - Until the same fix, the media library (`GET /api/admin/media`) listed the newest 200 bucket files to every partner.
+  - Until the same fix, the media library (`GET /api/admin/media`) listed the newest 200 bucket files to every provider.
   - Links may also have been copied into emails, chats or browser histories.
 
 ## What is built on dev
@@ -50,10 +50,10 @@ The rule: **customers see listings and their photos, and nothing else.**
 |---|---|---|---|---|
 | Signed out | No (401) | No (401) | No (401) | No (401) |
 | TBM admin | Yes | Yes | Yes | Yes |
-| The partner who uploaded it | Yes | n/a (applicants upload without an account) | n/a | No |
-| The partner managing a car whose documents list it | Yes | n/a | n/a | No |
+| The provider who uploaded it | Yes | n/a (applicants upload without an account) | n/a | No |
+| The provider managing a car whose documents list it | Yes | n/a | n/a | No |
 | The guest who made the request | n/a | n/a | Yes | No |
-| A partner working on that booking | n/a | n/a | Yes | No |
+| A provider working on that booking | n/a | n/a | Yes | No |
 | Anyone else | No (404) | No (404) | No (404) | No (404) |
 
 How the route works:
@@ -77,7 +77,7 @@ The existing type, size and file-signature checks are unchanged. The response fi
 
 - **Saving a car's documents** (`POST`/`PATCH` on `/api/provider/cars` and `/api/admin/cars`):
   - each new document must be a protected file;
-  - a partner can only add files they uploaded;
+  - a provider can only add files they uploaded;
   - TBM can add any protected file, but not a public link;
   - documents already on the car are kept as they are.
 - **Submitting a fleet application** (`POST /api/fleet-applications`): every photo and document must be a protected application file. Otherwise the applicant sees "Please upload your photos and documents again."
@@ -94,7 +94,7 @@ The existing type, size and file-signature checks are unchanged. The response fi
 
 - Listing photos, blog images and the media library stay public, as intended.
 - Public listing endpoints already leave out `documents`, registration number and other protected fields (`server/listing-privacy.ts`).
-- A partner could still upload a document photo as a listing photo by mistake. TBM's review of listing changes is the check for that.
+- A provider could still upload a document photo as a listing photo by mistake. TBM's review of listing changes is the check for that.
 
 ### A change from the earlier plan
 
@@ -144,13 +144,13 @@ The output has file paths and record IDs only, with no names or contact details.
 4. Deploy. The predeploy step creates the three new tables. Migration `0020_private_files.sql` does the same if run by hand.
 5. Check the server log for `[private-files]` errors. In Supabase, confirm the private bucket exists and **Public** is off.
 6. Smoke test:
-   - upload a vehicle document as a test partner and open it from their documents page;
-   - open the same link signed out (expect 401) and as another partner (expect 404).
+   - upload a vehicle document as a test provider and open it from their documents page;
+   - open the same link signed out (expect 401) and as another provider (expect 404).
 
 **Existing files (needs approval)**
 7. Run `npx tsx scripts/migrate-private-files.ts` (the dry run). Check that the counts match the inventory.
 8. Run `--apply`. Expect `failed: 0` and `verified` equal to `moved`. Spot-check in the app:
-   - a car's documents open for its partner;
+   - a car's documents open for its provider;
    - an application's files open for an admin;
    - a booking's request photo opens for the guest.
 9. Run `--remove-public`. Old public links stop working.
@@ -211,7 +211,7 @@ Not covered by a test:
 **TBM's car routes: 4/4.** An admin edit keeps a car's existing documents, can add a protected document, and can't add a public link when editing or creating a car.
 
 **Regression suites still pass:**
-- partner privacy API checks: 106/106;
+- provider privacy API checks: 106/106;
 - messaging screens: 17/17;
 - listing sharing: 17/17;
 - public listing fields: 22/22.
