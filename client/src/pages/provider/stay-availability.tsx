@@ -12,6 +12,8 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/useAuth";
 import { AdminMediaField } from "@/components/admin-media-field";
 import type { Stay } from "@shared/schema";
+import { ListingShareSheet } from "@/components/listing-share-sheet";
+import { getListingSharePrice } from "@shared/listing-share";
 
 type StayAvailability = {
   blockedRanges: Array<{
@@ -149,11 +151,16 @@ export default function ProviderStayAvailability() {
   return (
     <ProviderLayout>
       <div className="container mx-auto p-6 space-y-6">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">{stay?.title ?? "Stay Availability"}</h1>
-          <p className="text-muted-foreground mt-1">
-            Next available date: {availability?.availableFrom ?? "Loading..."}
-          </p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h1 className="text-3xl font-semibold tracking-tight">{stay?.title ?? "Stay Availability"}</h1>
+            <p className="text-muted-foreground mt-1">
+              Next available date: {availability?.availableFrom ?? "Loading..."}
+            </p>
+          </div>
+          {stay ? (
+            <ListingShareSheet kind="stay" id={stay.id} name={stay.title} description={stay.description} {...getListingSharePrice("stay", stay)} isPublic={stay.isPublic} source="provider" size="default" triggerLabel="Share listing" />
+          ) : null}
         </div>
 
         <Card id="details" className="scroll-mt-24">

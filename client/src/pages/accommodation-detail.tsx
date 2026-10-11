@@ -28,6 +28,10 @@ import {
 } from "@/lib/public-listing";
 import { eachDayOfInterval, format, parseISO, startOfDay } from "date-fns";
 import { parseCalendarDate, todayInKenya } from "@shared/calendar-dates";
+import { ListingShareSheet } from "@/components/listing-share-sheet";
+import { useOwnsListing } from "@/hooks/use-owns-listing";
+import { getListingSharePrice } from "@shared/listing-share";
+import { ListingUnavailable } from "@/components/listing-unavailable";
 
 type StayAvailability = {
   blockedRanges: Array<{
@@ -62,6 +66,7 @@ export default function AccommodationDetail() {
       return response.json();
     },
   });
+  const ownsListing = useOwnsListing("stay", accommodation?.id);
 
   const { data: availability } = useQuery<StayAvailability>({
     queryKey: ["/api/stays", id, "availability"],
@@ -107,14 +112,9 @@ export default function AccommodationDetail() {
 
   if (!accommodation) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <SeoHead title="Accommodation not found | Tembea Bila Matata" robots="noindex,follow" canonicalUrl={buildCanonicalUrl("/accommodations")} />
-        <div className="text-center">
-          <h2 className="font-serif text-2xl font-medium mb-2">Accommodation not found</h2>
-          <Button onClick={() => setLocation(`/accommodations${staySearchSuffix}`)} data-testid="button-back">
-            Back to Accommodations
-          </Button>
-        </div>
+      <div className="min-h-screen">
+        <SeoHead title="Stay not available | Tembea Bila Matata" robots="noindex,follow" canonicalUrl={buildCanonicalUrl("/accommodations")} />
+        <ListingUnavailable kind="stay" browseHref={`/accommodations${staySearchSuffix}`} browseLabel="Browse places to stay" />
       </div>
     );
   }
@@ -184,10 +184,22 @@ export default function AccommodationDetail() {
           <div className="lg:col-span-2 space-y-8">
             <div>
               <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <h1 className="mb-2 font-serif text-3xl font-medium md:text-4xl">
-                    {accommodation.title}
-                  </h1>
+                <div className="min-w-0">
+                  <div className="mb-2 flex items-start justify-between gap-3">
+                    <h1 className="min-w-0 font-serif text-3xl font-medium md:text-4xl" data-testid="text-stay-title">
+                      {accommodation.title}
+                    </h1>
+                    <ListingShareSheet
+                      kind="stay"
+                      id={accommodation.id}
+                      name={accommodation.title}
+                      description={accommodation.description}
+                      {...getListingSharePrice("stay", accommodation)}
+                      isPublic
+                      source={ownsListing ? "provider" : "visitor"}
+                      triggerClassName="mt-1 min-h-11 shrink-0"
+                    />
+                  </div>
                   <p className="max-w-3xl text-sm leading-6 text-muted-foreground sm:text-base">
                     {semanticSummary}
                   </p>

@@ -12,6 +12,10 @@ import { CurrencyAmount } from "@/components/currency-amount";
 import { PremiumMediaGallery } from "@/components/premium-media-gallery";
 import { SeoHead } from "@/components/seo-head";
 import { buildCanonicalUrl } from "@/lib/canonical-url";
+import { ListingShareSheet } from "@/components/listing-share-sheet";
+import { useOwnsListing } from "@/hooks/use-owns-listing";
+import { getListingSharePrice } from "@shared/listing-share";
+import { ListingUnavailable } from "@/components/listing-unavailable";
 import {
   buildListingSeoDescription,
   formatSeoLocation,
@@ -157,6 +161,7 @@ export default function PublicListingDetail({ kind }: { kind: Exclude<PublicList
       return response.json();
     },
   });
+  const ownsListing = useOwnsListing(kind, listing?.id);
 
   const listingName = listing ? getListingName(kind, listing) : category.label;
   const canonicalUrl = listing ? buildCanonicalUrl(getPublicListingPath(kind, listing.id, listingName)) : buildCanonicalUrl(`${category.href}/${id || ""}`);
@@ -174,11 +179,9 @@ export default function PublicListingDetail({ kind }: { kind: Exclude<PublicList
 
   if (isError || !listing) {
     return (
-      <div className="min-h-screen py-20 text-center">
-        <SeoHead title="Listing not found | Tembea Bila Matata" robots="noindex,follow" canonicalUrl={buildCanonicalUrl(category.href)} />
-        <h1 className="font-serif text-3xl font-medium">Listing not found</h1>
-        <p className="mx-auto mt-3 max-w-xl text-muted-foreground">This public listing is no longer available. Browse the current services instead.</p>
-        <Button className="mt-6 rounded-full" onClick={() => setLocation(category.href)}>Browse services</Button>
+      <div className="min-h-screen">
+        <SeoHead title="Listing not available | Tembea Bila Matata" robots="noindex,follow" canonicalUrl={buildCanonicalUrl(category.href)} />
+        <ListingUnavailable kind={kind} browseHref={category.href} browseLabel={({ car: "Browse cars and drivers", cook: "Browse private chefs", errand: "Browse home help and errands", experience: "Browse experiences" } as const)[kind]} />
       </div>
     );
   }
@@ -214,7 +217,19 @@ export default function PublicListingDetail({ kind }: { kind: Exclude<PublicList
                 <span className="inline-flex items-center gap-1"><MapPin className="h-4 w-4" />{location}</span>
                 <span className="inline-flex items-center gap-1"><Star className="h-4 w-4 fill-amber-400 text-amber-400" />{listing.rating.toFixed(1)}/5 from {listing.reviewCount} reviews</span>
               </div>
-              <h1 className="mt-3 font-serif text-3xl font-medium leading-tight sm:text-5xl">{listingName} in {location}</h1>
+              <div className="mt-3 flex items-start justify-between gap-3">
+                <h1 className="min-w-0 font-serif text-3xl font-medium leading-tight sm:text-5xl" data-testid="text-listing-title">{listingName} in {location}</h1>
+                <ListingShareSheet
+                  kind={kind}
+                  id={listing.id}
+                  name={listingName}
+                  description={listing.description}
+                  {...getListingSharePrice(kind, listing)}
+                  isPublic
+                  source={ownsListing ? "provider" : "visitor"}
+                  triggerClassName="mt-1 min-h-11 shrink-0"
+                />
+              </div>
               <p className="mt-4 max-w-3xl text-base leading-8 text-muted-foreground">{description}</p>
             </header>
 

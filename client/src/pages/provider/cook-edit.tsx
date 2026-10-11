@@ -25,6 +25,8 @@ import { useCurrency } from "@/lib/currency";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { getCookCustomMenuRequestFee, getCookInclusivePrice, getCookServiceFee } from "@shared/cook-pricing";
 import { customMenuRequestFeeDefault, insertCookSchema, type Cook } from "@shared/schema";
+import { ListingShareSheet } from "@/components/listing-share-sheet";
+import { getListingSharePrice } from "@shared/listing-share";
 
 const featureOptions = [
   "African Cuisine",
@@ -269,9 +271,14 @@ export default function ProviderCookEdit() {
   return (
     <ProviderLayout>
       <div className="p-8 max-w-4xl mx-auto space-y-6">
-        <div className="mb-8">
-          <h1 className="text-3xl font-serif font-semibold mb-2">Manage Chef Listing</h1>
-          <p className="text-muted-foreground">Update your chef listing. Changes go live when you save, and TBM reviews them afterwards.</p>
+        <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h1 className="text-3xl font-serif font-semibold mb-2">Manage Chef Listing</h1>
+            <p className="text-muted-foreground">Update your chef listing. Changes go live when you save, and TBM reviews them afterwards.</p>
+          </div>
+          {cook ? (
+            <ListingShareSheet kind="cook" id={cook.id} name={cook.title} description={cook.description} {...getListingSharePrice("cook", cook)} isPublic={cook.isPublic} source="provider" size="default" triggerLabel="Share listing" />
+          ) : null}
         </div>
 
         <Card id="details" className="scroll-mt-24">
