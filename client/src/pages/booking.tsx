@@ -1185,7 +1185,7 @@ export default function Booking() {
   }
 
   return (
-    <div className="app-shell min-h-screen pb-24 pt-6 sm:pb-10 sm:pt-8 lg:pb-12">
+    <div className="app-shell min-h-screen pb-40 pt-6 sm:pt-8 lg:pb-12">
       <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="space-y-6">
           <Card className="surface-soft-card min-w-0 overflow-hidden border">
@@ -1919,7 +1919,8 @@ export default function Booking() {
         </div>
       </div>
       </div>
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border/70 bg-background/92 px-4 py-3 shadow-[0_-18px_40px_rgba(15,23,42,0.16)] backdrop-blur lg:hidden">
+      {/* Sits above the phone tab bar (h-16), which would otherwise cover Book. */}
+      <div className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-40 border-t border-border/70 bg-background/92 px-4 py-3 shadow-[0_-18px_40px_rgba(15,23,42,0.16)] backdrop-blur lg:hidden">
         <div className="mx-auto flex w-full max-w-7xl items-center gap-3">
           <div className="min-w-0 flex-1">
             <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
