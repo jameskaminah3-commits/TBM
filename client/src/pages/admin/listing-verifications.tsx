@@ -92,7 +92,7 @@ export default function AdminListingVerifications() {
                         <div className="mt-1"><span className="font-medium">Fee:</span> {task.feeKes ? `KSh ${task.feeKes.toLocaleString("en-KE")}` : `USD ${task.feeUsd}`}</div>
                       </div>
                       <div className="space-y-3">
-                        <Input placeholder="Assigned partner or agent" value={draft.assignee} onChange={(event) => setDraft(task, "assignee", event.target.value)} />
+                        <Input placeholder="Team member assigned" value={draft.assignee} onChange={(event) => setDraft(task, "assignee", event.target.value)} />
                         <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" disabled={updateMutation.isPending} onClick={() => updateMutation.mutate({ id: task.id, payload: { action: "assign", assigned_to: draft.assignee } })}>Assign</Button><Button size="sm" disabled={!paid || updateMutation.isPending} onClick={() => updateMutation.mutate({ id: task.id, payload: { action: "start" } })}>Start field review</Button></div>
                       </div>
                     </div>

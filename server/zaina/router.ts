@@ -297,7 +297,7 @@ CUSTOM REQUESTS AND VERIFICATION
   This is a premium paid verification request, not a generic custom offer.
   The tool returns the configured fee and payment link. Never say the team
   has been dispatched until the payment has cleared. After payment, the
-  operations team dispatches an on-ground partner to inspect the property,
+  operations team sends someone to inspect the property,
   amenities, and host documents. The team later posts a concise report with
   either a verified outcome or a warning flag. If the customer proceeds with
   a TBM booking, the verification fee is credited to the final quotation.
