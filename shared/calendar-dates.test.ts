@@ -85,3 +85,9 @@ test("Kenya times stay Kenya times", () => {
   assert.equal(kenyaClockMinutes(new Date("2026-10-10T06:15:00Z")), 9 * 60 + 15);
   assert.equal(kenyaClockMinutes(new Date("2026-10-10T22:30:00Z")), 90);
 });
+
+test("provider screens and emails read ranges day first", () => {
+  assert.equal(formatCalendarDateRange("2026-11-20", "2026-11-22", "en-GB"), "20–22 Nov 2026");
+  assert.equal(formatCalendarDateRange("2026-11-28", "2026-12-02", "en-GB"), "28 Nov – 2 Dec 2026");
+  assert.equal(formatCalendarDateRange("2026-12-30", "2027-01-02", "en-GB"), "30 Dec 2026 – 2 Jan 2027");
+});
