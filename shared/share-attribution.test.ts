@@ -135,12 +135,26 @@ test("R10: the person who created the link gets the credit, but not for their ow
   assert.equal(older.reason, "own-link");
 });
 
-test("R11: a booking counts once paid or deposit-paid; pending and cancelled are separate", () => {
-  assert.equal(getShareBookingState({ status: "upcoming", paymentStatus: "paid" }), "confirmed");
-  assert.equal(getShareBookingState({ status: "upcoming", paymentStatus: "pending", paymentAmountPaid: 320 }), "confirmed");
-  assert.equal(getShareBookingState({ status: "upcoming", paymentStatus: "pending", paymentAmountPaid: 0 }), "pending");
-  assert.equal(getShareBookingState({ status: "cancelled", paymentStatus: "paid" }), "cancelled");
-  assert.equal(getShareBookingState({ status: "upcoming", paymentStatus: "refunded" }), "cancelled");
+test("R11: a booking counts once fully paid or its required deposit is paid", () => {
+  const stay = { status: "upcoming", totalPrice: 1000, paymentDepositAmount: 500, serviceMode: null };
+  // Paid in full.
+  assert.equal(getShareBookingState({ ...stay, paymentStatus: "paid", paymentAmountPaid: 1000 }), "confirmed");
+  assert.equal(getShareBookingState({ ...stay, paymentStatus: "paid", paymentAmountPaid: 0 }), "confirmed");
+  // The required deposit, or more.
+  assert.equal(getShareBookingState({ ...stay, paymentStatus: "pending", paymentAmountPaid: 500 }), "confirmed");
+  assert.equal(getShareBookingState({ ...stay, paymentStatus: "pending", paymentAmountPaid: 700 }), "confirmed");
+  // Less than the deposit, or nothing yet.
+  assert.equal(getShareBookingState({ ...stay, paymentStatus: "pending", paymentAmountPaid: 320 }), "pending");
+  assert.equal(getShareBookingState({ ...stay, paymentStatus: "pending", paymentAmountPaid: 0 }), "pending");
+  // No deposit set: only full payment counts.
+  assert.equal(getShareBookingState({ ...stay, paymentDepositAmount: null, paymentStatus: "pending", paymentAmountPaid: 500 }), "pending");
+  // Custom menus take full payment only, so half doesn't count.
+  assert.equal(getShareBookingState({ ...stay, serviceMode: "cook-custom-menu", paymentStatus: "pending", paymentAmountPaid: 500 }), "pending");
+  // Nothing to pay isn't a paid booking.
+  assert.equal(getShareBookingState({ ...stay, totalPrice: 0, paymentStatus: "paid", paymentAmountPaid: 0 }), "pending");
+  // Cancelled or refunded stop counting.
+  assert.equal(getShareBookingState({ ...stay, status: "cancelled", paymentStatus: "paid", paymentAmountPaid: 1000 }), "cancelled");
+  assert.equal(getShareBookingState({ ...stay, paymentStatus: "refunded", paymentAmountPaid: 1000 }), "cancelled");
 });
 
 test("no share at all is recorded as no share", () => {

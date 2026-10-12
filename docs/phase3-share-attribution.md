@@ -1,6 +1,6 @@
 # Phase 3: share attribution and "Your shares"
 
-Status (11 Oct 2026): **built and tested on the dev branch only. Not released.** It is reporting only: no money is paid on attribution.
+Status (12 Oct 2026): the first version is on `main`; the changes below marked **12 Oct** are on the dev branch only. It is reporting only: no money is paid on attribution, and it never changes a price, a promo, a payout or a provider's earnings.
 
 Terms: a **provider** is the host or owner of a service (a stay, car, chef, errand or experience). **Partner** is kept for agents who refer guests, a role that isn't built yet.
 
@@ -12,7 +12,7 @@ The rules are the ones proposed in the provider audit (R1 to R13), which the own
 - **Your shares** (Provider Hub › Share & grow). For each listing they shared:
   - links shared, by channel;
   - visits and Book taps;
-  - bookings that are paid or deposit-paid, not yet paid, and cancelled;
+  - bookings that are paid (see the paid-booking rule below), not yet paid, and cancelled;
   - bookings from older links (shared before codes existed), marked unverified;
   - how many other bookings their links helped with;
   - last activity.
@@ -36,7 +36,7 @@ TBM sees every provider's shares in Admin › Marketing › **Provider shares**.
 | R8 | No credit after 30 days, through a stopped link, or when the listing isn't public at booking time. | `decideShareCredit` |
 | R9 | The booking must include the shared listing. Otherwise it counts as "helped" (assisted) for that link. The decision is made once, when the booking is created, and never replaced. | `POST /api/bookings`, `createBookingAttribution` |
 | R10 | The provider who created the link gets the credit. Nobody earns credit for booking through their own link. Other providers can't get codes for listings that aren't theirs. | `issueShareLink`, `decideShareCredit` |
-| R11 | Bookings count once paid or deposit-paid. Not yet paid and cancelled are shown separately. The state is read from the booking each time, so payment or cancellation updates the numbers but never adds credit. | `getShareBookingState` |
+| R11 | **The paid-booking rule** (final, 12 Oct). A credited booking counts as paid once TBM has received money for it, and that money is either the full amount or the deposit the booking requires. Bookings that take full payment only (custom menus, custom offers) need the full amount. A smaller part-payment, an unpaid booking and a booking with nothing to pay count as "not paid yet". Cancelled or refunded bookings count apart. The state is read from the booking each time, so payment or cancellation updates the numbers but never adds or moves credit. It uses the same payment helpers as the rest of the site (`shared/booking-payments.ts`). | `getShareBookingState` |
 | R12 | Your shares shows counts, booking references and dates only. A provider sees only their own links; TBM admins see all. | `getProviderShares`, `getAdminShareSummary` |
 | R13 | Credit comes from the server's own records (the link, the recorded visit, the booking), never from counts the browser sends. The visit and tracking endpoints are rate-limited per address and per device. | `shareEventRateLimit`, `marketingTrackRateLimit` |
 
@@ -72,7 +72,7 @@ The old merged tracking record in the browser (fields from different links mixed
 
 ## Limits
 
-- **What gets credited.** Only bookings made through the site's booking pages. Bookings made in Zaina chat, custom requests and custom offers aren't credited yet.
+- **What gets credited.** Bookings made through the site's booking pages, custom requests and bookings Zaina makes in chat. Custom offers TBM creates by hand aren't credited.
 - **Shared networks.** Without a stored device id, a visit is matched by network address. Two people on the same network (an office or hotel Wi-Fi) could share credit in that case.
 - **R3 precision.** Visits are recorded once a day per device, so the server's 30 days can start up to a day before the latest visit.
 - **Retention.** Share events aren't pruned yet. A 90-day retention job is a sensible follow-up.
@@ -110,4 +110,13 @@ The old merged tracking record in the browser (fields from different links mixed
 ## Later additions
 
 - **QR cards.** Share & grow makes a printable "scan to book" card for each public listing. Its link uses the `qr` channel and counts like any other share.
-- **Bookings made outside the Book button.** Custom requests and bookings Zaina makes in chat are credited by the same rules. The custom-request page and Zaina's chat send the visitor's share claim; for Zaina it's kept in memory for six hours per chat, so a lost claim only means a booking isn't credited. A custom request never includes the shared listing, so it counts as "helped" (assisted) rather than credited.
+- **Bookings made outside the Book button.** Custom requests and bookings Zaina makes in chat are credited by the same rules. The custom-request page and Zaina's chat send the visitor's share claim. A custom request never includes the shared listing, so it counts as "helped" (assisted) rather than credited.
+- **Zaina chat claims are stored (12 Oct).** Each chat's latest claim is kept in `zaina_share_claims` (migration `0023`) for the 30-day credit window, so a restart or a second server copy no longer loses it. Device and address are stored only as keyed hashes, as for share visits. Rows older than 30 days are deleted by the server.
+- **The paid-booking rule made exact (12 Oct).** Before, any part-payment counted as "deposit paid". Now only the booking's required deposit, or the full amount, counts (R11).
+
+## Reporting only: what attribution can't change
+
+- **Payouts and earnings.** Payouts are worked out from the booking, its service assignment, the provider's agreed rate and any promo on the booking. No share field is read. A credited booking pays the provider exactly what an uncredited one would.
+- **The booking's promo record.** When a booking already has a marketing record (for example a promo code), share credit is added with `setBookingShareCredit`, which writes the share columns only. Before 12 Oct, that path rewrote the whole record and could clear the promo's cost-sharing setting, which payouts read. That could have changed a payout, and it no longer can.
+- **No referral payments.** Nothing pays, credits or discounts anyone because of a share. "Your shares" is information for the provider and TBM.
+- **Agents.** Partner (agent) referral earnings are not built. If they ever are, they need their own rules and the owner's approval.

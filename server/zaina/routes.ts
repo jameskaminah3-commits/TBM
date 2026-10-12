@@ -199,7 +199,8 @@ export function registerZainaRoutes(app: Express): void {
     }
 
     // The visitor's share claim, for crediting a booking Zaina makes in this chat.
-    rememberZainaShareClaim(sessionId, req.body?.shareClaim, getRequestIp(req));
+    // Stored before the reply, so a booking made in this same message is credited.
+    await rememberZainaShareClaim(sessionId, req.body?.shareClaim, getRequestIp(req));
 
     try {
       const result = await handleZainaMessage(sessionId, message);

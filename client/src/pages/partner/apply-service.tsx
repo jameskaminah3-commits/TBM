@@ -214,9 +214,9 @@ function ApplicationForm({ serviceType }: { serviceType: ApplicationServiceType 
           <h1 className="mt-4 font-serif text-3xl font-semibold text-stone-950">Asante, {draft.fullName.split(/\s+/)[0] || "karibu"}!</h1>
           <p className="mt-3 text-stone-700">Your application is with TBM. We've emailed you a copy.</p>
           <ol className="mx-auto mt-6 max-w-sm space-y-3 text-left text-sm text-stone-700">
-            <li className="flex gap-3"><span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-400 text-xs font-semibold text-stone-950">1</span>TBM calls or WhatsApps you, usually within two working days.</li>
+            <li className="flex gap-3"><span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-400 text-xs font-semibold text-stone-950">1</span>Our team reviews your application and calls or WhatsApps you. We review them in the order they arrive.</li>
             <li className="flex gap-3"><span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-400 text-xs font-semibold text-stone-950">2</span>We check your ID and that the service is yours to offer.</li>
-            <li className="flex gap-3"><span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-400 text-xs font-semibold text-stone-950">3</span>You get your Provider Hub: add your listing, set prices, start sharing.</li>
+            <li className="flex gap-3"><span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-400 text-xs font-semibold text-stone-950">3</span>If you're approved, we email you a link to your Provider Hub. Add your listing, set your prices and start sharing.</li>
           </ol>
           <div className="mt-8 flex flex-col gap-2 sm:flex-row sm:justify-center">
             <Button asChild className="rounded-full"><Link href="/partner">Back to Become a provider</Link></Button>
@@ -350,7 +350,7 @@ function ApplicationForm({ serviceType }: { serviceType: ApplicationServiceType 
             )}
           </div>
         </div>
-        <p className="mt-4 text-center text-xs text-stone-500">No joining fee. Questions? <a href={SUPPORT_WHATSAPP_URL} target="_blank" rel="noreferrer" className="underline">WhatsApp TBM</a>.</p>
+        <p className="mt-4 text-center text-xs text-stone-500">No joining or monthly fee. TBM's commission is agreed with you before your first payout. Questions? <a href={SUPPORT_WHATSAPP_URL} target="_blank" rel="noreferrer" className="underline">WhatsApp TBM</a>.</p>
       </div>
     </div>
   );

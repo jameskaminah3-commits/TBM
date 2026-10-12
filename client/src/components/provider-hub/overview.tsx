@@ -277,6 +277,11 @@ export function ProviderOverview(props: OverviewProps) {
                 <div className="mt-1 text-xl font-semibold tabular-nums text-stone-950">{formatAmount(props.payments?.totalPaidOut ?? 0)}</div>
               </div>
             </div>
+            {props.payments?.awaitingRateCount ? (
+              <p className="mt-3 text-sm text-amber-900" data-testid="text-awaiting-rate">
+                {props.payments.awaitingRateCount === 1 ? "1 job is" : `${props.payments.awaitingRateCount} jobs are`} waiting for your agreed rate. TBM agrees it with you before your first payout.
+              </p>
+            ) : null}
           </HubPanel>
 
           <HubPanel

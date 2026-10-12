@@ -169,6 +169,7 @@ export const providerPayoutFields = [
   "paymentReference",
   "createdAt",
   "updatedAt",
+  "rateAgreed",
 ] as const;
 
 export type ProviderPayout = Record<(typeof providerPayoutFields)[number], unknown>;
@@ -182,6 +183,11 @@ export function toProviderPayout(payout: object): ProviderPayout & { serviceValu
     }
   }
   view.serviceValue = typeof source.grossAmount === "number" ? source.grossAmount : null;
+  // Until a rate is agreed, a payout has no amount to show, not a 0% one.
+  if (source.rateAgreed === false) {
+    view.payoutAmount = null;
+    view.commissionPercent = null;
+  }
   return view as ProviderPayout & { serviceValue: number | null };
 }
 
@@ -192,6 +198,8 @@ type PaymentData = {
   totalPaidOut: number;
   unpaidPayoutCount: number;
   paidPayoutCount: number;
+  awaitingRateCount: number;
+  awaitingRateValue: number;
   serviceFeePercents: number[];
   payouts: object[];
 };
@@ -204,6 +212,8 @@ export function toProviderPaymentData(data: PaymentData) {
     totalPaidOut: data.totalPaidOut,
     unpaidPayoutCount: data.unpaidPayoutCount,
     paidPayoutCount: data.paidPayoutCount,
+    awaitingRateCount: data.awaitingRateCount,
+    awaitingRateValue: data.awaitingRateValue,
     serviceFeePercents: data.serviceFeePercents,
     payouts: data.payouts.map(toProviderPayout),
   };

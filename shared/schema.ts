@@ -1062,6 +1062,17 @@ export const listingShareEvents = pgTable("listing_share_events", {
   createdAt: text("created_at").notNull(),
 }, (table) => [index("listing_share_events_code_idx").on(table.code, table.eventType, table.createdAt)]);
 
+// The latest share claim sent with each Zaina chat, so a booking Zaina makes
+// in that chat can be credited after a restart (migration 0023). Kept for the
+// 30-day credit window; device and address only as keyed hashes.
+export const zainaShareClaims = pgTable("zaina_share_claims", {
+  sessionId: varchar("session_id").primaryKey(),
+  claim: jsonb("claim").notNull(),
+  deviceHash: varchar("device_hash"),
+  ipHash: varchar("ip_hash"),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [index("zaina_share_claims_updated_idx").on(table.updatedAt)]);
+
 // A provider's business profile, payout details and TBM's verification
 // (migration 0022). Payout details are seen only by the provider and admins.
 export const providerProfiles = pgTable("provider_profiles", {
@@ -2029,6 +2040,9 @@ export type AdminBookingPayout = {
   createdAt: string;
   updatedAt: string;
   marketingAttribution: BookingMarketingSummary | null;
+  // A rate is recorded for this provider and service (or the payout is paid).
+  // Without one the amount isn't known and the payout can't be approved.
+  rateAgreed: boolean;
 };
 
 export type PaymentManagementData = {
@@ -2039,6 +2053,8 @@ export type PaymentManagementData = {
   totalPaidOut: number;
   unpaidPayoutCount: number;
   paidPayoutCount: number;
+  awaitingRateCount: number;
+  awaitingRateValue: number;
   partnersNeedingCommissionSetup: number;
   commissionSettings: AdminCommissionSettingSummary[];
   payouts: AdminBookingPayout[];
@@ -2053,6 +2069,8 @@ export type ProviderPaymentData = {
   totalPaidOut: number;
   unpaidPayoutCount: number;
   paidPayoutCount: number;
+  awaitingRateCount: number;
+  awaitingRateValue: number;
   serviceFeePercents: number[];
   payouts: AdminBookingPayout[];
 };
@@ -2063,12 +2081,17 @@ export type ProviderPaymentData = {
 export type ProviderPayoutView = Pick<
   AdminBookingPayout,
   "id" | "assignmentId" | "bookingId" | "providerCategory" | "serviceId" | "serviceName" | "commissionPercent"
-  | "payoutAmount" | "status" | "dueAt" | "paidAt" | "paymentMethod" | "paymentReference" | "createdAt" | "updatedAt"
-> & { serviceValue: number | null };
+  | "status" | "dueAt" | "paidAt" | "paymentMethod" | "paymentReference" | "createdAt" | "updatedAt" | "rateAgreed"
+> & {
+  serviceValue: number | null;
+  // Null until TBM records the rate agreed with the provider.
+  payoutAmount: number | null;
+  commissionPercent: number | null;
+};
 export type ProviderPaymentView = Pick<
   ProviderPaymentData,
   "totalProjectedPayouts" | "totalPendingPayouts" | "totalApprovedPayouts" | "totalPaidOut"
-  | "unpaidPayoutCount" | "paidPayoutCount" | "serviceFeePercents"
+  | "unpaidPayoutCount" | "paidPayoutCount" | "serviceFeePercents" | "awaitingRateCount" | "awaitingRateValue"
 > & { payouts: ProviderPayoutView[] };
 
 // Admin Clients Types

@@ -19,6 +19,17 @@ export function JobEarnings({ assignmentId }: { assignmentId: string }) {
     return null;
   }
 
+  if (payout.payoutAmount === null) {
+    return (
+      <div className="rounded-xl border bg-muted/30 px-3 py-2 text-sm" data-testid={`job-earnings-${assignmentId}`}>
+        <span className="font-medium text-foreground">Waiting for your agreed rate</span>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {payout.serviceValue ? `Service value ${formatAmount(payout.serviceValue)}. ` : ""}TBM agrees its rate with you before your first payout, then shows what you'll receive here.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-xl border bg-muted/30 px-3 py-2 text-sm" data-testid={`job-earnings-${assignmentId}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">

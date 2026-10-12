@@ -53,6 +53,14 @@ export function ensureShareTables(): Promise<void> {
       created_at text NOT NULL
     );
     CREATE INDEX IF NOT EXISTS listing_share_events_code_idx ON listing_share_events (code, event_type, created_at);
+    CREATE TABLE IF NOT EXISTS zaina_share_claims (
+      session_id varchar PRIMARY KEY,
+      claim jsonb NOT NULL,
+      device_hash varchar,
+      ip_hash varchar,
+      updated_at text NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS zaina_share_claims_updated_idx ON zaina_share_claims (updated_at);
   `).then(() => undefined).catch((error) => {
     tablesReady = null;
     throw error;
@@ -194,11 +202,11 @@ export async function recordShareEvent(args: { code: string; eventType: "visit" 
   return { recorded: !duplicate.rowCount };
 }
 
-async function getLastShareVisit(code: string, deviceId: string | null | undefined, ip: string) {
+async function getLastShareVisit(code: string, deviceHash: string | null, ipHash: string | null) {
   const { rows } = await pool.query<{ last: string | null }>(
     `SELECT max(created_at) AS last FROM listing_share_events
      WHERE code = $1 AND event_type = 'visit' AND (device_hash = $2 OR ip_hash = $3)`,
-    [code, keyedHash(deviceId), keyedHash(ip)],
+    [code, deviceHash, ipHash],
   );
   return rows[0]?.last ?? null;
 }
@@ -209,6 +217,8 @@ export async function decideBookingShareCredit(args: {
   claim: ShareClaim;
   deviceId?: string | null;
   ip: string;
+  // Already-hashed device and address (a stored Zaina claim), used instead.
+  hashes?: { deviceHash: string | null; ipHash: string | null };
   bookerUserId: string;
   booking: { bookingType?: string | null; accommodationId?: string | null; selectedServices?: string[] | null };
 }): Promise<{ decision: ShareCreditDecision; assistedCodes: string[] }> {
@@ -217,7 +227,9 @@ export async function decideBookingShareCredit(args: {
   const listing = link
     ? await getShareListing(link.listing_kind, link.listing_id)
     : args.claim.olderLink ? await getShareListing(args.claim.olderLink.kind, args.claim.olderLink.id) : null;
-  const lastVisitAt = link ? await getLastShareVisit(link.code, args.deviceId, args.ip) : null;
+  const deviceHash = args.hashes ? args.hashes.deviceHash : keyedHash(args.deviceId);
+  const ipHash = args.hashes ? args.hashes.ipHash : keyedHash(args.ip);
+  const lastVisitAt = link ? await getLastShareVisit(link.code, deviceHash, ipHash) : null;
   const decision = decideShareCredit({
     claim: args.claim,
     link: link ? { code: link.code, listingKind: link.listing_kind, listingId: link.listing_id, createdByUserId: link.created_by_user_id, stoppedAt: link.stopped_at } : null,
@@ -299,6 +311,9 @@ type AttributionRow = {
   status: string | null;
   payment_status: string | null;
   payment_amount_paid: number | null;
+  total_price: number | null;
+  payment_deposit_amount: number | null;
+  service_mode: string | null;
 };
 
 const latest = (...values: Array<string | null | undefined>) => values.filter((value): value is string => Boolean(value)).sort().at(-1) ?? null;
@@ -321,7 +336,8 @@ async function summarise(ownerUserIds: string[] | null) {
     : [];
   const attributions = (await pool.query<AttributionRow>(
     `SELECT ba.booking_id, ba.share_code, ba.share_credit, ba.share_listing_kind, ba.share_listing_id, ba.credited_user_id,
-            ba.assisted_share_codes, b.created_at, b.check_in, b.check_out, b.status, b.payment_status, b.payment_amount_paid
+            ba.assisted_share_codes, b.created_at, b.check_in, b.check_out, b.status, b.payment_status, b.payment_amount_paid,
+            b.total_price, b.payment_deposit_amount, b.service_mode
      FROM booking_attributions ba JOIN bookings b ON b.id = ba.booking_id
      WHERE (ba.share_credit IS NOT NULL AND ba.share_credit <> 'none')
        AND ($1::varchar[] IS NULL OR ba.credited_user_id = ANY($1) OR ba.share_code = ANY($2) OR ba.assisted_share_codes && $2)
@@ -378,7 +394,14 @@ export async function getShareSummaries(ownerUserIds: string[] | null) {
   }
 
   for (const row of attributions) {
-    const state = getShareBookingState({ status: row.status, paymentStatus: row.payment_status, paymentAmountPaid: row.payment_amount_paid });
+    const state = getShareBookingState({
+      status: row.status,
+      paymentStatus: row.payment_status,
+      paymentAmountPaid: row.payment_amount_paid,
+      totalPrice: row.total_price,
+      paymentDepositAmount: row.payment_deposit_amount,
+      serviceMode: row.service_mode,
+    });
     const booking = {
       reference: shareBookingReference(row.booking_id),
       bookedOn: row.created_at,
@@ -450,4 +473,42 @@ export async function getAdminShareSummary() {
       bookingCount: creditedBookings.length,
     })),
   };
+}
+
+// ---- Zaina chat claims --------------------------------------------------------
+
+// Zaina's chat sends the visitor's share claim with each message, and a booking
+// Zaina makes later in that chat is credited with the latest one. Kept in the
+// database for the 30-day credit window (R3), so a restart loses nothing. The
+// device and address are kept only as keyed hashes, like share visits.
+const ZAINA_CLAIM_DAYS = 30;
+let lastClaimPruneAt = 0;
+
+export async function saveZainaShareClaim(sessionId: string, claim: ShareClaim & { deviceId?: string | null }, ip: string) {
+  await ensureShareTables();
+  const { deviceId, ...rest } = claim;
+  const now = new Date();
+  await pool.query(
+    `INSERT INTO zaina_share_claims (session_id, claim, device_hash, ip_hash, updated_at)
+     VALUES ($1, $2::jsonb, $3, $4, $5)
+     ON CONFLICT (session_id) DO UPDATE SET claim = EXCLUDED.claim, device_hash = EXCLUDED.device_hash,
+       ip_hash = EXCLUDED.ip_hash, updated_at = EXCLUDED.updated_at`,
+    [sessionId.slice(0, 200), JSON.stringify({ ...rest, deviceId: null }), keyedHash(deviceId), keyedHash(ip), now.toISOString()],
+  );
+  if (now.getTime() - lastClaimPruneAt > 60 * 60 * 1000) {
+    lastClaimPruneAt = now.getTime();
+    const cutoff = new Date(now.getTime() - ZAINA_CLAIM_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    await pool.query("DELETE FROM zaina_share_claims WHERE updated_at < $1", [cutoff]);
+  }
+}
+
+export async function getZainaShareClaim(sessionId: string) {
+  await ensureShareTables();
+  const cutoff = new Date(Date.now() - ZAINA_CLAIM_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const { rows } = await pool.query<{ claim: unknown; device_hash: string | null; ip_hash: string | null }>(
+    "SELECT claim, device_hash, ip_hash FROM zaina_share_claims WHERE session_id = $1 AND updated_at >= $2",
+    [sessionId.slice(0, 200), cutoff],
+  );
+  const row = rows[0];
+  return row ? { claim: row.claim, hashes: { deviceHash: row.device_hash, ipHash: row.ip_hash } } : null;
 }

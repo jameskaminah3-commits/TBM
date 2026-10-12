@@ -35,7 +35,7 @@ export function AdminProviderShares() {
       <CardHeader className="min-w-0 space-y-1 px-4 py-5 sm:px-6">
         <CardTitle className="text-xl sm:text-2xl">Provider shares</CardTitle>
         <CardDescription className="max-w-full break-words leading-6">
-          Listings providers shared with their own links: visits, Book taps and the bookings credited to them. A booking counts once paid or deposit-paid. Reporting only.
+          Listings providers shared with their own links: visits, Book taps and the bookings credited to them. A booking counts once TBM has received its full payment or its required deposit. Reporting only: no referral payments, and payouts are unaffected.
         </CardDescription>
       </CardHeader>
       <CardContent className="min-w-0 px-4 pb-4 sm:px-6 sm:pb-6">
