@@ -8,6 +8,7 @@ import { Briefcase, Mail, Pencil, Phone, Search, ShieldAlert, ShieldCheck, Star,
 import { providerCategories, type ProviderAccountSummary } from "@shared/schema";
 import { AdminLayout } from "@/components/admin-layout";
 import { PartnerAdminThread } from "@/components/partner-admin-thread";
+import { AdminProviderAccount } from "@/components/admin-provider-account";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -191,10 +192,20 @@ export default function AdminProviders() {
       setActiveMessageProviderId(providerId);
     }
   }, [search]);
+  // Alerts about payout details or verification link here with ?provider=ID.
+  const focusedProviderId = new URLSearchParams(search).get("provider");
 
   const { data: providers = [], isLoading } = useQuery<ProviderAccountSummary[]>({
     queryKey: ["/api/admin/provider-accounts"],
   });
+
+  useEffect(() => {
+    if (!focusedProviderId || !providers.length) return;
+    const timer = window.setTimeout(() => {
+      document.getElementById(`provider-account-${focusedProviderId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [focusedProviderId, providers.length]);
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -680,6 +691,8 @@ export default function AdminProviders() {
                         </AlertDialog>
                       </div>
                     )}
+
+                    <AdminProviderAccount providerId={provider.id} defaultOpen={focusedProviderId === provider.id} />
 
                     {activeMessageProviderId === provider.id ? (
                       <PartnerAdminThread

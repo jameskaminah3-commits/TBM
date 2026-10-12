@@ -8,8 +8,8 @@ The rules are the ones proposed in the provider audit (R1 to R13), which the own
 
 ## What a provider sees
 
-- **Share sheet.** When the listing's own provider opens Share, the link carries their random code: `?ref=k7m2x9qa4p`, plus the existing `utm_` tags. Copy link, WhatsApp and the phone's share menu each record which channel was used. Anyone else who shares gets the plain link, as before.
-- **Your shares** (Provider Hub › Listings, at the top). For each listing they shared:
+- **Share sheet.** When the listing's own provider opens Share, the link carries their random code: `?ref=k7m2x9qa4p`, plus the existing `utm_` tags. Copy link, WhatsApp, the phone's share menu and the printable QR card each record which channel was used. Anyone else who shares gets the plain link, as before.
+- **Your shares** (Provider Hub › Share & grow). For each listing they shared:
   - links shared, by channel;
   - visits and Book taps;
   - bookings that are paid or deposit-paid, not yet paid, and cancelled;
@@ -106,3 +106,8 @@ The old merged tracking record in the browser (fields from different links mixed
   - a signed-out phone visit records one visit;
   - a booking through it appears in Your shares and in Admin › Marketing › Provider shares.
 - Rollback: redeploy the previous release. The new tables and columns are left unused and harmless.
+
+## Later additions
+
+- **QR cards.** Share & grow makes a printable "scan to book" card for each public listing. Its link uses the `qr` channel and counts like any other share.
+- **Bookings made outside the Book button.** Custom requests and bookings Zaina makes in chat are credited by the same rules. The custom-request page and Zaina's chat send the visitor's share claim; for Zaina it's kept in memory for six hours per chat, so a lost claim only means a booking isn't credited. A custom request never includes the shared listing, so it counts as "helped" (assisted) rather than credited.

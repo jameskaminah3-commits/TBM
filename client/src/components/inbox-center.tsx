@@ -22,6 +22,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import { formatInboxDates } from "@shared/provider-dashboard";
 
 type InboxCenterProps = {
   mode?: "full" | "compact";
@@ -66,6 +67,10 @@ function getPriorityBadgeTone(priority: string) {
     default:
       return "bg-sky-100 text-sky-800";
   }
+}
+
+function getPriorityLabel(priority: string) {
+  return priority === "urgent" ? "Urgent" : priority === "high" ? "Soon" : priority;
 }
 
 function isImportantPriority(priority: string) {
@@ -379,15 +384,15 @@ export function InboxCenter({
                     <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                       <div className="min-w-0 space-y-2">
                         <div className="flex flex-wrap items-center gap-2">
-                          <div className="font-medium text-foreground">{thread.title}</div>
+                          <div className="font-medium text-foreground">{formatInboxDates(thread.title)}</div>
                           {thread.unreadCount ? <Badge className="bg-amber-600">{thread.unreadCount} unread</Badge> : null}
-                          {isImportantPriority(thread.priority) ? <Badge className={cn("capitalize", getPriorityBadgeTone(thread.priority))}>{thread.priority}</Badge> : null}
+                          {isImportantPriority(thread.priority) ? <Badge className={cn("capitalize", getPriorityBadgeTone(thread.priority))}>{getPriorityLabel(thread.priority)}</Badge> : null}
                         </div>
-                        <p className="text-sm leading-6 text-muted-foreground">{thread.preview}</p>
+                        <p className="text-sm leading-6 text-muted-foreground">{formatInboxDates(thread.preview)}</p>
                         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                           <span>{formatInboxTimestamp(thread.latestCreatedAt)}</span>
                           <span>{thread.totalCount} message{thread.totalCount === 1 ? "" : "s"}</span>
-                          {thread.bookingId ? <span>Booking {thread.bookingId.slice(0, 8).toUpperCase()}</span> : null}
+                          {thread.bookingId ? <span>Ref {thread.bookingId.slice(0, 8).toUpperCase()}</span> : null}
                         </div>
                       </div>
                       <div className="flex w-full md:w-auto md:min-w-40">
@@ -424,15 +429,15 @@ export function InboxCenter({
                     <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                       <div className="min-w-0 space-y-2">
                         <div className="flex flex-wrap items-center gap-2">
-                          <div className="font-medium text-foreground">{item.title}</div>
+                          <div className="font-medium text-foreground">{formatInboxDates(item.title)}</div>
                           {!item.isRead ? <Badge className="bg-amber-600">Unread</Badge> : null}
-                          {isImportantPriority(item.priority) ? <Badge className={cn("capitalize", getPriorityBadgeTone(item.priority))}>{item.priority}</Badge> : null}
+                          {isImportantPriority(item.priority) ? <Badge className={cn("capitalize", getPriorityBadgeTone(item.priority))}>{getPriorityLabel(item.priority)}</Badge> : null}
                         </div>
-                        <p className="text-sm leading-6 text-muted-foreground">{item.body}</p>
+                        <p className="text-sm leading-6 text-muted-foreground">{formatInboxDates(item.body)}</p>
                         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                           <span>{formatInboxTimestamp(item.createdAt)}</span>
-                          {item.assignmentId ? <span>Assignment {item.assignmentId.slice(0, 8).toUpperCase()}</span> : null}
-                          {item.bookingId ? <span>Booking {item.bookingId.slice(0, 8).toUpperCase()}</span> : null}
+                          {item.assignmentId && userRole === "admin" ? <span>Assignment {item.assignmentId.slice(0, 8).toUpperCase()}</span> : null}
+                          {item.bookingId ? <span>Ref {item.bookingId.slice(0, 8).toUpperCase()}</span> : null}
                         </div>
                       </div>
                       <div className="flex w-full md:w-auto md:min-w-40">
@@ -460,11 +465,11 @@ export function InboxCenter({
                   <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                     <div className="min-w-0 space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
-                        <div className="font-medium text-foreground">{thread.title}</div>
+                        <div className="font-medium text-foreground">{formatInboxDates(thread.title)}</div>
                         {thread.unreadCount ? <Badge className="bg-amber-600">{thread.unreadCount} unread</Badge> : null}
-                        {isImportantPriority(thread.priority) ? <Badge className={cn("capitalize", getPriorityBadgeTone(thread.priority))}>{thread.priority}</Badge> : null}
+                        {isImportantPriority(thread.priority) ? <Badge className={cn("capitalize", getPriorityBadgeTone(thread.priority))}>{getPriorityLabel(thread.priority)}</Badge> : null}
                       </div>
-                      <p className="text-sm leading-6 text-muted-foreground">{thread.preview}</p>
+                      <p className="text-sm leading-6 text-muted-foreground">{formatInboxDates(thread.preview)}</p>
                       <div className="text-xs text-muted-foreground">{formatInboxTimestamp(thread.latestCreatedAt)}</div>
                     </div>
                     <div className="flex w-full md:w-auto md:min-w-40">
@@ -490,11 +495,11 @@ export function InboxCenter({
                   <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                     <div className="min-w-0 space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
-                        <div className="font-medium text-foreground">{item.title}</div>
+                        <div className="font-medium text-foreground">{formatInboxDates(item.title)}</div>
                         {!item.isRead ? <Badge className="bg-amber-600">Unread</Badge> : null}
-                        {isImportantPriority(item.priority) ? <Badge className={cn("capitalize", getPriorityBadgeTone(item.priority))}>{item.priority}</Badge> : null}
+                        {isImportantPriority(item.priority) ? <Badge className={cn("capitalize", getPriorityBadgeTone(item.priority))}>{getPriorityLabel(item.priority)}</Badge> : null}
                       </div>
-                      <p className="text-sm leading-6 text-muted-foreground">{item.body}</p>
+                      <p className="text-sm leading-6 text-muted-foreground">{formatInboxDates(item.body)}</p>
                       <div className="text-xs text-muted-foreground">{formatInboxTimestamp(item.createdAt)}</div>
                     </div>
                     <div className="flex w-full md:w-auto md:min-w-40">

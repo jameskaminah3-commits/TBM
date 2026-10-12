@@ -25,7 +25,7 @@ type ShareState = "confirmed" | "pending" | "cancelled";
 type Counts = Record<ShareState, number>;
 type ShareLink = {
   code: string;
-  channel: "whatsapp" | "copy" | "native" | null;
+  channel: "whatsapp" | "copy" | "native" | "qr" | null;
   createdAt: string;
   sharedAt: string | null;
   stoppedAt: string | null;
@@ -50,7 +50,7 @@ type ListingShares = {
   name: string;
   isPublic: boolean;
   path: string;
-  linksShared: Record<"whatsapp" | "copy" | "native", number>;
+  linksShared: Record<"whatsapp" | "copy" | "native" | "qr", number>;
   visits: number;
   bookTaps: number;
   bookings: Counts;
@@ -61,7 +61,7 @@ type ListingShares = {
   creditedBookings: SharedBooking[];
 };
 
-const channelLabel: Record<string, string> = { whatsapp: "WhatsApp", copy: "Copied link", native: "Phone share menu" };
+const channelLabel: Record<string, string> = { whatsapp: "WhatsApp", copy: "Copied link", native: "Phone share menu", qr: "QR code" };
 const stateLabel: Record<ShareState, string> = { confirmed: "Paid or deposit paid", pending: "Not paid yet", cancelled: "Cancelled" };
 const shortDate = (value: string | null) => (value ? formatKenyaDateTime(value, { day: "numeric", month: "short", year: "numeric" }, "en-GB") : "");
 const total = (counts: Counts) => counts.confirmed + counts.pending + counts.cancelled;

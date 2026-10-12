@@ -3,7 +3,7 @@
 // browser and the server agree and each rule can be tested on its own.
 import type { PublicListingKind } from "./seo.ts";
 
-export const shareChannels = ["whatsapp", "copy", "native"] as const;
+export const shareChannels = ["whatsapp", "copy", "native", "qr"] as const;
 export type ShareChannel = typeof shareChannels[number];
 
 // R3: credit lasts 30 days from the latest share visit on the device.

@@ -25,6 +25,7 @@ import { ZAINA_OPEN_EVENT, setZainaAvailable, whatsAppUrlWithText, type OpenZain
 import { useCurrency } from "@/lib/currency";
 import { isListingDetailPath } from "@/lib/public-listing";
 import { safeLocalStorage, safeSessionStorage } from "@/lib/safe-storage";
+import { getBookingShareClaim } from "@/lib/marketing-attribution";
 
 type Msg = { role: "user" | "assistant"; content: string };
 type Chip = { emoji: string; label: string };
@@ -553,7 +554,8 @@ export function ZainaWidget() {
           // sync if the customer toggles USD/KES on the site mid-chat.
           "x-zaina-currency": currentCurrency(),
         },
-        body: JSON.stringify({ message: trimmed }),
+        // Who shared the page that brought this visitor, if anyone: a booking made in chat is credited to them.
+        body: JSON.stringify({ message: trimmed, shareClaim: getBookingShareClaim() }),
       });
 
       if (res.status === 429) {

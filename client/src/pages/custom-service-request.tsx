@@ -38,6 +38,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useCurrency } from "@/lib/currency";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { getBookingShareClaim } from "@/lib/marketing-attribution";
 import { customServiceRequestFeeUsd } from "@shared/custom-service";
 
 const customRequestCategories = ["stay", "drive", "dine", "errands", "experience", "other"] as const;
@@ -237,6 +238,7 @@ export default function CustomServiceRequestPage() {
         budgetAmount: payload.budgetUsd ? convertFromUsd(payload.budgetUsd, selectedCurrency) : undefined,
         budgetCurrency: payload.budgetUsd ? selectedCurrency : undefined,
         attachmentUrl,
+        shareClaim: getBookingShareClaim(),
       });
       return response.json() as Promise<CustomRequestCheckoutResponse>;
     },

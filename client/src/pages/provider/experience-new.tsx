@@ -16,7 +16,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { insertExperienceSchema } from "@shared/schema";
+import { insertExperienceSchema, type ExperienceAddon } from "@shared/schema";
+import { useCurrency } from "@/lib/currency";
+import { convertErrandAddonsToUsd, convertErrandAmountToUsd, currencyLabel } from "@/lib/errand-currency";
 
 const featureOptions = [
   "Private",
@@ -74,6 +76,9 @@ function splitLines(value?: string) {
 export default function ProviderExperienceNew() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  // Prices are entered in the provider's currency (KSh by default) and stored in US dollars.
+  const { selectedCurrency, convertToUsd } = useCurrency();
+  const amountCurrencyLabel = currencyLabel(selectedCurrency);
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
 
   const form = useForm<FormData>({
@@ -128,6 +133,10 @@ export default function ProviderExperienceNew() {
   const onSubmit = async (data: FormData) => {
     await mutation.mutateAsync({
       ...data,
+      privatePricePerPerson: convertErrandAmountToUsd(data.privatePricePerPerson, convertToUsd, selectedCurrency),
+      sharedPricePerPerson: convertErrandAmountToUsd(data.sharedPricePerPerson, convertToUsd, selectedCurrency),
+      privateAddons: convertErrandAddonsToUsd(Array.from((data.privateAddons ?? []) as ArrayLike<ExperienceAddon>), convertToUsd, selectedCurrency),
+      sharedAddons: convertErrandAddonsToUsd(Array.from((data.sharedAddons ?? []) as ArrayLike<ExperienceAddon>), convertToUsd, selectedCurrency),
       inclusions: splitLines(data.inclusionsText),
       exclusions: splitLines(data.exclusionsText),
       features: selectedFeatures,
@@ -203,7 +212,7 @@ export default function ProviderExperienceNew() {
                     </div>
                     <div className="grid gap-4 md:grid-cols-2">
                       <FormField control={form.control} name="privatePricePerPerson" render={({ field }) => (
-                        <FormItem><FormLabel>Private Price Per Person (USD)</FormLabel><FormControl><Input type="number" min="0" {...field} /></FormControl><FormMessage /></FormItem>
+                        <FormItem><FormLabel>Private price a person ({amountCurrencyLabel})</FormLabel><FormControl><Input type="number" min="0" {...field} /></FormControl><FormMessage /></FormItem>
                       )} />
                       <FormField control={form.control} name="privateMinimumGuests" render={({ field }) => (
                         <FormItem><FormLabel>Private Minimum Guests</FormLabel><FormControl><Input type="number" min="2" {...field} /></FormControl><FormMessage /></FormItem>
@@ -217,6 +226,7 @@ export default function ProviderExperienceNew() {
                             description="Optional upgrades for the private experience."
                             value={Array.from((field.value ?? []) as ArrayLike<{ id: string; name: string; price: number }>)}
                             onChange={field.onChange}
+                            currencyLabel={amountCurrencyLabel}
                           />
                         </FormControl>
                         <FormMessage />
@@ -233,7 +243,7 @@ export default function ProviderExperienceNew() {
                     </div>
                     <div className="grid gap-4 md:grid-cols-3">
                       <FormField control={form.control} name="sharedPricePerPerson" render={({ field }) => (
-                        <FormItem><FormLabel>Shared Price Per Person (USD)</FormLabel><FormControl><Input type="number" min="0" {...field} /></FormControl><FormMessage /></FormItem>
+                        <FormItem><FormLabel>Shared price a person ({amountCurrencyLabel})</FormLabel><FormControl><Input type="number" min="0" {...field} /></FormControl><FormMessage /></FormItem>
                       )} />
                       <FormField control={form.control} name="sharedMinimumGuests" render={({ field }) => (
                         <FormItem><FormLabel>Minimum Guests To Run</FormLabel><FormControl><Input type="number" min="1" {...field} /></FormControl><FormMessage /></FormItem>
@@ -258,6 +268,7 @@ export default function ProviderExperienceNew() {
                             description="Extras guests can attach when joining a shared departure."
                             value={Array.from((field.value ?? []) as ArrayLike<{ id: string; name: string; price: number }>)}
                             onChange={field.onChange}
+                            currencyLabel={amountCurrencyLabel}
                           />
                         </FormControl>
                         <FormMessage />

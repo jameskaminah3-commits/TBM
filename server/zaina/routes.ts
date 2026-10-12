@@ -18,6 +18,8 @@ import { chatSessions, zainaAuditLogs } from "@shared/schema";
 import { and, asc, eq } from "drizzle-orm";
 import { handleZainaMessage } from "./router";
 import { consumeLimits, visitorKey, ZAINA_LIMITS } from "./limits";
+import { rememberZainaShareClaim } from "../share-credit";
+import { getRequestIp } from "../middleware/rate-limit";
 import { getListingVerificationFee } from "./tools";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -195,6 +197,9 @@ export function registerZainaRoutes(app: Express): void {
         console.error("[zaina] failed to sync session currency:", err);
       }
     }
+
+    // The visitor's share claim, for crediting a booking Zaina makes in this chat.
+    rememberZainaShareClaim(sessionId, req.body?.shareClaim, getRequestIp(req));
 
     try {
       const result = await handleZainaMessage(sessionId, message);

@@ -76,6 +76,11 @@ const menuItems = [
     icon: UserPlus,
   },
   {
+    title: "Provider Applications",
+    url: "/admin/provider-applications",
+    icon: UserPlus,
+  },
+  {
     title: "Listings",
     url: "/admin/listings",
     icon: List,

@@ -12,7 +12,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { usePush } from "@/hooks/use-push";
 import { useToast } from "@/hooks/use-toast";
 
-export default function InboxPage() {
+// embedded: shown inside Provider Hub, which has its own frame and navigation.
+export default function InboxPage({ embedded = false }: { embedded?: boolean }) {
   const [, setLocation] = useLocation();
   const search = useSearch();
   const { user, isAuthenticated, isLoading } = useAuth();
@@ -38,6 +39,13 @@ export default function InboxPage() {
     }
   }, [isAuthenticated, isLoading, setLocation]);
 
+  // Providers read their messages inside Provider Hub.
+  useEffect(() => {
+    if (!embedded && user?.role === "provider") {
+      setLocation(`/provider/messages${search ? `?${search}` : ""}`, { replace: true });
+    }
+  }, [embedded, user?.role, search, setLocation]);
+
   if (!isLoading && !isAuthenticated) {
     return null;
   }
@@ -54,12 +62,12 @@ export default function InboxPage() {
           : "Off";
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(20,184,166,0.12),transparent_30%),radial-gradient(circle_at_top_right,rgba(245,158,11,0.12),transparent_24%),linear-gradient(180deg,rgba(255,252,248,0.94),rgba(246,248,250,1))] py-6 sm:py-8">
+    <div className={embedded ? "py-5 sm:py-8" : "min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(20,184,166,0.12),transparent_30%),radial-gradient(circle_at_top_right,rgba(245,158,11,0.12),transparent_24%),linear-gradient(180deg,rgba(255,252,248,0.94),rgba(246,248,250,1))] py-6 sm:py-8"}>
       <div className="container mx-auto max-w-5xl space-y-4 px-4 md:px-6">
         <Collapsible open={showPushSettings} onOpenChange={setShowPushSettings} className="space-y-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-1">
-              <Button
+              {embedded ? null : <Button
                 type="button"
                 variant="ghost"
                 className="-ml-2 mb-1 w-fit rounded-full px-2 text-muted-foreground"
@@ -74,14 +82,19 @@ export default function InboxPage() {
               >
                 <ArrowLeft className="mr-2 h-4 w-4" />
                 Back
-              </Button>
+              </Button>}
               <div className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                 <BellRing className="h-3.5 w-3.5" />
                 Inbox
               </div>
               <h1 className="font-serif text-2xl font-semibold tracking-tight sm:text-3xl">
-                {user?.firstName ? `${user.firstName}, your inbox` : "Your inbox"}
+                {embedded ? "Messages and alerts" : user?.firstName ? `${user.firstName}, your inbox` : "Your inbox"}
               </h1>
+              {embedded ? (
+                <p className="max-w-2xl text-sm text-muted-foreground">
+                  Messages with TBM about your bookings, and alerts about new jobs, payouts and your listings.
+                </p>
+              ) : null}
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant={pushStatus === "enabled" ? "default" : "outline"}>{pushStatusLabel}</Badge>

@@ -30,6 +30,8 @@ import { errandAddonSchema, helpMamaPricingSchema, insertErrandSchema, type Erra
 import { getDefaultHouseCleaningAddons, normalizeHelpMamaPricing } from "@shared/errand-pricing";
 import { ListingShareSheet } from "@/components/listing-share-sheet";
 import { getListingSharePrice } from "@shared/listing-share";
+import { DateBlocksPanel } from "@/components/provider-hub/date-blocks-panel";
+import { HubPageHeader } from "@/components/provider-hub/hub-ui";
 
 const featureOptions = [
   "Same-Day Service",
@@ -144,8 +146,8 @@ export default function ProviderErrandEdit() {
       queryClient.invalidateQueries({ queryKey: ["/api/provider/errands", id] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/errands"] });
       queryClient.invalidateQueries({ queryKey: ["/api/errands"] });
-      toast({ title: "Errand updated", description: "Your changes are live. TBM reviews your edits afterwards." });
-      setLocation("/provider/dashboard");
+      toast({ title: "Service updated", description: "Your changes are live. TBM reviews your edits afterwards." });
+      setLocation("/provider/dashboard?tab=listings&workspace=errands");
     },
     onError: (error: Error) => {
       toast({ title: "Could not update errand", description: error.message.replace(/^\d+:\s*/, ""), variant: "destructive" });
@@ -169,20 +171,19 @@ export default function ProviderErrandEdit() {
   };
 
   return (
-    <ProviderLayout>
-      <div className="p-8 max-w-4xl mx-auto">
-        <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h1 className="text-3xl font-serif font-semibold mb-2">Manage Errand Listing</h1>
-            <p className="text-muted-foreground">Update your shopping, laundry, house cleaning, and family support details.</p>
-          </div>
-          {errand ? (
+    <ProviderLayout title={errand?.serviceName ?? "Home help"}>
+      <div className="mx-auto max-w-4xl space-y-6 px-4 py-6 sm:px-6 sm:py-8">
+        <HubPageHeader
+          eyebrow="Home help"
+          title={errand?.serviceName ?? "Your service"}
+          description="Shopping, laundry, cleaning and family help: what you offer and what it costs."
+          actions={errand ? (
             <ListingShareSheet kind="errand" id={errand.id} name={errand.serviceName} description={errand.description} {...getListingSharePrice("errand", errand)} isPublic={errand.isPublic} source="provider" size="default" triggerLabel="Share listing" />
-          ) : null}
-        </div>
+          ) : undefined}
+        />
         <Card id="details" className="scroll-mt-24">
           <CardHeader>
-            <CardTitle>Errand Details</CardTitle>
+            <CardTitle>Service details</CardTitle>
             <CardDescription>Changes go live when you save. TBM reviews your edits afterwards.</CardDescription>
           </CardHeader>
           <CardContent>
@@ -245,13 +246,14 @@ export default function ProviderErrandEdit() {
                   </div>
                 </div>
                 <div className="flex gap-4">
-                  <Button type="button" variant="outline" onClick={() => setLocation("/provider/dashboard")}>Cancel</Button>
-                  <Button type="submit" disabled={mutation.isPending}>{mutation.isPending ? "Saving..." : "Update Listing"}</Button>
+                  <Button type="button" variant="outline" onClick={() => setLocation("/provider/dashboard?tab=listings&workspace=errands")}>Cancel</Button>
+                  <Button type="submit" disabled={mutation.isPending}>{mutation.isPending ? "Saving..." : "Save changes"}</Button>
                 </div>
               </form>
             </Form>
           </CardContent>
         </Card>
+        {id ? <DateBlocksPanel segment="errands" listingId={id} /> : null}
       </div>
     </ProviderLayout>
   );

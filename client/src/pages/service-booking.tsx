@@ -669,6 +669,14 @@ export default function ServiceBooking() {
     },
   });
 
+  // Days a home help or experience provider has blocked: greyed out in the pickers.
+  const { data: serviceBlockedDates } = useQuery<{ blockedRanges: Array<{ startDate: string; endDate: string }> }>({
+    queryKey: [`/api/${serviceType === "errand" ? "errands" : "experiences"}/${id}/blocked-dates`],
+    enabled: (serviceType === "errand" || serviceType === "experience") && !!id,
+    staleTime: 60_000,
+  });
+  const providerBlockedRanges = serviceBlockedDates?.blockedRanges;
+
   const { data: experienceSharedDeparturesData } = useQuery<ExperienceDepartureAvailabilityItem[]>({
     queryKey: ["/api/experiences", id, "shared-departures"],
     enabled: serviceType === "experience" && !!id && !!service && "experienceType" in service && !!service.sharedEnabled,
@@ -2138,6 +2146,7 @@ export default function ServiceBooking() {
                                               value={field.value || ""}
                                               onChange={field.onChange}
                                               minDate={todayDateInputValue}
+                                              bookedRanges={providerBlockedRanges}
                                               label={`Date for visit ${index + 1}`}
                                               data-testid={`input-errand-package-date-${index}`}
                                             />
@@ -2187,7 +2196,7 @@ export default function ServiceBooking() {
                                     checkIn={form.watch("checkIn") || ""}
                                     checkOut={form.watch("checkOut") || ""}
                                     minDate={todayDateInputValue}
-                                    bookedRanges={serviceType === "car" ? carAvailability?.blockedRanges : serviceType === "cook" ? cookAvailability?.blockedRanges : undefined}
+                                    bookedRanges={serviceType === "car" ? carAvailability?.blockedRanges : serviceType === "cook" ? cookAvailability?.blockedRanges : providerBlockedRanges}
                                     onChange={(next) => {
                                       form.setValue("checkIn", next.checkIn, { shouldDirty: true, shouldValidate: true });
                                       form.setValue("checkOut", next.checkOut, { shouldDirty: true, shouldValidate: true });
@@ -2214,7 +2223,7 @@ export default function ServiceBooking() {
                                     value={field.value || ""}
                                     onChange={field.onChange}
                                     minDate={todayDateInputValue}
-                                    bookedRanges={serviceType === "car" ? carAvailability?.blockedRanges : undefined}
+                                    bookedRanges={serviceType === "car" ? carAvailability?.blockedRanges : serviceType === "experience" ? providerBlockedRanges : undefined}
                                     label={serviceType === "experience" ? "Experience date" : "Pickup date"}
                                     data-testid="input-start-date"
                                   />

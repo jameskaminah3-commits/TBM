@@ -15,6 +15,11 @@ import type { Stay } from "@shared/schema";
 import { isHotelStay } from "@shared/hotel-rooms";
 import { ListingShareSheet } from "@/components/listing-share-sheet";
 import { getListingSharePrice } from "@shared/listing-share";
+import { Field } from "@/components/provider-hub/field";
+import { HubPageHeader } from "@/components/provider-hub/hub-ui";
+import { addCalendarDays, formatCalendarDate, formatCalendarDateRange } from "@shared/calendar-dates";
+
+const dayLabel = (value: string | null | undefined) => (value ? formatCalendarDate(value, { day: "numeric", month: "short", year: "numeric" }, "en-GB") : "");
 
 type StayAvailability = {
   blockedRanges: Array<{
@@ -156,23 +161,20 @@ export default function ProviderStayAvailability() {
   });
 
   return (
-    <ProviderLayout>
-      <div className="container mx-auto p-6 space-y-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h1 className="text-3xl font-semibold tracking-tight">{stay?.title ?? "Stay Availability"}</h1>
-            <p className="text-muted-foreground mt-1">
-              Next available date: {availability?.availableFrom ?? "Loading..."}
-            </p>
-          </div>
-          {stay ? (
+    <ProviderLayout title={stay?.title ?? "Stay"}>
+      <div className="mx-auto max-w-5xl space-y-6 px-4 py-6 sm:px-6 sm:py-8">
+        <HubPageHeader
+          eyebrow="Stays"
+          title={stay?.title ?? "Your stay"}
+          description={availability?.availableFrom ? `Next free night: ${dayLabel(availability.availableFrom)}` : "Loading dates…"}
+          actions={stay ? (
             <ListingShareSheet kind="stay" id={stay.id} name={stay.title} description={stay.description} {...getListingSharePrice("stay", stay)} isPublic={stay.isPublic} source="provider" size="default" triggerLabel="Share listing" />
-          ) : null}
-        </div>
+          ) : undefined}
+        />
 
         <Card id="details" className="scroll-mt-24">
           <CardHeader>
-            <CardTitle>Listing Details</CardTitle>
+            <CardTitle>Listing details</CardTitle>
             <CardDescription>
               Changes go live when you save. TBM reviews your edits afterwards.
             </CardDescription>
@@ -199,13 +201,25 @@ export default function ProviderStayAvailability() {
               </div>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
-              <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Stay title" />
-              <Input value={locationValue} onChange={(e) => setLocationValue(e.target.value)} placeholder="Location" />
+              <Field id="stay-title" label="Name guests see">
+                <Input id="stay-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="For example, Beachfront villa with pool" />
+              </Field>
+              <Field id="stay-location" label="Area">
+                <Input id="stay-location" value={locationValue} onChange={(e) => setLocationValue(e.target.value)} placeholder="For example, Galu Beach, Diani" />
+              </Field>
               {isHotel ? null : (
                 <>
-                  <Input type="number" value={maxOccupancy} onChange={(e) => setMaxOccupancy(e.target.value)} placeholder="Max occupancy" />
-                  <Input type="number" value={bedrooms} onChange={(e) => setBedrooms(e.target.value)} placeholder="Bedrooms" />
-                  <Input type="number" value={bathrooms} onChange={(e) => setBathrooms(e.target.value)} placeholder="Bathrooms" />
+                  <Field id="stay-guests" label="Most guests">
+                    <Input id="stay-guests" type="number" inputMode="numeric" min="1" value={maxOccupancy} onChange={(e) => setMaxOccupancy(e.target.value)} />
+                  </Field>
+                  <div className="grid grid-cols-2 gap-4">
+                    <Field id="stay-bedrooms" label="Bedrooms">
+                      <Input id="stay-bedrooms" type="number" inputMode="numeric" min="0" value={bedrooms} onChange={(e) => setBedrooms(e.target.value)} />
+                    </Field>
+                    <Field id="stay-bathrooms" label="Bathrooms">
+                      <Input id="stay-bathrooms" type="number" inputMode="numeric" min="0" value={bathrooms} onChange={(e) => setBathrooms(e.target.value)} />
+                    </Field>
+                  </div>
                 </>
               )}
             </div>
@@ -224,7 +238,9 @@ export default function ProviderStayAvailability() {
                 </p>
               </div>
               <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
-                <Input type="number" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="Price per night (KSh)" />
+                <Field id="stay-price" label="Price a night (KSh)" hint="What guests pay a night, before any add-ons.">
+                  <Input id="stay-price" type="number" inputMode="numeric" min="1" value={price} onChange={(e) => setPrice(e.target.value)} />
+                </Field>
                 <div className="rounded-xl border border-border/70 bg-background p-4">
                   <div className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">Current setup</div>
                   <div className="mt-2 text-lg font-semibold text-foreground">
@@ -253,41 +269,47 @@ export default function ProviderStayAvailability() {
                 onMediaTypeChange={(value: "image" | "video") => setMediaType(value)}
               />
             </div>
-            <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={5} placeholder="Description" />
+            <Field id="stay-description" label="Description" hint="What makes it special, who it suits, and what's nearby.">
+              <Textarea id="stay-description" value={description} onChange={(e) => setDescription(e.target.value)} rows={5} />
+            </Field>
             <Button onClick={() => updateStayMutation.mutate()} disabled={updateStayMutation.isPending}>
-              {updateStayMutation.isPending ? "Saving..." : "Save Listing Changes"}
+              {updateStayMutation.isPending ? "Saving..." : "Save changes"}
             </Button>
           </CardContent>
         </Card>
 
         <Card id="availability" className="scroll-mt-24">
           <CardHeader>
-            <CardTitle>Block Dates</CardTitle>
-            <CardDescription>Use this when the house is unavailable for owner use, maintenance, or held inventory.</CardDescription>
+            <CardTitle>Dates you're away</CardTitle>
+            <CardDescription>Block nights when the house isn't available: you're using it, it's being repaired, or it's booked elsewhere. Guests can't book them.</CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-3">
-            <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-            <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-            <Button onClick={() => createBlockMutation.mutate()} disabled={createBlockMutation.isPending}>
-              {createBlockMutation.isPending ? "Blocking..." : "Block Dates"}
+          <CardContent className="grid items-end gap-3 md:grid-cols-3">
+            <Field id="block-start" label="First night unavailable">
+              <Input id="block-start" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+            </Field>
+            <Field id="block-end" label="Free again from">
+              <Input id="block-end" type="date" min={startDate ? addCalendarDays(startDate, 1) : undefined} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+            </Field>
+            <Button onClick={() => createBlockMutation.mutate()} disabled={createBlockMutation.isPending || !startDate || !endDate}>
+              {createBlockMutation.isPending ? "Blocking..." : "Block these nights"}
             </Button>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>Blocked and Booked Dates</CardTitle>
-            <CardDescription>Customer bookings are visible here but cannot be removed from this screen.</CardDescription>
+            <CardTitle>Booked and blocked nights</CardTitle>
+            <CardDescription>Guest bookings show here too. Only TBM can change those.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {availability?.blockedRanges?.length ? availability.blockedRanges.map((range) => (
               <div key={range.id} className="flex items-center justify-between rounded-lg border p-4">
                 <div>
-                  <div className="font-medium">{range.startDate} to {range.endDate}</div>
+                  <div className="font-medium">Nights of {formatCalendarDateRange(range.startDate, range.endDate, "en-GB")}</div>
                   <div className="text-sm text-muted-foreground">
                     {range.source === "manual"
-                      ? "Manual provider block"
-                      : `${range.guestName}${range.checkoutDate !== range.startDate ? `, checkout ${range.checkoutDate}` : ""}`}
+                      ? `Blocked by you · free again ${dayLabel(range.checkoutDate)}`
+                      : `${range.guestName} · checks out ${dayLabel(range.checkoutDate)}`}
                   </div>
                   {availability?.propertyType === "hotel" ? (
                     <div className="text-xs text-muted-foreground">
@@ -300,7 +322,7 @@ export default function ProviderStayAvailability() {
                     Remove
                   </Button>
                 ) : (
-                  <div className="text-sm text-muted-foreground capitalize">{range.status}</div>
+                  <div className="text-sm text-muted-foreground">{range.status === "confirmed" ? "Booked" : range.status === "pending" ? "Being booked" : range.status.charAt(0).toUpperCase() + range.status.slice(1)}</div>
                 )}
               </div>
             )) : <p className="text-sm text-muted-foreground">No blocked dates yet.</p>}

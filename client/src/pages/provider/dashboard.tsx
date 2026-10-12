@@ -2,29 +2,33 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
-  CalendarClock,
+  BadgeCheck,
+  CalendarDays,
   ChevronDown,
-  HandCoins,
-  Mail,
-  Phone,
+  ClipboardList,
+  Eye,
+  MessagesSquare,
+  Plus,
+  ReceiptText,
   Search,
-  Share2,
-  Star,
-  UserRound,
+  Settings2,
+  ShieldCheck,
   Wallet,
 } from "lucide-react";
 import type { Stay, Car, Cook, Errand, Experience, ProviderBookingAssignmentView, ProviderPaymentView } from "@shared/schema";
-import { InboxCenter } from "@/components/inbox-center";
-import { PartnerAdminThread } from "@/components/partner-admin-thread";
 import { ProviderLayout } from "@/components/provider-layout";
+import { HubPageHeader, WorkspaceIcon } from "@/components/provider-hub/hub-ui";
+import { ProviderOverview, type AttentionItem, type UpcomingItem } from "@/components/provider-hub/overview";
+import { QrShareCard } from "@/components/provider-hub/qr-share-card";
+import { useProviderHub } from "@/hooks/use-provider-hub";
+import { toHubListings } from "@/lib/provider-listings";
 import { useAuth } from "@/hooks/useAuth";
 import { useInbox } from "@/hooks/use-inbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -36,14 +40,15 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useCurrency } from "@/lib/currency";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { awaitsProviderResponse, isAgreedOrder } from "@shared/provider-dashboard";
-import { getCarDisplayName, getListingSharePrice } from "@shared/listing-share";
+import { awaitsProviderResponse, canStartJob, getJobStartDate, isAgreedOrder } from "@shared/provider-dashboard";
+import { getCarDisplayName } from "@shared/listing-share";
 import { ListingShareSheet } from "@/components/listing-share-sheet";
-import { YourShares } from "@/components/your-shares";
-import { ShareYourListings } from "@/components/share-your-listings";
+import { isProviderWorkspace, providerWorkspaces, workspacesHaveCustomQuotes } from "@shared/provider-workspaces";
+import type { ProviderCategory } from "@shared/schema";
+import { getPublicListingPath } from "@shared/seo";
 import { getCookExtraGuestInclusivePrice, getCookExtraGuestServiceFee, getCookMinimumGuests } from "@shared/cook-pricing";
 import { HOUSE_CLEANING_BASE_ROOM_LABEL, getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
-import { formatCalendarDate, formatCalendarDateRange, isCalendarDate } from "@shared/calendar-dates";
+import { formatCalendarDate, formatCalendarDateRange, isCalendarDate, todayInKenya } from "@shared/calendar-dates";
 import { isHotelStay } from "@shared/hotel-rooms";
 
 type ProviderAssignments = {
@@ -237,14 +242,6 @@ function getActiveBookingCount(bookings: ProviderBookingAssignmentView[]) {
   return bookings.filter((booking) => isConfirmedOrderBooking(booking) && !isDashboardArchivedBooking(booking)).length;
 }
 
-function getPendingStatusRequests(bookings: ProviderBookingAssignmentView[]) {
-  return bookings.filter((booking) => hasOpenProviderStatusRequest(booking)).length;
-}
-
-function getPendingProposalCount(bookings: ProviderBookingAssignmentView[]) {
-  return bookings.filter((booking) => hasOpenAdminReviewRequest(booking)).length;
-}
-
 function getNextProgressAction(status: string) {
   if (status === "upcoming") {
     return { status: "in-progress" as const, label: "Mark In Progress" };
@@ -265,26 +262,26 @@ function getCustomRequestQueueLabel(assignment: ProviderBookingAssignmentView) {
   const mode = getAssignmentServiceMode(assignment);
   if (mode === "cook-custom-menu") {
     if (assignment.booking.customMenuProposalStatus === "pending-admin-approval") {
-      return "Waiting Admin";
+      return "TBM checking";
     }
 
     if (assignment.booking.customMenuProposalStatus === "proposed" || assignment.booking.customMenuProposalStatus === "declined") {
-      return "Waiting Client";
+      return "With the guest";
     }
 
-    return "Needs Quote";
+    return "Needs your price";
   }
 
   if (mode === "experience-custom-offer") {
     if (assignment.booking.experienceCustomOfferStatus === "pending-admin-approval") {
-      return "Waiting Admin";
+      return "TBM checking";
     }
 
     if (assignment.booking.experienceCustomOfferStatus === "proposed" || assignment.booking.experienceCustomOfferStatus === "declined") {
-      return "Waiting Client";
+      return "With the guest";
     }
 
-    return "Needs Quote";
+    return "Needs your price";
   }
 
   return "Open";
@@ -367,9 +364,9 @@ function formatDashboardDate(value: string | null | undefined) {
     return null;
   }
 
-  // Booking dates are calendar dates: the same day in every time zone.
+  // Booking dates are calendar dates: the same day in every time zone. Day first, as in Kenya.
   if (isCalendarDate(value)) {
-    return formatCalendarDate(value, { month: "short", day: "numeric", year: "numeric" }, undefined);
+    return formatCalendarDate(value, { month: "short", day: "numeric", year: "numeric" }, "en-GB");
   }
 
   const parsed = new Date(value);
@@ -377,11 +374,17 @@ function formatDashboardDate(value: string | null | undefined) {
     return value.length >= 10 ? value.slice(0, 10) : value;
   }
 
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat("en-GB", {
     month: "short",
     day: "numeric",
     year: "numeric",
+    timeZone: "Africa/Nairobi",
   }).format(parsed);
+}
+
+// "12 Nov 2026" for a calendar date, or the text as it is.
+function formatDay(value: string | null | undefined) {
+  return value ? formatDashboardDate(value) : null;
 }
 
 function getBookedOnLabel(assignment: ProviderBookingAssignmentView) {
@@ -406,26 +409,6 @@ function getCarModeSummary(assignment: ProviderBookingAssignmentView) {
   }
 
   return "Chauffeur day booking";
-}
-
-function DashboardSectionHeader({
-  eyebrow,
-  title,
-  description,
-}: {
-  eyebrow?: string;
-  title: string;
-  description?: string;
-}) {
-  return (
-    <div className="space-y-1">
-      {eyebrow ? <div className="text-[0.7rem] font-semibold uppercase tracking-[0.24em] text-teal-700">{eyebrow}</div> : null}
-      <div className="space-y-1">
-        <h2 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">{title}</h2>
-        {description ? <p className="max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p> : null}
-      </div>
-    </div>
-  );
 }
 
 function ProviderOrderCollapsible({
@@ -484,16 +467,6 @@ function ProviderOrderCollapsible({
   );
 }
 
-function getAverageListingRating(items: Array<{ rating: number; reviewCount: number }>) {
-  const totalReviews = items.reduce((sum, item) => sum + item.reviewCount, 0);
-  if (totalReviews === 0) {
-    return null;
-  }
-
-  const weightedTotal = items.reduce((sum, item) => sum + item.rating * item.reviewCount, 0);
-  return Number((weightedTotal / totalReviews).toFixed(1));
-}
-
 function matchesDashboardQuery(
   query: string,
   values: Array<string | number | null | undefined>,
@@ -505,70 +478,20 @@ function matchesDashboardQuery(
   return values.some((value) => String(value ?? "").toLowerCase().includes(query));
 }
 
-const platformServiceFeeHelpText = "TBM's commission on your bookings. It pays for marketing your listings, secure guest payments and 24/7 guest support.";
-
-function formatServiceFeePercentLabel(serviceFeePercents: number[]) {
-  if (serviceFeePercents.length === 0) {
-    return "0%";
-  }
-
-  if (serviceFeePercents.length === 1) {
-    return `${serviceFeePercents[0]}%`;
-  }
-
-  return `${serviceFeePercents[0]}% - ${serviceFeePercents[serviceFeePercents.length - 1]}%`;
-}
-
-function PlatformServiceFeeHint() {
-  const hintTriggerClassName = "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-stone-200 bg-white text-sm font-semibold text-stone-500 shadow-sm transition-colors hover:border-teal-300 hover:bg-teal-50 hover:text-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40 sm:h-6 sm:w-6 sm:text-[0.78rem]";
-  const hintCardClassName = "w-72 max-w-[calc(100vw-1.5rem)] rounded-[1.35rem] border border-stone-200/90 bg-gradient-to-br from-white via-stone-50 to-teal-50/70 px-4 py-3.5 text-stone-700 shadow-[0_20px_60px_-36px_rgba(92,73,47,0.34)]";
-
-  return (
-    <>
-      <div className="hidden sm:block">
-        <HoverCard openDelay={120} closeDelay={80}>
-          <HoverCardTrigger asChild>
-            <button type="button" className={hintTriggerClassName} aria-label="What are platform service fees?">
-              ?
-            </button>
-          </HoverCardTrigger>
-          <HoverCardContent align="end" className={hintCardClassName}>
-            <div className="space-y-2">
-              <div className="text-xs font-medium italic text-stone-500">Platform Service Fees</div>
-              <p className="text-[0.92rem] leading-6 italic text-stone-700">{platformServiceFeeHelpText}</p>
-            </div>
-          </HoverCardContent>
-        </HoverCard>
-      </div>
-
-      <div className="sm:hidden">
-        <Popover>
-          <PopoverTrigger asChild>
-            <button type="button" className={hintTriggerClassName} aria-label="What are platform service fees?">
-              ?
-            </button>
-          </PopoverTrigger>
-          <PopoverContent align="end" side="top" className={hintCardClassName}>
-            <div className="space-y-2">
-              <div className="text-xs font-medium italic text-stone-500">Platform Service Fees</div>
-              <p className="text-[0.92rem] leading-6 italic text-stone-700">{platformServiceFeeHelpText}</p>
-            </div>
-          </PopoverContent>
-        </Popover>
-      </div>
-    </>
-  );
-}
+type DashboardTab = "overview" | "listings" | "custom-requests" | "bookings";
 
 function readProviderDashboardIntent(search: string) {
   const params = new URLSearchParams(search);
   const requestedTab = params.get("tab");
-  const tab: "overview" | "listings" | "custom-requests" | "bookings" = requestedTab === "listings" || requestedTab === "custom-requests" || requestedTab === "bookings"
+  const tab: DashboardTab = requestedTab === "listings" || requestedTab === "custom-requests" || requestedTab === "bookings"
     ? requestedTab
     : "overview";
 
+  const workspace = params.get("workspace");
+
   return {
     tab,
+    workspace: isProviderWorkspace(workspace) ? workspace : null,
     bookingId: params.get("bookingId"),
     assignmentId: params.get("assignmentId"),
     openThread: params.get("openThread") === "1",
@@ -583,10 +506,11 @@ export default function ProviderDashboard() {
   const { toast } = useToast();
   const { formatAmount, convertToUsd, selectedCurrency } = useCurrency();
   const dashboardIntent = useMemo(() => readProviderDashboardIntent(search), [search]);
-  const [activeTab, setActiveTab] = useState<"overview" | "listings" | "custom-requests" | "bookings">("overview");
+  const [activeTab, setActiveTab] = useState<DashboardTab>(dashboardIntent.tab);
   const [dashboardQuery, setDashboardQuery] = useState("");
   const [showOnlyActionable, setShowOnlyActionable] = useState(false);
-  const [profileForm, setProfileForm] = useState({ firstName: "", lastName: "", phone: "" });
+  const hub = useProviderHub();
+  const today = todayInKenya();
   const [proposalAmounts, setProposalAmounts] = useState<Record<string, string>>({});
   const [proposalMessages, setProposalMessages] = useState<Record<string, string>>({});
   const [declineReasons, setDeclineReasons] = useState<Record<string, string>>({});
@@ -632,8 +556,20 @@ export default function ProviderDashboard() {
   const { data } = useQuery<ProviderAssignments>({
     queryKey: ["/api/provider/assignments"],
   });
-  const providerTypes = (user?.providerTypes ?? []) as Array<"stays" | "cars" | "cooks" | "errands" | "experiences">;
-  const hasRole = (role: "stays" | "cars" | "cooks" | "errands" | "experiences") => providerTypes.length === 0 || providerTypes.includes(role);
+  // Only the services this provider offers; a workspace link narrows it to one.
+  const activeWorkspace = dashboardIntent.workspace && hub.workspaces.includes(dashboardIntent.workspace) ? dashboardIntent.workspace : null;
+  const hasRole = (role: ProviderCategory) => hub.workspaces.includes(role) && (!activeWorkspace || activeWorkspace === role);
+  const showQuotes = workspacesHaveCustomQuotes(hub.workspaces);
+  // Tabs live in the address, so the sidebar, the back button and shared links agree.
+  const dashboardHref = (tab: DashboardTab, extra: Record<string, string> = {}) => {
+    const params = new URLSearchParams();
+    if (tab !== "overview") params.set("tab", tab);
+    if (activeWorkspace && (tab === "listings" || tab === "bookings")) params.set("workspace", activeWorkspace);
+    for (const [key, value] of Object.entries(extra)) params.set(key, value);
+    const query = params.toString();
+    return `/provider/dashboard${query ? `?${query}` : ""}`;
+  };
+  const goToTab = (tab: DashboardTab) => setLocation(dashboardHref(tab));
   const { data: providerBookingAssignments = [] } = useQuery<ProviderBookingAssignmentView[]>({
     queryKey: ["/api/provider/booking-assignments"],
   });
@@ -647,28 +583,12 @@ export default function ProviderDashboard() {
   const orderedCookBookings = sortProviderBookings(providerBookingAssignments.filter((item) => item.assignment.providerCategory === "cooks"));
   const orderedErrandBookings = sortProviderBookings(providerBookingAssignments.filter((item) => item.assignment.providerCategory === "errands"));
   const orderedExperienceBookings = sortProviderBookings(providerBookingAssignments.filter((item) => item.assignment.providerCategory === "experiences"));
-  const assignedListingCount =
-    (data?.stays?.length ?? 0) +
-    (data?.cars?.length ?? 0) +
-    (data?.cooks?.length ?? 0) +
-    (data?.errands?.length ?? 0) +
-    (data?.experiences?.length ?? 0);
   const liveBookingCount =
     getActiveBookingCount(orderedStayBookings) +
     getActiveBookingCount(orderedCarBookings) +
     getActiveBookingCount(orderedCookBookings) +
     getActiveBookingCount(orderedErrandBookings) +
     getActiveBookingCount(orderedExperienceBookings);
-  const pendingReviewCount =
-    (data?.stays?.filter((stay) => !stay.isPublic).length ?? 0) +
-    (data?.cars?.filter((car) => !car.isPublic).length ?? 0) +
-    (data?.cooks?.filter((cook) => !cook.isPublic).length ?? 0) +
-    (data?.errands?.filter((errand) => !errand.isPublic).length ?? 0) +
-    (data?.experiences?.filter((experience) => !experience.isPublic).length ?? 0) +
-    getPendingStatusRequests(orderedCarBookings) +
-    getPendingStatusRequests(orderedCookBookings) +
-    getPendingProposalCount(orderedCookBookings) +
-    getPendingProposalCount(orderedExperienceBookings);
   const normalizedDashboardQuery = dashboardQuery.trim().toLowerCase();
   const hasDashboardFilters = normalizedDashboardQuery.length > 0 || showOnlyActionable;
   const shouldIncludeListing = (searchValues: Array<string | number | null | undefined>, isPublic: boolean) =>
@@ -804,15 +724,6 @@ export default function ProviderDashboard() {
       booking.booking.experienceCustomOfferStatus === "proposed" ||
       booking.booking.experienceCustomOfferStatus === "declined",
   ).length;
-  const allAssignedListings = [
-    ...(data?.stays ?? []),
-    ...(data?.cars ?? []),
-    ...(data?.cooks ?? []),
-    ...(data?.errands ?? []),
-    ...(data?.experiences ?? []),
-  ];
-  const publicListingCount = allAssignedListings.filter((item) => item.isPublic).length;
-  const underReviewListingCount = allAssignedListings.filter((item) => !item.isPublic).length;
   const allProviderBookings = [
     ...orderedStayBookings,
     ...orderedCarBookings,
@@ -820,43 +731,8 @@ export default function ProviderDashboard() {
     ...orderedErrandBookings,
     ...orderedExperienceBookings,
   ];
-  const requestCount = allProviderBookings.filter((booking) =>
-    hasOpenProviderStatusRequest(booking) || hasOpenAdminReviewRequest(booking),
-  ).length;
   const isAgreed = (booking: ProviderBookingAssignmentView) => isAgreedOrder(getAssignmentServiceMode(booking), booking.booking);
-  const completedBookingCount = allProviderBookings.filter((booking) => getDashboardAssignmentStatus(booking) === "completed" && isAgreed(booking)).length;
   const awaitingResponseCount = allProviderBookings.filter((booking) => awaitsProviderResponse(booking.assignment)).length;
-  const averageRating = getAverageListingRating(
-    [
-      ...(data?.stays ?? []),
-      ...(data?.cars ?? []),
-      ...(data?.cooks ?? []),
-      ...(data?.errands ?? []),
-      ...(data?.experiences ?? []),
-    ].map((item) => ({ rating: item.rating, reviewCount: item.reviewCount })),
-  );
-  const totalReviewCount = [
-    ...(data?.stays ?? []),
-    ...(data?.cars ?? []),
-    ...(data?.cooks ?? []),
-    ...(data?.errands ?? []),
-    ...(data?.experiences ?? []),
-  ].reduce((sum, item) => sum + item.reviewCount, 0);
-  const payoutByAssignmentId = new Map(
-    (providerPaymentData?.payouts ?? [])
-      .filter((payout) => Boolean(payout.assignmentId))
-      .map((payout) => [payout.assignmentId!, payout] as const),
-  );
-  const projectedNetEarnings = providerPaymentData?.totalProjectedPayouts ?? 0;
-  const awaitingPayoutAmount = (providerPaymentData?.totalPendingPayouts ?? 0) + (providerPaymentData?.totalApprovedPayouts ?? 0);
-  const paidOutAmount = providerPaymentData?.totalPaidOut ?? 0;
-  const platformServiceFeeRateLabel = formatServiceFeePercentLabel(providerPaymentData?.serviceFeePercents ?? []);
-  const completedNetEarnings = allProviderBookings
-    .filter((booking) => getDashboardAssignmentStatus(booking) === "completed" && isAgreed(booking))
-    .reduce((sum, booking) => sum + (payoutByAssignmentId.get(booking.assignment.id)?.payoutAmount ?? 0), 0);
-  // Things only the provider can move forward. Unread messages have their own count.
-  // Only what the provider can act on; listings waiting for TBM's check show under Review.
-  const actionableQueueCount = customRequestBookings.length + requestCount + awaitingResponseCount;
   const deepLinkedAssignmentId = useMemo(
     () => dashboardIntent.assignmentId
       || allProviderBookings.find((booking) => booking.booking.id === dashboardIntent.bookingId)?.assignment.id
@@ -866,13 +742,9 @@ export default function ProviderDashboard() {
 
   useEffect(() => {
     if (!dashboardIntent.bookingId && !dashboardIntent.assignmentId) {
-      if (dashboardIntent.openAdminThread) {
-        setActiveTab("overview");
-        return;
-      }
-
-      if (dashboardIntent.tab !== "overview") {
-        setActiveTab(dashboardIntent.tab);
+      setActiveTab(dashboardIntent.openAdminThread ? "overview" : dashboardIntent.tab);
+      if (dashboardIntent.openAdminThread && typeof window !== "undefined") {
+        window.setTimeout(() => document.getElementById("message-tbm")?.scrollIntoView({ behavior: "smooth", block: "start" }), 120);
       }
       return;
     }
@@ -890,14 +762,6 @@ export default function ProviderDashboard() {
       document.getElementById(`partner-assignment-${deepLinkedAssignmentId}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 80);
   }, [dashboardIntent, deepLinkedAssignmentId]);
-
-  useEffect(() => {
-    setProfileForm({
-      firstName: user?.firstName ?? "",
-      lastName: user?.lastName ?? "",
-      phone: user?.phone ?? "",
-    });
-  }, [user?.firstName, user?.lastName, user?.phone]);
 
   const updateProviderBookingStatus = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: "in-progress" | "completed" }) =>
@@ -989,24 +853,6 @@ export default function ProviderDashboard() {
     },
   });
 
-  const updateProfileMutation = useMutation({
-    mutationFn: async (payload: typeof profileForm) => apiRequest("PATCH", "/api/auth/user", payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
-      toast({
-        title: "Profile updated",
-        description: "Your provider contact details have been saved.",
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Could not save profile",
-        description: error.message.replace(/^\d+:\s*/, ""),
-        variant: "destructive",
-      });
-    },
-  });
-
   const getCookBookingLabel = (booking: ProviderBookingAssignmentView) => {
     const mode = getAssignmentServiceMode(booking);
     if (mode === "cook-inclusive") {
@@ -1029,13 +875,13 @@ export default function ProviderDashboard() {
   const getProposalBadge = (proposalStatus: string) => {
     switch (proposalStatus) {
       case "pending-admin-approval":
-        return <Badge className="bg-blue-600">Submitted</Badge>;
+        return <Badge className="bg-sky-700">TBM checking</Badge>;
       case "proposed":
-        return <Badge className="bg-amber-600">With Client</Badge>;
+        return <Badge className="bg-amber-600">With the guest</Badge>;
       case "declined":
         return <Badge variant="destructive">Declined</Badge>;
       default:
-        return <Badge variant="outline">Pending Chef Review</Badge>;
+        return <Badge variant="outline">Needs your price</Badge>;
     }
   };
 
@@ -1049,7 +895,7 @@ export default function ProviderDashboard() {
     }
 
     if (isClosedCustomMenu(booking)) {
-      return <Badge variant="secondary">Fulfilled</Badge>;
+      return <Badge variant="secondary">Accepted</Badge>;
     }
 
     return getProposalBadge(booking.booking.customMenuProposalStatus);
@@ -1058,13 +904,13 @@ export default function ProviderDashboard() {
   const getExperienceOfferBadge = (proposalStatus: string) => {
     switch (proposalStatus) {
       case "pending-admin-approval":
-        return <Badge className="bg-blue-600">Submitted</Badge>;
+        return <Badge className="bg-sky-700">TBM checking</Badge>;
       case "proposed":
-        return <Badge className="bg-amber-600">With Client</Badge>;
+        return <Badge className="bg-amber-600">With the guest</Badge>;
       case "declined":
         return <Badge variant="destructive">Declined</Badge>;
       default:
-        return <Badge variant="outline">Open</Badge>;
+        return <Badge variant="outline">Needs your price</Badge>;
     }
   };
 
@@ -1078,7 +924,7 @@ export default function ProviderDashboard() {
     }
 
     if (isClosedExperienceOffer(booking)) {
-      return <Badge variant="secondary">Fulfilled</Badge>;
+      return <Badge variant="secondary">Accepted</Badge>;
     }
 
     return getExperienceOfferBadge(booking.booking.experienceCustomOfferStatus);
@@ -1130,31 +976,141 @@ export default function ProviderDashboard() {
     return <Badge variant="outline">{getProgressStatusLabel(getDashboardAssignmentStatus(booking))}</Badge>;
   };
 
-  const listingsTabLabel = "Listings";
-  const customRequestsTabLabel = customRequestBookings.length > 0 ? `Requests (${customRequestBookings.length})` : "Requests";
+  const quoteStatusText = (status: string | null | undefined) => {
+    switch (status) {
+      case "pending-admin-approval":
+        return "Sent. TBM is checking it before the guest sees it.";
+      case "proposed":
+        return "With the guest. You'll hear when they decide.";
+      case "declined":
+        return "Declined.";
+      default:
+        return "Waiting for your price.";
+    }
+  };
+
+  const renderQuoteForm = (booking: ProviderBookingAssignmentView) => {
+    const id = booking.assignment.id;
+    const isMenu = getAssignmentServiceMode(booking) === "cook-custom-menu";
+    const status = (isMenu ? booking.booking.customMenuProposalStatus : booking.booking.experienceCustomOfferStatus) ?? "pending";
+    const amount = isMenu ? booking.booking.customMenuProposedAmount : booking.booking.experienceCustomOfferAmount;
+    const message = isMenu ? booking.booking.customMenuProposalMessage : booking.booking.experienceCustomOfferMessage;
+    const declineReason = isMenu ? booking.booking.customMenuDeclineReason : booking.booking.experienceCustomOfferDeclineReason;
+    const mutation = isMenu ? reviewCookBookingMutation : reviewExperienceOfferMutation;
+    const isSending = (isMenu ? activeCustomMenuBookingId : activeExperienceOfferBookingId) === id;
+    const locked = isFinalizedAssignmentBooking(booking) || (isMenu ? isClosedCustomMenu(booking) : isClosedExperienceOffer(booking));
+    const canAnswer = !locked && status === "pending";
+    const enteredAmount = proposalAmounts[id] ?? "";
+    const note = proposalMessages[id] ?? "";
+    const currencyLabel = selectedCurrency === "KES" ? "KSh" : "US$";
+
+    return (
+      <div className="space-y-3 rounded-2xl border border-stone-200 bg-stone-50/70 p-4" data-testid={`quote-form-${id}`}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold text-stone-950">{isMenu ? "Your quote" : "Your offer"}</div>
+            <div className="text-xs text-stone-600">{locked ? (booking.booking.status === "cancelled" ? "This booking was cancelled." : "Accepted by the guest.") : quoteStatusText(status)}</div>
+          </div>
+          {isMenu ? getCustomMenuWorkflowBadge(booking) : getExperienceWorkflowBadge(booking)}
+        </div>
+        {status !== "pending" && amount ? (
+          <div className="rounded-xl bg-white p-3 text-sm">
+            <span className="text-stone-600">Price sent: </span>
+            <span className="font-semibold text-stone-950">{formatAmount(amount)}</span>
+            {message ? <span className="text-stone-600"> · {message}</span> : null}
+          </div>
+        ) : null}
+        {status !== "pending" && declineReason ? (
+          <div className="rounded-xl bg-white p-3 text-sm text-stone-700">Reason given: {declineReason}</div>
+        ) : null}
+        {canAnswer ? (
+          <>
+            <div className="space-y-1.5">
+              <Label htmlFor={`quote-amount-${id}`}>Total price for the guest ({currencyLabel})</Label>
+              <Input
+                id={`quote-amount-${id}`}
+                type="number"
+                inputMode="decimal"
+                min="1"
+                placeholder={selectedCurrency === "KES" ? "For example, 25000" : "For example, 200"}
+                value={enteredAmount}
+                onChange={(event) => setProposalAmounts((current) => ({ ...current, [id]: event.target.value }))}
+                className="bg-white"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor={`quote-note-${id}`}>Note for the guest, or why you can't do it</Label>
+              <Textarea
+                id={`quote-note-${id}`}
+                rows={3}
+                placeholder={isMenu ? "What's on the menu, what's included, anything the guest should know" : "What's included, timings, anything the guest should know"}
+                value={note}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setProposalMessages((current) => ({ ...current, [id]: value }));
+                  setDeclineReasons((current) => ({ ...current, [id]: value }));
+                }}
+                className="bg-white"
+              />
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button
+                type="button"
+                className="rounded-full"
+                disabled={mutation.isPending || !(Number(enteredAmount) > 0)}
+                onClick={() => mutation.mutate({
+                  assignmentId: id,
+                  payload: {
+                    action: "propose",
+                    proposedAmount: getSubmittedProposalAmountUsd(enteredAmount, amount),
+                    proposalMessage: note,
+                  },
+                })}
+                data-testid={`button-send-quote-${id}`}
+              >
+                {isSending ? "Sending..." : isMenu ? "Send quote" : "Send offer"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-full border-rose-200 text-rose-700 hover:bg-rose-50"
+                disabled={mutation.isPending || !note.trim()}
+                onClick={() => mutation.mutate({ assignmentId: id, payload: { action: "decline", declineReason: declineReasons[id] ?? note } })}
+              >
+                Decline
+              </Button>
+            </div>
+            <p className="text-xs text-stone-500">TBM checks your answer before the guest sees it. To decline, write a short reason in the note.</p>
+          </>
+        ) : null}
+      </div>
+    );
+  };
+
+  // In Bookings, quotes point to the Custom quotes tab, where they're answered.
+  const renderQuotePointer = (booking: ProviderBookingAssignmentView) => {
+    const isMenu = getAssignmentServiceMode(booking) === "cook-custom-menu";
+    if (isFinalizedAssignmentBooking(booking) || (isMenu ? isClosedCustomMenu(booking) : isClosedExperienceOffer(booking))) {
+      return null;
+    }
+    const status = isMenu ? booking.booking.customMenuProposalStatus : booking.booking.experienceCustomOfferStatus;
+    return (
+      <div className="flex flex-col gap-2 rounded-2xl border border-sky-200 bg-sky-50/60 p-3 sm:flex-row sm:items-center sm:justify-between">
+        <span className="text-sm text-sky-950">{isMenu ? "Custom menu" : "Custom offer"}: {quoteStatusText(status)}</span>
+        <Button type="button" size="sm" variant="outline" className="rounded-full bg-white" onClick={() => goToTab("custom-requests")}>
+          Open in Custom quotes
+        </Button>
+      </div>
+    );
+  };
+
+  const customRequestsTabLabel = customRequestBookings.length > 0 ? `Quotes (${customRequestBookings.length})` : "Quotes";
   const bookingsTabLabel = liveBookingCount > 0 ? `Bookings (${liveBookingCount})` : "Bookings";
-  const customRequestsTabTone =
-    customRequestBookings.length > 0
-      ? "border-blue-200 bg-blue-50 text-blue-900 hover:bg-blue-100"
-      : "";
-  const bookingsTabTone =
-    requestCount > 0
-      ? "border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100"
-      : liveBookingCount > 0
-        ? "border-teal-200 bg-teal-50 text-teal-900 hover:bg-teal-100"
-        : "";
-  const listingSectionLinks = [
-    hasRole("stays") ? { id: "provider-stays", label: "Stays", count: visibleStays.length } : null,
-    hasRole("cars") ? { id: "provider-cars", label: "Cars", count: visibleCars.length } : null,
-    hasRole("cooks") ? { id: "provider-cooks", label: "Chefs", count: visibleCooks.length } : null,
-    hasRole("errands") ? { id: "provider-errands", label: "Errands", count: visibleErrands.length } : null,
-    hasRole("experiences") ? { id: "provider-experiences", label: "Experiences", count: visibleExperiences.length } : null,
-  ].filter((value): value is { id: string; label: string; count: number } => Boolean(value));
   const bookingSectionLinks = [
     hasRole("stays") ? { id: "provider-stay-bookings", label: "Stays", count: visibleStayBookings.length } : null,
-    hasRole("cars") ? { id: "provider-car-bookings", label: "Cars", count: visibleCarBookings.length } : null,
-    hasRole("cooks") ? { id: "provider-cook-bookings", label: "Chefs", count: bookingTabCookBookings.length } : null,
-    hasRole("errands") ? { id: "provider-errand-bookings", label: "Errands", count: visibleErrandBookings.length } : null,
+    hasRole("cars") ? { id: "provider-car-bookings", label: "Vehicles", count: visibleCarBookings.length } : null,
+    hasRole("cooks") ? { id: "provider-cook-bookings", label: "Chef services", count: bookingTabCookBookings.length } : null,
+    hasRole("errands") ? { id: "provider-errand-bookings", label: "Home help", count: visibleErrandBookings.length } : null,
     hasRole("experiences") ? { id: "provider-experience-bookings", label: "Experiences", count: bookingTabExperienceBookings.length } : null,
   ].filter((value): value is { id: string; label: string; count: number } => Boolean(value));
 
@@ -1168,793 +1124,473 @@ export default function ProviderDashboard() {
     });
   };
 
-  const openCustomRequestWorkspace = (assignmentId: string) => {
-    setActiveTab("bookings");
-    openAssignment(assignmentId);
-
-    if (typeof window === "undefined") {
+  const openBookingWorkspace = (bookingId: string, assignmentId?: string | null) => {
+    const targetAssignmentId = assignmentId || allProviderBookings.find((booking) => booking.booking.id === bookingId)?.assignment.id;
+    if (!targetAssignmentId) {
+      goToTab("bookings");
       return;
     }
 
-    window.setTimeout(() => {
-      document.getElementById(`partner-assignment-${assignmentId}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 80);
+    setLocation(dashboardHref("bookings", { assignmentId: targetAssignmentId }));
+    openAssignment(targetAssignmentId);
+    if (typeof window !== "undefined") {
+      window.setTimeout(() => {
+        document.getElementById(`partner-assignment-${targetAssignmentId}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 120);
+    }
   };
 
-  const openBookingWorkspace = (bookingId: string, assignmentId?: string | null) => {
-    setActiveTab("bookings");
-    const targetAssignmentId = assignmentId || allProviderBookings.find((booking) => booking.booking.id === bookingId)?.assignment.id;
-    if (targetAssignmentId) {
-      openAssignment(targetAssignmentId);
+  // "In progress" only from the job's first day, as the server checks too.
+  const getJobStart = (booking: ProviderBookingAssignmentView) => getJobStartDate({
+    checkIn: booking.booking.checkIn,
+    serviceScheduleSlots: getAssignmentScheduleSlots(booking),
+  });
+  const renderStatusAction = (booking: ProviderBookingAssignmentView, statusAction: ReturnType<typeof getNextProgressAction>, className: string) => {
+    if (!statusAction) {
+      return null;
     }
-
-    if (typeof window === "undefined") {
-      return;
+    const startDate = getJobStart(booking);
+    if (!canStartJob(startDate, today)) {
+      return (
+        <p className="flex items-center gap-2 rounded-2xl bg-stone-50 px-3 py-2 text-sm text-stone-600" data-testid={`text-starts-on-${booking.assignment.id}`}>
+          <CalendarDays className="h-4 w-4 shrink-0" aria-hidden="true" />
+          {startDate ? `You can mark this job in progress from ${formatDay(startDate)}.` : "This job has no start date yet."}
+        </p>
+      );
     }
+    return (
+      <Button
+        variant="outline"
+        className={className}
+        onClick={() => updateProviderBookingStatus.mutate({ id: booking.assignment.id, status: statusAction.status })}
+        disabled={updateProviderBookingStatus.isPending}
+        data-testid={`button-status-${booking.assignment.id}`}
+      >
+        {activeStatusBookingId === booking.assignment.id ? "Updating..." : statusAction.label}
+      </Button>
+    );
+  };
 
-    window.setTimeout(() => {
-      if (targetAssignmentId) {
-        document.getElementById(`partner-assignment-${targetAssignmentId}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
-    }, 80);
+  // Overview: what needs the provider now, and what's coming.
+  const hubListings = toHubListings(data, hub.workspaces);
+  const firstAwaiting = allProviderBookings.find((booking) => awaitsProviderResponse(booking.assignment));
+  const startsToday = allProviderBookings.filter((booking) =>
+    isAgreed(booking)
+    && getDashboardAssignmentStatus(booking) === "upcoming"
+    && getJobStart(booking) === today,
+  );
+  const attentionItems = ([
+    awaitingResponseCount > 0 ? {
+      key: "job-requests",
+      icon: ClipboardList,
+      title: `${awaitingResponseCount} new ${awaitingResponseCount === 1 ? "job" : "jobs"} to accept or decline`,
+      detail: firstAwaiting ? joinMeta([firstAwaiting.assignment.serviceName, getAssignmentDateRange(firstAwaiting)]) : undefined,
+      action: "Answer",
+      href: "/provider/service-requests",
+      tone: "amber" as const,
+    } : null,
+    partnerPendingCustomRequestCount > 0 ? {
+      key: "quotes",
+      icon: ReceiptText,
+      title: `${partnerPendingCustomRequestCount} custom ${partnerPendingCustomRequestCount === 1 ? "request needs" : "requests need"} your quote`,
+      detail: "The guest is waiting for your price.",
+      action: "Quote",
+      onClick: () => goToTab("custom-requests"),
+      tone: "amber" as const,
+    } : null,
+    ...startsToday.slice(0, 2).map((booking) => ({
+      key: `today-${booking.assignment.id}`,
+      icon: CalendarDays,
+      title: `${booking.assignment.serviceName} starts today`,
+      detail: joinMeta([booking.booking.guestName, `Ref ${getShortBookingReference(booking.booking.id)}`]),
+      action: "Open",
+      onClick: () => openBookingWorkspace(booking.booking.id, booking.assignment.id),
+      tone: "teal" as const,
+    })),
+    unreadNotificationCount > 0 ? {
+      key: "messages",
+      icon: MessagesSquare,
+      title: `${unreadNotificationCount} unread ${unreadNotificationCount === 1 ? "message or alert" : "messages and alerts"}`,
+      action: "Read",
+      href: "/provider/messages",
+      tone: "sky" as const,
+    } : null,
+  ] as Array<AttentionItem | null>).filter((item): item is AttentionItem => Boolean(item));
+  const upcomingItems: UpcomingItem[] = allProviderBookings
+    .filter((booking) => {
+      const status = getDashboardAssignmentStatus(booking);
+      return isAgreed(booking)
+        && (status === "in-progress" || (status === "upcoming" && (booking.booking.checkOut || booking.booking.checkIn) >= today));
+    })
+    .sort((a, b) => (getJobStart(a) ?? "").localeCompare(getJobStart(b) ?? ""))
+    .map((booking) => ({
+      id: booking.assignment.id,
+      workspace: booking.assignment.providerCategory as ProviderCategory,
+      title: booking.assignment.serviceName,
+      when: getAssignmentDateRange(booking) ?? "Date to be set",
+      who: booking.booking.guestName ?? null,
+      status: getProgressStatusLabel(getDashboardAssignmentStatus(booking)),
+      onOpen: () => openBookingWorkspace(booking.booking.id, booking.assignment.id),
+    }));
+  const activeBookingCounts: Partial<Record<ProviderCategory, number>> = {
+    stays: getActiveBookingCount(orderedStayBookings),
+    cars: getActiveBookingCount(orderedCarBookings),
+    cooks: getActiveBookingCount(orderedCookBookings),
+    errands: getActiveBookingCount(orderedErrandBookings),
+    experiences: getActiveBookingCount(orderedExperienceBookings),
+  };
+
+  // Listings, one section per service, each listing on one card.
+  const listingDetails = (listing: (typeof hubListings)[number]): string[] => {
+    if (listing.workspace === "stays") {
+      const stay = data?.stays?.find((item) => item.id === listing.id);
+      return stay ? [isHotelStay(stay) ? `Hotel · from ${formatAmount(stay.price)} a room a night` : `${formatAmount(stay.price)} a night`] : [];
+    }
+    if (listing.workspace === "cars") {
+      const car = data?.cars?.find((item) => item.id === listing.id);
+      if (!car) return [];
+      return [
+        `${formatAmount(car.priceWithDriver)} a day with driver`,
+        car.priceWithDriverHourly ? `${formatAmount(car.priceWithDriverHourly)} an hour` : "",
+        car.pricePerDay ? `${formatAmount(car.pricePerDay)} a day self-drive` : "",
+      ].filter(Boolean);
+    }
+    if (listing.workspace === "cooks") {
+      const cook = data?.cooks?.find((item) => item.id === listing.id);
+      if (!cook) return [];
+      return [
+        `${formatAmount(cook.serviceFee || cook.pricePerSession)} a day, chef's service`,
+        `${formatAmount(cook.inclusivePrice || cook.serviceFee || cook.pricePerSession)} a day, food included`,
+        `Base for ${getCookMinimumGuests(cook)} guests · ${formatAmount(getCookExtraGuestServiceFee(cook))} per extra guest`,
+        cook.customMenuEnabled ? "Takes custom menu requests" : "",
+      ].filter(Boolean);
+    }
+    if (listing.workspace === "errands") {
+      const errand = data?.errands?.find((item) => item.id === listing.id);
+      if (!errand) return [];
+      return [
+        hasHelpMamaPricing(errand)
+          ? `From ${formatAmount(getHelpMamaStartingPrice(errand.helpMamaPricing))}`
+          : errand.houseCleaningEnabled && !errand.shoppingEnabled && !errand.laundryEnabled
+            ? `${formatAmount(errand.basePrice)} ${HOUSE_CLEANING_BASE_ROOM_LABEL}`
+            : `From ${formatAmount(errand.basePrice)}`,
+        errand.shoppingEnabled ? `Shopping + ${errand.shoppingCommissionPercent}%` : "",
+        errand.laundryEnabled ? "Laundry" : "",
+        errand.houseCleaningEnabled ? "Cleaning" : "",
+      ].filter(Boolean);
+    }
+    const experience = data?.experiences?.find((item) => item.id === listing.id);
+    if (!experience) return [];
+    return [
+      experience.privateEnabled ? `Private from ${formatAmount(experience.privatePricePerPerson)} a person` : "",
+      experience.sharedEnabled ? `Shared from ${formatAmount(experience.sharedPricePerPerson)} a person` : "",
+      `${experience.durationHours} hours`,
+      `Up to ${experience.maxGuests} guests`,
+    ].filter(Boolean);
+  };
+  const listingMatchesSearch = (listing: (typeof hubListings)[number]) =>
+    matchesDashboardQuery(normalizedDashboardQuery, [listing.name, listing.location, listing.isPublic ? "live public" : "checking review"])
+    && (!showOnlyActionable || !listing.isPublic);
+  const tabTitles: Record<DashboardTab, { title: string; description: string }> = {
+    overview: { title: "", description: "" },
+    listings: activeWorkspace
+      ? { title: providerWorkspaces[activeWorkspace].label, description: `Your ${providerWorkspaces[activeWorkspace].noun[1]}: prices, photos, dates you're away, and sharing.` }
+      : { title: "Your listings", description: "Prices, photos, dates you're away, and sharing, for each of your services." },
+    "custom-requests": { title: "Custom quotes", description: "Guests asked for something made for them. Send your price, or decline with a reason. TBM checks it before the guest sees it." },
+    bookings: { title: "Bookings", description: "Every job, with its dates, what the guest booked, and your messages with TBM." },
   };
 
   return (
-    <ProviderLayout>
-      <div className="min-h-full bg-[radial-gradient(circle_at_top_left,_rgba(20,184,166,0.12),_transparent_32%),radial-gradient(circle_at_top_right,_rgba(245,158,11,0.12),_transparent_28%),linear-gradient(180deg,_rgba(255,251,245,0.92),_rgba(255,255,255,1))] dark:bg-none dark:bg-background">
-        <div className="container mx-auto space-y-6 px-4 py-5 sm:px-5 md:space-y-8 md:px-6 md:py-8">
-          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "overview" | "listings" | "custom-requests" | "bookings")} className="space-y-6 md:space-y-8">
-          <section className="overflow-hidden rounded-[2rem] border border-border/60 bg-card/85 shadow-[0_36px_90px_-48px_rgba(92,73,47,0.38)] supports-[backdrop-filter]:backdrop-blur dark:bg-card/90 dark:supports-[backdrop-filter]:backdrop-blur-none">
-            <div className="px-4 py-5 sm:px-6 md:px-8 md:py-8">
-              <div className="space-y-5">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                  <div className="space-y-2">
-                    <div className="inline-flex w-fit items-center gap-2 rounded-full border border-stone-200 bg-stone-50/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-                      <CalendarClock className="h-3.5 w-3.5 text-teal-700" />
-                      {providerTypes.length ? `${providerTypes.length} workspace${providerTypes.length === 1 ? "" : "s"}` : "Assigned work"}
-                    </div>
-                    <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl md:text-4xl">
-                      Provider dashboard
-                    </h1>
-                    <p className="max-w-2xl text-sm text-muted-foreground sm:text-base">
-                      Manage listings, requests, and bookings in one place.
-                    </p>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 sm:min-w-[22rem]">
-                    <div className="rounded-[1.25rem] border border-amber-200 bg-amber-50/70 p-3">
-                      <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-amber-900">Needs action</div>
-                      <div className="mt-2 text-2xl font-semibold tracking-tight text-stone-950">{actionableQueueCount}</div>
-                    </div>
-                    <div className="rounded-[1.25rem] border border-teal-200 bg-teal-50/70 p-3">
-                      <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-teal-800">Listings</div>
-                      <div className="mt-2 text-2xl font-semibold tracking-tight text-stone-950">{assignedListingCount}</div>
-                    </div>
-                    <div className="rounded-[1.25rem] border border-sky-200 bg-sky-50/70 p-3">
-                      <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-sky-800">Requests</div>
-                      <div className="mt-2 text-2xl font-semibold tracking-tight text-stone-950">{customRequestBookings.length}</div>
-                    </div>
-                    <div className="rounded-[1.25rem] border border-stone-200 bg-stone-50/70 p-3">
-                      <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Live</div>
-                      <div className="mt-2 text-2xl font-semibold tracking-tight text-foreground">{liveBookingCount}</div>
-                    </div>
-                  </div>
-                </div>
+    <ProviderLayout title={activeTab === "overview" ? "Home" : tabTitles[activeTab].title}>
+      <div className="min-h-full">
+        <div className="mx-auto max-w-6xl space-y-5 px-4 py-5 sm:px-6 md:space-y-6 md:py-8">
+          <Tabs value={activeTab} onValueChange={(value) => goToTab(value as DashboardTab)} className="space-y-5 md:space-y-6">
+            <TabsList className="flex h-auto w-full justify-start gap-1 overflow-x-auto rounded-full border border-stone-200/80 bg-white/90 p-1 shadow-sm sm:w-fit">
+              <TabsTrigger value="overview" className="min-h-10 shrink-0 rounded-full px-4 text-sm data-[state=active]:bg-teal-800 data-[state=active]:text-white">
+                Overview
+              </TabsTrigger>
+              <TabsTrigger value="listings" className="min-h-10 shrink-0 rounded-full px-4 text-sm data-[state=active]:bg-teal-800 data-[state=active]:text-white">
+                Listings
+              </TabsTrigger>
+              {showQuotes ? (
+                <TabsTrigger value="custom-requests" className={cn("min-h-10 shrink-0 rounded-full px-4 text-sm data-[state=active]:bg-teal-800 data-[state=active]:text-white", partnerPendingCustomRequestCount > 0 && "text-amber-800")}>
+                  {customRequestsTabLabel}
+                </TabsTrigger>
+              ) : null}
+              <TabsTrigger value="bookings" className="min-h-10 shrink-0 rounded-full px-4 text-sm data-[state=active]:bg-teal-800 data-[state=active]:text-white">
+                {bookingsTabLabel}
+              </TabsTrigger>
+            </TabsList>
 
-                <TabsList className="grid h-auto grid-cols-2 gap-2 rounded-[1.5rem] border border-stone-200/70 bg-white/85 p-2 sm:grid-cols-4">
-                  <TabsTrigger value="overview" className="min-h-11 rounded-[1rem] px-3 text-sm">
-                    Overview
-                  </TabsTrigger>
-                  <TabsTrigger value="listings" className="min-h-11 rounded-[1rem] px-3 text-sm">
-                    {listingsTabLabel}
-                  </TabsTrigger>
-                  <TabsTrigger value="custom-requests" className={cn("min-h-11 rounded-[1rem] px-3 text-sm", customRequestsTabTone)}>
-                    {customRequestsTabLabel}
-                  </TabsTrigger>
-                  <TabsTrigger value="bookings" className={cn("min-h-11 rounded-[1rem] px-3 text-sm", bookingsTabTone)}>
-                    {bookingsTabLabel}
-                  </TabsTrigger>
-                </TabsList>
-
-                <div className="rounded-[1.5rem] border border-stone-200/70 bg-white/88 p-4">
-                  <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
-                    <div className="relative">
-                      <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        value={dashboardQuery}
-                        onChange={(event) => setDashboardQuery(event.target.value)}
-                        placeholder="Search dashboard"
-                        className="h-11 rounded-full border-stone-200 bg-white pl-11"
-                      />
-                    </div>
-                    <div className="flex flex-wrap gap-2">
+            {activeTab !== "overview" ? (
+              <div className="space-y-4">
+                <HubPageHeader
+                  title={tabTitles[activeTab].title}
+                  description={tabTitles[activeTab].description}
+                  actions={activeTab === "listings" && activeWorkspace ? (
+                    <Button asChild className="rounded-full">
+                      <Link href={providerWorkspaces[activeWorkspace].addHref}><Plus className="mr-1.5 h-4 w-4" />{providerWorkspaces[activeWorkspace].addLabel}</Link>
+                    </Button>
+                  ) : undefined}
+                />
+                {hub.workspaces.length > 1 && (activeTab === "listings" || activeTab === "bookings") ? (
+                  <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0" role="group" aria-label="Choose a service">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={!activeWorkspace ? "default" : "outline"}
+                      className="shrink-0 rounded-full"
+                      onClick={() => setLocation(activeTab === "listings" ? "/provider/dashboard?tab=listings" : "/provider/dashboard?tab=bookings")}
+                    >
+                      All services
+                    </Button>
+                    {hub.workspaces.map((key) => (
                       <Button
+                        key={key}
                         type="button"
-                        variant={!showOnlyActionable ? "default" : "outline"}
-                        className="flex-1 rounded-full sm:flex-none"
-                        onClick={() => setShowOnlyActionable(false)}
+                        size="sm"
+                        variant={activeWorkspace === key ? "default" : "outline"}
+                        className="shrink-0 rounded-full bg-white/90 data-[active=true]:bg-primary"
+                        data-active={activeWorkspace === key}
+                        onClick={() => setLocation(`/provider/dashboard?tab=${activeTab}&workspace=${key}`)}
+                        data-testid={`filter-workspace-${key}`}
                       >
-                        All
+                        {providerWorkspaces[key].label}
                       </Button>
-                      <Button
-                        type="button"
-                        variant={showOnlyActionable ? "default" : "outline"}
-                        className="flex-1 rounded-full sm:flex-none"
-                        onClick={() => setShowOnlyActionable(true)}
-                      >
-                        Needs action
-                      </Button>
-                      {hasDashboardFilters ? (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          className="flex-1 rounded-full sm:flex-none"
-                          onClick={() => {
-                            setDashboardQuery("");
-                            setShowOnlyActionable(false);
-                          }}
-                        >
-                          Clear
-                        </Button>
-                      ) : null}
-                    </div>
+                    ))}
                   </div>
-                </div>
-              </div>
-            </div>
-          </section>
-
-            <TabsContent value="overview" className="space-y-8">
-          <section className="space-y-4">
-            <DashboardSectionHeader
-              title="Overview"
-            />
-            <ShareYourListings data={data} />
-            <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(19rem,0.85fr)]">
-              <div className="space-y-6">
-                <Card className="border-stone-200/70 bg-white/82 shadow-[0_20px_60px_-42px_rgba(92,73,47,0.34)]">
-                  <CardHeader>
-                    <CardTitle>Action queue</CardTitle>
-                  </CardHeader>
-                  <CardContent className="grid gap-4 md:grid-cols-3">
-                    <div className="rounded-[1.5rem] border border-amber-200 bg-amber-50/70 p-4">
-                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-900">Needs Follow-up</div>
-                      <div className="mt-2 text-3xl font-semibold tracking-tight text-stone-950">{actionableQueueCount}</div>
-                      <Button variant="outline" className="mt-4 w-full rounded-full bg-white/80 sm:w-auto" onClick={() => setActiveTab(customRequestBookings.length > 0 ? "custom-requests" : "bookings")}>
-                        Open Queue
-                      </Button>
-                    </div>
-                    <div className="rounded-[1.5rem] border border-teal-200 bg-teal-50/70 p-4">
-                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-teal-800">Listings To Update</div>
-                      <div className="mt-2 text-3xl font-semibold tracking-tight text-stone-950">{underReviewListingCount}</div>
-                      <Button variant="outline" className="mt-4 w-full rounded-full bg-white/80 sm:w-auto" onClick={() => setActiveTab("listings")}>
-                        Open Listings
-                      </Button>
-                    </div>
-                    <div className="rounded-[1.5rem] border border-sky-200 bg-sky-50/70 p-4">
-                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-800">Custom Requests</div>
-                      <div className="mt-2 text-3xl font-semibold tracking-tight text-stone-950">{customRequestBookings.length}</div>
-                      <Button variant="outline" className="mt-4 w-full rounded-full bg-white/80 sm:w-auto" onClick={() => setActiveTab("custom-requests")}>
-                        Review Requests
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="border-stone-200/70 bg-white/82 shadow-[0_20px_60px_-42px_rgba(92,73,47,0.34)]">
-                  <CardHeader>
-                    <CardTitle>Counts</CardTitle>
-                  </CardHeader>
-                  <CardContent className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                    <div className="rounded-[1.5rem] border border-stone-200 bg-stone-50/70 p-4"><div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Listings</div><div className="mt-2 text-3xl font-semibold tracking-tight text-foreground">{assignedListingCount}</div></div>
-                    <div className="rounded-[1.5rem] border border-stone-200 bg-stone-50/70 p-4"><div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Public</div><div className="mt-2 text-3xl font-semibold tracking-tight text-foreground">{publicListingCount}</div></div>
-                    <div className="rounded-[1.5rem] border border-stone-200 bg-stone-50/70 p-4"><div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Under Review</div><div className="mt-2 text-3xl font-semibold tracking-tight text-foreground">{underReviewListingCount}</div></div>
-                    <div className="rounded-[1.5rem] border border-stone-200 bg-stone-50/70 p-4"><div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Bookings</div><div className="mt-2 text-3xl font-semibold tracking-tight text-foreground">{allProviderBookings.length}</div></div>
-                    <div className="rounded-[1.5rem] border border-stone-200 bg-stone-50/70 p-4"><div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Requests</div><div className="mt-2 text-3xl font-semibold tracking-tight text-foreground">{requestCount}</div></div>
-                    <div className="rounded-[1.5rem] border border-stone-200 bg-stone-50/70 p-4"><div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Completed</div><div className="mt-2 text-3xl font-semibold tracking-tight text-foreground">{completedBookingCount}</div></div>
-                  </CardContent>
-                </Card>
-
-                <Card className="border-stone-200/70 bg-white/82 shadow-[0_20px_60px_-42px_rgba(92,73,47,0.34)]">
-                  <CardHeader>
-                    <CardTitle>Performance</CardTitle>
-                  </CardHeader>
-                  <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                    <div className="rounded-[1.5rem] border border-amber-200 bg-amber-50/70 p-4"><div className="flex items-center gap-2 text-amber-800"><Star className="h-4 w-4 fill-amber-400 text-amber-400" /><span className="text-xs font-semibold uppercase tracking-[0.18em]">Rating</span></div><div className="mt-3 text-3xl font-semibold tracking-tight text-stone-950">{averageRating ? averageRating.toFixed(1) : "New"}</div><p className="mt-1 text-sm text-stone-600">{totalReviewCount ? `${totalReviewCount} review${totalReviewCount === 1 ? "" : "s"}` : "No reviews"}</p></div>
-                    <div className="rounded-[1.5rem] border border-emerald-200 bg-emerald-50/70 p-4"><div className="flex items-center gap-2 text-emerald-800"><Wallet className="h-4 w-4" /><span className="text-xs font-semibold uppercase tracking-[0.18em]">All payouts</span></div><div className="mt-3 text-3xl font-semibold tracking-tight text-stone-950">{formatAmount(projectedNetEarnings)}</div></div>
-                    <div className="rounded-[1.5rem] border border-teal-200 bg-teal-50/70 p-4"><div className="flex items-center gap-2 text-teal-800"><HandCoins className="h-4 w-4" /><span className="text-xs font-semibold uppercase tracking-[0.18em]">Completed</span></div><div className="mt-3 text-3xl font-semibold tracking-tight text-stone-950">{formatAmount(completedNetEarnings)}</div></div>
-                    <div className="rounded-[1.5rem] border border-sky-200 bg-sky-50/70 p-4"><div className="flex items-center gap-2 text-sky-800"><CalendarClock className="h-4 w-4" /><span className="text-xs font-semibold uppercase tracking-[0.18em]">Awaiting payout</span></div><div className="mt-3 text-3xl font-semibold tracking-tight text-stone-950">{formatAmount(awaitingPayoutAmount)}</div></div>
-                  </CardContent>
-                </Card>
-              </div>
-
-              <div className="space-y-6">
-                <Card className="border-stone-200/70 bg-white/82 shadow-[0_20px_60px_-42px_rgba(92,73,47,0.34)]">
-                  <CardHeader>
-                    <CardTitle>Payments</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid gap-3 sm:grid-cols-3">
-                      <div className="rounded-[1.5rem] border border-stone-200 bg-stone-50/70 p-4">
-                        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Awaiting Payout</div>
-                        <div className="mt-2 text-2xl font-semibold tracking-tight text-foreground">{formatAmount(awaitingPayoutAmount)}</div>
-                        <p className="mt-1 text-sm text-muted-foreground">{providerPaymentData?.unpaidPayoutCount ?? 0} open</p>
-                      </div>
-                      <div className="rounded-[1.5rem] border border-stone-200 bg-stone-50/70 p-4">
-                        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Paid Out</div>
-                        <div className="mt-2 text-2xl font-semibold tracking-tight text-foreground">{formatAmount(paidOutAmount)}</div>
-                        <p className="mt-1 text-sm text-muted-foreground">{providerPaymentData?.paidPayoutCount ?? 0} paid</p>
-                      </div>
-                      <div className="rounded-[1.5rem] border border-stone-200 bg-stone-50/70 p-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Platform Service Fees</div>
-                          </div>
-                          <PlatformServiceFeeHint />
-                        </div>
-                        <div className="mt-2 text-2xl font-semibold tracking-tight text-foreground">{platformServiceFeeRateLabel}</div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="border-stone-200/70 bg-white/82 shadow-[0_20px_60px_-42px_rgba(92,73,47,0.34)]">
-                  <CardHeader>
-                    <CardTitle>Profile</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex items-center gap-3 rounded-[1.5rem] border border-stone-200 bg-stone-50/70 p-4"><div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-teal-100 text-teal-700"><UserRound className="h-5 w-5" /></div><div className="min-w-0"><div className="font-medium text-foreground">{[profileForm.firstName, profileForm.lastName].filter(Boolean).join(" ") || "Provider Account"}</div><div className="text-sm text-muted-foreground">Primary provider contact</div></div></div>
-                    <div className="grid gap-3">
-                      <Input value={profileForm.firstName} onChange={(event) => setProfileForm((current) => ({ ...current, firstName: event.target.value }))} placeholder="First name" />
-                      <Input value={profileForm.lastName} onChange={(event) => setProfileForm((current) => ({ ...current, lastName: event.target.value }))} placeholder="Last name" />
-                      <Input value={profileForm.phone} onChange={(event) => setProfileForm((current) => ({ ...current, phone: event.target.value }))} placeholder="Phone number" />
-                    </div>
-                    <div className="space-y-2 rounded-[1.5rem] border border-stone-200 bg-stone-50/70 p-4 text-sm text-muted-foreground"><div className="flex items-start gap-2"><Mail className="mt-0.5 h-4 w-4 shrink-0" /><span className="min-w-0 break-all">{user?.email ?? "No email saved"}</span></div><div className="flex items-start gap-2"><Phone className="mt-0.5 h-4 w-4 shrink-0" /><span className="min-w-0 break-words">{profileForm.phone || "No phone saved"}</span></div></div>
-                    <Button onClick={() => updateProfileMutation.mutate(profileForm)} disabled={updateProfileMutation.isPending} className="w-full rounded-full">{updateProfileMutation.isPending ? "Saving..." : "Save Profile"}</Button>
-                  </CardContent>
-                </Card>
-
-                {isProvider ? (
-                  <Card className="border-stone-200/70 bg-white/82 shadow-[0_20px_60px_-42px_rgba(92,73,47,0.34)]">
-                    <CardHeader>
-                      <CardTitle>Admin Channel</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <PartnerAdminThread
-                        mode="provider"
-                        providerUserId={user?.id}
-                        title="Message Admin"
-                        description="Use this thread for account questions, listing approvals, payout follow-ups, or anything outside a booking."
-                        enabled={isProvider}
-                        defaultOpen={dashboardIntent.openAdminThread}
-                      />
-                    </CardContent>
-                  </Card>
                 ) : null}
-
-                <Card className="border-stone-200/70 bg-white/82 shadow-[0_20px_60px_-42px_rgba(92,73,47,0.34)]">
-                  <CardHeader>
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <CardTitle>Inbox</CardTitle>
-                      </div>
-                      <Button asChild variant="outline" className="rounded-full bg-white/80">
-                        <Link href="/inbox">Open inbox</Link>
-                      </Button>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-[1.25rem] border border-stone-200 bg-stone-50/70 p-3">
-                        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Unread</div>
-                        <div className="mt-2 text-2xl font-semibold tracking-tight text-foreground">{unreadNotificationCount}</div>
-                      </div>
-                      <div className="rounded-[1.25rem] border border-stone-200 bg-stone-50/70 p-3">
-                        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Review</div>
-                        <div className="mt-2 text-2xl font-semibold tracking-tight text-foreground">{pendingReviewCount}</div>
-                      </div>
-                    </div>
-                    <InboxCenter
-                      mode="compact"
-                      title=""
-                      description=""
-                      enabled={isProvider || isAdmin}
-                      userRole={user?.role}
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <div className="relative flex-1">
+                    <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      value={dashboardQuery}
+                      onChange={(event) => setDashboardQuery(event.target.value)}
+                      placeholder={activeTab === "listings" ? "Search your listings" : "Search by guest, place or reference"}
+                      aria-label="Search"
+                      className="h-11 rounded-full border-stone-200 bg-white pl-11"
                     />
-                    {user?.moderationNote ? (
-                      <div className="rounded-[1.5rem] border border-amber-200 bg-amber-50/70 p-4">
-                        <div className="font-medium text-amber-900">Admin note</div>
-                        <p className="mt-1 text-sm leading-6 text-amber-900/80">{user.moderationNote}</p>
-                      </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button type="button" variant={!showOnlyActionable ? "default" : "outline"} className="flex-1 rounded-full sm:flex-none" onClick={() => setShowOnlyActionable(false)}>
+                      All
+                    </Button>
+                    <Button type="button" variant={showOnlyActionable ? "default" : "outline"} className="flex-1 rounded-full sm:flex-none" onClick={() => setShowOnlyActionable(true)}>
+                      {activeTab === "listings" ? "Being checked" : "Open"}
+                    </Button>
+                    {hasDashboardFilters ? (
+                      <Button type="button" variant="ghost" className="rounded-full" onClick={() => { setDashboardQuery(""); setShowOnlyActionable(false); }}>
+                        Clear
+                      </Button>
                     ) : null}
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
-          </section>
-            </TabsContent>
-
-            <TabsContent value="listings" className="space-y-8">
-        <section className="space-y-4">
-            <DashboardSectionHeader
-              title="Listings"
-            />
-            {listingSectionLinks.length ? (
-              <div className="flex gap-2 overflow-x-auto pb-1">
-                {listingSectionLinks.map((section) => (
-                  <Button
-                    key={section.id}
-                    type="button"
-                    variant="outline"
-                    className="rounded-full whitespace-nowrap bg-white/80"
-                    onClick={() => jumpToSection(section.id)}
-                  >
-                    {section.label} ({section.count})
-                  </Button>
-                ))}
+                  </div>
+                </div>
               </div>
             ) : null}
-          </section>
 
-        <YourShares />
-
-        {hasRole("stays") && (
-        <Card id="provider-stays" className="border-stone-200/70 bg-white/82 shadow-[0_24px_70px_-42px_rgba(92,73,47,0.34)] scroll-mt-24">
-          <CardHeader>
-            <CardTitle>Assigned Stays</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex justify-stretch sm:justify-end">
-              <Button asChild className="w-full sm:w-auto">
-                <Link href="/provider/stays/new">Add Stay</Link>
-              </Button>
-            </div>
-            {visibleStays.length ? visibleStays.map((stay) => (
-              <div key={stay.id} className="flex flex-col gap-4 rounded-[1.5rem] border border-stone-200/80 bg-stone-50/65 p-5 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <div className="font-medium">{stay.title}</div>
-                  <div className="text-sm text-muted-foreground">
-                    {stay.location} • {stay.isPublic ? "Public" : "Private / Pending review"}
-                  </div>
-                </div>
-                <div className="rounded-2xl border border-stone-200 bg-white/80 px-4 py-3">
-                  <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Management</div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <Badge variant="secondary" className="rounded-full">
-                      {isHotelStay(stay) ? `Hotel · from ${formatAmount(stay.price)}/room/night` : `${formatAmount(stay.price)}/night`}
-                    </Badge>
-                    <Button asChild variant="outline" size="sm" className="rounded-full bg-white/80">
-                      <a href={`/provider/stays/${stay.id}/availability#availability`}>Lock days</a>
-                    </Button>
-                    <Button asChild variant="outline" size="sm" className="rounded-full bg-white/80">
-                      <a href={`/provider/stays/${stay.id}/availability#pricing`}>Update price</a>
-                    </Button>
-                    <Button asChild variant="outline" size="sm" className="rounded-full bg-white/80">
-                      <a href={`/provider/stays/${stay.id}/availability#media`}>Update photo</a>
-                    </Button>
-                    <ListingShareSheet kind="stay" id={stay.id} name={stay.title} description={stay.description} {...getListingSharePrice("stay", stay)} isPublic={stay.isPublic} source="provider" triggerClassName="bg-white/80" />
-                  </div>
-                </div>
-                <Button asChild className="w-full rounded-full md:min-w-48 md:w-auto">
-                  <Link href={`/provider/stays/${stay.id}/availability`}>Open Stay Manager</Link>
-                </Button>
-              </div>
-            )) : <p className="text-sm text-muted-foreground">No stays assigned yet.</p>}
-          </CardContent>
-        </Card>
-        )}
-
-        <div className="grid gap-6 xl:grid-cols-2">
-          {hasRole("cars") && (
-          <Card id="provider-cars" className="border-stone-200/70 bg-white/82 shadow-[0_24px_70px_-42px_rgba(92,73,47,0.34)] scroll-mt-24">
-            <CardHeader>
-              <CardTitle>Cars</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="flex justify-stretch sm:justify-end">
-                <Button asChild className="w-full sm:w-auto">
-                  <Link href="/provider/cars/new">Add Car</Link>
-                </Button>
-              </div>
-              {visibleCars.length ? visibleCars.map((car) => (
-                <div key={car.id} className="space-y-3 rounded-[1.5rem] border border-stone-200/80 bg-stone-50/65 p-5">
-                  <div className="font-medium">{getCarDisplayName(car)}</div>
-                  <div className="text-sm text-muted-foreground">
-                    {car.location} • {car.isPublic ? "Public" : "Private / Pending review"}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant="outline">{formatAmount(car.priceWithDriver)}/day chauffeur</Badge>
-                    {car.priceWithDriverHourly && <Badge variant="outline">{formatAmount(car.priceWithDriverHourly)}/hour</Badge>}
-                    {car.pricePerDay && <Badge variant="outline">{formatAmount(car.pricePerDay)}/day self-drive</Badge>}
-                  </div>
-                  <div className="rounded-2xl border border-stone-200 bg-white/80 px-4 py-3">
-                    <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Management</div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <Button asChild variant="outline" size="sm" className="rounded-full bg-white/80">
-                        <a href={`/provider/cars/${car.id}/availability#availability`}>Lock days</a>
-                      </Button>
-                      <Button asChild variant="outline" size="sm" className="rounded-full bg-white/80">
-                        <a href={`/provider/cars/${car.id}/availability#pricing`}>Update pricing</a>
-                      </Button>
-                      <Button asChild variant="outline" size="sm" className="rounded-full bg-white/80">
-                        <a href={`/provider/cars/${car.id}/availability#media`}>Update photos</a>
-                      </Button>
-                      <ListingShareSheet kind="car" id={car.id} name={getCarDisplayName(car)} description={car.description} {...getListingSharePrice("car", car)} isPublic={car.isPublic} source="provider" triggerClassName="bg-white/80" />
-                    </div>
-                  </div>
-                  <Button asChild variant="outline" size="sm" className="w-full rounded-full sm:w-auto">
-                    <Link href={`/provider/cars/${car.id}/availability`}>Open Car Manager</Link>
-                  </Button>
-                </div>
-              )) : <p className="text-sm text-muted-foreground">No cars assigned yet.</p>}
-            </CardContent>
-          </Card>
-          )}
-          {hasRole("cooks") && (
-          <Card id="provider-cooks" className="border-stone-200/70 bg-white/82 shadow-[0_24px_70px_-42px_rgba(92,73,47,0.34)] scroll-mt-24">
-            <CardHeader>
-              <CardTitle>Chefs</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex justify-stretch sm:justify-end">
-                <Button asChild className="w-full sm:w-auto">
-                  <Link href="/provider/cooks/new">Add Chef</Link>
-                </Button>
-              </div>
-              {visibleCooks.length ? visibleCooks.map((cook) => (
-                <div key={cook.id} className="space-y-3 rounded-[1.5rem] border border-stone-200/80 bg-stone-50/65 p-5">
-                  <div className="font-medium">{cook.serviceType} by {cook.title}</div>
-                  <div className="text-sm text-muted-foreground">
-                    {cook.location} • {cook.speciality} • base day package for {getCookMinimumGuests(cook)} guests • {cook.isPublic ? "Public" : "Private / Pending review"}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant="outline">{formatAmount(cook.serviceFee || cook.pricePerSession)} base service fee / day</Badge>
-                    <Badge variant="outline">{formatAmount(cook.inclusivePrice || cook.serviceFee || cook.pricePerSession)} base all inclusive / day</Badge>
-                    <Badge variant="outline">{formatAmount(getCookExtraGuestServiceFee(cook))} extra guest / day</Badge>
-                    <Badge variant="outline">{formatAmount(getCookExtraGuestInclusivePrice(cook))} extra inclusive guest / day</Badge>
-                    {cook.customMenuEnabled ? <Badge variant="outline">{formatAmount(cook.customMenuRequestFee || 4)} custom review fee</Badge> : null}
-                  </div>
-                  <div className="rounded-2xl border border-stone-200 bg-white/80 px-4 py-3">
-                    <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Management</div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <Button asChild variant="outline" size="sm" className="rounded-full bg-white/80">
-                        <a href={`/provider/cooks/${cook.id}/edit#availability`}>Lock days</a>
-                      </Button>
-                      <Button asChild variant="outline" size="sm" className="rounded-full bg-white/80">
-                        <a href={`/provider/cooks/${cook.id}/edit#pricing`}>Update pricing</a>
-                      </Button>
-                      <Button asChild variant="outline" size="sm" className="rounded-full bg-white/80">
-                        <a href={`/provider/cooks/${cook.id}/edit#media`}>Update photos</a>
-                      </Button>
-                      <ListingShareSheet kind="cook" id={cook.id} name={cook.title} description={cook.description} {...getListingSharePrice("cook", cook)} isPublic={cook.isPublic} source="provider" triggerClassName="bg-white/80" />
-                    </div>
-                  </div>
-                  <Button asChild variant="outline" size="sm" className="w-full rounded-full sm:w-auto">
-                    <Link href={`/provider/cooks/${cook.id}/edit`}>Open Chef Manager</Link>
-                  </Button>
-                </div>
-              )) : <p className="text-sm text-muted-foreground">No chefs assigned yet.</p>}
-            </CardContent>
-          </Card>
-          )}
-          {hasRole("errands") && (
-          <Card id="provider-errands" className="border-stone-200/70 bg-white/82 shadow-[0_24px_70px_-42px_rgba(92,73,47,0.34)] scroll-mt-24">
-            <CardHeader>
-              <CardTitle>Errands</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="flex justify-stretch sm:justify-end">
-                <Button asChild className="w-full sm:w-auto">
-                  <Link href="/provider/errands/new">Add Errand</Link>
-                </Button>
-              </div>
-              {visibleErrands.length ? visibleErrands.map((errand) => (
-                <div key={errand.id} className="space-y-3 rounded-[1.5rem] border border-stone-200/80 bg-stone-50/65 p-5">
-                  <div className="font-medium">{errand.serviceName}</div>
-                  <div className="text-sm text-muted-foreground">
-                    {errand.location ? `${errand.location} • ` : ""}
-                    {errand.isPublic ? "Public" : "Private / Pending review"}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant="outline">
-                      {hasHelpMamaPricing(errand)
-                        ? `From ${formatAmount(getHelpMamaStartingPrice(errand.helpMamaPricing))}`
-                        : errand.houseCleaningEnabled && !errand.shoppingEnabled && !errand.laundryEnabled
-                          ? `${formatAmount(errand.basePrice)} ${HOUSE_CLEANING_BASE_ROOM_LABEL}`
-                          : `${formatAmount(errand.basePrice)} base`}
-                    </Badge>
-                    {errand.shoppingEnabled ? <Badge variant="outline">shopping + {errand.shoppingCommissionPercent}%</Badge> : null}
-                    {errand.laundryEnabled ? <Badge variant="outline">laundry + {(errand.laundryAddons || []).length} add-ons</Badge> : null}
-                    {errand.houseCleaningEnabled ? <Badge variant="outline">cleaning + {(errand.houseCleaningAddons || []).length} add-ons</Badge> : null}
-                  </div>
-                  <div className="rounded-2xl border border-stone-200 bg-white/80 px-4 py-3">
-                    <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Management</div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <Button asChild variant="outline" size="sm" className="rounded-full bg-white/80">
-                        <a href={`/provider/errands/${errand.id}/edit#pricing`}>Update pricing</a>
-                      </Button>
-                      <Button asChild variant="outline" size="sm" className="rounded-full bg-white/80">
-                        <a href={`/provider/errands/${errand.id}/edit#media`}>Update photos</a>
-                      </Button>
-                      <Button asChild variant="outline" size="sm" className="rounded-full bg-white/80">
-                        <Link href={`/provider/errands/${errand.id}/edit`}>Adjust add-ons</Link>
-                      </Button>
-                      <ListingShareSheet kind="errand" id={errand.id} name={errand.serviceName} description={errand.description} {...getListingSharePrice("errand", errand)} isPublic={errand.isPublic} source="provider" triggerClassName="bg-white/80" />
-                    </div>
-                  </div>
-                  <Button asChild variant="outline" size="sm" className="w-full rounded-full sm:w-auto">
-                    <Link href={`/provider/errands/${errand.id}/edit`}>Open Errand Manager</Link>
-                  </Button>
-                </div>
-              )) : <p className="text-sm text-muted-foreground">No errands assigned yet.</p>}
-            </CardContent>
-          </Card>
-          )}
-          {hasRole("experiences") && (
-          <Card id="provider-experiences" className="border-stone-200/70 bg-white/82 shadow-[0_24px_70px_-42px_rgba(92,73,47,0.34)] scroll-mt-24">
-            <CardHeader>
-              <CardTitle>Experiences</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="flex justify-stretch sm:justify-end">
-                <Button asChild className="w-full sm:w-auto">
-                  <Link href="/provider/experiences/new">Add Experience</Link>
-                </Button>
-              </div>
-              {visibleExperiences.length ? visibleExperiences.map((experience) => (
-                <div key={experience.id} className="space-y-3 rounded-[1.5rem] border border-stone-200/80 bg-stone-50/65 p-5">
-                  <div className="font-medium">{experience.title}</div>
-                  <div className="text-sm text-muted-foreground">
-                    Based in {experience.location || "Not set"} • {experience.experienceLocation || "Destination not set"} • {experience.experienceType} • {experience.isPublic ? "Public" : "Private / Pending review"}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {experience.privateEnabled ? <Badge variant="outline">Private from {formatAmount(experience.privatePricePerPerson)}/person</Badge> : null}
-                    {experience.sharedEnabled ? <Badge variant="outline">Shared from {formatAmount(experience.sharedPricePerPerson)}/person</Badge> : null}
-                    <Badge variant="outline">{experience.durationHours}h</Badge>
-                    <Badge variant="outline">Up to {experience.maxGuests} private guests</Badge>
-                  </div>
-                  <div className="rounded-2xl border border-stone-200 bg-white/80 px-4 py-3">
-                    <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Management</div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <Button asChild variant="outline" size="sm" className="rounded-full bg-white/80">
-                        <a href={`/provider/experiences/${experience.id}/edit#pricing`}>Update pricing</a>
-                      </Button>
-                      <Button asChild variant="outline" size="sm" className="rounded-full bg-white/80">
-                        <a href={`/provider/experiences/${experience.id}/edit#media`}>Update photos</a>
-                      </Button>
-                      <Button asChild variant="outline" size="sm" className="rounded-full bg-white/80">
-                        <Link href={`/provider/experiences/${experience.id}/edit`}>Adjust guest settings</Link>
-                      </Button>
-                      <ListingShareSheet kind="experience" id={experience.id} name={experience.title} description={experience.description} {...getListingSharePrice("experience", experience)} isPublic={experience.isPublic} source="provider" triggerClassName="bg-white/80" />
-                    </div>
-                  </div>
-                  <Button asChild variant="outline" size="sm" className="w-full rounded-full sm:w-auto">
-                    <Link href={`/provider/experiences/${experience.id}/edit`}>Open Experience Manager</Link>
-                  </Button>
-                </div>
-              )) : <p className="text-sm text-muted-foreground">No experiences assigned yet.</p>}
-            </CardContent>
-          </Card>
-          )}
-        </div>
-
+            <TabsContent value="overview" className="mt-0">
+              <ProviderOverview
+                firstName={user?.firstName}
+                isAdmin={isAdmin}
+                isProvider={isProvider}
+                providerUserId={user?.id}
+                openAdminThread={dashboardIntent.openAdminThread}
+                moderationNote={user?.moderationNote}
+                workspaces={hub.workspaces}
+                listings={hubListings}
+                bookingCounts={activeBookingCounts}
+                attention={attentionItems}
+                upcoming={upcomingItems}
+                payments={providerPaymentData}
+              />
             </TabsContent>
 
-            <TabsContent value="custom-requests" className="space-y-8">
-        <section id="provider-custom-requests" className="space-y-4 scroll-mt-24">
-          <DashboardSectionHeader
-            title="Custom requests"
-          />
-        </section>
-
-        {false && customRequestBookings.length ? (
-          <Card className="border-stone-200/70 bg-white/82 shadow-[0_24px_70px_-42px_rgba(92,73,47,0.34)]">
-            <CardContent className="flex flex-col gap-4 py-6 sm:flex-row sm:items-center sm:justify-between">
-              <div className="space-y-1">
-                <div className="font-medium text-foreground">{customRequestBookings.length} custom request{customRequestBookings.length === 1 ? "" : "s"} still need tracking</div>
-                <p className="text-sm text-muted-foreground">
-                  Keep booking operations focused here, and use the dedicated custom requests tab for the quote queue.
-                </p>
-              </div>
-              <Button type="button" variant="outline" className="w-full rounded-full sm:w-auto" onClick={() => setActiveTab("custom-requests")}>
-                Open Custom Requests
-              </Button>
-            </CardContent>
-          </Card>
-        ) : null}
-
-        {false && customRequestBookings.length ? (
-          <Card className="border-stone-200/70 bg-white/82 shadow-[0_24px_70px_-42px_rgba(92,73,47,0.34)]">
-            <CardContent className="flex flex-col gap-4 py-6 sm:flex-row sm:items-center sm:justify-between">
-              <div className="space-y-1">
-                <div className="font-medium text-foreground">{customRequestBookings.length} custom request{customRequestBookings.length === 1 ? "" : "s"} still need tracking</div>
-                <p className="text-sm text-muted-foreground">
-                  Keep booking operations focused here, and use the dedicated custom requests tab for the quote queue.
-                </p>
-              </div>
-              <Button type="button" variant="outline" className="w-full rounded-full sm:w-auto" onClick={() => setActiveTab("custom-requests")}>
-                Open Custom Requests
-              </Button>
-            </CardContent>
-          </Card>
-        ) : null}
-
-        {false && customRequestBookings.length ? (
-          <Card className="border-stone-200/70 bg-white/82 shadow-[0_24px_70px_-42px_rgba(92,73,47,0.34)]">
-            <CardContent className="flex flex-col gap-4 py-6 sm:flex-row sm:items-center sm:justify-between">
-              <div className="space-y-1">
-                <div className="font-medium text-foreground">{customRequestBookings.length} custom request{customRequestBookings.length === 1 ? "" : "s"} still need tracking</div>
-                <p className="text-sm text-muted-foreground">
-                  Keep booking operations focused here, and use the dedicated custom requests tab for the quote queue.
-                </p>
-              </div>
-              <Button type="button" variant="outline" className="w-full rounded-full sm:w-auto" onClick={() => setActiveTab("custom-requests")}>
-                Open Custom Requests
-              </Button>
-            </CardContent>
-          </Card>
-        ) : null}
-
-        {false && customRequestBookings.length ? (
-          <Card className="border-stone-200/70 bg-white/82 shadow-[0_24px_70px_-42px_rgba(92,73,47,0.34)]">
-            <CardContent className="flex flex-col gap-4 py-6 sm:flex-row sm:items-center sm:justify-between">
-              <div className="space-y-1">
-                <div className="font-medium text-foreground">{customRequestBookings.length} custom request{customRequestBookings.length === 1 ? "" : "s"} still need tracking</div>
-                <p className="text-sm text-muted-foreground">
-                  Keep booking operations focused here, and use the dedicated custom requests tab for the quote queue.
-                </p>
-              </div>
-              <Button type="button" variant="outline" className="w-full rounded-full sm:w-auto" onClick={() => setActiveTab("custom-requests")}>
-                Open Custom Requests
-              </Button>
-            </CardContent>
-          </Card>
-        ) : null}
-
-        {customRequestBookings.length ? (
-          <Card className="border-stone-200/70 bg-white/82 shadow-[0_24px_70px_-42px_rgba(92,73,47,0.34)]">
-            <CardHeader>
-              <CardTitle>Custom Requests</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-[1.15rem] border border-stone-200/80 bg-stone-50/70 p-3">
-                  <div className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Needs Quote</div>
-                  <div className="mt-2 text-2xl font-semibold text-foreground">{partnerPendingCustomRequestCount}</div>
-                </div>
-                <div className="rounded-[1.15rem] border border-stone-200/80 bg-stone-50/70 p-3">
-                  <div className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Waiting Admin</div>
-                  <div className="mt-2 text-2xl font-semibold text-foreground">{adminPendingCustomRequestCount}</div>
-                </div>
-                <div className="rounded-[1.15rem] border border-stone-200/80 bg-stone-50/70 p-3">
-                  <div className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Waiting Client</div>
-                  <div className="mt-2 text-2xl font-semibold text-foreground">{clientPendingCustomRequestCount}</div>
-                </div>
-              </div>
-              {customRequestBookings.map((booking) => {
-                const label = getCustomRequestLabel(booking);
-                const serviceLocation = booking.assignment.serviceConfig.serviceLocation;
-                const serviceRequestDetails = booking.assignment.serviceConfig.serviceRequestDetails;
+            <TabsContent value="listings" className="mt-0 space-y-6">
+              {hub.workspaces.filter((key) => hasRole(key)).map((key) => {
+                const workspace = providerWorkspaces[key];
+                const rows = hubListings.filter((listing) => listing.workspace === key && listingMatchesSearch(listing));
+                const total = hubListings.filter((listing) => listing.workspace === key).length;
                 return (
-                  <div key={`custom-request-${booking.assignment.id}`} className="rounded-[1.25rem] border border-stone-200/80 bg-stone-50/70 p-4">
-                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                      <div className="space-y-2">
-                        <div className="text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-teal-700">{label} #{getShortBookingReference(booking.booking.id)}</div>
-                        <div className="text-sm text-muted-foreground">
-                          {booking.booking.guestName}
-                          {serviceLocation ? ` • ${serviceLocation}` : ""}
-                          {booking.booking.checkIn ? ` • ${booking.booking.checkIn}` : ""}
+                  <section key={key} id={`provider-${key}`} className="scroll-mt-24 space-y-3" data-testid={`listings-section-${key}`}>
+                    {!activeWorkspace ? (
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <WorkspaceIcon workspace={key} />
+                          <div>
+                            <h2 className="text-lg font-semibold tracking-tight text-stone-950">{workspace.label}</h2>
+                            <p className="text-xs text-stone-600">{workspace.description}</p>
+                          </div>
                         </div>
-                        <p className="max-w-3xl text-sm leading-6 text-stone-700">{getRequestPreview(serviceRequestDetails)}</p>
-                      </div>
-                      <div className="flex flex-col items-start gap-2 md:items-end">
-                        <Badge variant="secondary">{getCustomRequestQueueLabel(booking)}</Badge>
-                        {getAssignmentServiceMode(booking) === "cook-custom-menu"
-                          ? getCustomMenuWorkflowBadge(booking)
-                          : getExperienceWorkflowBadge(booking)}
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="w-full rounded-full bg-white/85 sm:w-auto"
-                          onClick={() => openCustomRequestWorkspace(booking.assignment.id)}
-                        >
-                          Open workspace
+                        <Button asChild size="sm" variant="outline" className="shrink-0 rounded-full bg-white">
+                          <Link href={workspace.addHref}><Plus className="mr-1 h-4 w-4" />Add</Link>
                         </Button>
                       </div>
-                    </div>
-                  </div>
+                    ) : null}
+                    {rows.length ? (
+                      <div className="grid gap-3 lg:grid-cols-2">
+                        {rows.map((listing) => (
+                          <article key={listing.id} className="flex flex-col overflow-hidden rounded-[1.5rem] border border-stone-200/80 bg-white shadow-[0_20px_50px_-42px_rgba(92,73,47,0.5)] sm:flex-row" data-testid={`listing-card-${listing.kind}-${listing.id}`}>
+                            <div className="relative h-36 shrink-0 bg-stone-100 sm:h-auto sm:w-40">
+                              {listing.imageUrl ? (
+                                <img src={listing.imageUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
+                              ) : (
+                                <div className="flex h-full w-full items-center justify-center"><WorkspaceIcon workspace={key} className="h-14 w-14" /></div>
+                              )}
+                              <span className={cn(
+                                "absolute left-3 top-3 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[0.7rem] font-semibold shadow-sm",
+                                listing.isPublic ? "bg-emerald-600 text-white" : "bg-amber-100 text-amber-900",
+                              )}>
+                                {listing.isPublic ? <><BadgeCheck className="h-3.5 w-3.5" />Live</> : <><ShieldCheck className="h-3.5 w-3.5" />TBM is checking it</>}
+                              </span>
+                            </div>
+                            <div className="flex min-w-0 flex-1 flex-col gap-3 p-4">
+                              <div className="min-w-0">
+                                <h3 className="truncate font-semibold text-stone-950">{listing.name}</h3>
+                                {listing.location ? <p className="truncate text-sm text-stone-600">{listing.location}</p> : null}
+                              </div>
+                              <div className="flex flex-wrap gap-1.5">
+                                {listingDetails(listing).map((detail) => (
+                                  <span key={detail} className="rounded-full bg-stone-100 px-2.5 py-1 text-xs text-stone-700">{detail}</span>
+                                ))}
+                              </div>
+                              <div className="mt-auto flex flex-wrap gap-2">
+                                <Button asChild size="sm" className="rounded-full">
+                                  <Link href={listing.manageHref}><Settings2 className="mr-1.5 h-3.5 w-3.5" />Manage</Link>
+                                </Button>
+                                <Button asChild size="sm" variant="outline" className="rounded-full">
+                                  <a href={listing.calendarHref}><CalendarDays className="mr-1.5 h-3.5 w-3.5" />Dates</a>
+                                </Button>
+                                <ListingShareSheet
+                                  kind={listing.kind}
+                                  id={listing.id}
+                                  name={listing.name}
+                                  description={listing.description}
+                                  {...listing.share}
+                                  isPublic={listing.isPublic}
+                                  source="provider"
+                                  triggerClassName={listing.isPublic ? "border-[#1f7a4d] text-[#1f7a4d]" : undefined}
+                                />
+                                {listing.isPublic ? <QrShareCard kind={listing.kind} id={listing.id} name={listing.name} isPublic /> : null}
+                                {listing.isPublic ? (
+                                  <Button asChild size="sm" variant="ghost" className="rounded-full">
+                                    <a href={getPublicListingPath(listing.kind, listing.id, listing.name)} target="_blank" rel="noreferrer"><Eye className="mr-1.5 h-3.5 w-3.5" />View</a>
+                                  </Button>
+                                ) : null}
+                              </div>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-start gap-3 rounded-[1.5rem] border border-dashed border-stone-300 bg-white/70 p-5 sm:flex-row sm:items-center sm:justify-between">
+                        <p className="text-sm text-stone-700">
+                          {total ? "No listings match your search." : `No ${workspace.noun[1]} yet. Add your first: TBM checks every listing before guests see it.`}
+                        </p>
+                        {!total ? (
+                          <Button asChild className="rounded-full">
+                            <Link href={workspace.addHref}><Plus className="mr-1.5 h-4 w-4" />{workspace.addLabel}</Link>
+                          </Button>
+                        ) : null}
+                      </div>
+                    )}
+                  </section>
                 );
               })}
-            </CardContent>
-          </Card>
-        ) : (
-          <Card className="border-stone-200/70 bg-white/82 shadow-[0_24px_70px_-42px_rgba(92,73,47,0.34)]">
-            <CardContent className="py-10 text-sm text-muted-foreground">
-              {hasDashboardFilters ? "No custom requests match the current filters." : "No custom requests are waiting right now."}
-            </CardContent>
-          </Card>
-        )}
+              <div className="flex flex-col items-start gap-3 rounded-[1.5rem] border border-emerald-200 bg-emerald-50/60 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-emerald-950">See the visits and bookings your shared links brought in.</p>
+                <Button asChild size="sm" variant="outline" className="rounded-full border-emerald-300 bg-white">
+                  <Link href="/provider/share">Open Share & grow</Link>
+                </Button>
+              </div>
             </TabsContent>
 
-            <TabsContent value="bookings" className="space-y-8">
-        <section id="provider-bookings" className="space-y-4 scroll-mt-24">
-          <DashboardSectionHeader
-            title="Bookings"
-          />
-          {bookingSectionLinks.length ? (
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {bookingSectionLinks.map((section) => (
-                <Button
-                  key={section.id}
-                  type="button"
-                  variant="outline"
-                  className="rounded-full whitespace-nowrap bg-white/80"
-                  onClick={() => jumpToSection(section.id)}
-                >
-                  {section.label} ({section.count})
-                </Button>
-              ))}
-            </div>
-          ) : null}
-        </section>
-
-        {false && customRequestBookings.length ? (
-          <Card className="border-stone-200/70 bg-white/82 shadow-[0_24px_70px_-42px_rgba(92,73,47,0.34)]">
-            <CardHeader>
-              <CardTitle>Custom Requests</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-[1.15rem] border border-stone-200/80 bg-stone-50/70 p-3">
-                  <div className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Needs Quote</div>
-                  <div className="mt-2 text-2xl font-semibold text-foreground">{partnerPendingCustomRequestCount}</div>
-                </div>
-                <div className="rounded-[1.15rem] border border-stone-200/80 bg-stone-50/70 p-3">
-                  <div className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Waiting Admin</div>
-                  <div className="mt-2 text-2xl font-semibold text-foreground">{adminPendingCustomRequestCount}</div>
-                </div>
-                <div className="rounded-[1.15rem] border border-stone-200/80 bg-stone-50/70 p-3">
-                  <div className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Waiting Client</div>
-                  <div className="mt-2 text-2xl font-semibold text-foreground">{clientPendingCustomRequestCount}</div>
-                </div>
-              </div>
-              {customRequestBookings.map((booking) => {
-                const label = getCustomRequestLabel(booking);
-                const serviceLocation = booking.assignment.serviceConfig.serviceLocation;
-                const serviceRequestDetails = booking.assignment.serviceConfig.serviceRequestDetails;
-                const destination = `#partner-assignment-${booking.assignment.id}`;
-                return (
-                  <div key={`custom-request-${booking.assignment.id}`} className="rounded-[1.25rem] border border-stone-200/80 bg-stone-50/70 p-4">
-                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                      <div className="space-y-2">
-                        <div className="text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-teal-700">{label} #{getShortBookingReference(booking.booking.id)}</div>
-                        <div className="text-sm text-muted-foreground">
-                          {booking.booking.guestName}
-                          {serviceLocation ? ` • ${serviceLocation}` : ""}
-                          {booking.booking.checkIn ? ` • ${booking.booking.checkIn}` : ""}
-                        </div>
-                        <p className="max-w-3xl text-sm leading-6 text-stone-700">{getRequestPreview(serviceRequestDetails)}</p>
-                      </div>
-                      <div className="flex flex-col items-start gap-2 md:items-end">
-                        <Badge variant="secondary">{getCustomRequestQueueLabel(booking)}</Badge>
-                        {getAssignmentServiceMode(booking) === "cook-custom-menu"
-                          ? getCustomMenuWorkflowBadge(booking)
-                          : getExperienceWorkflowBadge(booking)}
-                        <a href={destination} className="text-sm font-medium text-teal-700 underline-offset-4 hover:underline">
-                          Open details
-                        </a>
-                      </div>
+            <TabsContent value="custom-requests" className="mt-0 space-y-4">
+              {customRequestBookings.length ? (
+                <>
+                  <div className="grid grid-cols-3 gap-2 sm:gap-3">
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-3">
+                      <div className="text-2xl font-semibold tabular-nums text-stone-950">{partnerPendingCustomRequestCount}</div>
+                      <div className="text-xs font-medium text-amber-900">Need your price</div>
+                    </div>
+                    <div className="rounded-2xl border border-sky-200 bg-sky-50/70 p-3">
+                      <div className="text-2xl font-semibold tabular-nums text-stone-950">{adminPendingCustomRequestCount}</div>
+                      <div className="text-xs font-medium text-sky-900">TBM checking</div>
+                    </div>
+                    <div className="rounded-2xl border border-stone-200 bg-white p-3">
+                      <div className="text-2xl font-semibold tabular-nums text-stone-950">{clientPendingCustomRequestCount}</div>
+                      <div className="text-xs font-medium text-stone-700">With the guest</div>
                     </div>
                   </div>
-                );
-              })}
-            </CardContent>
-          </Card>
+                  {customRequestBookings.map((booking) => {
+                    const details = getAssignmentRequestDetails(booking);
+                    const serviceLocation = getAssignmentLocation(booking);
+                    return (
+                      <article key={`custom-request-${booking.assignment.id}`} className="space-y-4 rounded-[1.5rem] border border-stone-200/80 bg-white p-4 shadow-[0_20px_50px_-42px_rgba(92,73,47,0.5)] sm:p-5" data-testid={`quote-card-${booking.assignment.id}`}>
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0 space-y-1">
+                            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-teal-700">{getCustomRequestLabel(booking)} · Ref {getShortBookingReference(booking.booking.id)}</div>
+                            <h3 className="font-semibold text-stone-950">{booking.assignment.serviceName}</h3>
+                            <p className="text-sm text-stone-600">
+                              {joinMeta([
+                                booking.booking.guestName,
+                                getAssignmentDateRange(booking),
+                                serviceLocation,
+                                getAssignmentGuests(booking) ? `${getAssignmentGuests(booking)} ${getAssignmentGuests(booking) === 1 ? "guest" : "guests"}` : null,
+                              ])}
+                            </p>
+                          </div>
+                          <Badge variant="secondary" className="w-fit shrink-0 rounded-full">{getCustomRequestQueueLabel(booking)}</Badge>
+                        </div>
+                        {details ? (
+                          <RequestBriefAccordion
+                            id={`quote-brief-${booking.assignment.id}`}
+                            title="What the guest asked for"
+                            summary={getRequestPreview(details)}
+                            content={details}
+                            accent={getAssignmentServiceMode(booking) === "cook-custom-menu" ? "amber" : "sky"}
+                            className="mt-0"
+                          />
+                        ) : null}
+                        {renderQuoteForm(booking)}
+                        <Button type="button" variant="ghost" size="sm" className="rounded-full" onClick={() => openBookingWorkspace(booking.booking.id, booking.assignment.id)}>
+                          Booking details and messages
+                        </Button>
+                      </article>
+                    );
+                  })}
+                </>
+              ) : (
+                <div className="flex flex-col items-center gap-2 rounded-[1.5rem] border border-dashed border-stone-300 bg-white/70 px-4 py-10 text-center">
+                  <ReceiptText className="h-8 w-8 text-stone-400" aria-hidden="true" />
+                  <p className="text-sm text-stone-700">
+                    {hasDashboardFilters ? "No custom requests match your search." : "No custom requests right now. When a guest asks for a menu or an outing made for them, it shows here."}
+                  </p>
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="bookings" className="mt-0 space-y-5">
+        {bookingSectionLinks.length > 1 ? (
+          <div id="provider-bookings" className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0">
+            {bookingSectionLinks.map((section) => (
+              <Button
+                key={section.id}
+                type="button"
+                variant="outline"
+                size="sm"
+                className="shrink-0 rounded-full bg-white/90"
+                onClick={() => jumpToSection(section.id)}
+              >
+                {section.label} ({section.count})
+              </Button>
+            ))}
+          </div>
         ) : null}
 
         {hasRole("stays") && (
-          <Card id="provider-stay-bookings" className="border-stone-200/70 bg-white/82 shadow-[0_24px_70px_-42px_rgba(92,73,47,0.34)]">
-            <CardHeader>
-              <CardTitle>Stay Bookings</CardTitle>
+          <Card id="provider-stay-bookings" className="scroll-mt-24 rounded-[1.75rem] border-stone-200/80 bg-white/90 shadow-[0_24px_60px_-46px_rgba(92,73,47,0.45)]">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-3 text-lg"><WorkspaceIcon workspace="stays" className="h-9 w-9" />Stays</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               {visibleStayBookings.length ? visibleStayBookings.map((booking, index) => {
@@ -2016,28 +1652,19 @@ export default function ProviderDashboard() {
                         defaultOpen={dashboardIntent.openThread && dashboardIntent.bookingId === booking.booking.id}
                       />
 
-                      {statusAction ? (
-                        <Button
-                          variant="outline"
-                          className="w-full rounded-full lg:w-auto"
-                          onClick={() => updateProviderBookingStatus.mutate({ id: booking.assignment.id, status: statusAction.status })}
-                          disabled={updateProviderBookingStatus.isPending}
-                        >
-                          {activeStatusBookingId === booking.assignment.id ? "Updating..." : statusAction.label}
-                        </Button>
-                      ) : null}
+                      {renderStatusAction(booking, statusAction, "w-full rounded-full lg:w-auto")}
                     </ProviderOrderCollapsible>
                   </div>
                 );
-              }) : <p className="text-sm text-muted-foreground">No stay bookings yet.</p>}
+              }) : <p className="text-sm text-muted-foreground">No stay bookings yet. Share your stays to bring in the first guests.</p>}
             </CardContent>
           </Card>
         )}
 
         {hasRole("cars") && (
-          <Card id="provider-car-bookings" className="border-stone-200/70 bg-white/82 shadow-[0_24px_70px_-42px_rgba(92,73,47,0.34)]">
-            <CardHeader>
-              <CardTitle>Car Bookings</CardTitle>
+          <Card id="provider-car-bookings" className="scroll-mt-24 rounded-[1.75rem] border-stone-200/80 bg-white/90 shadow-[0_24px_60px_-46px_rgba(92,73,47,0.45)]">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-3 text-lg"><WorkspaceIcon workspace="cars" className="h-9 w-9" />Vehicles</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               {visibleCarBookings.length ? visibleCarBookings.map((booking, index) => {
@@ -2057,7 +1684,7 @@ export default function ProviderDashboard() {
                       open={isOpen}
                       onOpenChange={(open) => setAssignmentExpanded(booking.assignment.id, open)}
                       archived={isArchivedBookingStatus(dashboardStatus)}
-                      title={car ? getCarDisplayName(car) : "Car booking"}
+                      title={car ? getCarDisplayName(car) : "Vehicle booking"}
                       summary={joinMeta([
                         booking.booking.guestName,
                         getAssignmentDateRange(booking),
@@ -2079,28 +1706,19 @@ export default function ProviderDashboard() {
                         composerPlaceholder="Ask TBM a question or send an update about this booking..."
                         defaultOpen={dashboardIntent.openThread && dashboardIntent.bookingId === booking.booking.id}
                       />
-                      {statusAction ? (
-                        <Button
-                          variant="outline"
-                          className="w-full md:w-56"
-                          onClick={() => updateProviderBookingStatus.mutate({ id: booking.assignment.id, status: statusAction.status })}
-                          disabled={updateProviderBookingStatus.isPending}
-                        >
-                          {activeStatusBookingId === booking.assignment.id ? "Updating..." : statusAction.label}
-                        </Button>
-                      ) : null}
+                      {renderStatusAction(booking, statusAction, "w-full md:w-56")}
                     </ProviderOrderCollapsible>
                   </div>
                 );
-              }) : <p className="text-sm text-muted-foreground">No car bookings yet.</p>}
+              }) : <p className="text-sm text-muted-foreground">No vehicle bookings yet.</p>}
             </CardContent>
           </Card>
         )}
 
         {hasRole("cooks") && (
-          <Card id="provider-cook-bookings" className="border-stone-200/70 bg-white/82 shadow-[0_24px_70px_-42px_rgba(92,73,47,0.34)]">
-            <CardHeader>
-              <CardTitle>Chef Bookings</CardTitle>
+          <Card id="provider-cook-bookings" className="scroll-mt-24 rounded-[1.75rem] border-stone-200/80 bg-white/90 shadow-[0_24px_60px_-46px_rgba(92,73,47,0.45)]">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-3 text-lg"><WorkspaceIcon workspace="cooks" className="h-9 w-9" />Chef services</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               {bookingTabCookBookings.length ? bookingTabCookBookings.map((booking, index) => {
@@ -2134,103 +1752,14 @@ export default function ProviderDashboard() {
                       {getAssignmentRequestDetails(booking) ? (
                         <RequestBriefAccordion
                           id={`partner-cook-brief-${booking.assignment.id}`}
-                          title={`Custom Menu #${getShortBookingReference(booking.booking.id)}`}
+                          title={`What the guest asked for · Ref ${getShortBookingReference(booking.booking.id)}`}
                           summary={getRequestPreview(getAssignmentRequestDetails(booking))}
                           content={getAssignmentRequestDetails(booking) ?? ""}
                           accent="amber"
                           className="mt-3"
                         />
                       ) : null}
-                      {getAssignmentServiceMode(booking) === "cook-custom-menu" ? (
-                        <div className="mt-3 rounded-lg border p-3 space-y-3">
-                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                            <div className="text-sm font-medium">Quote Review</div>
-                            {getCustomMenuWorkflowBadge(booking)}
-                          </div>
-                          {booking.booking.customMenuProposalStatus === "proposed" && booking.booking.customMenuProposedAmount ? (
-                            <div className="text-sm text-muted-foreground">
-                              Quote sent: <span className="font-medium text-foreground">{formatAmount(booking.booking.customMenuProposedAmount)}</span>
-                              {booking.booking.customMenuProposalMessage ? ` • ${booking.booking.customMenuProposalMessage}` : ""}
-                            </div>
-                          ) : null}
-                          {booking.booking.customMenuProposalStatus === "pending-admin-approval" ? (
-                            <div className="text-sm text-muted-foreground">
-                              {booking.booking.customMenuProposedAmount
-                                ? <>Submitted quote: <span className="font-medium text-foreground">{formatAmount(booking.booking.customMenuProposedAmount)}</span>{booking.booking.customMenuProposalMessage ? ` • ${booking.booking.customMenuProposalMessage}` : ""}</>
-                                : booking.booking.customMenuDeclineReason
-                                  ? <>Submitted decline reason: {booking.booking.customMenuDeclineReason}</>
-                                  : "Submitted, waiting for confirmation."}
-                            </div>
-                          ) : null}
-                          {booking.booking.customMenuProposalStatus === "declined" && booking.booking.customMenuDeclineReason ? (
-                            <div className="text-sm text-muted-foreground">
-                              Decline reason: {booking.booking.customMenuDeclineReason}
-                            </div>
-                          ) : null}
-                          {isFinalizedAssignmentBooking(booking) ? (
-                            <div className="text-sm text-muted-foreground rounded-md bg-muted/40 p-3">
-                              {booking.booking.status === "cancelled"
-                                ? "This booking was cancelled by admin. Custom menu actions are now locked."
-                                : "This booking was marked completed by admin. Custom menu actions are now locked."}
-                            </div>
-                          ) : isClosedCustomMenu(booking) ? (
-                            <div className="text-sm text-muted-foreground rounded-md bg-muted/40 p-3">
-                              This custom menu offer has been accepted by the customer and is now closed for editing.
-                            </div>
-                          ) : null}
-                          {!isFinalizedAssignmentBooking(booking) && !isClosedCustomMenu(booking) && booking.booking.customMenuProposalStatus === "pending" ? <Input
-                            type="number"
-                            min="1"
-                            placeholder={`Quoted total (${selectedCurrency})`}
-                            value={proposalAmounts[booking.assignment.id] ?? ""}
-                            onChange={(e) => setProposalAmounts((current) => ({ ...current, [booking.assignment.id]: e.target.value }))}
-                          /> : null}
-                          {!isFinalizedAssignmentBooking(booking) && !isClosedCustomMenu(booking) && booking.booking.customMenuProposalStatus === "pending" ? <Textarea
-                            rows={3}
-                            placeholder="Quote note or decline reason"
-                            value={proposalMessages[booking.assignment.id] ?? booking.booking.customMenuProposalMessage ?? declineReasons[booking.assignment.id] ?? booking.booking.customMenuDeclineReason ?? ""}
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              setProposalMessages((current) => ({ ...current, [booking.assignment.id]: value }));
-                              setDeclineReasons((current) => ({ ...current, [booking.assignment.id]: value }));
-                            }}
-                          /> : null}
-                          {!isFinalizedAssignmentBooking(booking) && !isClosedCustomMenu(booking) && booking.booking.customMenuProposalStatus === "pending" ? <div className="flex flex-col gap-2 sm:flex-row">
-                            <Button
-                              variant="outline"
-                              className="w-full sm:w-auto"
-                              disabled={reviewCookBookingMutation.isPending}
-                              onClick={() => reviewCookBookingMutation.mutate({
-                                assignmentId: booking.assignment.id,
-                                payload: {
-                                  action: "propose",
-                                  proposedAmount: getSubmittedProposalAmountUsd(
-                                    proposalAmounts[booking.assignment.id],
-                                    booking.booking.customMenuProposedAmount,
-                                  ),
-                                  proposalMessage: proposalMessages[booking.assignment.id] ?? booking.booking.customMenuProposalMessage ?? "",
-                                },
-                              })}
-                            >
-                              {activeCustomMenuBookingId === booking.assignment.id ? "Sending..." : "Send Quote"}
-                            </Button>
-                            <Button
-                              variant="destructive"
-                              className="w-full sm:w-auto"
-                              disabled={reviewCookBookingMutation.isPending}
-                              onClick={() => reviewCookBookingMutation.mutate({
-                                assignmentId: booking.assignment.id,
-                                payload: {
-                                  action: "decline",
-                                  declineReason: declineReasons[booking.assignment.id] ?? proposalMessages[booking.assignment.id] ?? booking.booking.customMenuDeclineReason ?? "",
-                                },
-                              })}
-                            >
-                              {activeCustomMenuBookingId === booking.assignment.id ? "Sending..." : "Send Decline"}
-                            </Button>
-                          </div> : null}
-                        </div>
-                      ) : null}
+                      {getAssignmentServiceMode(booking) === "cook-custom-menu" ? renderQuotePointer(booking) : null}
                     </div>
                       <JobEarnings assignmentId={booking.assignment.id} />
                       <SharedGuestContact bookingId={booking.booking.id} />
@@ -2242,16 +1771,7 @@ export default function ProviderDashboard() {
                         composerPlaceholder="Ask TBM a question or send an update about this booking..."
                         defaultOpen={dashboardIntent.openThread && dashboardIntent.bookingId === booking.booking.id}
                       />
-                      {statusAction ? (
-                        <Button
-                          variant="outline"
-                          className="w-full md:w-56"
-                          onClick={() => updateProviderBookingStatus.mutate({ id: booking.assignment.id, status: statusAction.status })}
-                          disabled={updateProviderBookingStatus.isPending}
-                        >
-                          {activeStatusBookingId === booking.assignment.id ? "Updating..." : statusAction.label}
-                        </Button>
-                      ) : null}
+                      {renderStatusAction(booking, statusAction, "w-full md:w-56")}
                     </ProviderOrderCollapsible>
                   </div>
                 );
@@ -2261,9 +1781,9 @@ export default function ProviderDashboard() {
         )}
 
         {hasRole("errands") && (
-          <Card id="provider-errand-bookings" className="border-stone-200/70 bg-white/82 shadow-[0_24px_70px_-42px_rgba(92,73,47,0.34)]">
-            <CardHeader>
-              <CardTitle>Errand Bookings</CardTitle>
+          <Card id="provider-errand-bookings" className="scroll-mt-24 rounded-[1.75rem] border-stone-200/80 bg-white/90 shadow-[0_24px_60px_-46px_rgba(92,73,47,0.45)]">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-3 text-lg"><WorkspaceIcon workspace="errands" className="h-9 w-9" />Home help</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               {visibleErrandBookings.length ? visibleErrandBookings.map((booking, index) => {
@@ -2283,7 +1803,7 @@ export default function ProviderDashboard() {
                       open={isOpen}
                       onOpenChange={(open) => setAssignmentExpanded(booking.assignment.id, open)}
                       archived={isArchivedBookingStatus(dashboardStatus)}
-                      title={errand?.serviceName ?? "Errand booking"}
+                      title={errand?.serviceName ?? "Home help booking"}
                       summary={joinMeta([
                         booking.booking.guestName,
                         getAssignmentLocation(booking),
@@ -2297,7 +1817,7 @@ export default function ProviderDashboard() {
                       <div className="space-y-1 text-sm text-muted-foreground">
                         {getAssignmentScheduleSlots(booking).map((slot, index) => (
                           <div key={`${slot.date}-${slot.note}-${index}`}>
-                            {slot.date}{slot.note?.trim() ? ` - ${slot.note.trim()}` : ""}
+                            {formatDay(slot.date)}{slot.note?.trim() ? ` · ${slot.note.trim()}` : ""}
                           </div>
                         ))}
                       </div>
@@ -2317,28 +1837,19 @@ export default function ProviderDashboard() {
                         composerPlaceholder="Ask TBM a question or send an update about this request..."
                         defaultOpen={dashboardIntent.openThread && dashboardIntent.bookingId === booking.booking.id}
                       />
-                      {statusAction ? (
-                        <Button
-                          variant="outline"
-                          className="w-full md:w-56"
-                          onClick={() => updateProviderBookingStatus.mutate({ id: booking.assignment.id, status: statusAction.status })}
-                          disabled={updateProviderBookingStatus.isPending}
-                        >
-                          {activeStatusBookingId === booking.assignment.id ? "Updating..." : statusAction.label}
-                        </Button>
-                      ) : null}
+                      {renderStatusAction(booking, statusAction, "w-full md:w-56")}
                     </ProviderOrderCollapsible>
                   </div>
                 );
-              }) : <p className="text-sm text-muted-foreground">No errand bookings yet.</p>}
+              }) : <p className="text-sm text-muted-foreground">No home help bookings yet.</p>}
             </CardContent>
           </Card>
         )}
 
         {hasRole("experiences") && (
-          <Card id="provider-experience-bookings" className="border-stone-200/70 bg-white/82 shadow-[0_24px_70px_-42px_rgba(92,73,47,0.34)]">
-            <CardHeader>
-              <CardTitle>Experience Bookings</CardTitle>
+          <Card id="provider-experience-bookings" className="scroll-mt-24 rounded-[1.75rem] border-stone-200/80 bg-white/90 shadow-[0_24px_60px_-46px_rgba(92,73,47,0.45)]">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-3 text-lg"><WorkspaceIcon workspace="experiences" className="h-9 w-9" />Experiences</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               {bookingTabExperienceBookings.length ? bookingTabExperienceBookings.map((booking, index) => {
@@ -2372,7 +1883,7 @@ export default function ProviderDashboard() {
                       {getAssignmentRequestDetails(booking) ? (
                         <RequestBriefAccordion
                           id={`partner-experience-brief-${booking.assignment.id}`}
-                          title={`Request Brief #${getShortBookingReference(booking.booking.id)}`}
+                          title={`What the guest asked for · Ref ${getShortBookingReference(booking.booking.id)}`}
                           summary={getRequestPreview(getAssignmentRequestDetails(booking))}
                           content={getAssignmentRequestDetails(booking) ?? ""}
                           accent="sky"
@@ -2380,115 +1891,7 @@ export default function ProviderDashboard() {
                         />
                       ) : null}
                     </div>
-                    {getAssignmentServiceMode(booking) === "experience-custom-offer" ? (
-                      <div className="rounded-lg border p-3 space-y-3">
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                          <div className="space-y-1">
-                            <div className="text-sm font-medium">Offer Review</div>
-                            <div className="text-xs text-muted-foreground">{getExperienceOfferStatusText(booking)}</div>
-                          </div>
-                          {getExperienceWorkflowBadge(booking)}
-                        </div>
-                        {booking.booking.experienceCustomOfferAmount ? (
-                          <div className="rounded-md bg-muted/40 p-3">
-                            <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                              {booking.booking.experienceCustomOfferStatus === "pending-admin-approval" ? "Submitted Offer" : "Offer Total"}
-                            </div>
-                            <div className="mt-1 text-sm font-medium text-foreground">{formatAmount(booking.booking.experienceCustomOfferAmount)}</div>
-                          </div>
-                        ) : null}
-                        {booking.booking.experienceCustomOfferMessage ? (
-                          <div className="rounded-md bg-muted/40 p-3">
-                            <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Offer Note</div>
-                            <div className="mt-1 text-sm text-muted-foreground">{booking.booking.experienceCustomOfferMessage}</div>
-                          </div>
-                        ) : null}
-                        {booking.booking.experienceCustomOfferDeclineReason ? (
-                          <div className="rounded-md bg-muted/40 p-3">
-                            <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Decline Reason</div>
-                            <div className="mt-1 text-sm text-muted-foreground">{booking.booking.experienceCustomOfferDeclineReason}</div>
-                          </div>
-                        ) : null}
-                        {false && booking.booking.experienceCustomOfferStatus === "proposed" && booking.booking.experienceCustomOfferAmount ? (
-                          <div className="text-sm text-muted-foreground">
-                            Offer sent: <span className="font-medium text-foreground">{formatAmount(booking.booking.experienceCustomOfferAmount ?? 0)}</span>
-                            {booking.booking.experienceCustomOfferMessage ? ` • ${booking.booking.experienceCustomOfferMessage}` : ""}
-                          </div>
-                        ) : null}
-                        {false && booking.booking.experienceCustomOfferStatus === "pending-admin-approval" ? (
-                          <div className="text-sm text-muted-foreground">
-                            Submitted, waiting for confirmation.
-                          </div>
-                        ) : null}
-                        {false && booking.booking.experienceCustomOfferStatus === "declined" && booking.booking.experienceCustomOfferDeclineReason ? (
-                          <div className="text-sm text-muted-foreground">
-                            Decline reason: {booking.booking.experienceCustomOfferDeclineReason}
-                          </div>
-                        ) : null}
-                        {isFinalizedAssignmentBooking(booking) ? (
-                          <div className="text-sm text-muted-foreground rounded-md bg-muted/40 p-3">
-                            {booking.booking.status === "cancelled"
-                              ? "This booking was cancelled by admin. Offer actions are now locked."
-                              : "This booking was marked completed by admin. Offer actions are now locked."}
-                          </div>
-                        ) : isClosedExperienceOffer(booking) ? (
-                          <div className="text-sm text-muted-foreground rounded-md bg-muted/40 p-3">
-                            Accepted by client. Editing locked.
-                          </div>
-                        ) : null}
-                        {!isFinalizedAssignmentBooking(booking) && !isClosedExperienceOffer(booking) && booking.booking.experienceCustomOfferStatus === "pending" ? <Input
-                          type="number"
-                          min="1"
-                          placeholder={`Offer total (${selectedCurrency})`}
-                          value={proposalAmounts[booking.assignment.id] ?? ""}
-                          onChange={(e) => setProposalAmounts((current) => ({ ...current, [booking.assignment.id]: e.target.value }))}
-                        /> : null}
-                        {!isFinalizedAssignmentBooking(booking) && !isClosedExperienceOffer(booking) && booking.booking.experienceCustomOfferStatus === "pending" ? <Textarea
-                          rows={3}
-                          placeholder="Offer note or decline reason"
-                          value={proposalMessages[booking.assignment.id] ?? booking.booking.experienceCustomOfferMessage ?? declineReasons[booking.assignment.id] ?? booking.booking.experienceCustomOfferDeclineReason ?? ""}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            setProposalMessages((current) => ({ ...current, [booking.assignment.id]: value }));
-                            setDeclineReasons((current) => ({ ...current, [booking.assignment.id]: value }));
-                          }}
-                        /> : null}
-                        {!isFinalizedAssignmentBooking(booking) && !isClosedExperienceOffer(booking) && booking.booking.experienceCustomOfferStatus === "pending" ? <div className="flex flex-col gap-2 sm:flex-row">
-                          <Button
-                            variant="outline"
-                            className="w-full sm:w-auto"
-                            disabled={reviewExperienceOfferMutation.isPending}
-                            onClick={() => reviewExperienceOfferMutation.mutate({
-                              assignmentId: booking.assignment.id,
-                              payload: {
-                                action: "propose",
-                                proposedAmount: getSubmittedProposalAmountUsd(
-                                  proposalAmounts[booking.assignment.id],
-                                  booking.booking.experienceCustomOfferAmount,
-                                ),
-                                proposalMessage: proposalMessages[booking.assignment.id] ?? booking.booking.experienceCustomOfferMessage ?? "",
-                              },
-                            })}
-                          >
-                            {activeExperienceOfferBookingId === booking.assignment.id ? "Sending..." : "Send Offer"}
-                          </Button>
-                          <Button
-                            variant="destructive"
-                            className="w-full sm:w-auto"
-                            disabled={reviewExperienceOfferMutation.isPending}
-                            onClick={() => reviewExperienceOfferMutation.mutate({
-                              assignmentId: booking.assignment.id,
-                              payload: {
-                                action: "decline",
-                                declineReason: declineReasons[booking.assignment.id] ?? proposalMessages[booking.assignment.id] ?? booking.booking.experienceCustomOfferDeclineReason ?? "",
-                              },
-                            })}
-                          >
-                            {activeExperienceOfferBookingId === booking.assignment.id ? "Sending..." : "Send Decline"}
-                          </Button>
-                        </div> : null}
-                      </div>
-                    ) : null}
+                    {getAssignmentServiceMode(booking) === "experience-custom-offer" ? renderQuotePointer(booking) : null}
                       <JobEarnings assignmentId={booking.assignment.id} />
                       <SharedGuestContact bookingId={booking.booking.id} />
                       <BookingThread
@@ -2499,16 +1902,7 @@ export default function ProviderDashboard() {
                         composerPlaceholder="Ask TBM a question or send an update about this booking..."
                         defaultOpen={dashboardIntent.openThread && dashboardIntent.bookingId === booking.booking.id}
                       />
-                      {statusAction ? (
-                        <Button
-                          variant="outline"
-                          className="w-full md:w-56"
-                          onClick={() => updateProviderBookingStatus.mutate({ id: booking.assignment.id, status: statusAction.status })}
-                          disabled={updateProviderBookingStatus.isPending}
-                        >
-                          {activeStatusBookingId === booking.assignment.id ? "Updating..." : statusAction.label}
-                        </Button>
-                      ) : null}
+                      {renderStatusAction(booking, statusAction, "w-full md:w-56")}
                     </ProviderOrderCollapsible>
                   </div>
                 );

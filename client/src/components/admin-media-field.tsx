@@ -29,7 +29,7 @@ async function fileToDataUrl(file: File) {
   });
 }
 
-async function optimizeImage(file: File) {
+export async function optimizeImage(file: File) {
   const dataUrl = await fileToDataUrl(file);
   const image = await new Promise<HTMLImageElement>((resolve, reject) => {
     const img = new Image();

@@ -2,7 +2,7 @@
 // the message that goes with it.
 import { getPublicListingPath, type PublicListingKind } from "./seo.ts";
 
-export type ShareChannel = "whatsapp" | "copy" | "native";
+export type ShareChannel = "whatsapp" | "copy" | "native" | "qr";
 // "provider" when the listing's own provider shares it; "visitor" for anyone else.
 export type ShareSource = "provider" | "visitor";
 

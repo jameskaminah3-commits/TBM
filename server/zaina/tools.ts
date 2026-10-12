@@ -11,6 +11,7 @@
 //   6. Notifications to ops are best-effort. If they fail, they log — the tool still returns.
 
 import { db } from "../db";
+import { creditZainaBooking } from "../share-credit";
 import {
   sendOpsAlertEmail,
   sendZainaBookingCreatedEmail,
@@ -452,6 +453,9 @@ async function notifyBookingCreated(args: {
   sessionId: string;
 }): Promise<void> {
   let transcript: Array<{ actor: string; text: string; timestamp: string }> = [];
+
+  // A visitor who arrived through a provider's shared link: credit the share.
+  await creditZainaBooking(args.sessionId, args.bookingId);
 
   try {
     const transcriptRows = await db

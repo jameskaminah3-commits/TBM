@@ -342,7 +342,7 @@ export async function getShareSummaries(ownerUserIds: string[] | null) {
     if (!entry) {
       entry = {
         ownerUserId, kind, id, name: "", isPublic: false, path: "",
-        linksShared: { whatsapp: 0, copy: 0, native: 0 }, visits: 0, bookTaps: 0,
+        linksShared: { whatsapp: 0, copy: 0, native: 0, qr: 0 }, visits: 0, bookTaps: 0,
         bookings: emptyCounts(), olderLinkBookings: emptyCounts(), assisted: 0, lastActivityAt: null, links: [], creditedBookings: [],
       };
       listings.set(key, entry);
