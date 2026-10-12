@@ -59,6 +59,10 @@ async function get(path, { cookie, method = "GET", absolute = false, redirect = 
   }
 }
 
+// Some releases answer unknown addresses with the website's own page (HTML,
+// status 200) rather than a 404. That page is not a file, so it isn't a leak.
+const isAppPage = (response) => response.status === 200 && /text\/html/i.test(response.headers.get("content-type") ?? "");
+
 // Contact details in a response, other than TBM's own. Returns counts only.
 function contactFindings(text) {
   const emails = (text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) ?? []).filter((email) => !TBM_EMAIL_DOMAIN.test(email));
@@ -160,7 +164,8 @@ for (const path of privatePaths) {
 // ── E. Old upload links ─────────────────────────────────────────────────
 section("E. Old /uploads links don't serve files");
 const uploadProbe = await get(`/uploads/${crypto.randomBytes(8).toString("hex")}-logbook.pdf`, { method: "HEAD" });
-check(uploadProbe.status >= 400, "a made-up /uploads document link is not served", `status ${uploadProbe.status}`);
+check(uploadProbe.status >= 400 || isAppPage(uploadProbe), "a made-up /uploads document link is not served",
+  isAppPage(uploadProbe) ? `the site's own page (${uploadProbe.status}), not a file` : `status ${uploadProbe.status}`);
 
 // ── F. Existing document links (from the storage inventory) ─────────────
 section("F. Existing compliance documents are no longer public");
@@ -195,7 +200,8 @@ if (!INVENTORY || !PUBLIC_BASE) {
       if (filePath.startsWith("legacy/")) {
         viaUploads = await get(`/uploads/${filePath.slice("legacy/".length)}`, { method: "HEAD" });
       }
-      if ((direct.status > 0 && direct.status < 400) || (viaUploads && viaUploads.status > 0 && viaUploads.status < 400)) {
+      const open = (response) => response && response.status > 0 && response.status < 400 && !isAppPage(response);
+      if (open(direct) || open(viaUploads)) {
         stillOpen.push(`${category}: ${filePath} (direct ${direct.status}${viaUploads ? `, /uploads ${viaUploads.status}` : ""})`);
       }
     }));
