@@ -298,7 +298,7 @@ export function PrivacyPage() {
       title="Privacy Policy"
       intro="Tembea Bila Matata respects your privacy and is committed to protecting your personal information."
     >
-      <p className="text-sm font-medium text-foreground">Last Updated: June 2, 2026</p>
+      <p className="text-sm font-medium text-foreground">Last Updated: October 12, 2026</p>
 
       <LegalSection title="Overview">
         <p>
@@ -343,6 +343,25 @@ export function PrivacyPage() {
           service personnel, or other operational resources involved in delivering the requested service.
         </p>
         <p>Information is shared only to the extent reasonably necessary to provide the requested service.</p>
+      </LegalSection>
+
+      <LegalSection title="Signing In with Google or Apple">
+        <p>
+          If you choose to sign in with Google or Apple, we receive only your name, email address and profile picture from that account. We do not
+          receive your Google or Apple password, and we do not ask for access to your contacts, files, calendar or email.
+        </p>
+        <p>
+          We use this information only to create your Tembea Bila Matata account, sign you in, and contact you about your bookings. We do not sell it
+          or use it for advertising. The companies that host our platform and handle sign-in process it on our behalf, and when you book, we share only
+          what that booking needs, as described under Information Sharing.
+        </p>
+        <p>
+          Our use of information received from Google APIs adheres to the Google API Services User Data Policy, including its Limited Use requirements.
+        </p>
+        <p>
+          You can remove our access at any time from your Google Account (Security › Third-party apps and services) or your Apple ID settings (Sign in
+          with Apple). To delete your Tembea Bila Matata account and the information we hold, contact us using the details below.
+        </p>
       </LegalSection>
 
       <LegalSection title="Data Security">

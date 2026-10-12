@@ -294,9 +294,10 @@ export default function AuthPage() {
         provider,
         options: {
           redirectTo,
+          // Sign-in only: no offline access, so Google asks for the basic
+          // profile and nothing more.
           queryParams: provider === "google"
             ? {
-                access_type: "offline",
                 prompt: "select_account",
               }
             : undefined,
