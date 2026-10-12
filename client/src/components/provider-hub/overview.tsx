@@ -9,6 +9,7 @@ import { QrShareCard } from "@/components/provider-hub/qr-share-card";
 import { ListingShareSheet } from "@/components/listing-share-sheet";
 import { PartnerAdminThread } from "@/components/partner-admin-thread";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/hooks/useAuth";
 import { useCurrency } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 import type { HubListing } from "@/lib/provider-listings";
@@ -121,7 +122,9 @@ export function ProviderOverview(props: OverviewProps) {
   const hasShared = (sharesData?.listings ?? []).some((listing) => listing.links.length > 0);
   const live = props.listings.filter((listing) => listing.isPublic);
   const today = formatKenyaDateTime(new Date(), { weekday: "long", day: "numeric", month: "long" }, "en-GB");
-  const name = profile.businessName || props.firstName || "";
+  const { user } = useAuth();
+  // The same name the sidebar card uses, so both avatars show the same initials.
+  const name = profile.businessName?.trim() || [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim() || props.firstName || "";
   const onTheWay = (props.payments?.totalPendingPayouts ?? 0) + (props.payments?.totalApprovedPayouts ?? 0);
 
   return (
