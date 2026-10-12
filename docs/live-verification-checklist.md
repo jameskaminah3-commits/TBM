@@ -18,7 +18,7 @@ A pass on the dev branch or a local copy does not count.
 
   Whether Railway is running that commit is not confirmed.
 - **Existing files.** New uploads go to private storage. **Files uploaded before the release are still in the public bucket and still open from their old links**, until the one-off move in section 3 is run. Treat existing logbooks, insurance papers and application files as publicly reachable until section 3 passes.
-- **Not in this checklist.** The Provider Hub redesign (dev branch) is not live and is not needed for any of these checks.
+- **The Provider Hub release** goes out on top of that. It doesn't change these fixes, and the script's section A reports whether it's live. Its own clean-up steps (agreed rates, emails, a test provider) are in `docs/production-cleanup-runbook.md`.
 
 ## Before you start
 
