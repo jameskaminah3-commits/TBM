@@ -5,6 +5,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { ProviderLayout } from "@/components/provider-layout";
+import { Field } from "@/components/provider-hub/field";
+import { addCalendarDays, formatCalendarDate, formatCalendarDateRange } from "@shared/calendar-dates";
+import { getReservationStatusLabel, getServiceModeLabel } from "@shared/service-modes";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -377,15 +380,19 @@ export default function ProviderCookEdit() {
           <CardHeader>
             <CardTitle>Availability</CardTitle>
             <CardDescription>
-              Next available date: {availability?.availableFrom ?? "Loading..."}
+              Next free day: {availability?.availableFrom ? formatCalendarDate(availability.availableFrom, { day: "numeric", month: "short", year: "numeric" }, "en-GB") : "Loading..."}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid gap-3 md:grid-cols-3">
-              <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-              <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+            <div className="grid items-end gap-3 md:grid-cols-3">
+              <Field id="block-start" label="First day unavailable">
+              <Input id="block-start" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+            </Field>
+              <Field id="block-end" label="Free again from">
+              <Input id="block-end" type="date" min={startDate ? addCalendarDays(startDate, 1) : undefined} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+            </Field>
               <Button onClick={() => createBlockMutation.mutate()} disabled={createBlockMutation.isPending}>
-                {createBlockMutation.isPending ? "Blocking..." : "Mark Unavailable"}
+                {createBlockMutation.isPending ? "Blocking..." : "Block these days"}
               </Button>
             </div>
 
@@ -393,11 +400,11 @@ export default function ProviderCookEdit() {
               {availability?.blockedRanges?.length ? availability.blockedRanges.map((range) => (
                 <div key={range.id} className="flex items-center justify-between rounded-lg border p-4">
                   <div>
-                    <div className="font-medium">{range.startDate} to {range.endDate}</div>
+                    <div className="font-medium">{formatCalendarDateRange(range.startDate, range.endDate, "en-GB")}</div>
                     <div className="text-sm text-muted-foreground">
                       {range.source === "manual"
-                        ? "Manual unavailable block"
-                        : `${range.guestName}${range.serviceMode ? ` • ${range.serviceMode}` : ""}`}
+                        ? "Blocked by you"
+                        : [range.guestName, getServiceModeLabel(range.serviceMode)].filter(Boolean).join(" · ")}
                     </div>
                   </div>
                   {range.source === "manual" ? (
@@ -405,7 +412,7 @@ export default function ProviderCookEdit() {
                       Remove
                     </Button>
                   ) : (
-                    <div className="text-sm text-muted-foreground capitalize">{range.status}</div>
+                    <div className="text-sm text-muted-foreground">{getReservationStatusLabel(range.status)}</div>
                   )}
                 </div>
               )) : <p className="text-sm text-muted-foreground">No blocked dates yet.</p>}

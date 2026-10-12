@@ -142,6 +142,7 @@ import { partnerGuestName, toPartnerInboxItem } from "./provider-booking-view";
 import { PAYMENT_MESSAGE_ROLE, getConversationThreadKey, getMessageAudience, isPaymentThreadMessage, type BookingConversation } from "@shared/booking-thread";
 import { queueNotificationTask, sendProviderAssignmentEmail } from "./notifications";
 import { formatCalendarDateRange, formatKenyaDateTime } from "@shared/calendar-dates";
+import { getJobAlertPriority } from "@shared/provider-dashboard";
 
 type DashboardListingCatalog = {
   staysById: Map<string, Stay>;
@@ -3239,6 +3240,45 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  // Provider account events (payout details changed, verification asked for,
+  // a provider application arrived): TBM's admins hear about them in the inbox.
+  async notifyAdminsOfProviderAccount(args: {
+    actorUserId?: string | null;
+    title: string;
+    body: string;
+    actionUrl: string;
+    priority?: AppInboxPriority;
+  }): Promise<void> {
+    const admins = await this.getUsersByRole("admin");
+    for (const admin of admins) {
+      await this.createInboxItem({
+        userId: admin.id,
+        actorUserId: args.actorUserId ?? null,
+        actorRole: args.actorUserId ? "provider" : null,
+        type: "provider-account",
+        title: args.title,
+        body: args.body,
+        actionUrl: args.actionUrl,
+        priority: args.priority ?? "normal",
+        channels: ["in-app", "push"],
+      });
+    }
+  }
+
+  // ...and the provider hears TBM's side: payout details confirmed, verified.
+  async notifyProviderOfAccount(args: { providerUserId: string; title: string; body: string; actionUrl: string }): Promise<void> {
+    await this.createInboxItem({
+      userId: args.providerUserId,
+      actorRole: "admin",
+      type: "provider-account",
+      title: args.title,
+      body: args.body,
+      actionUrl: args.actionUrl,
+      priority: "normal",
+      channels: ["in-app", "push"],
+    });
+  }
+
   // TBM shared a guest's contact with a provider: the provider hears what was
   // shared, why and until when, but not the details themselves.
   async notifyPartnerOfGuestContactRelease(release: GuestContactRelease, assignment: BookingServiceAssignment): Promise<void> {
@@ -3307,9 +3347,9 @@ export class DatabaseStorage implements IStorage {
     type: "assignment-created" | "assignment-reassigned",
   ) {
     const now = new Date().toISOString();
-    const bookingWindow = booking.checkOut && booking.checkOut !== booking.checkIn
-      ? `${booking.checkIn} to ${booking.checkOut}`
-      : booking.checkIn;
+    // "20–22 Nov 2026" and "Ref 4DA29E3D": how providers read dates and bookings.
+    const bookingWindow = formatCalendarDateRange(booking.checkIn, booking.checkOut && booking.checkOut !== booking.checkIn ? booking.checkOut : booking.checkIn, "en-GB");
+    const reference = booking.id.slice(0, 8).toUpperCase();
     const provider = await this.getUser(userId);
     if (provider?.email) {
       queueNotificationTask(
@@ -3330,9 +3370,9 @@ export class DatabaseStorage implements IStorage {
       bookingId: booking.id,
       assignmentId,
       type,
-      title: type === "assignment-reassigned" ? `Reassigned: ${serviceName}` : `New assignment: ${serviceName}`,
-      body: `${partnerGuestName(booking.guestName)} needs ${serviceName} on ${bookingWindow}.`,
-      priority: "high",
+      title: type === "assignment-reassigned" ? `Passed to you: ${serviceName}` : `New job: ${serviceName}`,
+      body: `${partnerGuestName(booking.guestName)} booked ${serviceName} for ${bookingWindow}. Ref ${reference}. Accept or decline in Provider Hub.`,
+      priority: getJobAlertPriority(booking.checkIn, todayInKenya()),
       channels: ["in-app", "push"],
       metadata: {
         serviceName,

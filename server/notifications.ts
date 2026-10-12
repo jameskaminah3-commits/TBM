@@ -991,6 +991,42 @@ export async function sendProviderApprovedEmail(args: { email: string; name: str
   });
 }
 
+// A short plain email to a provider, an applicant or TBM's team ("team").
+// Paragraphs are text; the optional link becomes a button-like line.
+export function providerAppUrl(path: string) {
+  const baseUrl = process.env.APP_BASE_URL?.trim() || "https://tembeabilamatata.com";
+  return `${baseUrl.replace(/\/+$/, "")}${path}`;
+}
+
+export async function sendSimpleEmail(args: {
+  to: string[] | "team";
+  subject: string;
+  greetingName?: string | null;
+  paragraphs: string[];
+  link?: { label: string; url: string } | null;
+}) {
+  const recipients = args.to === "team" ? getNotificationRecipientEmails() : args.to;
+  if (!recipients.length) {
+    return false;
+  }
+  const firstName = args.greetingName?.trim().split(/\s+/)[0] || null;
+  const text = [
+    ...(firstName ? [`Hi ${firstName},`, ""] : []),
+    ...args.paragraphs.flatMap((paragraph) => [paragraph, ""]),
+    ...(args.link ? [`${args.link.label}: ${args.link.url}`, ""] : []),
+    `Questions? Call or WhatsApp TBM on ${SUPPORT_PHONE_DISPLAY}.`,
+  ].join("\n");
+  const html = [
+    '<div style="font-family:Arial,sans-serif;line-height:1.6;color:#0f172a;">',
+    ...(firstName ? [`<p>Hi ${escapeHtml(firstName)},</p>`] : []),
+    ...args.paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`),
+    ...(args.link ? [`<p><a href="${escapeHtml(args.link.url)}">${escapeHtml(args.link.label)}</a></p>`] : []),
+    `<p>Questions? Call or WhatsApp TBM on ${escapeHtml(SUPPORT_PHONE_DISPLAY)}.</p>`,
+    "</div>",
+  ].join("");
+  return await sendEmailMessage({ to: recipients, subject: `[Tembea Bila Matata] ${args.subject}`, text, html });
+}
+
 export async function sendListingVerificationCompletedEmail(args: {
   customerEmail: string;
   customerName: string;

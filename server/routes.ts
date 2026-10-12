@@ -89,6 +89,8 @@ import { toPartnerAvailability, toPublicAvailability } from "./availability-view
 import { diffListingFields } from "./listing-edits";
 import { resolveShortLinkPath } from "./share-metadata";
 import { canRespondToAssignment } from "./provider-policy";
+import { canStartJob, getJobStartDate } from "@shared/provider-dashboard";
+import { recordShareCreditForBooking } from "./share-credit";
 import { PAYMENT_MESSAGE_ROLE, canSeeThreadMessage, isInConversation, type BookingConversation } from "@shared/booking-thread";
 import { db } from "./db";
 import { bookings, users, stays, cars, cooks, errands, experiences, listings, blogPosts, customOffers, stayReservations, carReservations, cookReservations } from "@shared/schema";
@@ -141,7 +143,10 @@ import { sanitizeUserRecord } from "./user-sanitizer";
 import { registerZainaRoutes } from "./zaina/routes";
 import { registerZainaAgentRoutes } from "./zaina/agent-routes";
 import { getUsdToKesRate } from "./currency";
-import { formatKenyaDateTime, kenyaClockMinutes, kenyaDateTimeToIso } from "@shared/calendar-dates";
+import { addCalendarDays, formatCalendarDate, formatKenyaDateTime, isCalendarDate, kenyaClockMinutes, kenyaDateTimeToIso, todayInKenya } from "@shared/calendar-dates";
+import { findBlockedDate } from "./provider-hub";
+import { registerProviderHubRoutes } from "./provider-hub-routes";
+import { getServiceBookingDates } from "@shared/listing-blocks";
 
 function normalizeDateOnly(value: string) {
   const date = new Date(`${value}T00:00:00.000Z`);
@@ -2271,6 +2276,21 @@ async function applyProviderAssignmentStatusUpdate(
     return { error: "Progress updates are available after the client accepts the quote." } as const;
   }
 
+  // Not before the job's first day, in Kenya time.
+  const jobStartDate = getJobStartDate({
+    checkIn: booking.checkIn,
+    serviceScheduleSlots: assignment.serviceConfig?.serviceScheduleSlots?.length
+      ? assignment.serviceConfig.serviceScheduleSlots
+      : booking.serviceScheduleSlots,
+  });
+  if (!canStartJob(jobStartDate, todayInKenya())) {
+    return {
+      error: jobStartDate
+        ? `This job starts on ${formatCalendarDate(jobStartDate, { day: "numeric", month: "short", year: "numeric" }, "en-GB")}. You can update it from that day.`
+        : "This job has no start date yet.",
+    } as const;
+  }
+
   const currentAssignmentStatus = assignment.status || "upcoming";
   if (!canTransitionBookingStatus(currentAssignmentStatus, requestedStatus)) {
     return { error: getProviderProgressUpdateError(currentAssignmentStatus) } as const;
@@ -2663,6 +2683,11 @@ async function assertProviderCanAccessExperienceBooking(req: any, bookingId: str
   return access;
 }
 
+// A provider blocked one of the dates a guest asked for.
+function blockedDateMessage(name: string, date: string) {
+  return `${name} isn't available on ${formatCalendarDate(date, { day: "numeric", month: "short", year: "numeric" }, "en-GB")}. Please choose another date.`;
+}
+
 // Anonymous fleet-application uploads: a few per visitor per hour is plenty for
 // one application (photos and four documents); more is refused.
 const fleetUploadRateLimit = createRateLimitMiddleware([
@@ -2969,6 +2994,7 @@ async function buildSitemapXml() {
 export async function registerRoutes(app: Express): Promise<Server> {
   setupAuth(app);
   registerAuthRoutes(app);
+  registerProviderHubRoutes(app);
   registerZainaRoutes(app);
   registerZainaAgentRoutes(app);
 
@@ -3243,6 +3269,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         sendBookingCreatedNotificationEmails(booking, req),
       );
       await storage.syncBookingServiceAssignments({ bookingIds: [booking.id], notifyProviders: true });
+      // A guest who came through a provider's shared link: the same share rules decide the credit.
+      await recordShareCreditForBooking({ bookingId: booking.id, claim: req.body?.shareClaim, ip: getRequestIp(req), bookerUserId: req.user.claims.sub });
       return res.status(201).json(booking);
     } catch (error) {
       if (error instanceof Error) {
@@ -4262,6 +4290,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 validatedData.serviceRequestDetails = validatedData.serviceRequestDetails.trim();
               }
 
+              const blockedErrandDate = await findBlockedDate("errand", errand.id, getServiceBookingDates(validatedData));
+              if (blockedErrandDate) {
+                return res.status(409).json({ error: blockedDateMessage(errand.serviceName, blockedErrandDate) });
+              }
+
               validatedData.totalPrice = packagePrice * packageCount;
             } else {
               const experience = await storage.getExperience(selectedCarId);
@@ -4277,6 +4310,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 const serviceMode = validatedData.serviceMode;
                 if (!["experience-private", "experience-shared", "experience-custom-offer"].includes(serviceMode ?? "")) {
                   return res.status(400).json({ error: "Choose a valid experience booking option." });
+                }
+
+                // Shared departures are dates the provider set; private and custom dates are the guest's.
+                if (serviceMode !== "experience-shared") {
+                  const blockedExperienceDate = await findBlockedDate("experience", experience.id, [validatedData.checkIn]);
+                  if (blockedExperienceDate) {
+                    return res.status(409).json({ error: blockedDateMessage(experience.title, blockedExperienceDate) });
+                  }
                 }
 
                 if (serviceMode === "experience-private") {

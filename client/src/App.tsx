@@ -55,6 +55,8 @@ const AdminZaina = lazy(() => import("@/pages/admin/zaina"));
 const AdminListingVerifications = lazy(() => import("@/pages/admin/listing-verifications"));
 const PartnerLanding = lazy(() => import("@/pages/partner/index"));
 const PartnerApply = lazy(() => import("@/pages/partner/apply"));
+const PartnerApplyService = lazy(() => import("@/pages/partner/apply-service"));
+const AdminProviderApplications = lazy(() => import("@/pages/admin/provider-applications"));
 const Blog = lazy(() => import("@/pages/blog"));
 const BlogPost = lazy(() => import("@/pages/blog-post"));
 const AboutPage = lazy(async () => ({ default: (await import("@/pages/about")).AboutPage }));
@@ -80,6 +82,10 @@ const ProviderAvailability = lazy(() => import("@/pages/provider/availability"))
 const ProviderServiceRequests = lazy(() => import("@/pages/provider/service-requests"));
 const ProviderDocuments = lazy(() => import("@/pages/provider/documents"));
 const ProviderSupport = lazy(() => import("@/pages/provider/support"));
+const ProviderMessages = lazy(() => import("@/pages/provider/messages"));
+const ProviderProfilePage = lazy(() => import("@/pages/provider/profile"));
+const ProviderEarnings = lazy(() => import("@/pages/provider/earnings"));
+const ProviderShare = lazy(() => import("@/pages/provider/share"));
 const CustomServiceRequestPage = lazy(() => import("@/pages/custom-service-request"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 const PublicListingDetail = lazy(() => import("@/pages/public-listing-detail"));
@@ -132,12 +138,14 @@ function Router() {
         <AppRoute path="/refund-cancellation" element={<RefundCancellationPage />} />
         <AppRoute path="/partner" element={<PartnerLanding />} />
         <AppRoute path="/partner/apply" element={<PartnerApply />} />
+        <AppRoute path="/partner/apply/:type" element={<PartnerApplyService />} />
         <AppRoute path="/admin/dashboard" element={<AdminDashboard />} />
         <AppRoute path="/admin/bookings" element={<AdminBookings />} />
         <AppRoute path="/admin/listing-verifications" element={<AdminListingVerifications />} />
         <AppRoute path="/admin/clients" element={<AdminClients />} />
         <AppRoute path="/admin/payments" element={<AdminPayments />} />
         <AppRoute path="/admin/providers" element={<AdminProviders />} />
+        <AppRoute path="/admin/provider-applications" element={<AdminProviderApplications />} />
         <AppRoute path="/admin/stays/new" element={<AdminStaysNew />} />
         <AppRoute path="/admin/stays/:id/edit" element={<AdminStaysEdit />} />
         <AppRoute path="/admin/cars/new" element={<AdminCarsNew />} />
@@ -169,6 +177,10 @@ function Router() {
         <AppRoute path="/provider/service-requests" element={<ProviderServiceRequests />} />
         <AppRoute path="/provider/documents" element={<ProviderDocuments />} />
         <AppRoute path="/provider/support" element={<ProviderSupport />} />
+        <AppRoute path="/provider/messages" element={<ProviderMessages />} />
+        <AppRoute path="/provider/profile" element={<ProviderProfilePage />} />
+        <AppRoute path="/provider/earnings" element={<ProviderEarnings />} />
+        <AppRoute path="/provider/share" element={<ProviderShare />} />
         <AppRoute element={<NotFound />} />
       </Switch>
     </Suspense>

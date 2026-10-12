@@ -30,6 +30,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useCurrency } from "@/lib/currency";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { CheckoutPaymentPreview, customRequestCheckoutPreviewCopy } from "@/components/payment-provider-picker";
+import { getBookingShareClaim } from "@/lib/marketing-attribution";
 import { customServiceRequestFeeUsd } from "@shared/custom-service";
 
 const customRequestSchema = z.object({
@@ -112,6 +113,7 @@ export default function CustomServiceRequestPage() {
         budgetAmount: payload.budgetUsd ? convertFromUsd(payload.budgetUsd, selectedCurrency) : undefined,
         budgetCurrency: payload.budgetUsd ? selectedCurrency : undefined,
         attachmentUrl,
+        shareClaim: getBookingShareClaim(),
       });
       return response.json() as Promise<CustomRequestCheckoutResponse>;
     },

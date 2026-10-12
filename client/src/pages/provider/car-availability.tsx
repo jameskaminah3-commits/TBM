@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import { useParams, useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ProviderLayout } from "@/components/provider-layout";
+import { Field } from "@/components/provider-hub/field";
+import { addCalendarDays, formatCalendarDate, formatCalendarDateRange } from "@shared/calendar-dates";
+import { getReservationStatusLabel, getServiceModeLabel } from "@shared/service-modes";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -169,7 +172,7 @@ export default function ProviderCarAvailability() {
           <div>
             <h1 className="text-3xl font-semibold tracking-tight">{car ? getCarDisplayName(car) : "Car Listing"}</h1>
             <p className="text-muted-foreground mt-1">
-              Next available date: {availability?.availableFrom ?? "Loading..."}
+              Next free day: {availability?.availableFrom ? formatCalendarDate(availability.availableFrom, { day: "numeric", month: "short", year: "numeric" }, "en-GB") : "Loading..."}
             </p>
           </div>
           {car ? (
@@ -257,11 +260,15 @@ export default function ProviderCarAvailability() {
             <CardTitle>Block Dates</CardTitle>
             <CardDescription>Use this when the car is unavailable for maintenance, owner use, or held inventory.</CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-3">
-            <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-            <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+          <CardContent className="grid items-end gap-3 md:grid-cols-3">
+            <Field id="block-start" label="First day unavailable">
+              <Input id="block-start" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+            </Field>
+            <Field id="block-end" label="Free again from">
+              <Input id="block-end" type="date" min={startDate ? addCalendarDays(startDate, 1) : undefined} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+            </Field>
             <Button onClick={() => createBlockMutation.mutate()} disabled={createBlockMutation.isPending}>
-              {createBlockMutation.isPending ? "Blocking..." : "Block Dates"}
+              {createBlockMutation.isPending ? "Blocking..." : "Block these days"}
             </Button>
           </CardContent>
         </Card>
@@ -275,11 +282,11 @@ export default function ProviderCarAvailability() {
             {availability?.blockedRanges?.length ? availability.blockedRanges.map((range) => (
               <div key={range.id} className="flex items-center justify-between rounded-lg border p-4">
                 <div>
-                  <div className="font-medium">{range.startDate} to {range.endDate}</div>
+                  <div className="font-medium">{formatCalendarDateRange(range.startDate, range.endDate, "en-GB")}</div>
                   <div className="text-sm text-muted-foreground">
                     {range.source === "manual"
-                      ? "Manual provider block"
-                      : `${range.guestName}${range.serviceMode ? ` • ${range.serviceMode}` : ""}`}
+                      ? "Blocked by you"
+                      : [range.guestName, getServiceModeLabel(range.serviceMode)].filter(Boolean).join(" · ")}
                   </div>
                 </div>
                 {range.source === "manual" ? (
@@ -287,7 +294,7 @@ export default function ProviderCarAvailability() {
                     Remove
                   </Button>
                 ) : (
-                  <div className="text-sm text-muted-foreground capitalize">{range.status}</div>
+                  <div className="text-sm text-muted-foreground">{getReservationStatusLabel(range.status)}</div>
                 )}
               </div>
             )) : <p className="text-sm text-muted-foreground">No blocked dates yet.</p>}

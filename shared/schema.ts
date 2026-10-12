@@ -771,7 +771,7 @@ export type ProviderBookingAssignmentView = {
   assignment: BookingServiceAssignment;
   booking: Booking;
 };
-export const appInboxItemTypes = ["assignment-created", "assignment-reassigned", "assignment-updated", "assignment-declined", "guest-contact-shared", "booking-created", "booking-message", "partner-admin-message"] as const;
+export const appInboxItemTypes = ["assignment-created", "assignment-reassigned", "assignment-updated", "assignment-declined", "guest-contact-shared", "booking-created", "booking-message", "partner-admin-message", "provider-account"] as const;
 export type AppInboxItemType = typeof appInboxItemTypes[number];
 export const appInboxPriorities = ["low", "normal", "high", "urgent"] as const;
 export type AppInboxPriority = typeof appInboxPriorities[number];
@@ -1048,6 +1048,67 @@ export const listingShareEvents = pgTable("listing_share_events", {
   ipHash: varchar("ip_hash"),
   createdAt: text("created_at").notNull(),
 }, (table) => [index("listing_share_events_code_idx").on(table.code, table.eventType, table.createdAt)]);
+
+// A provider's business profile, payout details and TBM's verification
+// (migration 0022). Payout details are seen only by the provider and admins.
+export const providerProfiles = pgTable("provider_profiles", {
+  userId: varchar("user_id").primaryKey(),
+  businessName: text("business_name").notNull().default(""),
+  bio: text("bio").notNull().default(""),
+  photoUrl: text("photo_url").notNull().default(""),
+  languages: text("languages").array().notNull().default(sql`'{}'::text[]`),
+  serviceAreas: text("service_areas").array().notNull().default(sql`'{}'::text[]`),
+  payoutMethod: varchar("payout_method"),
+  mpesaNumber: varchar("mpesa_number"),
+  mpesaName: text("mpesa_name"),
+  bankName: text("bank_name"),
+  bankAccountName: text("bank_account_name"),
+  bankAccountNumber: varchar("bank_account_number"),
+  bankBranch: text("bank_branch"),
+  payoutDetailsStatus: varchar("payout_details_status").notNull().default("none"),
+  payoutDetailsUpdatedAt: text("payout_details_updated_at"),
+  payoutDetailsConfirmedAt: text("payout_details_confirmed_at"),
+  payoutDetailsConfirmedBy: varchar("payout_details_confirmed_by"),
+  verificationStatus: varchar("verification_status").notNull().default("not-started"),
+  verificationNote: text("verification_note"),
+  verifiedAt: text("verified_at"),
+  verifiedBy: varchar("verified_by"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+// Dates a provider has blocked on a home help or experience listing
+// (migration 0022). Stays, cars and chefs keep theirs with their reservations.
+export const listingBlocks = pgTable("listing_blocks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  listingKind: varchar("listing_kind").notNull(),
+  listingId: varchar("listing_id").notNull(),
+  startDate: varchar("start_date").notNull(),
+  endDate: varchar("end_date").notNull(),
+  reason: text("reason"),
+  createdByUserId: varchar("created_by_user_id"),
+  createdAt: text("created_at").notNull(),
+}, (table) => [index("listing_blocks_listing_idx").on(table.listingKind, table.listingId, table.startDate)]);
+
+// Applications from hosts, chefs, home help and experience providers
+// (migration 0022). Vehicle owners keep the fleet application.
+export const providerApplications = pgTable("provider_applications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  serviceType: varchar("service_type").notNull(),
+  fullName: text("full_name").notNull(),
+  phone: varchar("phone").notNull(),
+  email: varchar("email").notNull(),
+  town: text("town").notNull(),
+  details: jsonb("details").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+  photos: jsonb("photos").$type<Array<{ label: string; url: string }>>().notNull().default(sql`'[]'::jsonb`),
+  documents: jsonb("documents").$type<Array<{ label: string; url: string }>>().notNull().default(sql`'[]'::jsonb`),
+  status: varchar("status").notNull().default("new"),
+  reviewNote: text("review_note"),
+  createdUserId: varchar("created_user_id"),
+  reviewedBy: varchar("reviewed_by"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [index("provider_applications_status_idx").on(table.status, table.createdAt)]);
 
 const optionalTrimmedString = z.preprocess(
   (value) => {

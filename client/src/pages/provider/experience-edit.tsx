@@ -16,9 +16,13 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { insertExperienceSchema, type Experience } from "@shared/schema";
+import { insertExperienceSchema, type Experience, type ExperienceAddon } from "@shared/schema";
 import { ListingShareSheet } from "@/components/listing-share-sheet";
 import { getListingSharePrice } from "@shared/listing-share";
+import { DateBlocksPanel } from "@/components/provider-hub/date-blocks-panel";
+import { HubPageHeader } from "@/components/provider-hub/hub-ui";
+import { useCurrency } from "@/lib/currency";
+import { convertErrandAddonsFromUsd, convertErrandAddonsToUsd, convertErrandAmountFromUsd, convertErrandAmountToUsd, currencyLabel } from "@/lib/errand-currency";
 
 const featureOptions = [
   "Private",
@@ -77,6 +81,9 @@ export default function ProviderExperienceEdit() {
   const { id } = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  // Prices are entered in the provider's currency (KSh by default) and stored in US dollars.
+  const { selectedCurrency, convertFromUsd, convertToUsd } = useCurrency();
+  const amountCurrencyLabel = currencyLabel(selectedCurrency);
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
 
   const { data: experience, isLoading } = useQuery<Experience>({
@@ -131,12 +138,14 @@ export default function ProviderExperienceEdit() {
       meetingPoint: experience.meetingPoint ?? "",
       inclusionsText: experience.inclusions.join("\n"),
       exclusionsText: experience.exclusions.join("\n"),
-      privateAddons: experience.privateAddons || [],
-      sharedAddons: experience.sharedAddons || [],
+      privatePricePerPerson: convertErrandAmountFromUsd(experience.privatePricePerPerson, convertFromUsd, selectedCurrency),
+      sharedPricePerPerson: convertErrandAmountFromUsd(experience.sharedPricePerPerson, convertFromUsd, selectedCurrency),
+      privateAddons: convertErrandAddonsFromUsd(experience.privateAddons, convertFromUsd, selectedCurrency),
+      sharedAddons: convertErrandAddonsFromUsd(experience.sharedAddons, convertFromUsd, selectedCurrency),
       sharedDepartures: experience.sharedDepartures || [],
     });
     setSelectedFeatures(experience.features || []);
-  }, [experience, form]);
+  }, [experience, form, convertFromUsd, selectedCurrency]);
 
   const mutation = useMutation({
     mutationFn: async (data: FormData) => apiRequest("PATCH", `/api/provider/experiences/${id}`, data),
@@ -146,7 +155,7 @@ export default function ProviderExperienceEdit() {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/experiences"] });
       queryClient.invalidateQueries({ queryKey: ["/api/experiences"] });
       toast({ title: "Experience updated", description: "Your changes are live. TBM reviews your edits afterwards." });
-      setLocation("/provider/dashboard");
+      setLocation("/provider/dashboard?tab=listings&workspace=experiences");
     },
     onError: (error: Error) => {
       toast({ title: "Could not update experience", description: error.message.replace(/^\d+:\s*/, ""), variant: "destructive" });
@@ -156,6 +165,10 @@ export default function ProviderExperienceEdit() {
   const onSubmit = async (data: FormData) => {
     await mutation.mutateAsync({
       ...data,
+      privatePricePerPerson: convertErrandAmountToUsd(data.privatePricePerPerson, convertToUsd, selectedCurrency),
+      sharedPricePerPerson: convertErrandAmountToUsd(data.sharedPricePerPerson, convertToUsd, selectedCurrency),
+      privateAddons: convertErrandAddonsToUsd(Array.from((data.privateAddons ?? []) as ArrayLike<ExperienceAddon>), convertToUsd, selectedCurrency),
+      sharedAddons: convertErrandAddonsToUsd(Array.from((data.sharedAddons ?? []) as ArrayLike<ExperienceAddon>), convertToUsd, selectedCurrency),
       inclusions: splitLines(data.inclusionsText),
       exclusions: splitLines(data.exclusionsText),
       features: selectedFeatures,
@@ -170,20 +183,19 @@ export default function ProviderExperienceEdit() {
   const sharedEnabled = form.watch("sharedEnabled");
 
   return (
-    <ProviderLayout>
-      <div className="mx-auto max-w-5xl p-8">
-        <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h1 className="mb-2 text-3xl font-serif font-semibold">Manage Experience Listing</h1>
-            <p className="text-muted-foreground">Changes go live when you save. TBM reviews your edits afterwards.</p>
-          </div>
-          {experience ? (
+    <ProviderLayout title={experience?.title ?? "Experience"}>
+      <div className="mx-auto max-w-5xl space-y-6 px-4 py-6 sm:px-6 sm:py-8">
+        <HubPageHeader
+          eyebrow="Experiences"
+          title={experience?.title ?? "Your experience"}
+          description="Changes go live when you save. TBM reviews your edits afterwards."
+          actions={experience ? (
             <ListingShareSheet kind="experience" id={experience.id} name={experience.title} description={experience.description} {...getListingSharePrice("experience", experience)} isPublic={experience.isPublic} source="provider" size="default" triggerLabel="Share listing" />
-          ) : null}
-        </div>
+          ) : undefined}
+        />
         <Card id="details" className="scroll-mt-24">
           <CardHeader>
-            <CardTitle>Experience Details</CardTitle>
+            <CardTitle>Experience details</CardTitle>
             <CardDescription>Keep the structure clear so guests understand both private and shared options instantly.</CardDescription>
           </CardHeader>
           <CardContent>
@@ -240,7 +252,7 @@ export default function ProviderExperienceEdit() {
                     </div>
                     <div className="grid gap-4 md:grid-cols-2">
                       <FormField control={form.control} name="privatePricePerPerson" render={({ field }) => (
-                        <FormItem><FormLabel>Private Price Per Person (USD)</FormLabel><FormControl><Input type="number" min="0" {...field} /></FormControl><FormMessage /></FormItem>
+                        <FormItem><FormLabel>Private price a person ({amountCurrencyLabel})</FormLabel><FormControl><Input type="number" min="0" {...field} /></FormControl><FormMessage /></FormItem>
                       )} />
                       <FormField control={form.control} name="privateMinimumGuests" render={({ field }) => (
                         <FormItem><FormLabel>Private Minimum Guests</FormLabel><FormControl><Input type="number" min="2" {...field} /></FormControl><FormMessage /></FormItem>
@@ -254,6 +266,7 @@ export default function ProviderExperienceEdit() {
                             description="Extras like flowers, photography, premium drinks, or transfer upgrades."
                             value={Array.from((field.value ?? []) as ArrayLike<{ id: string; name: string; price: number }>)}
                             onChange={field.onChange}
+                            currencyLabel={amountCurrencyLabel}
                           />
                         </FormControl>
                         <FormMessage />
@@ -270,7 +283,7 @@ export default function ProviderExperienceEdit() {
                     </div>
                     <div className="grid gap-4 md:grid-cols-3">
                       <FormField control={form.control} name="sharedPricePerPerson" render={({ field }) => (
-                        <FormItem><FormLabel>Shared Price Per Person (USD)</FormLabel><FormControl><Input type="number" min="0" {...field} /></FormControl><FormMessage /></FormItem>
+                        <FormItem><FormLabel>Shared price a person ({amountCurrencyLabel})</FormLabel><FormControl><Input type="number" min="0" {...field} /></FormControl><FormMessage /></FormItem>
                       )} />
                       <FormField control={form.control} name="sharedMinimumGuests" render={({ field }) => (
                         <FormItem><FormLabel>Minimum Guests To Run</FormLabel><FormControl><Input type="number" min="1" {...field} /></FormControl><FormMessage /></FormItem>
@@ -295,6 +308,7 @@ export default function ProviderExperienceEdit() {
                             description="Optional extras guests can attach to their shared booking."
                             value={Array.from((field.value ?? []) as ArrayLike<{ id: string; name: string; price: number }>)}
                             onChange={field.onChange}
+                            currencyLabel={amountCurrencyLabel}
                           />
                         </FormControl>
                         <FormMessage />
@@ -361,13 +375,14 @@ export default function ProviderExperienceEdit() {
                   </div>
                 </div>
                 <div className="flex gap-4">
-                  <Button type="button" variant="outline" onClick={() => setLocation("/provider/dashboard")}>Cancel</Button>
+                  <Button type="button" variant="outline" onClick={() => setLocation("/provider/dashboard?tab=listings&workspace=experiences")}>Cancel</Button>
                   <Button type="submit" disabled={mutation.isPending}>{mutation.isPending ? "Saving..." : "Save Changes"}</Button>
                 </div>
               </form>
             </Form>
           </CardContent>
         </Card>
+        {id ? <DateBlocksPanel segment="experiences" listingId={id} /> : null}
       </div>
     </ProviderLayout>
   );

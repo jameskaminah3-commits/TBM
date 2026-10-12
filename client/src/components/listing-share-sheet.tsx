@@ -233,7 +233,7 @@ export function ListingShareSheet({
               <Label htmlFor={`share-link-${id}`} className="text-xs text-muted-foreground">Link</Label>
               <Input id={`share-link-${id}`} ref={linkInputRef} readOnly value={links.copy} onFocus={(event) => event.currentTarget.select()} onCopy={() => markShared("copy")} />
               {shareCode ? (
-                <p className="text-xs text-muted-foreground">Visits and bookings from this link show in Your shares, under Listings.</p>
+                <p className="text-xs text-muted-foreground">Visits and bookings from this link show in Share &amp; grow, in your Provider Hub.</p>
               ) : null}
             </div>
 

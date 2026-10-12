@@ -8,6 +8,7 @@ type ExperienceAddonEditorProps = {
   description: string;
   value: ExperienceAddon[];
   onChange: (addons: ExperienceAddon[]) => void;
+  currencyLabel?: string;
 };
 
 function createAddon(): ExperienceAddon {
@@ -18,7 +19,7 @@ function createAddon(): ExperienceAddon {
   };
 }
 
-export function ExperienceAddonEditor({ label, description, value, onChange }: ExperienceAddonEditorProps) {
+export function ExperienceAddonEditor({ label, description, value, onChange, currencyLabel }: ExperienceAddonEditorProps) {
   const updateAddon = (id: string, patch: Partial<ExperienceAddon>) => {
     onChange(value.map((addon) => addon.id === id ? { ...addon, ...patch } : addon));
   };
@@ -38,17 +39,19 @@ export function ExperienceAddonEditor({ label, description, value, onChange }: E
         <div key={addon.id} className="grid gap-3 md:grid-cols-[1fr_140px_auto]">
           <Input
             placeholder="Add-on name"
+            aria-label="Add-on name"
             value={addon.name}
             onChange={(e) => updateAddon(addon.id, { name: e.target.value })}
           />
           <Input
             type="number"
             min="0"
-            placeholder="Price"
+            placeholder={currencyLabel ? `Price (${currencyLabel})` : "Price"}
+            aria-label={currencyLabel ? `Price (${currencyLabel})` : "Price"}
             value={addon.price}
             onChange={(e) => updateAddon(addon.id, { price: e.target.value === "" ? 0 : Number(e.target.value) })}
           />
-          <Button type="button" variant="outline" size="icon" onClick={() => removeAddon(addon.id)}>
+          <Button type="button" variant="outline" size="icon" onClick={() => removeAddon(addon.id)} aria-label={`Remove ${addon.name || "add-on"}`}>
             <Trash2 className="h-4 w-4" />
           </Button>
         </div>
