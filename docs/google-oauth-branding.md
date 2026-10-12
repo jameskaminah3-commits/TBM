@@ -73,7 +73,13 @@ Google keeps showing the address until brand verification passes in step G. Sign
 
 ## B. Verify the domain (Google Search Console)
 
-Use **the same Google account** as step A.
+**If TBM already has a Search Console property**, it probably counts. Check two things:
+- Search Console › Settings › Users and permissions: the Google account you use in Google Cloud is listed as **Owner**. Full user isn't enough.
+- Google Cloud › IAM: that same account is **Owner** or **Editor** on the project.
+
+If both are true, skip to step C. If the brand check in step G later says the domain isn't verified, come back and add the Domain property below.
+
+Otherwise, use **the same Google account** as step A.
 
 1. Go to Search Console › Add property › **Domain**, and enter `tembeabilamatata.com`.
 2. Search Console gives a TXT record (`google-site-verification=…`). Add it at the DNS provider for `tembeabilamatata.com`, then press **Verify**. DNS can take from a few minutes to a few hours.
