@@ -223,7 +223,7 @@ export function YourShares() {
           Your shares
         </CardTitle>
         <CardDescription>
-          Visits and bookings from links you've shared. A booking counts once it's paid or the deposit is paid. Credit lasts 30 days on the guest's device.
+          Visits and bookings from links you've shared. A booking counts once TBM has received its full payment or its required deposit. Credit lasts 30 days on the guest's device.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">

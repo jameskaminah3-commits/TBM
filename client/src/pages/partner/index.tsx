@@ -52,7 +52,7 @@ const tbmDoes = [
 
 const steps = [
   { title: "Apply in about five minutes", body: "Tell us about you and your service. No documents needed to start." },
-  { title: "TBM calls you", body: "Usually within two working days, we call or WhatsApp you, answer your questions and arrange a check of your ID and your right to offer the service." },
+  { title: "TBM calls you", body: "Our team reviews applications in the order they arrive, then calls or WhatsApps you to answer your questions and arrange a check of your ID and your right to offer the service." },
   { title: "Set up your listing", body: "In Provider Hub you add photos, set your prices and block the dates you're away. TBM checks it and publishes it." },
   { title: "Accept jobs, get paid", body: "Each new booking comes with its dates and details. Accept or decline, do the job, and your payout follows." },
 ];
@@ -65,7 +65,7 @@ const control = [
 ];
 
 const faqs = [
-  { q: "Does it cost anything to join?", a: "No. There's no joining fee and no monthly fee. TBM takes a rate from each booking, agreed with you before your first payout, and it pays for finding guests, taking payments and supporting them." },
+  { q: "Does it cost anything to join?", a: "There's no joining fee and no monthly subscription fee. TBM earns a commission on each booking made through TBM, which pays for finding guests, taking payments and supporting them. The rate depends on your service and is agreed with you before your first payout. You'll see it in your Provider Hub." },
   { q: "When and how do I get paid?", a: "After each job, to your M-Pesa or bank account. For your safety, TBM confirms your payout details before the first payout, and emails you whenever they change." },
   { q: "Can I keep my listing on other sites?", a: "Yes. Block the dates you're booked elsewhere in Provider Hub, so a guest can't book the same days through TBM." },
   { q: "Do I have to take every booking?", a: "No. You accept or decline each new job. If plans change after you accept, message TBM from the booking." },
@@ -129,11 +129,11 @@ function Estimator() {
         <div className="flex flex-col justify-center rounded-[1.5rem] bg-gradient-to-br from-[#0f3d3a] to-[#1f5f4f] p-6 text-white">
           <div className="text-sm text-teal-50/80">Booked {units} {units === 1 ? example.unitNoun[0] : example.unitNoun[1]} a month at KSh {Math.round(price || 0).toLocaleString("en-KE")}</div>
           <div className="mt-2 font-serif text-4xl font-semibold tabular-nums sm:text-5xl" data-testid="text-estimate">KSh {gross.toLocaleString("en-KE")}</div>
-          <div className="mt-1 text-sm text-teal-50/80">a month, before TBM's agreed rate</div>
+          <div className="mt-1 text-sm text-teal-50/80">a month, before TBM's commission</div>
         </div>
       </div>
       <p className="mt-5 text-xs leading-5 text-stone-500">
-        An example to plan with, not a promise. Bookings depend on your listing, prices, season and reviews. You set your own prices, and TBM's rate is agreed with you before your first payout.
+        An example to plan with, not a promise. Bookings depend on your listing, prices, season and reviews. You set your own prices, and TBM's commission is agreed with you before your first payout.
       </p>
     </div>
   );
@@ -171,7 +171,7 @@ export default function PartnerLanding() {
             </Button>
           </div>
           <ul className="mx-auto mt-8 grid max-w-3xl grid-cols-1 gap-2 text-left text-sm text-white/90 sm:grid-cols-3">
-            {["No joining fee", "You set your prices", "Guests pay through TBM"].map((point) => (
+            {["No joining or monthly fee", "Commission agreed before your first payout", "You set your prices"].map((point) => (
               <li key={point} className="flex items-center justify-center gap-2 rounded-2xl bg-white/10 px-3 py-2.5 backdrop-blur sm:justify-start">
                 <Check className="h-4 w-4 shrink-0 text-amber-300" aria-hidden="true" />
                 {point}
@@ -339,7 +339,7 @@ export default function PartnerLanding() {
         <div className="mx-auto max-w-5xl overflow-hidden rounded-[2rem] bg-gradient-to-br from-amber-300 via-amber-200 to-amber-100 p-6 text-center shadow-[0_40px_90px_-60px_rgba(146,64,14,0.8)] sm:p-12">
           <HandCoins className="mx-auto h-8 w-8 text-amber-900" aria-hidden="true" />
           <h2 className="mt-3 font-serif text-3xl font-semibold leading-tight text-stone-950 sm:text-4xl">Start today. It takes about five minutes.</h2>
-          <p className="mx-auto mt-3 max-w-xl text-stone-800">Tell us what you offer. TBM usually calls you within two working days.</p>
+          <p className="mx-auto mt-3 max-w-xl text-stone-800">Tell us what you offer. Our team reviews every application and gets in touch by phone or WhatsApp.</p>
           <div className="mt-6 flex flex-wrap justify-center gap-2">
             {services.map((service) => (
               <Button key={service.key} asChild className="rounded-full bg-stone-950 text-white hover:bg-stone-800">

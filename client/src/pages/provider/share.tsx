@@ -105,7 +105,7 @@ export default function ProviderShare() {
           </div>
           <div className="mt-4 flex items-start gap-2 rounded-2xl border border-stone-200 bg-white p-3 text-sm text-stone-600">
             <Lightbulb className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden="true" />
-            A booking counts for you when the guest books within 30 days of opening your link on the same device, and it's paid or the deposit is paid.
+            A booking counts for you when the guest books within 30 days of opening your link on the same device, and TBM has received its full payment or its required deposit. Shares are for your information: they don't change your earnings.
           </div>
         </HubPanel>
 

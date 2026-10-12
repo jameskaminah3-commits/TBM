@@ -143,6 +143,16 @@ import { PAYMENT_MESSAGE_ROLE, getConversationThreadKey, getMessageAudience, isP
 import { queueNotificationTask, sendProviderAssignmentEmail } from "./notifications";
 import { formatCalendarDateRange, formatKenyaDateTime } from "@shared/calendar-dates";
 import { getJobAlertPriority } from "@shared/provider-dashboard";
+import { commissionSettingKey, isPayoutRateAgreed, payoutRateNotAgreedMessage, payoutStatusNeedsAgreedRate } from "@shared/payout-rate";
+
+// A payout can't be approved or paid before TBM records the rate agreed with
+// that provider for that service.
+export class PayoutRateNotAgreedError extends Error {
+  constructor() {
+    super(payoutRateNotAgreedMessage);
+    this.name = "PayoutRateNotAgreedError";
+  }
+}
 
 type DashboardListingCatalog = {
   staysById: Map<string, Stay>;
@@ -1435,6 +1445,7 @@ export interface IStorage {
   recordMarketingPromoRedemption(promoId: string, revenue: number): Promise<MarketingPromo | undefined>;
   createMarketingAttributionEvent(event: InsertMarketingAttributionEvent): Promise<MarketingAttributionEvent>;
   getBookingAttributionsByBookingIds(bookingIds: string[]): Promise<BookingAttribution[]>;
+  setBookingShareCredit(bookingId: string, share: BookingShareCredit): Promise<void>;
   createBookingAttribution(
     bookingId: string,
     attribution: MarketingAttributionPayload & {
@@ -4422,6 +4433,25 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
+  // Adds share credit to a booking's existing attribution, touching the share
+  // columns only, and only if none was decided yet (R9). Its promo and revenue
+  // fields, which payouts read, stay exactly as they were.
+  async setBookingShareCredit(bookingId: string, share: BookingShareCredit): Promise<void> {
+    await this.ensureMarketingTables();
+    await db.update(bookingAttributions)
+      .set({
+        shareCode: share.code,
+        shareListingKind: share.listingKind,
+        shareListingId: share.listingId,
+        shareCredit: share.credit,
+        shareCreditReason: share.reason,
+        creditedUserId: share.creditedUserId,
+        assistedShareCodes: share.assistedCodes,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(and(eq(bookingAttributions.bookingId, bookingId), isNull(bookingAttributions.shareCredit)));
+  }
+
   async getMarketingAttributionSummary(): Promise<MarketingAttributionSummary> {
     await this.ensureMarketingTables();
     const [events, attributions] = await Promise.all([
@@ -5553,6 +5583,22 @@ export class DatabaseStorage implements IStorage {
   ): Promise<BookingPayout | undefined> {
     await this.ensurePaymentsTables();
 
+    if (data.status === "approved" || data.status === "paid") {
+      const [current] = await db.select().from(bookingPayouts).where(eq(bookingPayouts.id, id)).limit(1);
+      if (!current) return undefined;
+      const [setting] = await db
+        .select({ id: providerCommissionSettings.id })
+        .from(providerCommissionSettings)
+        .where(and(
+          eq(providerCommissionSettings.providerUserId, current.providerUserId),
+          eq(providerCommissionSettings.providerCategory, current.providerCategory),
+        ))
+        .limit(1);
+      if (payoutStatusNeedsAgreedRate(data.status, current.status, Boolean(setting))) {
+        throw new PayoutRateNotAgreedError();
+      }
+    }
+
     const updateData: Partial<BookingPayout> = {
       updatedAt: new Date().toISOString(),
     };
@@ -5639,11 +5685,21 @@ export class DatabaseStorage implements IStorage {
     const commissionSettings: AdminCommissionSettingSummary[] = providerSummaries
       .flatMap((provider) => {
         const providerName = [provider.firstName, provider.lastName].filter(Boolean).join(" ").trim() || provider.email || "Provider";
-        const categories = provider.providerTypes.length
+        // Every service the provider is set up for, manages a listing in or has
+        // a payout for, so TBM can record a rate wherever a payout needs one.
+        const categories = new Set<string>(provider.providerTypes.length
           ? provider.providerTypes
-          : (provider.providerType ? [provider.providerType] : []);
+          : (provider.providerType ? [provider.providerType] : []));
+        if (provider.assignedStayIds.length) categories.add("stays");
+        if (provider.assignedCarIds.length) categories.add("cars");
+        if (provider.assignedCookIds.length) categories.add("cooks");
+        if (provider.assignedErrandIds.length) categories.add("errands");
+        if (provider.assignedExperienceIds.length) categories.add("experiences");
+        canonicalPayoutRows
+          .filter((row) => row.providerUserId === provider.id && row.status !== "cancelled")
+          .forEach((row) => categories.add(row.providerCategory));
 
-        return categories
+        return Array.from(categories)
           .filter((category): category is ProviderCategory => isProviderCategory(category))
           .map((category) => {
             const assignedListings = category === "stays"
@@ -5712,6 +5768,7 @@ export class DatabaseStorage implements IStorage {
           createdAt: row.createdAt,
           updatedAt: row.updatedAt,
           marketingAttribution: bookingAttributionMap.get(row.bookingId) ?? null,
+          rateAgreed: isPayoutRateAgreed(row.status, commissionSettingsMap.has(commissionSettingKey(row.providerUserId, row.providerCategory))),
         };
       })
       .sort((a, b) =>
@@ -5721,16 +5778,21 @@ export class DatabaseStorage implements IStorage {
       );
 
     const activePayouts = payouts.filter((payout) => payout.status !== "cancelled");
+    // Payouts without an agreed rate have no known amount yet: they're counted
+    // apart, never as money on the way.
+    const awaitingRate = payouts.filter((payout) => (payout.status === "pending" || payout.status === "approved") && !payout.rateAgreed);
 
     return {
       totalGrossTracked: activePayouts.reduce((sum, payout) => sum + payout.grossAmount, 0),
-      totalCommissionTracked: activePayouts.reduce((sum, payout) => sum + payout.commissionAmount, 0),
+      totalCommissionTracked: activePayouts.filter((payout) => payout.rateAgreed).reduce((sum, payout) => sum + payout.commissionAmount, 0),
       totalPendingPayouts: payouts
-        .filter((payout) => payout.status === "pending")
+        .filter((payout) => payout.status === "pending" && payout.rateAgreed)
         .reduce((sum, payout) => sum + payout.payoutAmount, 0),
       totalApprovedPayouts: payouts
-        .filter((payout) => payout.status === "approved")
+        .filter((payout) => payout.status === "approved" && payout.rateAgreed)
         .reduce((sum, payout) => sum + payout.payoutAmount, 0),
+      awaitingRateCount: awaitingRate.length,
+      awaitingRateValue: awaitingRate.reduce((sum, payout) => sum + payout.grossAmount, 0),
       totalPaidOut: payouts
         .filter((payout) => payout.status === "paid")
         .reduce((sum, payout) => sum + payout.payoutAmount, 0),
@@ -5765,22 +5827,28 @@ export class DatabaseStorage implements IStorage {
     )).sort((left, right) => left - right);
     const payoutServiceFeePercents = Array.from(new Set(
       activePayouts
+        .filter((payout) => payout.rateAgreed)
         .map((payout) => Math.max(0, Number(payout.commissionPercent ?? 0))),
     )).sort((left, right) => left - right);
     const serviceFeePercents = configuredServiceFeePercents.length
       ? configuredServiceFeePercents
       : payoutServiceFeePercents;
 
+    const agreedPayouts = activePayouts.filter((payout) => payout.rateAgreed);
+    const awaitingRate = payouts.filter((payout) => (payout.status === "pending" || payout.status === "approved") && !payout.rateAgreed);
+
     return {
       totalGrossTracked: activePayouts.reduce((sum, payout) => sum + payout.grossAmount, 0),
-      totalCommissionRetained: activePayouts.reduce((sum, payout) => sum + payout.commissionAmount, 0),
-      totalProjectedPayouts: activePayouts.reduce((sum, payout) => sum + payout.payoutAmount, 0),
+      totalCommissionRetained: agreedPayouts.reduce((sum, payout) => sum + payout.commissionAmount, 0),
+      totalProjectedPayouts: agreedPayouts.reduce((sum, payout) => sum + payout.payoutAmount, 0),
       totalPendingPayouts: payouts
-        .filter((payout) => payout.status === "pending")
+        .filter((payout) => payout.status === "pending" && payout.rateAgreed)
         .reduce((sum, payout) => sum + payout.payoutAmount, 0),
       totalApprovedPayouts: payouts
-        .filter((payout) => payout.status === "approved")
+        .filter((payout) => payout.status === "approved" && payout.rateAgreed)
         .reduce((sum, payout) => sum + payout.payoutAmount, 0),
+      awaitingRateCount: awaitingRate.length,
+      awaitingRateValue: awaitingRate.reduce((sum, payout) => sum + payout.grossAmount, 0),
       totalPaidOut: payouts
         .filter((payout) => payout.status === "paid")
         .reduce((sum, payout) => sum + payout.payoutAmount, 0),

@@ -13,6 +13,7 @@ import { getPrivateFile } from "./private-files";
 import { privateFileKeyFromUrl } from "./private-file-key";
 import { isAuthenticated, requireAdmin, requireProviderOrAdmin } from "./middleware/auth";
 import { providerAppUrl, queueNotificationTask, sendSimpleEmail } from "./notifications";
+import { emailPayoutDetailsConfirmed, emailProviderVerified } from "./provider-emails";
 import {
   confirmPayoutDetails,
   createProviderApplication,
@@ -189,6 +190,7 @@ export function registerProviderHubRoutes(app: Express) {
         body: "TBM confirmed your payout details. Your next payout goes there.",
         actionUrl: "/provider/profile#payout",
       }));
+      emailPayoutDetailsConfirmed(req.params.id);
       res.json({ profile: await getProviderProfile(req.params.id) });
     } catch (error) {
       res.status(500).json({ error: "Couldn't confirm the payout details" });
@@ -200,6 +202,7 @@ export function registerProviderHubRoutes(app: Express) {
     if (!verificationStatuses.includes(status)) return res.status(400).json({ error: "Choose a verification status." });
     const note = typeof req.body?.note === "string" && req.body.note.trim() ? req.body.note.trim().slice(0, 300) : null;
     try {
+      const before = await getProviderProfile(req.params.id);
       const profile = await setVerification(req.params.id, status, note, userIdOf(req));
       if (status === "verified" || note) {
         queueNotificationTask(`verification result for ${req.params.id}`, storage.notifyProviderOfAccount({
@@ -209,6 +212,8 @@ export function registerProviderHubRoutes(app: Express) {
           actionUrl: "/provider/profile#verification",
         }));
       }
+      // Emailed once, when the account becomes verified.
+      if (status === "verified" && before.verificationStatus !== "verified") emailProviderVerified(req.params.id);
       res.json({ profile });
     } catch (error) {
       res.status(500).json({ error: "Couldn't update verification" });
@@ -313,7 +318,8 @@ export function registerProviderHubRoutes(app: Express) {
         subject: "We've got your application",
         paragraphs: [
           `Asante for applying to offer ${label.toLowerCase()} with Tembea Bila Matata.`,
-          "Someone from TBM will call or WhatsApp you, usually within two working days, to talk it through and arrange a check.",
+          "Our team reviews applications in the order they arrive. We'll call or WhatsApp you to talk it through and arrange a check. If you're approved, we'll email you how to sign in to your Provider Hub.",
+          "There's no joining fee and no monthly subscription fee. TBM earns a commission on bookings made through TBM, agreed with you before your first payout.",
           "Once you're approved you'll get your own Provider Hub: add your listing, set your prices, block the dates you're away and share your link.",
         ],
         link: { label: "See how it works", url: providerAppUrl("/partner") },

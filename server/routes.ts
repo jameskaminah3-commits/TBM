@@ -1,7 +1,8 @@
 import crypto from "crypto";
 import type { Express, Response as ExpressResponse } from "express";
 import { createServer, type Server } from "http";
-import { storage } from "./storage";
+import { PayoutRateNotAgreedError, storage } from "./storage";
+import { notifyListingPublished } from "./provider-emails";
 import { getPublicListingPath } from "@shared/seo";
 import {
   isAuthenticated,
@@ -5810,6 +5811,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json(updated);
     } catch (error) {
+      if (error instanceof PayoutRateNotAgreedError) {
+        return res.status(409).json({ error: error.message });
+      }
       console.error("[ADMIN] Failed to update payout:", error);
       res.status(500).json({ error: "Failed to update payout" });
     }
@@ -6939,6 +6943,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await syncRelatedServiceBookings("stays", stay.id, {
           notifyProviders: existingStay.managerUserId !== stay.managerUserId,
         });
+        notifyListingPublished("stay", existingStay, stay, stay.title);
       }
       res.json(stay);
     } catch (error) {
@@ -8206,6 +8211,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await syncRelatedServiceBookings("cars", car.id, {
           notifyProviders: existingCar.managerUserId !== car.managerUserId,
         });
+        notifyListingPublished("car", existingCar, car, `${car.make ? `${car.make} ` : ""}${car.model}`);
       }
       res.json(car);
     } catch (error) {
@@ -8574,6 +8580,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await syncRelatedServiceBookings("cooks", cook.id, {
           notifyProviders: existingCook.managerUserId !== cook.managerUserId,
         });
+        notifyListingPublished("cook", existingCook, cook, cook.title);
       }
       res.json(cook);
     } catch (error) {
@@ -8658,6 +8665,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await syncRelatedServiceBookings("errands", errand.id, {
           notifyProviders: existingErrand.managerUserId !== errand.managerUserId,
         });
+        notifyListingPublished("errand", existingErrand, errand, errand.serviceName);
       }
       res.json(errand);
     } catch (error) {
@@ -8736,6 +8744,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await syncRelatedServiceBookings("experiences", experience.id, {
           notifyProviders: existingExperience.managerUserId !== experience.managerUserId,
         });
+        notifyListingPublished("experience", existingExperience, experience, experience.title);
       }
       res.json(experience);
     } catch (error) {

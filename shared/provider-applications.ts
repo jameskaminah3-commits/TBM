@@ -2,6 +2,7 @@
 // application is checked, and the honest example earnings shown on the
 // Become a Provider page. Vehicles keep their own fleet form.
 import { z } from "zod";
+import { addCalendarDays } from "./calendar-dates.ts";
 import { normalizeKenyanMobile } from "./provider-profile.ts";
 
 export const applicationServiceTypes = ["stays", "cooks", "errands", "experiences"] as const;
@@ -97,7 +98,7 @@ export const providerApplicationSchema = z.object({
 export type ProviderApplicationInput = z.infer<typeof providerApplicationSchema>;
 
 // The Become a Provider page's example: the provider's own price times how
-// often they might be booked, before TBM's agreed rate. An example, not a promise.
+// often they might be booked, before TBM's commission. An example, not a promise.
 export type EarningsExample = {
   priceLabel: string;
   unitLabel: string;
@@ -122,3 +123,14 @@ export function estimateMonthlyGross(price: number, units: number) {
 
 // Real numbers on the page only once there are enough to mean something.
 export const PROVIDER_STATS_THRESHOLD = 20;
+
+// Weekdays an open application has waited since it arrived (Kenya dates), so
+// TBM's team can reply promptly. For TBM only: applicants aren't promised a time.
+export function workingDaysWaiting(appliedOn: string, today: string) {
+  let days = 0;
+  for (let day = addCalendarDays(appliedOn, 1); day <= today && days < 99; day = addCalendarDays(day, 1)) {
+    const weekday = new Date(`${day}T00:00:00Z`).getUTCDay();
+    if (weekday !== 0 && weekday !== 6) days += 1;
+  }
+  return days;
+}

@@ -395,7 +395,7 @@ export default function AdminPayments() {
 
   const getCommissionValue = (setting: AdminCommissionSettingSummary) => {
     const key = `${setting.providerUserId}:${setting.providerCategory}`;
-    return commissionDrafts[key] ?? String(setting.commissionPercent);
+    return commissionDrafts[key] ?? (setting.isConfigured ? String(setting.commissionPercent) : "");
   };
 
   const getPayoutDraft = (payout: AdminBookingPayout): PayoutDraft => ({
@@ -406,8 +406,9 @@ export default function AdminPayments() {
   });
 
   const saveCommission = (setting: AdminCommissionSettingSummary) => {
-    const commissionPercent = Number(getCommissionValue(setting));
-    if (!Number.isFinite(commissionPercent) || commissionPercent < 0 || commissionPercent > 100) {
+    const raw = getCommissionValue(setting).trim();
+    const commissionPercent = Number(raw);
+    if (!raw || !Number.isFinite(commissionPercent) || commissionPercent < 0 || commissionPercent > 100) {
       toast({
         title: "Enter a valid commission",
         description: "Commission must stay between 0 and 100.",
@@ -552,7 +553,9 @@ export default function AdminPayments() {
                 <MetricCard
                   title="Unpaid payouts"
                   value={formatAmount(data.totalPendingPayouts + data.totalApprovedPayouts)}
-                  detail={`${data.unpaidPayoutCount} pending or approved`}
+                  detail={data.awaitingRateCount
+                    ? `${data.unpaidPayoutCount - data.awaitingRateCount} with an agreed rate · ${data.awaitingRateCount} waiting for a rate (${formatAmount(data.awaitingRateValue)} booked)`
+                    : `${data.unpaidPayoutCount} pending or approved`}
                   icon={Clock3}
                 />
                 <MetricCard
@@ -666,7 +669,7 @@ export default function AdminPayments() {
                                   <div>
                                     <h4 className="text-sm font-semibold uppercase tracking-[0.18em] text-stone-700">Commission</h4>
                                     <p className="mt-1 text-sm text-muted-foreground">
-                                      Keep provider rates short and simple. One rate per service line.
+                                      Record the rate agreed with this provider for each service. There is no default: payouts can't be approved until a rate is recorded.
                                     </p>
                                   </div>
                                 </div>
@@ -693,8 +696,8 @@ export default function AdminPayments() {
                                                 {setting.assignedListings} listings
                                               </Badge>
                                             </div>
-                                            <p className="text-sm text-muted-foreground">
-                                              {setting.isConfigured ? "Current rate is active." : "Set a rate for future payouts."}
+                                            <p className={cn("text-sm", setting.isConfigured ? "text-muted-foreground" : "font-medium text-amber-800")} data-testid={`rate-status-${key}`}>
+                                              {setting.isConfigured ? "Agreed rate recorded." : "No rate recorded yet. Agree it with the provider, then record it here."}
                                             </p>
                                           </div>
 
@@ -706,8 +709,11 @@ export default function AdminPayments() {
                                                 max={100}
                                                 step={1}
                                                 value={draftValue}
+                                                placeholder="Agreed"
+                                                aria-label={`Agreed rate for ${formatLabel(setting.providerCategory)}`}
                                                 onChange={(event) => handleCommissionChange(key, event.target.value)}
                                                 className="w-full sm:w-24"
+                                                data-testid={`input-rate-${key}`}
                                               />
                                               <span className="text-sm text-muted-foreground">%</span>
                                             </div>
@@ -715,9 +721,10 @@ export default function AdminPayments() {
                                               type="button"
                                               size="sm"
                                               onClick={() => saveCommission(setting)}
-                                              disabled={commissionMutation.isPending}
+                                              disabled={commissionMutation.isPending || !draftValue.trim()}
+                                              data-testid={`button-save-rate-${key}`}
                                             >
-                                              Save
+                                              {setting.isConfigured ? "Save" : "Record rate"}
                                             </Button>
                                           </div>
                                         </div>
@@ -759,6 +766,11 @@ export default function AdminPayments() {
                                                     <Badge className={cn("border text-xs", getStatusTone(payout.status))}>
                                                       {formatLabel(payout.status)}
                                                     </Badge>
+                                                    {!payout.rateAgreed ? (
+                                                      <Badge variant="outline" className="border-amber-300 bg-amber-50 text-xs text-amber-900" data-testid={`badge-rate-missing-${payout.id}`}>
+                                                        No agreed rate
+                                                      </Badge>
+                                                    ) : null}
                                                   </div>
                                                   <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
                                                     <span>#{getBookingReference(payout.bookingId)}</span>
@@ -779,11 +791,11 @@ export default function AdminPayments() {
                                                   </div>
                                                   <div>
                                                     <div className="text-[0.68rem] uppercase tracking-[0.18em] text-muted-foreground">Commission</div>
-                                                    <div className="mt-1 text-sm font-semibold text-stone-950">{formatAmount(payout.commissionAmount)}</div>
+                                                    <div className="mt-1 text-sm font-semibold text-stone-950">{payout.rateAgreed ? formatAmount(payout.commissionAmount) : "Not agreed"}</div>
                                                   </div>
                                                   <div>
                                                     <div className="text-[0.68rem] uppercase tracking-[0.18em] text-muted-foreground">Provider gets</div>
-                                                    <div className="mt-1 text-sm font-semibold text-stone-950">{formatAmount(payout.payoutAmount)}</div>
+                                                    <div className="mt-1 text-sm font-semibold text-stone-950">{payout.rateAgreed ? formatAmount(payout.payoutAmount) : "To be agreed"}</div>
                                                   </div>
                                                   <div>
                                                     <div className="text-[0.68rem] uppercase tracking-[0.18em] text-muted-foreground">Method</div>
@@ -808,7 +820,11 @@ export default function AdminPayments() {
                                                     </SelectTrigger>
                                                     <SelectContent>
                                                       {payoutStatuses.map((status) => (
-                                                        <SelectItem key={status} value={status}>
+                                                        <SelectItem
+                                                          key={status}
+                                                          value={status}
+                                                          disabled={!payout.rateAgreed && (status === "approved" || status === "paid")}
+                                                        >
                                                           {formatLabel(status)}
                                                         </SelectItem>
                                                       ))}
@@ -861,6 +877,11 @@ export default function AdminPayments() {
                                                 </div>
                                               </div>
 
+                                              {!payout.rateAgreed ? (
+                                                <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                                                  Record the rate agreed with this provider for {formatLabel(payout.providerCategory)} above before approving or paying this payout.
+                                                </p>
+                                              ) : null}
                                               <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
                                                 <div className="text-sm text-muted-foreground">
                                                   Last updated {formatDate(payout.updatedAt)}

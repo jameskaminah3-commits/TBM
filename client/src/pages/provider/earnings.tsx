@@ -51,6 +51,8 @@ export default function ProviderEarnings() {
   const payouts = [...(data?.payouts ?? [])].sort((a, b) => (b.dueAt ?? b.createdAt).localeCompare(a.dueAt ?? a.createdAt));
   const onTheWay = (data?.totalPendingPayouts ?? 0) + (data?.totalApprovedPayouts ?? 0);
   const rate = formatRateLabel(data?.serviceFeePercents ?? []);
+  const awaitingRate = data?.awaitingRateCount ?? 0;
+  const agreedUnpaid = Math.max(0, (data?.unpaidPayoutCount ?? 0) - awaitingRate);
 
   return (
     <ProviderLayout title="Earnings">
@@ -62,10 +64,20 @@ export default function ProviderEarnings() {
         />
 
         <div className="grid gap-3 sm:grid-cols-3">
-          <Stat icon={Clock3} label="On the way" value={formatAmount(onTheWay)} note={`${data?.unpaidPayoutCount ?? 0} payout${(data?.unpaidPayoutCount ?? 0) === 1 ? "" : "s"} not paid yet`} tone="border-amber-200 bg-amber-50/70 text-amber-900" />
+          <Stat icon={Clock3} label="On the way" value={formatAmount(onTheWay)} note={`${agreedUnpaid} payout${agreedUnpaid === 1 ? "" : "s"} not paid yet`} tone="border-amber-200 bg-amber-50/70 text-amber-900" />
           <Stat icon={HandCoins} label="Paid to you" value={formatAmount(data?.totalPaidOut ?? 0)} note={`${data?.paidPayoutCount ?? 0} payout${(data?.paidPayoutCount ?? 0) === 1 ? "" : "s"}`} tone="border-emerald-200 bg-emerald-50/70 text-emerald-900" />
           <Stat icon={CircleDollarSign} label="Your TBM rate" value={rate ?? "Not set yet"} note={rate ? "Taken from each job's value" : "TBM agrees it with you before your first payout"} tone="border-stone-200 bg-white text-stone-700" />
         </div>
+
+        {awaitingRate > 0 ? (
+          <div className="flex items-start gap-3 rounded-[1.5rem] border border-amber-200 bg-amber-50/70 p-4 text-sm text-amber-950" data-testid="notice-awaiting-rate">
+            <Clock3 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <p>
+              {awaitingRate === 1 ? "1 job" : `${awaitingRate} jobs`} worth {formatAmount(data?.awaitingRateValue ?? 0)} {awaitingRate === 1 ? "is" : "are"} waiting for your agreed rate.
+              {" "}TBM agrees its rate with you before your first payout. Then you'll see exactly what you receive for each job.
+            </p>
+          </div>
+        ) : null}
 
         <HubPanel
           title="Where payouts go"
@@ -108,12 +120,18 @@ export default function ProviderEarnings() {
                       <div className="flex flex-wrap items-center gap-x-2 text-sm text-muted-foreground">
                         <span className="inline-flex items-center gap-1"><CalendarCheck2 className="h-3.5 w-3.5" />{when ? (payout.status === "paid" ? `Paid ${when}` : `Due ${when}`) : "Date to be set"}</span>
                         <span>Ref {payout.bookingId.slice(0, 8).toUpperCase()}</span>
-                        {payout.serviceValue ? <span>Job value {formatAmount(payout.serviceValue)} · rate {payout.commissionPercent}%</span> : null}
+                        {payout.serviceValue ? (
+                          <span>Job value {formatAmount(payout.serviceValue)}{payout.commissionPercent === null ? "" : ` · rate ${payout.commissionPercent}%`}</span>
+                        ) : null}
                         {payout.status === "paid" && payout.paymentReference ? <span>Payment ref {payout.paymentReference}</span> : null}
                       </div>
                     </div>
                     <div className="flex items-center gap-3 sm:flex-col sm:items-end sm:gap-1">
-                      <span className="text-lg font-semibold tabular-nums text-stone-950">{formatAmount(payout.payoutAmount)}</span>
+                      {payout.payoutAmount === null ? (
+                        <span className="text-sm font-medium text-amber-900">Rate to be agreed</span>
+                      ) : (
+                        <span className="text-lg font-semibold tabular-nums text-stone-950">{formatAmount(payout.payoutAmount)}</span>
+                      )}
                       <span className={cn("rounded-full px-2 py-0.5 text-xs font-semibold ring-1", style.className)}>{style.label}</span>
                     </div>
                   </li>

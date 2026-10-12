@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applicationDetailFields, earningsExamples, estimateMonthlyGross, providerApplicationSchema } from "./provider-applications.ts";
+import { applicationDetailFields, earningsExamples, estimateMonthlyGross, providerApplicationSchema, workingDaysWaiting } from "./provider-applications.ts";
 
 const base = {
   serviceType: "stays",
@@ -56,4 +56,12 @@ test("the example earnings are price times bookings, never negative", () => {
   assert.equal(estimateMonthlyGross(0, 10), 0);
   assert.equal(estimateMonthlyGross(-5, 10), 0);
   assert.equal(estimateMonthlyGross(Number.NaN, 10), 0);
+});
+
+test("working days waiting skip weekends", () => {
+  // Friday 9 Oct 2026 to Monday 12 Oct 2026: one working day (Monday).
+  assert.equal(workingDaysWaiting("2026-10-09", "2026-10-12"), 1);
+  assert.equal(workingDaysWaiting("2026-10-12", "2026-10-12"), 0);
+  // Monday to the next Monday: five working days.
+  assert.equal(workingDaysWaiting("2026-10-05", "2026-10-12"), 5);
 });

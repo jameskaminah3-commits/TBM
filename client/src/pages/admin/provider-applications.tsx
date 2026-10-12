@@ -12,8 +12,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
-import { formatKenyaDateTime } from "@shared/calendar-dates";
-import { applicationDetailFields, isApplicationServiceType } from "@shared/provider-applications";
+import { formatKenyaDateTime, todayInKenya } from "@shared/calendar-dates";
+import { applicationDetailFields, isApplicationServiceType, workingDaysWaiting } from "@shared/provider-applications";
 import { providerWorkspaces } from "@shared/provider-workspaces";
 
 type Application = {
@@ -72,7 +72,20 @@ function ApplicationCard({ application, focused }: { application: Application; f
               <CardDescription>{serviceKey ? providerWorkspaces[serviceKey].label : application.serviceType} · applied {formatKenyaDateTime(application.createdAt, { day: "numeric", month: "short", year: "numeric" }, "en-GB")}</CardDescription>
             </div>
           </div>
-          <Badge className={statusTone[application.status]}>{statusLabel[application.status]}</Badge>
+          <div className="flex flex-wrap items-center gap-2">
+            {application.status === "new" ? (() => {
+              const waited = workingDaysWaiting(todayInKenya(new Date(application.createdAt)), todayInKenya());
+              return (
+                <span
+                  className={cn("rounded-full px-2 py-0.5 text-xs font-medium ring-1", waited >= 2 ? "bg-amber-50 text-amber-900 ring-amber-300" : "bg-stone-50 text-stone-600 ring-stone-200")}
+                  data-testid={`application-waiting-${application.id}`}
+                >
+                  {waited === 0 ? "Arrived today" : `Waiting ${waited} working day${waited === 1 ? "" : "s"}`}
+                </span>
+              );
+            })() : null}
+            <Badge className={statusTone[application.status]}>{statusLabel[application.status]}</Badge>
+          </div>
         </div>
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
           <a href={`tel:+${application.phone}`} className="inline-flex items-center gap-1 hover:text-foreground"><Phone className="h-3.5 w-3.5" />+{application.phone}</a>

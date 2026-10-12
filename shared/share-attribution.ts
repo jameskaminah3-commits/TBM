@@ -1,6 +1,7 @@
 // Crediting bookings to the provider whose share link brought the guest.
 // The rules (R1 to R13 in the provider audit), as plain functions so the
 // browser and the server agree and each rule can be tested on its own.
+import { getBookingAmountPaid, hasLockedInBookingDeposit, isBookingFullyPaid } from "./booking-payments.ts";
 import type { PublicListingKind } from "./seo.ts";
 
 export const shareChannels = ["whatsapp", "copy", "native", "qr"] as const;
@@ -207,12 +208,26 @@ export function decideShareCredit(input: {
 
 export type ShareBookingState = "confirmed" | "pending" | "cancelled";
 
-// R11: a booking counts once it is paid or the deposit is paid. The state is
-// read from the booking each time, so payment or cancellation updates the
-// numbers but never adds credit.
-export function getShareBookingState(booking: { status?: string | null; paymentStatus?: string | null; paymentAmountPaid?: number | null }): ShareBookingState {
+export type ShareBookingSnapshot = {
+  status?: string | null;
+  paymentStatus?: string | null;
+  paymentAmountPaid?: number | null;
+  totalPrice?: number | null;
+  paymentDepositAmount?: number | null;
+  serviceMode?: string | null;
+};
+
+// R11, the paid-booking rule: a credited booking counts as paid once TBM has
+// received money for it and that money is either the full amount or the
+// deposit the booking requires (bookings that take full payment only need the
+// full amount). A smaller part-payment, an unpaid booking and a booking with
+// nothing to pay count as "not paid yet"; cancelled or refunded ones count
+// apart. The state is read from the booking each time, so payment or
+// cancellation updates the numbers but never adds or moves credit. Reporting
+// only: it changes no price, payout or earnings.
+export function getShareBookingState(booking: ShareBookingSnapshot): ShareBookingState {
   if (booking.status === "cancelled" || booking.paymentStatus === "cancelled" || booking.paymentStatus === "refunded") return "cancelled";
-  if ((booking.paymentStatus ?? "paid") === "paid" || (booking.paymentAmountPaid ?? 0) > 0) return "confirmed";
+  if (getBookingAmountPaid(booking) > 0 && (isBookingFullyPaid(booking) || hasLockedInBookingDeposit(booking))) return "confirmed";
   return "pending";
 }
 
