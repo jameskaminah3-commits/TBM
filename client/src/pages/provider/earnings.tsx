@@ -128,7 +128,7 @@ export default function ProviderEarnings() {
                     </div>
                     <div className="flex items-center gap-3 sm:flex-col sm:items-end sm:gap-1">
                       {payout.payoutAmount === null ? (
-                        <span className="text-sm font-medium text-amber-900">Rate to be agreed</span>
+                        payout.status === "cancelled" ? null : <span className="text-sm font-medium text-amber-900">Rate to be agreed</span>
                       ) : (
                         <span className="text-lg font-semibold tabular-nums text-stone-950">{formatAmount(payout.payoutAmount)}</span>
                       )}

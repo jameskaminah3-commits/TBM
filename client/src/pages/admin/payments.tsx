@@ -207,8 +207,9 @@ function buildProviderGroups(data?: PaymentManagementData): ProviderGroup[] {
         assignedListings: group.settings.reduce((sum, setting) => sum + setting.assignedListings, 0),
         missingCommissionCount: group.settings.filter((setting) => !setting.isConfigured && setting.assignedListings > 0).length,
         totalGross: sumAmounts(payouts, "grossAmount"),
-        totalCommission: sumAmounts(payouts, "commissionAmount"),
-        totalUnpaid: sumAmounts(unpaidPayouts, "payoutAmount"),
+        // Payouts without an agreed rate have no amount yet, so they're left out.
+        totalCommission: sumAmounts(payouts.filter((payout) => payout.rateAgreed), "commissionAmount"),
+        totalUnpaid: sumAmounts(unpaidPayouts.filter((payout) => payout.rateAgreed), "payoutAmount"),
         totalPaid: sumAmounts(paidPayouts, "payoutAmount"),
       };
     })
