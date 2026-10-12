@@ -1,6 +1,6 @@
 # Phase 3: share attribution and "Your shares"
 
-Status (12 Oct 2026): the first version is on `main`; the changes below marked **12 Oct** are on the dev branch only. It is reporting only: no money is paid on attribution, and it never changes a price, a promo, a payout or a provider's earnings.
+Status (12 Oct 2026): on `main`, including the changes below marked **12 Oct** (released with the Provider Hub). It is reporting only: no money is paid on attribution, and it never changes a price, a promo, a payout or a provider's earnings.
 
 Terms: a **provider** is the host or owner of a service (a stay, car, chef, errand or experience). **Partner** is kept for agents who refer guests, a role that isn't built yet.
 
