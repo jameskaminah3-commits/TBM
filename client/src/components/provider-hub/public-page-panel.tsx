@@ -6,6 +6,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { CheckCircle2, ExternalLink, Eye, Globe2 } from "lucide-react";
 import { HubPanel } from "@/components/provider-hub/hub-ui";
 import { ListingShareSheet } from "@/components/listing-share-sheet";
+import { BusinessCard } from "@/components/provider-hub/business-card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -82,6 +83,7 @@ export function PublicPagePanel({ services }: { services: string }) {
               Switch my page on
             </Button>
           )}
+          <BusinessCard settings={settings} />
           {settings.live ? (
             <ListingShareSheet
               kind="provider"
