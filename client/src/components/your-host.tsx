@@ -14,8 +14,9 @@ export function YourHost({ kind, listingId }: { kind: PublicListingKind; listing
     queryKey: ["/api/public/providers/by-listing", kind, listingId],
     queryFn: async () => {
       const response = await fetch(`/api/public/providers/by-listing/${kind}/${encodeURIComponent(listingId)}`);
-      if (!response.ok) return null;
-      return ((await response.json()) as { provider: PublicProviderSummary }).provider;
+      // Read the body either way, so the request is finished and the connection freed.
+      const body = await response.json().catch(() => null) as { provider?: PublicProviderSummary } | null;
+      return response.ok ? body?.provider ?? null : null;
     },
     staleTime: 60_000,
     retry: false,

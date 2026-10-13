@@ -351,13 +351,32 @@ Every phase also re-runs the existing suites: privacy access, provider end-to-en
 
 ## 12. Phases
 
-| Phase | Contents | Release |
+| Phase | Contents | Status (13 October 2026) |
 |---|---|---|
-| 0 | Public reviews fix | On `main`. Waiting for live verification (check R1). |
-| 1 | Onboarding fixes (section 8) and review integrity (eligibility, self-review check, unique index, one decimal place, comment cleaning) | Dev, then review, then your approval |
-| 2 | Public provider pages, "Your host" block, photo approval, suspension handling, provider links (R9b and `enquire`) and their reporting | Dev, then review, then your approval |
-| 3 | Rating display and replies, Founding Provider badge | Dev, then review, then your approval |
-| 4 | Smart business card, in every format | Dev, then review, then your approval |
+| 0 | Public reviews fix | On `main` (96cd989). **Not verified on the live site**: needs check R1. |
+| 1 | Onboarding fixes (section 8) and review integrity (eligibility, self-review check, unique index, one decimal place, comment cleaning) | Built on the dev branch (9142713, e9dd10f). Not released. |
+| 2 | Public provider pages, "Your host" block, photo approval, suspension handling, provider links (R9b and `enquire`) and their reporting | Built on the dev branch (5423275). Not released. |
+| 3 | Rating display and replies, Founding Provider badge | Built on the dev branch (67fff02). Not released. |
+| 4 | Smart business card, in every format | Built on the dev branch (8ed303d). Not released. |
+
+Nothing from phases 1 to 4 goes to `main` without the owner's approval.
+
+### As built: where it differs from this plan
+
+- **Status and set-up links** carry their token after `#` (`/partner/application#…`, `/set-up-account#…`), not in the path, so it never reaches server logs or other sites; the page removes it from the address bar once read.
+- **The page slug isn't stored.** It's made from the display name each time; the code alone finds the page, and an old or bare address moves to the current one.
+- **Photos:** the approved photo is public only once `photo_approved_at` is set. Photos saved before this change stay private until TBM approves them. A new photo waits in private storage; the approved one stays up meanwhile. The Hub's business form can no longer set a photo directly.
+- **TBM's switch** (`public_blocked_at`) was added so a page TBM switches off can't be switched back on by the provider.
+- **Bios** also lose links and social handles, not only phone numbers and emails; listing cards show an area name, never a street or plot.
+- **Founding Provider:** the publication date of a listing isn't recorded, so "a listing within 60 days" uses the listing's creation date; TBM checks it before granting. Older accounts with no application use the account's creation date as their approval date.
+- **Replies** are also shown under reviews on listing pages, not only on the provider page.
+
+### Not built yet (gaps)
+
+- **Home help, after booking:** the confirmed customer doesn't yet see the carer's first name and approved photo in My Bookings. The public side (never a face) is built; the private disclosure isn't.
+- **Provider pages in the sitemap:** live provider pages aren't listed in `sitemap.xml` yet; they are indexable when linked.
+- **Bulk review of old photos:** existing `photo_url` values (saved before review) are private until approved one by one in Admin › Providers; there's no list of all photos waiting.
+- **Live checks:** P1 (and R1 with replies) can only be run once these phases are released.
 
 ## 13. Decisions
 

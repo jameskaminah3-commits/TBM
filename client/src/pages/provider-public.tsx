@@ -49,9 +49,11 @@ export default function ProviderPublicPage() {
     queryKey: ["/api/public/providers", code],
     queryFn: async () => {
       const response = await fetch(`/api/public/providers/${encodeURIComponent(code)}`, { credentials: "include" });
+      // Read the body either way, so the request is finished and the connection freed.
+      const body = await response.json().catch(() => null);
       if (response.status === 404) return null;
       if (!response.ok) throw new Error("Couldn't load this page");
-      return response.json();
+      return body;
     },
     retry: false,
   });
