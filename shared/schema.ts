@@ -1108,6 +1108,9 @@ export const providerProfiles = pgTable("provider_profiles", {
   photoReviewNote: text("photo_review_note"),
   foundingProviderAt: text("founding_provider_at"),
   foundingCohort: varchar("founding_cohort"),
+  // Removed permanently (fraud, safety, impersonation, account removed).
+  foundingRevokedAt: text("founding_revoked_at"),
+  foundingRevokedReason: varchar("founding_revoked_reason"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 }, (table) => [uniqueIndex("provider_profiles_public_code_idx").on(table.publicCode)]);
@@ -1897,6 +1900,8 @@ export const reviews = pgTable("reviews", {
   providerReplyAt: text("provider_reply_at"),
   providerReplyReviewedBy: varchar("provider_reply_reviewed_by"),
   providerReplyReviewedAt: text("provider_reply_reviewed_at"),
+  // Why TBM didn't approve the reply, for the provider.
+  providerReplyReviewNote: text("provider_reply_review_note"),
 }, (table) => [
   // One review per booking, guest and item.
   uniqueIndex("reviews_one_per_item_idx").on(table.bookingId, table.userId, table.targetType, table.targetId),
@@ -1918,6 +1923,7 @@ export const insertReviewSchema = createInsertSchema(reviews).omit({
   providerReplyAt: true,
   providerReplyReviewedBy: true,
   providerReplyReviewedAt: true,
+  providerReplyReviewNote: true,
 }).extend({
   rating: z.coerce.number().min(1).max(5),
   comment: z.string().max(1000).optional(),

@@ -47,6 +47,8 @@ export function ensureProviderPageColumns(): Promise<void> {
     ALTER TABLE provider_profiles ADD COLUMN IF NOT EXISTS photo_review_note text;
     ALTER TABLE provider_profiles ADD COLUMN IF NOT EXISTS founding_provider_at text;
     ALTER TABLE provider_profiles ADD COLUMN IF NOT EXISTS founding_cohort varchar;
+    ALTER TABLE provider_profiles ADD COLUMN IF NOT EXISTS founding_revoked_at text;
+    ALTER TABLE provider_profiles ADD COLUMN IF NOT EXISTS founding_revoked_reason varchar;
     CREATE UNIQUE INDEX IF NOT EXISTS provider_profiles_public_code_idx ON provider_profiles (public_code);
   `)).then(() => undefined).catch((error) => {
     columnsReady = null;

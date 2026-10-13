@@ -18,3 +18,13 @@ export function removeContactDetails(text: string | null | undefined, replacemen
   }
   return text.replace(emailPattern, replacement).replace(phonePattern, replacement);
 }
+
+// Links and social handles, for text TBM shows in public on a provider's
+// behalf (bios, replies to reviews): guests reach providers through TBM.
+const linkPattern = /\b(?:https?:\/\/|www\.)\S+|\b(?:wa\.me|t\.me|bit\.ly|instagram\.com|facebook\.com|fb\.me|tiktok\.com)\/\S*/gi;
+const handlePattern = /(^|\s)@[A-Za-z0-9_.]{2,}/g;
+
+export function removeContactRoutes(text: string, replacement = PUBLIC_CONTACT_REMOVED) {
+  // Links first, so a link with a number in it goes as one piece.
+  return removeContactDetails(text.replace(linkPattern, replacement), replacement).replace(handlePattern, `$1${replacement}`);
+}

@@ -57,6 +57,8 @@ const PartnerLanding = lazy(() => import("@/pages/partner/index"));
 const PartnerApplicationStatus = lazy(() => import("@/pages/partner/application-status"));
 const SetUpAccount = lazy(() => import("@/pages/set-up-account"));
 const ProviderPublicPage = lazy(() => import("@/pages/provider-public"));
+const AdminReviews = lazy(() => import("@/pages/admin/reviews"));
+const ProviderReviewsPage = lazy(() => import("@/pages/provider/reviews"));
 const PartnerApplyService = lazy(() => import("@/pages/partner/apply-service"));
 const AdminProviderApplications = lazy(() => import("@/pages/admin/provider-applications"));
 const Blog = lazy(() => import("@/pages/blog"));
@@ -151,6 +153,7 @@ function Router() {
         <AppRoute path="/admin/clients" element={<AdminClients />} />
         <AppRoute path="/admin/payments" element={<AdminPayments />} />
         <AppRoute path="/admin/providers" element={<AdminProviders />} />
+        <AppRoute path="/admin/reviews" element={<AdminReviews />} />
         <AppRoute path="/admin/provider-applications" element={<AdminProviderApplications />} />
         <AppRoute path="/admin/stays/new" element={<AdminStaysNew />} />
         <AppRoute path="/admin/stays/:id/edit" element={<AdminStaysEdit />} />
@@ -185,6 +188,7 @@ function Router() {
         <AppRoute path="/provider/support" element={<ProviderSupport />} />
         <AppRoute path="/provider/messages" element={<ProviderMessages />} />
         <AppRoute path="/provider/profile" element={<ProviderProfilePage />} />
+        <AppRoute path="/provider/reviews" element={<ProviderReviewsPage />} />
         <AppRoute path="/provider/earnings" element={<ProviderEarnings />} />
         <AppRoute path="/provider/share" element={<ProviderShare />} />
         <AppRoute element={<NotFound />} />

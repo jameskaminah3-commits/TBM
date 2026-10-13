@@ -3,7 +3,7 @@
 // and returns only the allowlisted fields in shared/provider-public.ts. Kept
 // apart from the database code so tests can feed it rows full of private data
 // and prove none of it gets out.
-import { PUBLIC_CONTACT_REMOVED, removeContactDetails } from "../shared/contact-redaction.ts";
+import { removeContactRoutes } from "../shared/contact-redaction.ts";
 import { summarizeRatings } from "../shared/review-eligibility.ts";
 import { toPublicReview } from "../shared/public-review.ts";
 import { slugifyForUrl, type PublicListingKind } from "../shared/seo.ts";
@@ -68,18 +68,11 @@ export type ProviderPageSource = {
 const orderedKinds: PublicListingKind[] = ["stay", "car", "cook", "errand", "experience"];
 const MAX_PUBLIC_REVIEWS = 30;
 
-// Bios lose phone numbers and emails (as reviews do), and also links and
-// social handles: guests reach providers through TBM.
-const linkPattern = /\b(?:https?:\/\/|www\.)\S+|\b(?:wa\.me|t\.me|bit\.ly|instagram\.com|facebook\.com|fb\.me|tiktok\.com)\/\S*/gi;
-const handlePattern = /(^|\s)@[A-Za-z0-9_.]{2,}/g;
-
+// Bios lose phone numbers, emails, links and social handles: guests reach
+// providers through TBM.
 export function publicAbout(bio: string | null | undefined) {
   const trimmed = (bio ?? "").replace(/\s+\n/g, "\n").trim();
-  if (!trimmed) return "";
-  // Links first, so a link with a number in it goes as one piece.
-  return removeContactDetails(trimmed.replace(linkPattern, PUBLIC_CONTACT_REMOVED), PUBLIC_CONTACT_REMOVED)
-    .replace(handlePattern, `$1${PUBLIC_CONTACT_REMOVED}`)
-    .slice(0, 800);
+  return trimmed ? removeContactRoutes(trimmed).slice(0, 800) : "";
 }
 
 export function getProviderPageBlockers(source: ProviderPageSource): ProviderPageBlocker[] {
