@@ -201,6 +201,9 @@ export const passwordResetOtps = pgTable("password_reset_otps", {
   expiresAt: timestamp("expires_at").notNull(),
   usedAt: timestamp("used_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  // "password-reset" (a 6-digit code) or "account-setup" (a one-time link sent
+  // when TBM approves a provider). Migration 0025.
+  purpose: varchar("purpose").notNull().default("password-reset"),
 });
 
 export const emailVerificationOtps = pgTable(
@@ -1119,7 +1122,18 @@ export const providerApplications = pgTable("provider_applications", {
   reviewedBy: varchar("reviewed_by"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
-}, (table) => [index("provider_applications_status_idx").on(table.status, table.createdAt)]);
+  // Tracking (migration 0025): a reference to quote, a status link (stored as
+  // a hash only), and what TBM told the applicant.
+  reference: varchar("reference"),
+  statusTokenHash: varchar("status_token_hash"),
+  applicantMessage: text("applicant_message"),
+  declineReason: varchar("decline_reason"),
+  decidedAt: text("decided_at"),
+}, (table) => [
+  index("provider_applications_status_idx").on(table.status, table.createdAt),
+  uniqueIndex("provider_applications_reference_idx").on(table.reference),
+  index("provider_applications_status_token_idx").on(table.statusTokenHash),
+]);
 
 const optionalTrimmedString = z.preprocess(
   (value) => {

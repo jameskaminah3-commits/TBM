@@ -478,7 +478,7 @@ export async function resolveShortLinkPath(pathname: string): Promise<string | n
 }
 
 function getRobotsForPath(pathname: string) {
-  if (/^\/(?:book(?:ings)?|b\/|auth(?:\/|$)|admin(?:\/|$)|provider(?:\/|$)|inbox(?:\/|$))/.test(pathname)) {
+  if (/^\/(?:book(?:ings)?|b\/|auth(?:\/|$)|admin(?:\/|$)|provider(?:\/|$)|inbox(?:\/|$)|set-up-account(?:\/|$)|partner\/application(?:\/|$))/.test(pathname)) {
     return "noindex,follow";
   }
   return "index,follow";

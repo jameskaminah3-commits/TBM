@@ -2,7 +2,9 @@
 // profile and payout details, TBM's verification, date blocks for home help and
 // experiences, and applications from every kind of provider. Tables come from
 // migration 0022 and are also created on first use.
+import crypto from "node:crypto";
 import { pool } from "./db";
+import { APPLICATION_STATUS_LINK_DAYS, applicationStatuses, makeApplicationReference, type ApplicationStatus } from "@shared/provider-applications";
 import {
   emptyProviderProfile,
   type ProviderBusinessProfileInput,
@@ -70,6 +72,14 @@ export function ensureProviderHubTables(): Promise<void> {
       updated_at text NOT NULL
     );
     CREATE INDEX IF NOT EXISTS provider_applications_status_idx ON provider_applications (status, created_at);
+    ALTER TABLE provider_applications ADD COLUMN IF NOT EXISTS reference varchar;
+    ALTER TABLE provider_applications ADD COLUMN IF NOT EXISTS status_token_hash varchar;
+    ALTER TABLE provider_applications ADD COLUMN IF NOT EXISTS applicant_message text;
+    ALTER TABLE provider_applications ADD COLUMN IF NOT EXISTS decline_reason varchar;
+    ALTER TABLE provider_applications ADD COLUMN IF NOT EXISTS decided_at text;
+    UPDATE provider_applications SET reference = 'TBM-P-' || upper(substr(md5(id), 1, 6)) WHERE reference IS NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS provider_applications_reference_idx ON provider_applications (reference);
+    CREATE INDEX IF NOT EXISTS provider_applications_status_token_idx ON provider_applications (status_token_hash);
   `).then(() => undefined).catch((error) => {
     tablesReady = null;
     throw error;
@@ -286,6 +296,11 @@ type ApplicationRow = {
   reviewed_by: string | null;
   created_at: string;
   updated_at: string;
+  reference: string | null;
+  status_token_hash: string | null;
+  applicant_message: string | null;
+  decline_reason: string | null;
+  decided_at: string | null;
 };
 
 export type ProviderApplicationRecord = {
@@ -298,12 +313,16 @@ export type ProviderApplicationRecord = {
   details: Record<string, unknown>;
   photos: Array<{ label: string; url: string }>;
   documents: Array<{ label: string; url: string }>;
-  status: "new" | "contacted" | "approved" | "declined";
+  status: ApplicationStatus;
   reviewNote: string | null;
   createdUserId: string | null;
   reviewedBy: string | null;
   createdAt: string;
   updatedAt: string;
+  reference: string;
+  applicantMessage: string | null;
+  declineReason: string | null;
+  decidedAt: string | null;
 };
 
 const toApplication = (row: ApplicationRow): ProviderApplicationRecord => ({
@@ -316,23 +335,52 @@ const toApplication = (row: ApplicationRow): ProviderApplicationRecord => ({
   details: row.details ?? {},
   photos: row.photos ?? [],
   documents: row.documents ?? [],
-  status: (["new", "contacted", "approved", "declined"].includes(row.status) ? row.status : "new") as ProviderApplicationRecord["status"],
+  status: ((applicationStatuses as readonly string[]).includes(row.status) ? row.status : "new") as ApplicationStatus,
   reviewNote: row.review_note,
   createdUserId: row.created_user_id,
   reviewedBy: row.reviewed_by,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
+  reference: row.reference ?? "",
+  applicantMessage: row.applicant_message,
+  declineReason: row.decline_reason,
+  decidedAt: row.decided_at,
 });
 
-export async function createProviderApplication(input: Omit<ProviderApplicationRecord, "id" | "status" | "reviewNote" | "createdUserId" | "reviewedBy" | "createdAt" | "updatedAt">): Promise<ProviderApplicationRecord> {
+const sha256 = (value: string) => crypto.createHash("sha256").update(value).digest("hex");
+
+// A new application gets a reference to quote and a status link. Only the
+// link's hash is kept; the link itself goes to the applicant once.
+export async function createProviderApplication(input: Pick<ProviderApplicationRecord, "serviceType" | "fullName" | "phone" | "email" | "town" | "details" | "photos" | "documents">): Promise<{ application: ProviderApplicationRecord; statusToken: string }> {
   await ensureProviderHubTables();
   const now = new Date().toISOString();
-  const { rows } = await pool.query<ApplicationRow>(
-    `INSERT INTO provider_applications (service_type, full_name, phone, email, town, details, photos, documents, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9) RETURNING *`,
-    [input.serviceType, input.fullName, input.phone, input.email, input.town, JSON.stringify(input.details), JSON.stringify(input.photos), JSON.stringify(input.documents), now],
-  );
-  return toApplication(rows[0]);
+  const statusToken = crypto.randomBytes(32).toString("base64url");
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const reference = makeApplicationReference(crypto.randomBytes(6));
+    try {
+      const { rows } = await pool.query<ApplicationRow>(
+        `INSERT INTO provider_applications (service_type, full_name, phone, email, town, details, photos, documents, created_at, updated_at, reference, status_token_hash)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, $10, $11) RETURNING *`,
+        [input.serviceType, input.fullName, input.phone, input.email, input.town, JSON.stringify(input.details), JSON.stringify(input.photos), JSON.stringify(input.documents), now, reference, sha256(statusToken)],
+      );
+      return { application: toApplication(rows[0]), statusToken };
+    } catch (error) {
+      // A reference already taken: try another.
+      if ((error as { code?: string }).code !== "23505") throw error;
+    }
+  }
+  throw new Error("Couldn't give the application a reference.");
+}
+
+/** The application behind a status link, while the link is still valid. */
+export async function getApplicationByStatusToken(token: string): Promise<ProviderApplicationRecord | null> {
+  if (typeof token !== "string" || token.length < 32 || token.length > 100) return null;
+  await ensureProviderHubTables();
+  const { rows } = await pool.query<ApplicationRow>("SELECT * FROM provider_applications WHERE status_token_hash = $1 LIMIT 1", [sha256(token)]);
+  const application = rows[0] ? toApplication(rows[0]) : null;
+  if (!application) return null;
+  const ageMs = Date.now() - Date.parse(application.createdAt);
+  return ageMs <= APPLICATION_STATUS_LINK_DAYS * 24 * 60 * 60 * 1000 ? application : null;
 }
 
 export async function listProviderApplications(): Promise<ProviderApplicationRecord[]> {
@@ -347,19 +395,34 @@ export async function getProviderApplication(id: string): Promise<ProviderApplic
   return rows[0] ? toApplication(rows[0]) : null;
 }
 
-export async function updateProviderApplication(id: string, changes: { status?: ProviderApplicationRecord["status"]; reviewNote?: string | null; createdUserId?: string | null; reviewedBy?: string | null }): Promise<ProviderApplicationRecord | null> {
+export async function updateProviderApplication(id: string, changes: {
+  status?: ApplicationStatus;
+  reviewNote?: string | null;
+  createdUserId?: string | null;
+  reviewedBy?: string | null;
+  applicantMessage?: string | null;
+  declineReason?: string | null;
+}): Promise<ProviderApplicationRecord | null> {
   await ensureProviderHubTables();
   const current = await getProviderApplication(id);
   if (!current) return null;
+  const now = new Date().toISOString();
+  const status = changes.status ?? current.status;
+  const decided = status === "approved" || status === "declined";
   const { rows } = await pool.query<ApplicationRow>(
-    `UPDATE provider_applications SET status = $2, review_note = $3, created_user_id = $4, reviewed_by = $5, updated_at = $6 WHERE id = $1 RETURNING *`,
+    `UPDATE provider_applications SET status = $2, review_note = $3, created_user_id = $4, reviewed_by = $5, updated_at = $6,
+       applicant_message = $7, decline_reason = $8, decided_at = $9
+     WHERE id = $1 RETURNING *`,
     [
       id,
-      changes.status ?? current.status,
+      status,
       changes.reviewNote === undefined ? current.reviewNote : changes.reviewNote,
       changes.createdUserId === undefined ? current.createdUserId : changes.createdUserId,
       changes.reviewedBy === undefined ? current.reviewedBy : changes.reviewedBy,
-      new Date().toISOString(),
+      now,
+      changes.applicantMessage === undefined ? current.applicantMessage : changes.applicantMessage,
+      changes.declineReason === undefined ? current.declineReason : changes.declineReason,
+      decided ? (current.decidedAt && current.status === status ? current.decidedAt : now) : null,
     ],
   );
   return rows[0] ? toApplication(rows[0]) : null;

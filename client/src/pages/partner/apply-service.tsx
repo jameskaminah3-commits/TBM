@@ -17,7 +17,10 @@ import NotFound from "@/pages/not-found";
 import {
   applicationDetailFields,
   isApplicationServiceType,
+  officialContactLine,
   providerApplicationSchema,
+  verificationDocuments,
+  verificationDocumentsWhy,
   type ApplicationDetailField,
   type ApplicationServiceType,
 } from "@shared/provider-applications";
@@ -38,6 +41,7 @@ const emptyDraft: Draft = { details: {}, fullName: "", phone: "", email: "", tow
 
 const intro: Record<ApplicationServiceType, { title: string; lead: string; photoHint: string }> = {
   stays: { title: "List your stay", lead: "Tell us about the place. Guests book villas and apartments across the Coast through TBM.", photoHint: "The view, the pool, the bedrooms, the living room." },
+  cars: { title: "List your vehicle", lead: "Tell us about the car. Guests book cars with a driver, self-drive, airport runs and day trips through TBM.", photoHint: "The outside from the front and side, the seats and the boot." },
   cooks: { title: "Cook for TBM guests", lead: "Tell us about your cooking. Guests book private chefs for villa dinners, birthdays and family holidays.", photoHint: "Dishes you're proud of, and you at work." },
   errands: { title: "Offer home help", lead: "Tell us how you help. Families on holiday book cleaning, shopping, laundry and childcare.", photoHint: "Your work, or a clear photo of you." },
   experiences: { title: "List your experience", lead: "Tell us about your trip or activity. Guests book days out, boat trips and tours.", photoHint: "Guests enjoying it, the boat or place, the view." },
@@ -119,7 +123,7 @@ function ApplicationForm({ serviceType }: { serviceType: ApplicationServiceType 
   const [step, setStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [sent, setSent] = useState(false);
+  const [sent, setSent] = useState<{ reference: string; statusToken: string } | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const topRef = useRef<HTMLDivElement | null>(null);
   const fields = applicationDetailFields[serviceType];
@@ -196,11 +200,12 @@ function ApplicationForm({ serviceType }: { serviceType: ApplicationServiceType 
       };
       const parsed = providerApplicationSchema.safeParse(payload);
       if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? "Check your answers");
-      return apiRequest("POST", "/api/provider-applications", payload);
+      const response = await apiRequest("POST", "/api/provider-applications", payload);
+      return response.json() as Promise<{ reference: string; statusToken: string }>;
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       safeSessionStorage.removeItem(storageKey);
-      setSent(true);
+      setSent(result);
       topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     },
     onError: (submitError: Error) => setError(submitError.message.replace(/^\d+:\s*/, "").replace(/^\{"error":"(.*)"\}$/, "$1")),
@@ -213,15 +218,28 @@ function ApplicationForm({ serviceType }: { serviceType: ApplicationServiceType 
           <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-600" aria-hidden="true" />
           <h1 className="mt-4 font-serif text-3xl font-semibold text-stone-950">Asante, {draft.fullName.split(/\s+/)[0] || "karibu"}!</h1>
           <p className="mt-3 text-stone-700">Your application is with TBM. We've emailed you a copy.</p>
+          <div className="mx-auto mt-5 inline-flex flex-col items-center rounded-2xl bg-stone-50 px-5 py-3">
+            <span className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">Your reference</span>
+            <span className="font-mono text-xl font-semibold tracking-wider text-stone-950" data-testid="text-application-reference">{sent.reference}</span>
+          </div>
           <ol className="mx-auto mt-6 max-w-sm space-y-3 text-left text-sm text-stone-700">
-            <li className="flex gap-3"><span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-400 text-xs font-semibold text-stone-950">1</span>Our team reviews your application and calls or WhatsApps you. We review them in the order they arrive.</li>
-            <li className="flex gap-3"><span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-400 text-xs font-semibold text-stone-950">2</span>We check your ID and that the service is yours to offer.</li>
-            <li className="flex gap-3"><span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-400 text-xs font-semibold text-stone-950">3</span>If you're approved, we email you a link to your Provider Hub. Add your listing, set your prices and start sharing.</li>
+            <li className="flex gap-3"><span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-400 text-xs font-semibold text-stone-950">1</span>Our team reviews applications in the order they arrive, then calls or WhatsApps you.</li>
+            <li className="flex gap-3"><span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-400 text-xs font-semibold text-stone-950">2</span>If you're approved, we email you a link to set up your account and your Provider Hub.</li>
+            <li className="flex gap-3"><span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-400 text-xs font-semibold text-stone-950">3</span>Before you go live, you add your ID and {verificationDocuments[serviceType]} in the Hub, and TBM checks them.</li>
           </ol>
+          <div className="mx-auto mt-6 max-w-sm rounded-2xl border border-stone-200 p-4 text-left text-sm text-stone-700">
+            <div className="font-medium text-stone-950">While you wait</div>
+            <ul className="mt-2 list-disc space-y-1 pl-5">
+              <li>Find your ID and {verificationDocuments[serviceType]}.</li>
+              <li>Take five good photos in daylight.</li>
+              <li>Decide your prices and the dates you're away.</li>
+            </ul>
+          </div>
           <div className="mt-8 flex flex-col gap-2 sm:flex-row sm:justify-center">
-            <Button asChild className="rounded-full"><Link href="/partner">Back to Become a provider</Link></Button>
+            <Button asChild className="rounded-full"><a href={`/partner/application#${sent.statusToken}`} data-testid="link-application-status">Check your application</a></Button>
             <Button asChild variant="outline" className="rounded-full"><a href={SUPPORT_WHATSAPP_URL} target="_blank" rel="noreferrer"><MessageCircle className="mr-2 h-4 w-4" />WhatsApp TBM</a></Button>
           </div>
+          <p className="mt-6 text-xs text-stone-500">{officialContactLine}</p>
         </div>
       </div>
     );
@@ -238,7 +256,7 @@ function ApplicationForm({ serviceType }: { serviceType: ApplicationServiceType 
             <h1 className="font-serif text-3xl font-semibold leading-tight text-stone-950 sm:text-4xl">{intro[serviceType].title}</h1>
           </div>
         </div>
-        <p className="mt-3 text-stone-600">{intro[serviceType].lead} About five minutes; nothing is public until TBM has checked it with you.</p>
+        <p className="mt-3 text-stone-600">{intro[serviceType].lead} About five minutes, and no documents needed yet. Nothing is public until TBM has checked it with you.</p>
 
         <div className="mt-6" aria-label={`Step ${step + 1} of ${steps.length}`}>
           <div className="flex items-center justify-between text-xs font-medium text-stone-600">
@@ -326,6 +344,12 @@ function ApplicationForm({ serviceType }: { serviceType: ApplicationServiceType 
                   </div>
                 ))}
               </dl>
+              <div className="flex items-start gap-3 rounded-2xl bg-amber-50/70 p-4 text-sm text-stone-700" data-testid="text-documents-later">
+                <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" aria-hidden="true" />
+                <span>
+                  <span className="font-medium text-stone-900">Documents come later.</span> Before your listing goes live, TBM checks your ID and {verificationDocuments[serviceType]}, {verificationDocumentsWhy[serviceType]}. You add them in your Provider Hub, and only TBM's team sees them.
+                </span>
+              </div>
               <label className="flex items-start gap-3 rounded-2xl border border-stone-200 p-4 text-sm text-stone-700">
                 <Checkbox checked={draft.consent} onCheckedChange={(checked) => setDraft((current) => ({ ...current, consent: checked === true }))} className="mt-0.5" data-testid="checkbox-application-consent" />
                 <span>TBM may call, WhatsApp or email me about this application, and keep my details and photos to review it. <Link href="/privacy" className="text-teal-800 underline">Privacy</Link></span>
@@ -351,6 +375,7 @@ function ApplicationForm({ serviceType }: { serviceType: ApplicationServiceType 
           </div>
         </div>
         <p className="mt-4 text-center text-xs text-stone-500">No joining or monthly fee. TBM's commission is agreed with you before your first payout. Questions? <a href={SUPPORT_WHATSAPP_URL} target="_blank" rel="noreferrer" className="underline">WhatsApp TBM</a>.</p>
+        <p className="mt-2 text-center text-xs text-stone-500">{officialContactLine}</p>
       </div>
     </div>
   );

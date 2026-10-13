@@ -1,13 +1,14 @@
 // Joining TBM as a provider: what each kind of provider is asked, how an
-// application is checked, and the honest example earnings shown on the
-// Become a Provider page. Vehicles keep their own fleet form.
+// application is checked and tracked, and the honest example earnings shown on
+// the Become a Provider page. Every service, vehicles included, uses the same
+// short form; documents are asked for later, before a listing goes live.
 import { z } from "zod";
 import { addCalendarDays } from "./calendar-dates.ts";
 import { normalizeKenyanMobile } from "./provider-profile.ts";
 
-export const applicationServiceTypes = ["stays", "cooks", "errands", "experiences"] as const;
+export const applicationServiceTypes = ["stays", "cars", "cooks", "errands", "experiences"] as const;
 export type ApplicationServiceType = typeof applicationServiceTypes[number];
-export type JoinableService = ApplicationServiceType | "cars";
+export type JoinableService = ApplicationServiceType;
 
 export function isApplicationServiceType(value: unknown): value is ApplicationServiceType {
   return typeof value === "string" && (applicationServiceTypes as readonly string[]).includes(value);
@@ -35,6 +36,17 @@ export const applicationDetailFields: Record<ApplicationServiceType, Application
     { key: "relationship", label: "Is it yours?", type: "select", required: true, options: ["I own it", "I manage it for the owner"] },
     { key: "listedElsewhere", label: "Listed anywhere else?", type: "select", options: ["No", "Yes, on Airbnb or Booking.com", "Yes, somewhere else"] },
     { key: "about", label: "What guests love about it", type: "textarea", placeholder: "The view, the pool, the quiet, the beach a minute away…" },
+  ],
+  cars: [
+    { key: "vehicle", label: "Make and model", type: "text", required: true, placeholder: "For example, Toyota Prado" },
+    { key: "year", label: "Year", type: "number", max: 2100 },
+    { key: "seats", label: "Passenger seats", type: "number", required: true, max: 80 },
+    { key: "transmission", label: "Gearbox", type: "select", required: true, options: ["Automatic", "Manual"] },
+    { key: "driver", label: "How you offer it", type: "select", required: true, options: ["With a driver", "Self-drive", "Both"] },
+    { key: "area", label: "Where it's based", type: "text", required: true, placeholder: "For example, Nyali, Mombasa" },
+    { key: "dayPriceKes", label: "Your price a day (KSh)", type: "number", required: true, max: 2_000_000 },
+    { key: "relationship", label: "Is it yours?", type: "select", required: true, options: ["I own it", "I manage it for the owner"] },
+    { key: "about", label: "Anything guests should know", type: "textarea", placeholder: "Airport runs, safaris, child seats, a driver who speaks French…" },
   ],
   cooks: [
     { key: "speciality", label: "What you cook", type: "text", required: true, placeholder: "For example, Swahili seafood and BBQ" },
@@ -134,3 +146,69 @@ export function workingDaysWaiting(appliedOn: string, today: string) {
   }
   return days;
 }
+
+// ── Tracking an application ─────────────────────────────────────────────────
+
+export const applicationStatuses = ["new", "contacted", "needs-info", "approved", "declined"] as const;
+export type ApplicationStatus = typeof applicationStatuses[number];
+
+// What the applicant sees on their status page, in order.
+export const applicationStages: Array<{ status: ApplicationStatus; label: string; next: string }> = [
+  { status: "new", label: "Received", next: "Our team reviews applications in the order they arrive, then calls or WhatsApps you." },
+  { status: "contacted", label: "In review", next: "We're checking your details. We'll be in touch if we need anything." },
+  { status: "needs-info", label: "More information needed", next: "Reply to our email or WhatsApp TBM with what we've asked for." },
+  { status: "approved", label: "Approved", next: "Check your email for the link to set up your account." },
+  { status: "declined", label: "Not approved", next: "You're welcome to apply again when things change." },
+];
+
+export function applicationStage(status: string) {
+  return applicationStages.find((stage) => stage.status === status) ?? applicationStages[0];
+}
+
+export const applicationDeclineReasons = ["outside-area", "service-not-offered", "could-not-verify", "could-not-reach", "other"] as const;
+export type ApplicationDeclineReason = typeof applicationDeclineReasons[number];
+
+export const applicationDeclineReasonLabels: Record<ApplicationDeclineReason, string> = {
+  "outside-area": "It's outside the areas TBM covers for now.",
+  "service-not-offered": "It isn't a service TBM offers yet.",
+  "could-not-verify": "We couldn't confirm the details we need.",
+  "could-not-reach": "We couldn't reach you by phone or WhatsApp.",
+  other: "It isn't the right fit for TBM at the moment.",
+};
+
+/** What TBM checks before a listing goes live, by service. Never needed to apply. */
+export const verificationDocuments: Record<ApplicationServiceType, string> = {
+  stays: "a title deed, lease or the owner's written permission for each stay",
+  cars: "the logbook and insurance for each vehicle",
+  cooks: "a food handler's certificate if you have one",
+  errands: "a certificate of good conduct if you have one",
+  experiences: "any licence your activity needs (for example a boat licence)",
+};
+
+/** Why each one is asked for, in a sentence. */
+export const verificationDocumentsWhy: Record<ApplicationServiceType, string> = {
+  stays: "so TBM knows the place is yours to let",
+  cars: "so TBM knows the car is yours and insured",
+  cooks: "so guests can book you with confidence",
+  errands: "because you'll work in guests' homes, sometimes with children",
+  experiences: "so guests know the activity runs legally and safely",
+};
+
+const referenceAlphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+
+/** "TBM-P-7K3Q9X": random, so it reveals nothing about how many apply. */
+export function makeApplicationReference(randomBytes: Uint8Array) {
+  const chars = Array.from(randomBytes.slice(0, 6), (byte) => referenceAlphabet[byte % referenceAlphabet.length]).join("");
+  return `TBM-P-${chars}`;
+}
+
+export function isApplicationReference(value: unknown) {
+  return typeof value === "string" && /^TBM-P-[A-Z2-9]{6}$/.test(value);
+}
+
+/** Status links work for this long after the application. */
+export const APPLICATION_STATUS_LINK_DAYS = 90;
+/** Account set-up links work for this long. */
+export const ACCOUNT_SETUP_LINK_HOURS = 72;
+
+export const officialContactLine = "TBM's official number is +254 718 475 264. TBM never asks for a joining fee, your password or a sign-in code.";

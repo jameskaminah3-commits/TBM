@@ -16,6 +16,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { formatKenyaDateTime } from "@shared/calendar-dates";
 import { providerWorkspaces } from "@shared/provider-workspaces";
+import { verificationDocuments } from "@shared/provider-applications";
 import {
   describePayoutDestination,
   emptyProviderProfile,
@@ -333,13 +334,8 @@ function PayoutSection({ profile }: { profile: ProviderProfileView }) {
   );
 }
 
-const verificationProof: Record<string, string> = {
-  stays: "a title deed, lease or the owner's written permission for each stay",
-  cars: "the logbook and insurance for each vehicle",
-  cooks: "a food handler's certificate if you have one",
-  errands: "a certificate of good conduct if you have one",
-  experiences: "any licence your activity needs (for example a boat licence)",
-};
+// What TBM checks, by service: the same list the application and emails use.
+const verificationProof: Record<string, string> = verificationDocuments;
 
 function VerificationSection({ profile }: { profile: ProviderProfileView }) {
   const { toast } = useToast();

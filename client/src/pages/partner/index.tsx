@@ -37,7 +37,7 @@ import { SUPPORT_PHONE_DISPLAY, SUPPORT_WHATSAPP_URL } from "@shared/support-con
 
 const services: Array<{ key: JoinableService; who: string; image?: string; href: string }> = [
   { key: "stays", who: "Villas, apartments, cottages and guest houses you own or manage.", image: heroImage, href: "/partner/apply/stays" },
-  { key: "cars", who: "One car or a fleet: with a driver, self-drive, airport runs and tours.", image: fleetImage, href: "/partner/apply" },
+  { key: "cars", who: "One car or a fleet: with a driver, self-drive, airport runs and tours.", image: fleetImage, href: "/partner/apply/cars" },
   { key: "cooks", who: "Private chefs who cook in guests' villas: Swahili, seafood, BBQ and more.", image: chefImage, href: "/partner/apply/cooks" },
   { key: "errands", who: "Cleaning, shopping, laundry and trusted childcare for families on holiday.", href: "/partner/apply/errands" },
   { key: "experiences", who: "Dhow trips, snorkelling, forest walks, cooking classes and days out.", image: terraceImage, href: "/partner/apply/experiences" },
@@ -51,9 +51,9 @@ const tbmDoes = [
 ];
 
 const steps = [
-  { title: "Apply in about five minutes", body: "Tell us about you and your service. No documents needed to start." },
+  { title: "Apply in about five minutes", body: "Tell us about you and your service. You don't need any documents to apply." },
   { title: "TBM calls you", body: "Our team reviews applications in the order they arrive, then calls or WhatsApps you to answer your questions and arrange a check of your ID and your right to offer the service." },
-  { title: "Set up your listing", body: "In Provider Hub you add photos, set your prices and block the dates you're away. TBM checks it and publishes it." },
+  { title: "Set up your listing", body: "In Provider Hub you add photos, set your prices and upload your documents. TBM checks them and publishes your listing." },
   { title: "Accept jobs, get paid", body: "Each new booking comes with its dates and details. Accept or decline, do the job, and your payout follows." },
 ];
 
@@ -69,7 +69,8 @@ const faqs = [
   { q: "When and how do I get paid?", a: "After each job, to your M-Pesa or bank account. For your safety, TBM confirms your payout details before the first payout, and emails you whenever they change." },
   { q: "Can I keep my listing on other sites?", a: "Yes. Block the dates you're booked elsewhere in Provider Hub, so a guest can't book the same days through TBM." },
   { q: "Do I have to take every booking?", a: "No. You accept or decline each new job. If plans change after you accept, message TBM from the booking." },
-  { q: "What does TBM check?", a: "Your ID and that the service is yours to offer, for example a title deed or the owner's permission for a stay, or the logbook and insurance for a car. Documents stay private." },
+  { q: "What does TBM check, and when?", a: "Before your listing goes live, TBM checks your ID and that the service is yours to offer: a title deed, lease or the owner's permission for a stay, or the logbook and insurance for a car, so TBM knows the car is yours and insured. You don't need them to apply; you upload them in your Provider Hub after you're approved. Only TBM's team sees them, never guests." },
+  { q: "How do I know a message is really from TBM?", a: "TBM's official number is +254 718 475 264, and emails come from tembeabilamatata.com. TBM never asks for a joining fee, your password or a sign-in code, and never asks you to pay anyone to speed up your application." },
   { q: "Who talks to the guests?", a: "TBM does, so you get clear details for each job. If you need a guest's phone number for the job itself, TBM shares it with you for that booking." },
 ];
 

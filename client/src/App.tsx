@@ -54,7 +54,8 @@ const AdminFleetApplicationDetail = lazy(() => import("@/pages/admin/fleet-appli
 const AdminZaina = lazy(() => import("@/pages/admin/zaina"));
 const AdminListingVerifications = lazy(() => import("@/pages/admin/listing-verifications"));
 const PartnerLanding = lazy(() => import("@/pages/partner/index"));
-const PartnerApply = lazy(() => import("@/pages/partner/apply"));
+const PartnerApplicationStatus = lazy(() => import("@/pages/partner/application-status"));
+const SetUpAccount = lazy(() => import("@/pages/set-up-account"));
 const PartnerApplyService = lazy(() => import("@/pages/partner/apply-service"));
 const AdminProviderApplications = lazy(() => import("@/pages/admin/provider-applications"));
 const Blog = lazy(() => import("@/pages/blog"));
@@ -137,7 +138,9 @@ function Router() {
         <AppRoute path="/terms" element={<TermsPage />} />
         <AppRoute path="/refund-cancellation" element={<RefundCancellationPage />} />
         <AppRoute path="/partner" element={<PartnerLanding />} />
-        <AppRoute path="/partner/apply" element={<PartnerApply />} />
+        <AppRoute path="/partner/apply" element={<RedirectTo to="/partner/apply/cars" />} />
+        <AppRoute path="/partner/application" element={<PartnerApplicationStatus />} />
+        <AppRoute path="/set-up-account" element={<SetUpAccount />} />
         <AppRoute path="/partner/apply/:type" element={<PartnerApplyService />} />
         <AppRoute path="/admin/dashboard" element={<AdminDashboard />} />
         <AppRoute path="/admin/bookings" element={<AdminBookings />} />
@@ -240,6 +243,13 @@ function AppShell() {
     </TooltipProvider>
       </NavSheetProvider>
   );
+}
+
+// Vehicles now apply with the same short form as everyone else.
+function RedirectTo({ to }: { to: string }) {
+  const [, setLocation] = useLocation();
+  useEffect(() => setLocation(to, { replace: true }), [to, setLocation]);
+  return null;
 }
 
 function App() {
