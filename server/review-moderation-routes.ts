@@ -17,6 +17,7 @@ import {
   withdrawProviderReply,
 } from "./review-moderation";
 import { grantFoundingProvider, listFoundingCandidates, revokeFoundingProvider } from "./founding-providers";
+import { checkStoredRatings, recountStoredRatings } from "./rating-recount";
 
 const userIdOf = (req: any): string => req.user.claims.sub;
 const privateJson = (res: any) => res.setHeader("Cache-Control", "private, no-store");
@@ -115,6 +116,29 @@ export function registerReviewModerationRoutes(app: Express) {
     } catch (error) {
       console.error("[REVIEWS] Unhiding failed:", error);
       return res.status(500).json({ error: "Couldn't show the review again" });
+    }
+  });
+
+  // ── TBM: stored ratings against eligible reviews ───────────────────────
+  app.get("/api/admin/ratings/check", requireAdmin, async (_req, res) => {
+    try {
+      privateJson(res);
+      return res.json(await checkStoredRatings());
+    } catch (error) {
+      console.error("[REVIEWS] Rating check failed:", error);
+      return res.status(500).json({ error: "Couldn't check the stored ratings" });
+    }
+  });
+
+  // Only when TBM asks, after seeing the differences.
+  app.post("/api/admin/ratings/recount", requireAdmin, async (req: any, res) => {
+    try {
+      const result = await recountStoredRatings();
+      console.info(`[REVIEWS] Stored ratings recounted by ${userIdOf(req)}: ${result.updated} of ${result.checked} listings changed.`);
+      return res.json(result);
+    } catch (error) {
+      console.error("[REVIEWS] Rating recount failed:", error);
+      return res.status(500).json({ error: "Couldn't recount the stored ratings" });
     }
   });
 

@@ -3,10 +3,12 @@
 // number; the QR code opens the provider's live page, and TBM's official
 // number is the only number on any of it.
 import { SUPPORT_PHONE, SUPPORT_PHONE_DISPLAY } from "./support-contact.ts";
+import { providerPaySafely, providerPaySafelyHeading } from "./provider-public.ts";
 
 export const CARD_CALL_TO_ACTION = "Scan to explore and book";
 export const CARD_COORDINATED_BY = "Bookings and guest support coordinated by Tembea Bila Matata";
-export const CARD_PAY_SAFELY = "Pay only through TBM. TBM never asks you to send money to a personal number.";
+export const CARD_PAY_HEADING = providerPaySafelyHeading;
+export const CARD_PAY_SAFELY = providerPaySafely;
 export const CARD_HOW_TO_BOOK = "Book and pay through TBM, by M-Pesa or card.";
 
 // Print: 85 × 55 mm trimmed, with 3 mm bleed on every side, at 300 dpi.

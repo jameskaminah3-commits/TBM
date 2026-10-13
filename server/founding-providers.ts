@@ -4,6 +4,7 @@
 import { pool } from "./db";
 import { ensureProviderHubTables } from "./provider-hub";
 import { clearProviderPageCache, ensureProviderPageColumns } from "./provider-pages";
+import { ensureListingPublishedTracking } from "./listing-published";
 import {
   FOUNDING_COHORT,
   rankFoundingCandidates,
@@ -25,9 +26,16 @@ type Row = {
   founding_revoked_at: string | null;
   founding_revoked_reason: string | null;
   first_public_listing_at: string | null;
+  first_public_listing_estimated: boolean | null;
 };
 
 const iso = (value: Date | string | null) => (value instanceof Date ? value.toISOString() : value);
+// Creation dates are stored as Postgres text ("2026-10-11 03:40:40.86+00"):
+// sent on as ISO, which every browser reads.
+const isoText = (value: string | null) => {
+  const time = value ? Date.parse(value) : Number.NaN;
+  return Number.isNaN(time) ? value : new Date(time).toISOString();
+};
 
 export type FoundingListEntry = FoundingCandidate & {
   name: string;
@@ -38,25 +46,37 @@ export type FoundingListEntry = FoundingCandidate & {
 export async function listFoundingCandidates(): Promise<FoundingListEntry[]> {
   await ensureProviderHubTables();
   await ensureProviderPageColumns();
+  await ensureListingPublishedTracking();
+  // The earliest public listing by when it was first published. A listing
+  // already public before that was recorded counts from its creation date,
+  // and the list says the date is an estimate.
   const { rows } = await pool.query<Row>(`
+    WITH public_listings AS (
+      SELECT manager_user_id, first_published_at, created_at FROM stays WHERE is_public
+      UNION ALL SELECT manager_user_id, first_published_at, created_at FROM cars WHERE is_public
+      UNION ALL SELECT manager_user_id, first_published_at, created_at FROM cooks WHERE is_public
+      UNION ALL SELECT manager_user_id, first_published_at, created_at FROM errands WHERE is_public
+      UNION ALL SELECT manager_user_id, first_published_at, created_at FROM experiences WHERE is_public
+    ), firsts AS (
+      SELECT DISTINCT ON (manager_user_id) manager_user_id,
+             COALESCE(first_published_at, created_at) AS first_public_listing_at,
+             first_published_at IS NULL AS first_public_listing_estimated
+      FROM public_listings WHERE manager_user_id IS NOT NULL
+      ORDER BY manager_user_id, COALESCE(first_published_at, created_at)
+    )
     SELECT u.id, u.first_name, u.last_name, u.is_suspended, u.created_at AS account_created_at,
            p.business_name, p.verified_at, p.verification_status, p.founding_provider_at, p.founding_revoked_at, p.founding_revoked_reason,
            (SELECT min(COALESCE(a.decided_at, a.updated_at)) FROM provider_applications a WHERE a.created_user_id = u.id AND a.status = 'approved') AS application_approved_at,
-           (SELECT min(l.created_at) FROM (
-              SELECT created_at FROM stays WHERE manager_user_id = u.id AND is_public
-              UNION ALL SELECT created_at FROM cars WHERE manager_user_id = u.id AND is_public
-              UNION ALL SELECT created_at FROM cooks WHERE manager_user_id = u.id AND is_public
-              UNION ALL SELECT created_at FROM errands WHERE manager_user_id = u.id AND is_public
-              UNION ALL SELECT created_at FROM experiences WHERE manager_user_id = u.id AND is_public
-           ) l) AS first_public_listing_at
-    FROM users u LEFT JOIN provider_profiles p ON p.user_id = u.id
+           f.first_public_listing_at, f.first_public_listing_estimated
+    FROM users u LEFT JOIN provider_profiles p ON p.user_id = u.id LEFT JOIN firsts f ON f.manager_user_id = u.id
     WHERE u.role = 'provider'`);
   const byId = new Map(rows.map((row) => [row.id, row]));
   const ranked = rankFoundingCandidates(rows.map((row) => ({
     userId: row.id,
     approvedAt: row.application_approved_at ?? iso(row.account_created_at) ?? new Date(0).toISOString(),
     verifiedAt: row.verification_status === "verified" ? row.verified_at : null,
-    firstPublicListingAt: row.first_public_listing_at,
+    firstPublicListingAt: isoText(row.first_public_listing_at),
+    firstPublicListingEstimated: Boolean(row.first_public_listing_estimated),
     isSuspended: Boolean(row.is_suspended),
     grantedAt: row.founding_provider_at,
     revokedAt: row.founding_revoked_at,

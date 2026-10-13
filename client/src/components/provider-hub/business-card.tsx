@@ -10,19 +10,21 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { saveFile } from "@/lib/card-canvas";
-import { buildPrintPdf, renderPrintBack, renderPrintFront, renderStatusImage } from "@/lib/business-card-render";
+import { buildPrintPdf, renderPrintBack, renderPrintFront, renderStatusImage, type QrMatrix } from "@/lib/business-card-render";
+import { cn } from "@/lib/utils";
 import type { ProviderPageSettingsView } from "@/lib/provider-page";
 import { buildProviderVCard, businessCardContent, cardFileName, type BusinessCardContent } from "@shared/business-card";
 import { buildProviderPageShareUrl } from "@shared/listing-share";
 import type { PublicProviderProfile } from "@shared/provider-public";
 
-type Ready = { content: BusinessCardContent; qrUrl: string; qrDataUrl: string; shareCode: string; preview: string };
+type Ready = { content: BusinessCardContent; qrUrl: string; qr: QrMatrix; shareCode: string; front: string; back: string };
 
 export function BusinessCard({ settings }: { settings: ProviderPageSettingsView }) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [ready, setReady] = useState<Ready | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [side, setSide] = useState<"front" | "back">("front");
   const origin = typeof window === "undefined" ? "https://tembeabilamatata.com" : window.location.origin;
   const shortPath = `/p/${settings.code}`;
   const pageLabel = `${origin.replace(/^https?:\/\//, "")}${shortPath}`;
@@ -37,9 +39,11 @@ export function BusinessCard({ settings }: { settings: ProviderPageSettingsView 
         const { code: shareCode } = await (await apiRequest("POST", "/api/provider/share-links", { kind: "provider" })).json() as { code: string };
         const qrUrl = buildProviderPageShareUrl(origin, shortPath, { channel: "qr", code: shareCode });
         const QRCode = await import("qrcode");
-        const qrDataUrl = await QRCode.toDataURL(qrUrl, { margin: 1, width: 900, errorCorrectionLevel: "M", color: { dark: "#0f3d3a", light: "#ffffff" } });
-        const preview = (await renderPrintFront(content, qrDataUrl)).toDataURL("image/png");
-        if (!cancelled) setReady({ content, qrUrl, qrDataUrl, shareCode, preview });
+        // Error correction Q (25%) leaves room for the rounded dots and eyes.
+        const code = QRCode.create(qrUrl, { errorCorrectionLevel: "Q" });
+        const qr: QrMatrix = { size: code.modules.size, data: Array.from(code.modules.data) };
+        const [frontCanvas, backCanvas] = await Promise.all([renderPrintFront(content, qr), renderPrintBack(pageLabel)]);
+        if (!cancelled) setReady({ content, qrUrl, qr, shareCode, front: frontCanvas.toDataURL("image/png"), back: backCanvas.toDataURL("image/png") });
       } catch {
         if (!cancelled) toast({ title: "Couldn't make your card", description: "Please try again.", variant: "destructive" });
       }
@@ -47,7 +51,7 @@ export function BusinessCard({ settings }: { settings: ProviderPageSettingsView 
     return () => {
       cancelled = true;
     };
-  }, [open, ready, settings.live, settings.code, origin, shortPath, toast]);
+  }, [open, ready, settings.live, settings.code, origin, shortPath, pageLabel, toast]);
 
   const markShared = () => {
     if (ready) void apiRequest("POST", `/api/provider/share-links/${ready.shareCode}/shared`, { channel: "qr" }).catch(() => undefined);
@@ -66,10 +70,10 @@ export function BusinessCard({ settings }: { settings: ProviderPageSettingsView 
   };
 
   const saveStatus = () => run("status", async () => {
-    saveFile(await renderStatusImage(ready!.content, ready!.qrDataUrl, pageLabel), cardFileName(ready!.content.name, "status.png"));
+    saveFile(await renderStatusImage(ready!.content, ready!.qr, pageLabel), cardFileName(ready!.content.name, "status.png"));
   }, "Status image saved: post it on your WhatsApp Status");
   const savePdf = () => run("pdf", async () => {
-    const [front, back] = await Promise.all([renderPrintFront(ready!.content, ready!.qrDataUrl), renderPrintBack(pageLabel)]);
+    const [front, back] = await Promise.all([renderPrintFront(ready!.content, ready!.qr), renderPrintBack(pageLabel)]);
     saveFile(await buildPrintPdf(front, back, `${ready!.content.name} business card`), cardFileName(ready!.content.name, "card.pdf"));
   }, "Print file saved: 85 × 55 mm, with 3 mm bleed");
   const saveContact = () => run("vcf", async () => {
@@ -91,14 +95,34 @@ export function BusinessCard({ settings }: { settings: ProviderPageSettingsView 
             The QR code opens your page on TBM. It carries no phone number or rating: guests book and pay through TBM, and scans show in Your shares.
           </DialogDescription>
         </DialogHeader>
-        <div className="overflow-hidden rounded-xl border border-stone-200 bg-stone-50">
+        <div className="overflow-hidden rounded-xl border border-stone-200 bg-stone-900 shadow-[0_18px_40px_-24px_rgba(10,42,40,0.6)]">
           {ready ? (
-            <img src={ready.preview} alt="Front of your business card" className="w-full" data-testid="img-card-preview" data-qr-url={ready.qrUrl} />
+            <>
+              <img src={ready.front} alt="Front of your business card" className={cn("w-full", side !== "front" && "hidden")} data-testid="img-card-preview" data-qr-url={ready.qrUrl} />
+              <img src={ready.back} alt="Back of your business card" className={cn("w-full", side !== "back" && "hidden")} data-testid="img-card-preview-back" />
+            </>
           ) : (
             <div className="flex aspect-[91/61] items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-stone-400" /></div>
           )}
         </div>
-        <p className="text-xs text-muted-foreground">Front shown with its 3 mm bleed; the back carries TBM's booking and safety lines and official number.</p>
+        <div className="flex items-center justify-between gap-2">
+          <div className="inline-flex rounded-full bg-stone-100 p-1 text-sm" role="tablist" aria-label="Card side">
+            {(["front", "back"] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                role="tab"
+                aria-selected={side === value}
+                onClick={() => setSide(value)}
+                className={cn("min-h-9 rounded-full px-4 capitalize", side === value ? "bg-white font-medium text-stone-900 shadow-sm" : "text-stone-600")}
+                data-testid={`button-card-side-${value}`}
+              >
+                {value}
+              </button>
+            ))}
+          </div>
+          <p className="text-right text-xs text-muted-foreground">Shown with its 3 mm bleed</p>
+        </div>
         <div className="grid gap-2">
           <Button type="button" className="justify-start rounded-full" disabled={!ready || Boolean(busy)} onClick={saveStatus} data-testid="button-card-status">
             {busy === "status" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Smartphone className="mr-2 h-4 w-4" />}WhatsApp Status image (1080 × 1920)

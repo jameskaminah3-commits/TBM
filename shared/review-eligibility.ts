@@ -58,6 +58,15 @@ export function summarizeRatings(ratings: number[]): RatingSummary {
   return { count, average: Math.round(average * 10) / 10 };
 }
 
+/**
+ * What the listing tables store in `rating` (a whole number; 0 below the
+ * threshold) and `review_count` (eligible reviews). Public pages never read
+ * these; they recompute from eligible reviews.
+ */
+export function storedRatingFields(summary: RatingSummary) {
+  return { rating: summary.average === null ? 0 : Math.round(summary.average), reviewCount: summary.count };
+}
+
 /** Public listings carry `rating` (the average, or 0 below the threshold) and `reviewCount`. */
 export function hasPublicRating(listing: { rating?: number | null; reviewCount?: number | null }) {
   return Number(listing.reviewCount) >= RATING_MIN_REVIEWS && Number(listing.rating) > 0;

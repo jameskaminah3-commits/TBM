@@ -1106,6 +1106,9 @@ export const providerProfiles = pgTable("provider_profiles", {
   photoReviewedAt: text("photo_reviewed_at"),
   photoReviewedBy: varchar("photo_reviewed_by"),
   photoReviewNote: text("photo_review_note"),
+  // The approved photo's private copy (migration 0027), shown to a confirmed
+  // home-help guest without a public link.
+  photoPrivateKey: varchar("photo_private_key"),
   foundingProviderAt: text("founding_provider_at"),
   foundingCohort: varchar("founding_cohort"),
   // Removed permanently (fraud, safety, impersonation, account removed).
@@ -1527,6 +1530,8 @@ export const stays = pgTable("stays", {
   galleryUrls: text("gallery_urls").array().notNull().default(sql`'{}'::text[]`),
   mediaType: varchar("media_type").notNull().default("image"),
   isPublic: boolean("is_public").notNull().default(false),
+  // Set by the database the first time the listing goes public (migration 0027).
+  firstPublishedAt: text("first_published_at"),
   managerUserId: varchar("manager_user_id"),
   features: text("features").array().notNull(),
   createdAt: text("created_at").notNull(),
@@ -1537,6 +1542,7 @@ export const insertStaySchema = createInsertSchema(stays).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+  firstPublishedAt: true,
 }).extend({
   managerUserId: optionalManagerUserId,
 });
@@ -1619,6 +1625,8 @@ export const cars = pgTable("cars", {
   galleryUrls: text("gallery_urls").array().notNull().default(sql`'{}'::text[]`),
   mediaType: varchar("media_type").notNull().default("image"),
   isPublic: boolean("is_public").notNull().default(false),
+  // Set by the database the first time the listing goes public (migration 0027).
+  firstPublishedAt: text("first_published_at"),
   managerUserId: varchar("manager_user_id"),
   features: text("features").array().notNull(),
     make: text("make"),
@@ -1641,6 +1649,7 @@ export const insertCarSchema = createInsertSchema(cars).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+  firstPublishedAt: true,
 }).extend({
   chauffeurZones: z.array(carZoneRateSchema).optional(),
   managerUserId: optionalManagerUserId,
@@ -1685,6 +1694,8 @@ export const cooks = pgTable("cooks", {
   galleryUrls: text("gallery_urls").array().notNull().default(sql`'{}'::text[]`),
   mediaType: varchar("media_type").notNull().default("image"),
   isPublic: boolean("is_public").notNull().default(false),
+  // Set by the database the first time the listing goes public (migration 0027).
+  firstPublishedAt: text("first_published_at"),
   managerUserId: varchar("manager_user_id"),
   features: text("features").array().notNull(),
   createdAt: text("created_at").notNull(),
@@ -1695,6 +1706,7 @@ export const insertCookSchema = createInsertSchema(cooks).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+  firstPublishedAt: true,
 }).extend({
   managerUserId: optionalManagerUserId,
 });
@@ -1724,6 +1736,8 @@ export const errands = pgTable("errands", {
   galleryUrls: text("gallery_urls").array().notNull().default(sql`'{}'::text[]`),
   mediaType: varchar("media_type").notNull().default("image"),
   isPublic: boolean("is_public").notNull().default(false),
+  // Set by the database the first time the listing goes public (migration 0027).
+  firstPublishedAt: text("first_published_at"),
   managerUserId: varchar("manager_user_id"),
   features: text("features").array().notNull(),
   createdAt: text("created_at").notNull(),
@@ -1734,6 +1748,7 @@ export const insertErrandSchema = createInsertSchema(errands).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+  firstPublishedAt: true,
 }).extend({
   basePrice: z.coerce.number().int().min(0),
   helpMamaPricing: helpMamaPricingSchema.optional(),
@@ -1775,6 +1790,8 @@ export const experiences = pgTable("experiences", {
   galleryUrls: text("gallery_urls").array().notNull().default(sql`'{}'::text[]`),
   mediaType: varchar("media_type").notNull().default("image"),
   isPublic: boolean("is_public").notNull().default(false),
+  // Set by the database the first time the listing goes public (migration 0027).
+  firstPublishedAt: text("first_published_at"),
   managerUserId: varchar("manager_user_id"),
   features: text("features").array().notNull(),
   createdAt: text("created_at").notNull(),
@@ -1785,6 +1802,7 @@ export const insertExperienceSchema = createInsertSchema(experiences).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+  firstPublishedAt: true,
 }).extend({
   managerUserId: optionalManagerUserId,
 });

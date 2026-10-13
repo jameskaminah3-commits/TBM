@@ -212,5 +212,9 @@ export const providerVerifiedMeaning =
   "TBM checked this provider's ID and that the service is theirs to offer. It isn't a guarantee of quality, and it doesn't remove every risk. Reviews come from guests who booked through TBM.";
 export const providerHowToBook =
   "Book online or ask TBM. You pay TBM by M-Pesa or card, and TBM coordinates your booking and supports you throughout.";
-export const providerPaySafely = "Pay only through TBM. TBM never asks you to send money to a personal number.";
+// Said the same way on the page and the business card: why paying through
+// the checkout protects both sides, rather than a warning about the provider.
+export const providerPaySafelyHeading = "Book with confidence";
+export const providerPaySafely =
+  "To keep every transaction safe, and to protect hosts and guests alike from impersonation and scams, use the payment options in your My Bookings checkout.";
 export const providerFoundingMeaning = "One of the first providers to join TBM. It says when they joined, not how good they are.";

@@ -15,6 +15,7 @@ import {
   providerHowToBook,
   providerPageBlockerLabels,
   providerPaySafely,
+  providerPaySafelyHeading,
   type ProviderPageBlocker,
   type PublicProviderProfile,
 } from "@shared/provider-public";
@@ -223,7 +224,7 @@ export default function ProviderPublicPage() {
             <p className="text-sm text-muted-foreground">TBM's official number: <span className="font-medium text-foreground">{SUPPORT_PHONE_DISPLAY}</span></p>
           </div>
           <div className="space-y-3">
-            <h2 className="flex items-center gap-2 font-serif text-2xl font-medium"><ShieldCheck className="h-5 w-5 text-emerald-700" aria-hidden="true" />Book safely</h2>
+            <h2 className="flex items-center gap-2 font-serif text-2xl font-medium"><ShieldCheck className="h-5 w-5 text-emerald-700" aria-hidden="true" />{providerPaySafelyHeading}</h2>
             <p className="leading-7 text-muted-foreground" data-testid="text-provider-pay-safely">{providerPaySafely}</p>
             <ProviderBadges provider={provider} showMeaning />
             <p className="text-sm text-muted-foreground">Bookings and guest support coordinated by Tembea Bila Matata.</p>

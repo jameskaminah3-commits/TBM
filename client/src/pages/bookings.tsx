@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { BookingThread } from "@/components/booking-thread";
 import { BookingServiceDetails } from "@/components/booking-service-details";
+import { BookingCarers } from "@/components/booking-carers";
 import { RequestBriefAccordion } from "@/components/request-brief-accordion";
 import { CheckoutPaymentPreview, CheckoutPaymentSheet, getPaymentChoiceForProvider } from "@/components/payment-provider-picker";
 import { useAuth } from "@/hooks/useAuth";
@@ -1218,6 +1219,14 @@ export default function Bookings() {
               />
             ) : null}
             <BookingTimeline booking={booking} />
+            <BookingCarers
+              bookingId={booking.id}
+              enabled={
+                booking.status !== "cancelled"
+                && booking.status !== "completed"
+                && (Boolean(booking.serviceMode?.startsWith("errand")) || booking.selectedServices.some((serviceId) => errands?.some((errand) => errand.id === serviceId)))
+              }
+            />
             <BookingServiceDetails
               booking={booking}
               getServiceById={(serviceId) => getServiceItem(serviceId) || null}

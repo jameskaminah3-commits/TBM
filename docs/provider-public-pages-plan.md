@@ -108,6 +108,10 @@ This applies to a page that's suspended, switched off, removed, or has no public
 
 - **Publicly:** the business name or first name, with a logo, a photo of their work, or a service icon. **Never a face by default.** In the Hub, the photo field for these services says "Logo or a photo of your work, not your face".
 - **After booking:** the confirmed customer sees the carer's first name and approved photo in My Bookings once the booking is confirmed. That's shared privately, through the booking.
+  - **As built:** "Who's coming" in My Bookings, from `GET /api/bookings/:id/carers`. Only the guest who made the booking gets it (everyone else, TBM's admins included, gets "not found"), and only while the booking is upcoming or in progress, paid or with its deposit in, and after the carer has accepted the home-help job.
+  - It carries the first name, the services, whether TBM checked their ID, and a link to the photo. Nothing else: no surname, email, phone or account ID.
+  - The photo is shown only if TBM approved it as a face. It's streamed from private storage through `GET /api/bookings/:id/carers/:n/photo`, signed in and never cached. TBM keeps the approved photo's private copy for this (`photo_private_key`).
+  - The note under it asks the guest to keep it private. It mentions TBM's ID check only when there was one, and says that isn't a guarantee.
 
 ### "Your host" block on listing pages
 
@@ -321,7 +325,8 @@ The numbers below are the files as built (they were built in a different order f
 | `0024_review_integrity.sql` (Phase 1) | `reviews`: adds `status` (default `published`), `hidden_reason`, `hidden_by`, `hidden_at`, `provider_reply`, `provider_reply_status`, `provider_reply_at`, `provider_reply_reviewed_by` and `provider_reply_reviewed_at`. Adds a unique index on (`booking_id`, `user_id`, `target_type`, `target_id`). Check for duplicates before adding it (query below). |
 | `0025_provider_application_tracking.sql` (Phase 1) | `provider_applications`: adds `reference` (unique, filled in for existing rows), `status_token_hash`, `applicant_message`, `decline_reason` and `decided_at`. Adds the status `needs-info`. `password_reset_otps`: adds `purpose` (default `password-reset`). |
 | `0026_provider_public_pages.sql` (Phase 2) | `provider_profiles`: adds `public_code` (unique), `public_enabled` (default false), `public_enabled_at`, TBM's switch (`public_blocked_at`, `public_blocked_by`, `public_blocked_note`), photo approval (`photo_status`, `photo_kind`, `photo_approved_at`, `photo_pending_key`, `photo_pending_kind`, `photo_submitted_at`, `photo_reviewed_at`, `photo_reviewed_by`, `photo_review_note`) and `founding_provider_at`, `founding_cohort`. The slug isn't stored: it's made from the display name each time, and the code alone finds the page. |
-| No change | `listing_share_links` and `listing_share_events`: the kind and event-type columns are free text, so `provider` and `enquire` are new values in code only. The listing tables don't change. |
+| `0027_listing_published_and_carer_photo.sql` (gap fixes) | `stays`, `cars`, `cooks`, `errands`, `experiences`: adds `first_published_at`, set by a database trigger the first time a listing goes from private to public and never changed afterwards. A value sent in a request is ignored. Listings already public before this ran have no date. `provider_profiles`: adds `photo_private_key`, the approved photo's private copy. Needs Postgres 14 or later (`CREATE OR REPLACE TRIGGER`). |
+| No change | `listing_share_links` and `listing_share_events`: the kind and event-type columns are free text, so `provider` and `enquire` are new values in code only. |
 
 The server also adds each migration's columns when it starts (`ADD COLUMN IF NOT EXISTS`), so an older database keeps working before the deploy step has run.
 
@@ -358,6 +363,7 @@ Every phase also re-runs the existing suites: privacy access, provider end-to-en
 | 2 | Public provider pages, "Your host" block, photo approval, suspension handling, provider links (R9b and `enquire`) and their reporting | Built on the dev branch (5423275). Not released. |
 | 3 | Rating display and replies, Founding Provider badge | Built on the dev branch (67fff02). Not released. |
 | 4 | Smart business card, in every format | Built on the dev branch (8ed303d). Not released. |
+| Gaps | Carer details after booking, listing publish dates, provider pages in the sitemap, the photo queue, the stored-rating check and recount, and the card redesign with the new back wording | Built on the dev branch. Not released. |
 
 Nothing from phases 1 to 4 goes to `main` without the owner's approval.
 
@@ -368,15 +374,23 @@ Nothing from phases 1 to 4 goes to `main` without the owner's approval.
 - **Photos:** the approved photo is public only once `photo_approved_at` is set. Photos saved before this change stay private until TBM approves them. A new photo waits in private storage; the approved one stays up meanwhile. The Hub's business form can no longer set a photo directly.
 - **TBM's switch** (`public_blocked_at`) was added so a page TBM switches off can't be switched back on by the provider.
 - **Bios** also lose links and social handles, not only phone numbers and emails; listing cards show an area name, never a street or plot.
-- **Founding Provider:** the publication date of a listing isn't recorded, so "a listing within 60 days" uses the listing's creation date; TBM checks it before granting. Older accounts with no application use the account's creation date as their approval date.
+- **Founding Provider:** "a listing within 60 days" uses the date the listing was first published (`first_published_at`). A listing that was already public before dates were recorded uses its creation date instead, and the admin list marks it "estimated from its creation date" so TBM checks it before granting. Older accounts with no application use the account's creation date as their approval date.
+- **Paying safely, in the provider's favour:** the page and the back of the card say "Book with confidence: to keep every transaction safe, and to protect hosts and guests alike from impersonation and scams, use the payment options in your My Bookings checkout." It frames paying through TBM as protection for both sides, not a warning about the provider. The contact file's note says the same.
+- **The card's look:** deep ink-teal and ivory with champagne-gold hairlines, a quiet coastal wave line, Cormorant Garamond for names and tracked small capitals for labels. The QR code is drawn from its modules (rounded dots and eyes) in dark teal on ivory, with error correction Q; every format's code is read back by a decoder in the tests. Print text is at least 5.5 pt.
 - **Replies** are also shown under reviews on listing pages, not only on the provider page.
 
-### Not built yet (gaps)
+### Gaps, now built (dev branch)
 
-- **Home help, after booking:** the confirmed customer doesn't yet see the carer's first name and approved photo in My Bookings. The public side (never a face) is built; the private disclosure isn't.
-- **Provider pages in the sitemap:** live provider pages aren't listed in `sitemap.xml` yet; they are indexable when linked.
-- **Bulk review of old photos:** existing `photo_url` values (saved before review) are private until approved one by one in Admin › Providers; there's no list of all photos waiting.
-- **Live checks:** P1 (and R1 with replies) can only be run once these phases are released.
+- **Home help, after booking:** "Who's coming" in My Bookings (section 2, Home help and childcare).
+- **When a listing was first published:** recorded by the database (migration 0027) and used for the Founding Provider list.
+- **Provider pages in the sitemap:** live pages only, with the same rules as the page itself (switched on, not blocked by TBM, provider not suspended, at least one public listing).
+- **Photos to check:** one list on Admin › Providers of every photo waiting, including photos saved before checks began. Each opens the same review panel as the provider's account.
+- **Stored ratings:** Admin › Reviews › Stored ratings compares the stored `rating` and `review_count` on every listing with its eligible reviews, and recounts only when TBM confirms. Seeded numbers with no eligible reviews behind them go to zero. Guests never saw the stored numbers; this tidies TBM's own screens.
+
+### Still open
+
+- **Live checks:** P1 (and R1 with replies) can only be run once these phases are released. Nothing here is verified on the live site.
+- **The stored-rating recount on the live database** is TBM's call, after looking at the list of differences there.
 
 ## 13. Decisions
 

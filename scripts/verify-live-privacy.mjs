@@ -34,7 +34,7 @@ const PUBLIC_BASE = arg("public-base")?.replace(/\/+$/, "") ?? null;
 // TBM's own contact details are allowed anywhere.
 const TBM_PHONE_DIGITS = "718475264";
 const TBM_EMAIL_DOMAIN = /@(?:[a-z0-9-]+\.)*tembeabilamatata\.com$/i;
-const privateListingFields = ["managerUserId", "documents", "registrationNumber", "ownershipType", "mileage", "availabilityPreference", "chauffeurArrangement"];
+const privateListingFields = ["managerUserId", "documents", "registrationNumber", "ownershipType", "mileage", "availabilityPreference", "chauffeurArrangement", "firstPublishedAt"];
 const hiddenBookingFields = ["guestPhone", "guestEmail", "userId", "paymentStatus", "paymentProvider", "paymentReference", "paymentAmount", "paymentAmountPaid", "paymentDepositAmount", "totalPrice", "adminLockNote", "marketingAttribution"];
 
 const results = { pass: 0, fail: 0, skip: 0 };
@@ -225,6 +225,17 @@ else {
   if (!hostsChecked) report("SKIP", "provider pages", "none of the sampled listings has a live provider page yet");
 }
 
+// ── S. Sitemap ───────────────────────────────────────────────────────────
+section("S. The sitemap lists provider pages by their code, never an ID");
+const sitemap = await get("/sitemap.xml");
+if (sitemap.status !== 200) report("SKIP", "/sitemap.xml", `status ${sitemap.status}`);
+else {
+  const providerLocs = sitemap.text.match(/<loc>[^<]*\/p\/[^<]*<\/loc>/g) ?? [];
+  check(!providerLocs.some((loc) => uuidPattern.test(loc)), "provider page addresses in the sitemap carry no account IDs", `${providerLocs.length} provider page(s) listed`);
+  const contacts = contactFindings(sitemap.text);
+  check(contacts.emails + contacts.phones === 0, "the sitemap has no contact details", describeContacts(contacts));
+}
+
 // ── D. Private endpoints refuse signed-out visitors ──────────────────────
 section("D. Provider, guest and admin data refuse signed-out visitors");
 const privatePaths = [
@@ -232,6 +243,7 @@ const privatePaths = [
   "/api/provider/errand-bookings", "/api/provider/experience-bookings", "/api/provider/notifications", "/api/provider/payments",
   "/api/provider/contact-releases", "/api/provider/shares", "/api/inbox", "/api/bookings", "/api/admin/bookings", "/api/admin/media",
   "/api/admin/fleet-applications", "/api/admin/provider-applications", "/api/admin/payments", "/api/admin/marketing/shares",
+  "/api/bookings/zzzzzzzz/carers", "/api/bookings/zzzzzzzz/carers/0/photo", "/api/admin/provider-photos", "/api/admin/ratings/check",
 ];
 for (const path of privatePaths) {
   const response = await get(path);

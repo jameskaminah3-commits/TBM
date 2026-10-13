@@ -14,6 +14,7 @@ import {
   getProviderPageSettings,
   getPublicProviderPage,
   getPublicProviderSummaryForListing,
+  listWaitingProviderPhotos,
   removeProviderPhoto,
   reviewProviderPhoto,
   setPublicPageBlocked,
@@ -142,6 +143,17 @@ export function registerProviderPageRoutes(app: Express) {
   });
 
   // ── TBM's side ─────────────────────────────────────────────────────────
+  // Every provider with a photo waiting for a check, in one list.
+  app.get("/api/admin/provider-photos", requireAdmin, async (_req, res) => {
+    try {
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.json({ waiting: await listWaitingProviderPhotos() });
+    } catch (error) {
+      console.error("[PROVIDER_PAGES] Photo queue failed:", error);
+      return res.status(500).json({ error: "Couldn't load the photos to check" });
+    }
+  });
+
   app.get("/api/admin/providers/:id/public-page", requireAdmin, async (req, res) => {
     try {
       res.setHeader("Cache-Control", "private, no-store");

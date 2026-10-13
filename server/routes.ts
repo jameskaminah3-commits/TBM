@@ -87,7 +87,10 @@ import { isPublicReviewTarget, listPublicReviews } from "./public-reviews";
 import { isProviderSuspendedNow, isSuspendedProvider, noteProviderSuspension, startSuspendedProviderRefresh } from "./provider-status";
 import { registerProviderPageRoutes } from "./provider-page-routes";
 import { registerReviewModerationRoutes } from "./review-moderation-routes";
-import { clearProviderPageCache } from "./provider-pages";
+import { clearProviderPageCache, listLiveProviderPages } from "./provider-pages";
+import { getBookingCarerPhoto, getBookingCarers } from "./booking-carers";
+import { ensureListingPublishedTracking } from "./listing-published";
+import { storedRatingFields } from "@shared/review-eligibility";
 import { clearRatingSummaries, ensureReviewColumns, getRatingSummary, reviewSource, withPublicRatings } from "./review-ratings";
 import { createRateLimitMiddleware, getRequestIp } from "./middleware/rate-limit";
 import { toPublicListing, withoutProviderProtectedFields } from "./listing-privacy";
@@ -2830,9 +2833,7 @@ async function getReviewTargetListing(targetType: string, targetId: string): Pro
 
 async function refreshTargetRating(targetType: string, targetId: string) {
   clearRatingSummaries();
-  const summary = await getRatingSummary(targetType, targetId);
-  const reviewCount = summary.count;
-  const rating = summary.average === null ? 0 : Math.round(summary.average);
+  const { rating, reviewCount } = storedRatingFields(await getRatingSummary(targetType, targetId));
 
   if (targetType === "stay") {
     await storage.updateStay(targetId, { rating, reviewCount });
@@ -2933,13 +2934,17 @@ async function buildSitemapXml() {
     sitemapEntry({ baseUrl, path: "/faq", changefreq: "monthly", priority: "0.5", lastmod: now }),
   ];
 
-  const [posts, stays, cars, cooks, errands, experiences] = await Promise.all([
+  const [posts, stays, cars, cooks, errands, experiences, providerPages] = await Promise.all([
     storage.getPublishedBlogPosts(),
     storage.getStays(),
     storage.getCars(),
     storage.getCooks(),
     storage.getErrands(),
     storage.getExperiences(),
+    listLiveProviderPages().catch((error) => {
+      console.error("[SITEMAP] Couldn't list provider pages:", error);
+      return [];
+    }),
   ]);
 
   const blogEntries = posts.map((post) => sitemapEntry({
@@ -2998,12 +3003,22 @@ async function buildSitemapXml() {
       })),
   ];
 
+  // Providers' public pages, only while live.
+  const providerEntries = providerPages.map((page) => sitemapEntry({
+    baseUrl,
+    path: page.path,
+    changefreq: "weekly",
+    priority: "0.6",
+    lastmod: page.lastmod,
+  }));
+
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
     ...staticEntries,
     ...blogEntries,
     ...listingEntries,
+    ...providerEntries,
     "</urlset>",
     "",
   ].join("\n");
@@ -3020,6 +3035,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerZainaAgentRoutes(app);
   // Review columns from migration 0024, in case the deploy step hasn't added them.
   void ensureReviewColumns().catch((error) => console.error("[REVIEWS] Couldn't check review columns:", error));
+  // When listings are first published (migration 0027): the column and the trigger that sets it.
+  void ensureListingPublishedTracking().catch((error) => console.error("[LISTINGS] Couldn't set up first-published dates:", error));
 
   app.get("/robots.txt", (_req, res) => {
     const baseUrl = getPublicSiteBaseUrl();
@@ -3713,6 +3730,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(access.viewer === "provider" ? toProviderBooking(booking) : await attachBookingMarketingAttribution(booking));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch booking" });
+    }
+  });
+
+  // Who's coming on a confirmed home-help booking: the guest's own bookings
+  // only. Anyone else gets "not found".
+  app.get("/api/bookings/:id/carers", isAuthenticated, async (req: any, res) => {
+    res.setHeader("Cache-Control", "private, no-store, max-age=0");
+    try {
+      const carers = await getBookingCarers(String(req.params.id), req.user.claims.sub);
+      if (!carers) return res.status(404).json({ error: "Booking not found" });
+      return res.json({ carers });
+    } catch (error) {
+      console.error("[CARERS] Failed to load the carers:", error);
+      return res.status(500).json({ error: "Couldn't load who's coming" });
+    }
+  });
+
+  app.get("/api/bookings/:id/carers/:index/photo", isAuthenticated, async (req: any, res) => {
+    res.setHeader("Cache-Control", "private, no-store, max-age=0");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    try {
+      const index = Number(req.params.index);
+      const photo = Number.isInteger(index) && index >= 0 && index < 20
+        ? await getBookingCarerPhoto(String(req.params.id), req.user.claims.sub, index)
+        : null;
+      if (!photo) return res.status(404).json({ error: "Photo not found" });
+      if ("url" in photo) return res.redirect(302, photo.url);
+      const file = await getPrivateFile(photo.privateKey);
+      const opened = await openPrivateFile(photo.privateKey);
+      if (opened.type === "redirect") return res.redirect(302, opened.url);
+      if (file?.mimeType) res.type(file.mimeType);
+      res.setHeader("Content-Disposition", "inline");
+      return res.sendFile(opened.filePath, (error) => {
+        if (error && !res.headersSent) res.status(404).json({ error: "Photo not found" });
+      });
+    } catch (error) {
+      console.error("[CARERS] Failed to open a carer photo:", error);
+      return res.status(500).json({ error: "Couldn't open the photo" });
     }
   });
 

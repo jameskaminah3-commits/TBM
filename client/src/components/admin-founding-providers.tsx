@@ -27,6 +27,8 @@ type Candidate = {
   rank: number;
   approvedAt: string;
   approvedFrom: "application" | "account";
+  firstPublicListingAt: string | null;
+  firstPublicListingEstimated?: boolean;
   eligible: boolean;
   reasons: FoundingIneligibleReason[];
   grantedAt: string | null;
@@ -58,6 +60,9 @@ function Row({ candidate }: { candidate: Candidate }) {
         <div className="font-medium">{candidate.rank ? `#${candidate.rank} ` : ""}{candidate.name}</div>
         <div className="text-xs text-muted-foreground">
           {candidate.approvedFrom === "application" ? "Approved" : "Account created"} {shortDate(candidate.approvedAt)}
+          {candidate.firstPublicListingAt
+            ? ` · First listing public ${shortDate(candidate.firstPublicListingAt)}${candidate.firstPublicListingEstimated ? " (estimated from its creation date)" : ""}`
+            : ""}
           {candidate.reasons.length ? ` · ${candidate.reasons.map((reason) => foundingReasonLabels[reason]).join("; ")}` : ""}
           {candidate.revokedReason ? ` · ${foundingRevokeReasonLabels[candidate.revokedReason]}` : ""}
         </div>
@@ -105,7 +110,7 @@ export function AdminFoundingProviders() {
         </CardHeader>
         <CollapsibleContent>
           <CardContent className="space-y-3">
-            <p className="text-sm text-muted-foreground">{granted} granted. A listing's publication date isn't recorded, so "within 60 days" uses the date the listing was created; check it before granting.</p>
+            <p className="text-sm text-muted-foreground">{granted} granted. "Within 60 days" uses the date a listing was first published. Listings that were public before those dates were recorded use their creation date, marked "estimated"; check those before granting.</p>
             <ul className="space-y-2">{shown.map((candidate) => <Row key={candidate.userId} candidate={candidate} />)}</ul>
             {!shown.length ? <p className="text-sm text-muted-foreground">No providers in the cohort yet.</p> : null}
           </CardContent>
