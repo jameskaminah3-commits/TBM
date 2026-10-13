@@ -21,6 +21,7 @@ export function ensureReviewColumns(): Promise<void> {
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS provider_reply_at text;
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS provider_reply_reviewed_by varchar;
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS provider_reply_reviewed_at text;
+      ALTER TABLE reviews ADD COLUMN IF NOT EXISTS provider_reply_review_note text;
     `).then(() => undefined).catch((error) => {
       columnsReady = null;
       throw error;

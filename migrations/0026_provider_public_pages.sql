@@ -30,6 +30,9 @@ ALTER TABLE provider_profiles ADD COLUMN IF NOT EXISTS photo_review_note text;
 -- Founding Provider badge (Phase 3): granted once by TBM, never recalculated.
 ALTER TABLE provider_profiles ADD COLUMN IF NOT EXISTS founding_provider_at text;
 ALTER TABLE provider_profiles ADD COLUMN IF NOT EXISTS founding_cohort varchar;
+-- Removed permanently for fraud, safety or impersonation, or a removed account.
+ALTER TABLE provider_profiles ADD COLUMN IF NOT EXISTS founding_revoked_at text;
+ALTER TABLE provider_profiles ADD COLUMN IF NOT EXISTS founding_revoked_reason varchar;
 
 CREATE UNIQUE INDEX IF NOT EXISTS provider_profiles_public_code_idx ON provider_profiles (public_code);
 

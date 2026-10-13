@@ -13,5 +13,6 @@ ALTER TABLE reviews ADD COLUMN IF NOT EXISTS provider_reply_status varchar;
 ALTER TABLE reviews ADD COLUMN IF NOT EXISTS provider_reply_at text;
 ALTER TABLE reviews ADD COLUMN IF NOT EXISTS provider_reply_reviewed_by varchar;
 ALTER TABLE reviews ADD COLUMN IF NOT EXISTS provider_reply_reviewed_at text;
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS provider_reply_review_note text;
 CREATE UNIQUE INDEX IF NOT EXISTS reviews_one_per_item_idx ON reviews (booking_id, user_id, target_type, target_id);
 CREATE INDEX IF NOT EXISTS reviews_target_idx ON reviews (target_type, target_id);

@@ -103,6 +103,7 @@ import { getCarDisplayName } from "@shared/listing-share";
 import { isPublicReviewTarget, listPublicReviews } from "./public-reviews";
 import { isProviderSuspendedNow, isSuspendedProvider, noteProviderSuspension, startSuspendedProviderRefresh } from "./provider-status";
 import { registerProviderPageRoutes } from "./provider-page-routes";
+import { registerReviewModerationRoutes } from "./review-moderation-routes";
 import { clearProviderPageCache } from "./provider-pages";
 import { clearRatingSummaries, ensureReviewColumns, getRatingSummary, reviewSource, withPublicRatings } from "./review-ratings";
 import { createRateLimitMiddleware, getRequestIp } from "./middleware/rate-limit";
@@ -3330,6 +3331,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerAuthRoutes(app);
   registerProviderHubRoutes(app);
   registerProviderPageRoutes(app);
+  registerReviewModerationRoutes(app);
   registerZainaRoutes(app);
   registerZainaAgentRoutes(app);
   // Review columns from migration 0024, in case the deploy step hasn't added them.

@@ -17,6 +17,7 @@ import {
   Megaphone,
   UserPlus,
   ShieldCheck,
+  Star,
 } from "lucide-react";
 import {
   Sidebar,
@@ -69,6 +70,11 @@ const menuItems = [
     title: "Providers",
     url: "/admin/providers",
     icon: Handshake,
+  },
+  {
+    title: "Reviews",
+    url: "/admin/reviews",
+    icon: Star,
   },
   {
     title: "Fleet Applications",

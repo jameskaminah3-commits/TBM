@@ -12,6 +12,7 @@ import {
   MessagesSquare,
   ReceiptText,
   Share2,
+  Star,
   UserRound,
   Wallet,
 } from "lucide-react";
@@ -199,6 +200,7 @@ function ProviderSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               <NavLink href="/provider/share" icon={Share2} label="Share & grow" active={route.path === "/provider/share"} testId="nav-share" />
+              <NavLink href="/provider/reviews" icon={Star} label="Reviews" active={route.path === "/provider/reviews"} testId="nav-reviews" />
               <NavLink href="/provider/earnings" icon={Wallet} label="Earnings" active={route.path === "/provider/earnings"} testId="nav-earnings" />
             </SidebarMenu>
           </SidebarGroupContent>

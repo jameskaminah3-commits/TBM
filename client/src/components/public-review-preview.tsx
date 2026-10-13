@@ -20,6 +20,17 @@ function formatGuestName(value?: string | null) {
   return publicReviewerName(value);
 }
 
+// The provider's reply, shown only once TBM has approved it (the server sends nothing before that).
+function ProviderReply({ review }: { review: PublicReview }) {
+  if (!review.reply) return null;
+  return (
+    <div className="mt-3 rounded-xl bg-muted/50 p-3 text-sm" data-testid="text-review-reply">
+      <div className="text-xs font-medium text-foreground">Reply from the provider</div>
+      <p className="mt-1 whitespace-pre-line leading-6 text-muted-foreground">{review.reply.text}</p>
+    </div>
+  );
+}
+
 function formatReviewMonth(value: string) {
   return new Date(value).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
 }
@@ -84,6 +95,7 @@ export function PublicReviewPreview({
                 ))}
               </div>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">{review.comment?.trim()}</p>
+              <ProviderReply review={review} />
             </li>
           ))}
         </ul>
@@ -134,6 +146,7 @@ export function PublicReviewPreview({
                   </div>
                   <div className="mb-2 text-sm font-medium text-foreground">{formatGuestName(review.guestName)}</div>
                   <p className="text-sm leading-7 text-muted-foreground">"{review.comment?.trim()}"</p>
+                  <ProviderReply review={review} />
                 </div>
               ))}
             </div>
