@@ -314,14 +314,18 @@ Commission arrangements don't change.
 
 All changes are additive, and no data is deleted. The SQL files are kept for the record, as with 0021 to 0023. `drizzle-kit push` applies `shared/schema.ts` on deploy.
 
+The numbers below are the files as built (they were built in a different order from the first draft of this plan).
+
 | Migration | Changes |
 |---|---|
-| `0024_provider_public_pages.sql` | `provider_profiles`: adds `public_code` (unique), `public_slug`, `public_enabled` (default false), `photo_status` (`none`, `pending`, `approved` or `rejected`), `photo_kind` (`face`, `logo` or `work`), `photo_pending_key` (private file), `photo_reviewed_at`, `photo_reviewed_by`, `photo_review_note`, `founding_provider_at` and `founding_cohort`. |
-| `0025_review_integrity.sql` | `reviews`: adds `status` (default `published`), `hidden_reason`, `hidden_by`, `hidden_at`, `provider_reply`, `provider_reply_status`, `provider_reply_at` and `provider_reply_reviewed_by`. Adds a unique index on (`booking_id`, `user_id`, `target_type`, `target_id`). Check for duplicates before adding it (query below). |
-| `0026_provider_application_status.sql` | `provider_applications`: adds `reference` (unique, filled in for existing rows), `status_token_hash`, `applicant_message` and `decided_at`. Adds the status `needs-info`. `password_reset_otps`: adds `purpose` (default `password-reset`). |
+| `0024_review_integrity.sql` (Phase 1) | `reviews`: adds `status` (default `published`), `hidden_reason`, `hidden_by`, `hidden_at`, `provider_reply`, `provider_reply_status`, `provider_reply_at`, `provider_reply_reviewed_by` and `provider_reply_reviewed_at`. Adds a unique index on (`booking_id`, `user_id`, `target_type`, `target_id`). Check for duplicates before adding it (query below). |
+| `0025_provider_application_tracking.sql` (Phase 1) | `provider_applications`: adds `reference` (unique, filled in for existing rows), `status_token_hash`, `applicant_message`, `decline_reason` and `decided_at`. Adds the status `needs-info`. `password_reset_otps`: adds `purpose` (default `password-reset`). |
+| `0026_provider_public_pages.sql` (Phase 2) | `provider_profiles`: adds `public_code` (unique), `public_enabled` (default false), `public_enabled_at`, TBM's switch (`public_blocked_at`, `public_blocked_by`, `public_blocked_note`), photo approval (`photo_status`, `photo_kind`, `photo_approved_at`, `photo_pending_key`, `photo_pending_kind`, `photo_submitted_at`, `photo_reviewed_at`, `photo_reviewed_by`, `photo_review_note`) and `founding_provider_at`, `founding_cohort`. The slug isn't stored: it's made from the display name each time, and the code alone finds the page. |
 | No change | `listing_share_links` and `listing_share_events`: the kind and event-type columns are free text, so `provider` and `enquire` are new values in code only. The listing tables don't change. |
 
-Read-only checks to run on the live database before migration 0025:
+The server also adds each migration's columns when it starts (`ADD COLUMN IF NOT EXISTS`), so an older database keeps working before the deploy step has run.
+
+Read-only checks to run on the live database before migration 0024:
 
 ```sql
 -- Listings whose stored review count doesn't match real reviews
@@ -355,7 +359,19 @@ Every phase also re-runs the existing suites: privacy access, provider end-to-en
 | 3 | Rating display and replies, Founding Provider badge | Dev, then review, then your approval |
 | 4 | Smart business card, in every format | Dev, then review, then your approval |
 
-## 13. Decisions needed before coding
+## 13. Decisions
+
+The owner accepted the recommended option for each on 13 October 2026 ("Yes, let's work on the phases"). What was built follows them:
+
+1. **Suspended providers:** new bookings stop automatically. Their listings leave public lists, pages and the sitemap; Zaina doesn't offer them; booking creation checks the database directly.
+2. **Page switch:** the provider switches their page on after opening a preview. TBM's switch wins over theirs.
+3. **Founding Provider:** the first 50 approved, or approved by 31 March 2027, whichever comes first.
+4. **Contact file:** included, with TBM's number only.
+5. **Reviews on bookings TBM marked completed:** they count, like any other completed booking.
+6. **Old `/api/providers` endpoints:** kept for now.
+7. **`pdf-lib`:** allowed for the print PDF, loaded only when someone downloads it.
+
+The questions as first asked:
 
 1. **Suspended providers' listings:** stop new bookings automatically (recommended), or leave them to TBM to handle by hand?
 2. **Provider page switch:** the provider switches it on after a preview (recommended), or it turns on automatically when they're verified?

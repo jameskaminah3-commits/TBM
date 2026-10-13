@@ -14,9 +14,12 @@ import {
   type ShareChannel,
   type ShareClaim,
   type ShareCreditDecision,
+  type ShareEventType,
+  type ShareTargetKind,
 } from "@shared/share-attribution";
 import { getPublicListingPath, type PublicListingKind } from "@shared/seo";
 import { getCarDisplayName } from "@shared/listing-share";
+import { ensurePublicCode, getProviderShareTarget } from "./provider-pages";
 
 export const shareListingKinds = ["stay", "car", "cook", "errand", "experience"] as const satisfies readonly PublicListingKind[];
 
@@ -81,23 +84,55 @@ function newShareCode() {
   return Array.from({ length: 10 }, () => alphabet[crypto.randomInt(alphabet.length)]).join("");
 }
 
-export type ShareListing = { kind: PublicListingKind; id: string; name: string; isPublic: boolean; managerUserId: string | null };
+export type ShareListing = { kind: ShareTargetKind; id: string; name: string; isPublic: boolean; managerUserId: string | null; path: string };
 
-export async function getShareListing(kind: PublicListingKind, id: string): Promise<ShareListing | null> {
+// A listing, or a provider's page ('provider', by page code). "Public" means
+// people can see and book it now: published, with a provider who isn't suspended.
+export async function getShareListing(kind: ShareTargetKind, id: string): Promise<ShareListing | null> {
+  if (kind === "provider") {
+    const target = await getProviderShareTarget(id);
+    return target ? { kind, id, name: target.name, isPublic: target.isLive, managerUserId: target.userId, path: target.path } : null;
+  }
   const config = listingTables[kind];
   if (!config) return null;
   const { rows } = await pool.query(
-    `SELECT id, ${config.name} AS name, ${kind === "car" ? "make" : "NULL"} AS make, is_public, manager_user_id FROM ${config.table} WHERE id = $1`,
+    `SELECT l.id, l.${config.name} AS name, ${kind === "car" ? "l.make" : "NULL"} AS make, l.is_public, l.manager_user_id,
+            COALESCE(u.is_suspended, false) AS manager_suspended
+     FROM ${config.table} l LEFT JOIN users u ON u.id = l.manager_user_id WHERE l.id = $1`,
     [id],
   );
   const row = rows[0];
   const name = kind === "car" ? getCarDisplayName({ make: row?.make, model: row?.name }) : row?.name;
-  return row ? { kind, id: row.id, name: name ?? "Listing", isPublic: Boolean(row.is_public), managerUserId: row.manager_user_id ?? null } : null;
+  return row
+    ? {
+      kind,
+      id: row.id,
+      name: name ?? "Listing",
+      isPublic: Boolean(row.is_public && row.manager_user_id && !row.manager_suspended),
+      managerUserId: row.manager_user_id ?? null,
+      path: getPublicListingPath(kind, row.id, name ?? "Listing"),
+    }
+    : null;
+}
+
+// R9b: who manages each listing in a booking, at booking time.
+async function getBookingManagerUserIds(booking: { accommodationId?: string | null; selectedServices?: string[] | null }) {
+  const ids = [booking.accommodationId, ...(booking.selectedServices ?? [])].filter((value): value is string => Boolean(value));
+  if (!ids.length) return [];
+  const { rows } = await pool.query<{ manager_user_id: string | null }>(
+    `SELECT manager_user_id FROM stays WHERE id = $1
+     UNION SELECT manager_user_id FROM cars WHERE id = ANY($2)
+     UNION SELECT manager_user_id FROM cooks WHERE id = ANY($2)
+     UNION SELECT manager_user_id FROM errands WHERE id = ANY($2)
+     UNION SELECT manager_user_id FROM experiences WHERE id = ANY($2)`,
+    [booking.accommodationId ?? null, booking.selectedServices ?? []],
+  );
+  return rows.map((row) => row.manager_user_id).filter((value): value is string => Boolean(value));
 }
 
 type ShareLinkRow = {
   code: string;
-  listing_kind: PublicListingKind;
+  listing_kind: ShareTargetKind;
   listing_id: string;
   created_by_user_id: string;
   channel: ShareChannel | null;
@@ -115,14 +150,16 @@ async function getShareLink(code: string): Promise<ShareLinkRow | null> {
 
 // R1: a code for the listing's own provider. An unused code from the last day
 // is handed back instead of making another, so opening the sheet twice
-// doesn't fill the list.
-export async function issueShareLink(userId: string, kind: PublicListingKind, listingId: string) {
+// doesn't fill the list. A provider page link is always for the provider's
+// own page, whatever listing ID was sent.
+export async function issueShareLink(userId: string, kind: ShareTargetKind, requestedListingId: string) {
+  const listingId = kind === "provider" ? await ensurePublicCode(userId) : requestedListingId;
   const listing = await getShareListing(kind, listingId);
   if (!listing || listing.managerUserId !== userId) {
     return { error: "Only the listing's provider gets a tracked link." as const };
   }
   if (!listing.isPublic) {
-    return { error: "This listing isn't public yet." as const };
+    return { error: kind === "provider" ? "Your page isn't live yet." as const : "This listing isn't public yet." as const };
   }
   await ensureShareTables();
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -134,7 +171,7 @@ export async function issueShareLink(userId: string, kind: PublicListingKind, li
      ORDER BY l.created_at DESC LIMIT 1`,
     [userId, kind, listingId, since],
   );
-  if (unused.rows[0]) return { code: unused.rows[0].code };
+  if (unused.rows[0]) return { code: unused.rows[0].code, listingId };
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const code = newShareCode();
     const inserted = await pool.query(
@@ -142,7 +179,7 @@ export async function issueShareLink(userId: string, kind: PublicListingKind, li
        VALUES ($1, $2, $3, $4, $5) ON CONFLICT (code) DO NOTHING`,
       [code, kind, listingId, userId, new Date().toISOString()],
     );
-    if (inserted.rowCount) return { code };
+    if (inserted.rowCount) return { code, listingId };
   }
   throw new Error("Couldn't make a share link.");
 }
@@ -171,7 +208,7 @@ export async function stopShareLink(code: string, userId: string, isAdmin: boole
 
 // R2: a visit or Book tap counts once per device (or, without one, per
 // address) per link per 24 hours, and only while the link and listing are live.
-export async function recordShareEvent(args: { code: string; eventType: "visit" | "book"; deviceId?: string | null; ip: string; channel?: string | null }) {
+export async function recordShareEvent(args: { code: string; eventType: ShareEventType; deviceId?: string | null; ip: string; channel?: string | null }) {
   const link = await getShareLink(args.code);
   if (!link || link.stopped_at) return { recorded: false };
   const listing = await getShareListing(link.listing_kind, link.listing_id);
@@ -234,6 +271,7 @@ export async function decideBookingShareCredit(args: {
     claim: args.claim,
     link: link ? { code: link.code, listingKind: link.listing_kind, listingId: link.listing_id, createdByUserId: link.created_by_user_id, stoppedAt: link.stopped_at } : null,
     listing: listing ? { isPublic: listing.isPublic, managerUserId: listing.managerUserId } : null,
+    bookingManagerUserIds: link?.listing_kind === "provider" ? await getBookingManagerUserIds(args.booking) : undefined,
     lastVisitAt,
     bookerUserId: args.bookerUserId,
     booking: args.booking,
@@ -265,6 +303,7 @@ export type ShareLinkSummary = {
   stoppedAt: string | null;
   visits: number;
   bookTaps: number;
+  enquiries: number;
   bookings: ShareCounts;
   assisted: number;
   lastActivityAt: string | null;
@@ -281,7 +320,7 @@ export type ShareBookingSummary = {
 };
 
 export type ListingShareSummary = {
-  kind: PublicListingKind;
+  kind: ShareTargetKind;
   id: string;
   name: string;
   isPublic: boolean;
@@ -289,6 +328,7 @@ export type ListingShareSummary = {
   linksShared: Record<ShareChannel, number>;
   visits: number;
   bookTaps: number;
+  enquiries: number;
   bookings: ShareCounts;
   olderLinkBookings: ShareCounts;
   assisted: number;
@@ -301,7 +341,7 @@ type AttributionRow = {
   booking_id: string;
   share_code: string | null;
   share_credit: string | null;
-  share_listing_kind: PublicListingKind | null;
+  share_listing_kind: ShareTargetKind | null;
   share_listing_id: string | null;
   credited_user_id: string | null;
   assisted_share_codes: string[] | null;
@@ -351,14 +391,14 @@ export async function getShareSummaries(ownerUserIds: string[] | null) {
   const { links, events, attributions } = await summarise(ownerUserIds);
   const linkOwner = new Map(links.map((link) => [link.code, link.created_by_user_id]));
   const listings = new Map<string, ListingShareSummary & { ownerUserId: string }>();
-  const listingKey = (ownerUserId: string, kind: PublicListingKind, id: string) => `${ownerUserId}|${kind}|${id}`;
-  const ensureListing = (ownerUserId: string, kind: PublicListingKind, id: string) => {
+  const listingKey = (ownerUserId: string, kind: ShareTargetKind, id: string) => `${ownerUserId}|${kind}|${id}`;
+  const ensureListing = (ownerUserId: string, kind: ShareTargetKind, id: string) => {
     const key = listingKey(ownerUserId, kind, id);
     let entry = listings.get(key);
     if (!entry) {
       entry = {
         ownerUserId, kind, id, name: "", isPublic: false, path: "",
-        linksShared: { whatsapp: 0, copy: 0, native: 0, qr: 0 }, visits: 0, bookTaps: 0,
+        linksShared: { whatsapp: 0, copy: 0, native: 0, qr: 0 }, visits: 0, bookTaps: 0, enquiries: 0,
         bookings: emptyCounts(), olderLinkBookings: emptyCounts(), assisted: 0, lastActivityAt: null, links: [], creditedBookings: [],
       };
       listings.set(key, entry);
@@ -380,6 +420,7 @@ export async function getShareSummaries(ownerUserIds: string[] | null) {
       stoppedAt: link.stopped_at,
       visits,
       bookTaps: Number(linkEvents.find((event) => event.event_type === "book")?.count ?? 0),
+      enquiries: Number(linkEvents.find((event) => event.event_type === "enquire")?.count ?? 0),
       bookings: emptyCounts(),
       assisted: 0,
       lastActivityAt: latest(link.shared_at, ...linkEvents.map((event) => event.last)),
@@ -390,6 +431,7 @@ export async function getShareSummaries(ownerUserIds: string[] | null) {
     listing.linksShared[link.channel ?? "copy"] += 1;
     listing.visits += summary.visits;
     listing.bookTaps += summary.bookTaps;
+    listing.enquiries += summary.enquiries;
     listing.lastActivityAt = latest(listing.lastActivityAt, summary.lastActivityAt);
   }
 
@@ -440,9 +482,9 @@ export async function getShareSummaries(ownerUserIds: string[] | null) {
   const result = Array.from(listings.values());
   await Promise.all(result.map(async (entry) => {
     const listing = await getShareListing(entry.kind, entry.id);
-    entry.name = listing?.name ?? "Listing no longer available";
+    entry.name = listing?.name ?? (entry.kind === "provider" ? "Your provider page" : "Listing no longer available");
     entry.isPublic = Boolean(listing?.isPublic);
-    entry.path = listing ? getPublicListingPath(entry.kind, entry.id, listing.name) : "";
+    entry.path = listing?.path ?? "";
   }));
   return result.sort((left, right) => (right.lastActivityAt ?? "").localeCompare(left.lastActivityAt ?? ""));
 }

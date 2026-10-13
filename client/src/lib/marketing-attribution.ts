@@ -14,6 +14,7 @@ import {
   type AttributionTouch,
   type ShareChannel,
   type ShareClaim,
+  type ShareEventType,
 } from "@shared/share-attribution";
 import { safeLocalStorage } from "./safe-storage";
 
@@ -249,8 +250,8 @@ export function withShareRef(path: string) {
   }
 }
 
-// R2: a visit or Book tap from a share link. Never blocks the page.
-export async function trackShareEvent(event: "visit" | "book", code: string | null = getCurrentShareCode(), channel?: string | null) {
+// R2: a visit, Book tap or "Ask TBM" tap from a share link. Never blocks the page.
+export async function trackShareEvent(event: ShareEventType, code: string | null = getCurrentShareCode(), channel?: string | null) {
   if (!isShareCode(code)) {
     return;
   }
@@ -270,6 +271,16 @@ export async function trackShareEvent(event: "visit" | "book", code: string | nu
 // Listing pages: record the visit, and tell the server about a share visit.
 export function captureListingVisit(listingKind: PublicListingKind, listingId: string) {
   const touch = captureMarketingQueryParams({ listingKind, listingId });
+  if (touch?.shareCode) {
+    void trackShareEvent("visit", touch.shareCode, touch.utmMedium);
+  }
+  void trackMarketingPageView();
+}
+
+// A provider's page: the same, with no single listing. The code is kept on the
+// device, so it carries on to the listing pages and checkout (R6).
+export function capturePageVisit() {
+  const touch = captureMarketingQueryParams();
   if (touch?.shareCode) {
     void trackShareEvent("visit", touch.shareCode, touch.utmMedium);
   }

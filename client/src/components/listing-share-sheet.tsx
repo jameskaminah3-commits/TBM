@@ -20,6 +20,8 @@ import { cn } from "@/lib/utils";
 import {
   buildListingShareMessage,
   buildListingShareUrl,
+  buildProviderPageShareMessage,
+  buildProviderPageShareUrl,
   buildWhatsAppShareHref,
   formatSharePriceLine,
   type ShareSource,
@@ -27,9 +29,13 @@ import {
 import { getPublicListingPath, type PublicListingKind } from "@shared/seo";
 
 type ListingShareSheetProps = {
-  kind: PublicListingKind;
+  // "provider": the provider's own public page (pagePath), not one listing.
+  kind: PublicListingKind | "provider";
   id: string;
   name: string;
+  pagePath?: string;
+  /** For a provider page: "Stays · Car hire". */
+  services?: string;
   description?: string | null;
   /** The current public price in US dollars, offered as an optional line. */
   priceUsd?: number | null;
@@ -48,6 +54,8 @@ export function ListingShareSheet({
   kind,
   id,
   name,
+  pagePath,
+  services,
   description,
   priceUsd,
   priceUnit = "",
@@ -100,20 +108,23 @@ export function ListingShareSheet({
   };
 
   const origin = typeof window === "undefined" ? "https://tembeabilamatata.com" : window.location.origin;
-  const listing = useMemo(() => ({ kind, id, name }), [kind, id, name]);
-  const links = useMemo(() => ({
-    whatsapp: buildListingShareUrl(origin, listing, { source, channel: "whatsapp", code: shareCode }),
-    copy: buildListingShareUrl(origin, listing, { source, channel: "copy", code: shareCode }),
-    native: buildListingShareUrl(origin, listing, { source, channel: "native", code: shareCode }),
-  }), [origin, listing, source, shareCode]);
+  const previewPath = kind === "provider" ? pagePath ?? "/" : getPublicListingPath(kind, id, name);
+  const links = useMemo(() => {
+    const build = (channel: "whatsapp" | "copy" | "native") => (kind === "provider"
+      ? buildProviderPageShareUrl(origin, pagePath ?? "/", { channel, code: shareCode })
+      : buildListingShareUrl(origin, { kind, id, name }, { source, channel, code: shareCode }));
+    return { whatsapp: build("whatsapp"), copy: build("copy"), native: build("native") };
+  }, [origin, kind, id, name, pagePath, source, shareCode]);
   const priceLine = includePrice && priceUsd && priceUsd > 0 ? formatSharePriceLine(priceUsd * usdToKes, priceUnit) : null;
 
   // A fresh message each time the sheet opens or the price choice changes.
   useEffect(() => {
     if (open) {
-      setMessage(buildListingShareMessage({ kind, name, description, url: links.whatsapp, priceLine }));
+      setMessage(kind === "provider"
+        ? buildProviderPageShareMessage({ name, services, url: links.whatsapp })
+        : buildListingShareMessage({ kind, name, description, url: links.whatsapp, priceLine }));
     }
-  }, [open, kind, name, description, links.whatsapp, priceLine]);
+  }, [open, kind, name, services, description, links.whatsapp, priceLine]);
 
   const copyLink = async () => {
     markShared("copy");
@@ -168,7 +179,9 @@ export function ListingShareSheet({
           <DialogDescription>
             {isPublic
               ? "Send the public page on Tembea Bila Matata. Guests book through TBM, and dates are confirmed when they book."
-              : "This listing isn't public yet. Share links start working once TBM publishes it."}
+              : kind === "provider"
+                ? "Your page isn't live yet. Share links start working once it is."
+                : "This listing isn't public yet. Share links start working once TBM publishes it."}
           </DialogDescription>
         </DialogHeader>
 
@@ -221,7 +234,7 @@ export function ListingShareSheet({
                 </Button>
               ) : (
                 <Button asChild variant="outline">
-                  <a href={getPublicListingPath(kind, id, name)} target="_blank" rel="noreferrer">
+                  <a href={previewPath} target="_blank" rel="noreferrer">
                     <ExternalLink className="mr-2 h-4 w-4" />
                     Preview page
                   </a>
@@ -239,7 +252,7 @@ export function ListingShareSheet({
 
             {canShareNatively ? (
               <a
-                href={getPublicListingPath(kind, id, name)}
+                href={previewPath}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-1.5 text-sm text-primary underline-offset-4 hover:underline"

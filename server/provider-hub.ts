@@ -155,13 +155,14 @@ async function ensureProfileRow(userId: string) {
   );
 }
 
+// The photo isn't saved here: it goes through TBM's review (provider-pages.ts).
 export async function saveBusinessProfile(userId: string, input: ProviderBusinessProfileInput): Promise<ProviderProfileView> {
   await ensureProviderHubTables();
   await ensureProfileRow(userId);
   await pool.query(
-    `UPDATE provider_profiles SET business_name = $2, bio = $3, photo_url = $4, languages = $5, service_areas = $6, updated_at = $7
+    `UPDATE provider_profiles SET business_name = $2, bio = $3, languages = $4, service_areas = $5, updated_at = $6
      WHERE user_id = $1`,
-    [userId, input.businessName, input.bio, input.photoUrl, input.languages, input.serviceAreas, new Date().toISOString()],
+    [userId, input.businessName, input.bio, input.languages, input.serviceAreas, new Date().toISOString()],
   );
   return getProviderProfile(userId);
 }

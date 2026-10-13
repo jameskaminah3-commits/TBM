@@ -45,6 +45,7 @@ import { Card } from "@/components/ui/card";
 import { CurrencyAmount } from "@/components/currency-amount";
 import { PremiumMediaGallery } from "@/components/premium-media-gallery";
 import { PublicReviewPreview } from "@/components/public-review-preview";
+import { YourHost } from "@/components/your-host";
 import { SeoHead } from "@/components/seo-head";
 import { buildCanonicalUrl } from "@/lib/canonical-url";
 import { useCurrency } from "@/lib/currency";
@@ -608,6 +609,8 @@ export default function PublicListingDetail({ kind }: { kind: ListingKind }) {
             ) : null}
 
             <PublicReviewPreview targetType={kind} targetId={listing.id} variant="open" maxItems={4} />
+
+            <YourHost kind={kind} listingId={listing.id} />
 
             {listing.features.length > 0 ? (
               <section aria-labelledby="features-heading">

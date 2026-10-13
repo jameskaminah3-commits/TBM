@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { BadgeCheck, Camera, Landmark, Loader2, LockKeyhole, ShieldCheck, Smartphone } from "lucide-react";
+import { BadgeCheck, Landmark, LockKeyhole, ShieldCheck, Smartphone } from "lucide-react";
 import { ProviderLayout } from "@/components/provider-layout";
-import { HubAvatar, HubPageHeader, HubPanel, VerificationBadge } from "@/components/provider-hub/hub-ui";
-import { optimizeImage } from "@/components/admin-media-field";
+import { HubPageHeader, HubPanel, VerificationBadge } from "@/components/provider-hub/hub-ui";
+import { ProviderPhotoField } from "@/components/provider-hub/provider-photo-field";
 import { PartnerAdminThread } from "@/components/partner-admin-thread";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,19 +63,17 @@ function ChipToggle({ options, value, onChange, label }: { options: readonly str
 
 function BusinessSection({ profile, fallbackName }: { profile: ProviderProfileView; fallbackName: string }) {
   const { toast } = useToast();
-  const fileRef = useRef<HTMLInputElement | null>(null);
+  // The photo has its own field: it goes to TBM for a check, not with these details.
   const [form, setForm] = useState({
     businessName: profile.businessName,
     bio: profile.bio,
-    photoUrl: profile.photoUrl,
     languages: profile.languages,
     serviceAreas: profile.serviceAreas,
   });
-  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
-    setForm({ businessName: profile.businessName, bio: profile.bio, photoUrl: profile.photoUrl, languages: profile.languages, serviceAreas: profile.serviceAreas });
-  }, [profile.businessName, profile.bio, profile.photoUrl, profile.languages, profile.serviceAreas]);
+    setForm({ businessName: profile.businessName, bio: profile.bio, languages: profile.languages, serviceAreas: profile.serviceAreas });
+  }, [profile.businessName, profile.bio, profile.languages, profile.serviceAreas]);
 
   const save = useMutation({
     mutationFn: async () => apiRequest("PUT", "/api/provider/profile/business", form),
@@ -86,28 +84,6 @@ function BusinessSection({ profile, fallbackName }: { profile: ProviderProfileVi
     onError: (error: Error) => toast({ title: "Couldn't save", description: errorText(error), variant: "destructive" }),
   });
 
-  const uploadPhoto = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      toast({ title: "Choose a photo", description: "JPG, PNG or WebP.", variant: "destructive" });
-      return;
-    }
-    setUploading(true);
-    try {
-      const dataUrl = await optimizeImage(file);
-      const response = await apiRequest("POST", "/api/admin/media", { dataUrl, mimeType: "image/jpeg" });
-      const { mediaUrl } = await response.json() as { mediaUrl: string };
-      setForm((current) => ({ ...current, photoUrl: mediaUrl }));
-      toast({ title: "Photo ready", description: "Save your details to keep it." });
-    } catch (error) {
-      toast({ title: "Couldn't upload the photo", description: error instanceof Error ? errorText(error) : "Please try again.", variant: "destructive" });
-    } finally {
-      setUploading(false);
-    }
-  };
-
   const bioLength = form.bio.trim().length;
 
   return (
@@ -117,17 +93,7 @@ function BusinessSection({ profile, fallbackName }: { profile: ProviderProfileVi
       description="Helps TBM introduce you, match you with the right guests and check your account faster."
     >
       <div className="space-y-5">
-        <div className="flex items-center gap-4">
-          <HubAvatar photoUrl={form.photoUrl} name={form.businessName || fallbackName} className="h-20 w-20 rounded-3xl text-xl" />
-          <div className="space-y-2">
-            <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={uploadPhoto} data-testid="input-profile-photo" />
-            <Button type="button" variant="outline" className="rounded-full" onClick={() => fileRef.current?.click()} disabled={uploading}>
-              {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Camera className="mr-2 h-4 w-4" />}
-              {form.photoUrl ? "Change photo" : "Add a photo or logo"}
-            </Button>
-            <p className="text-xs text-muted-foreground">A clear face or logo builds trust.</p>
-          </div>
-        </div>
+        <ProviderPhotoField fallbackName={form.businessName || fallbackName} />
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5 sm:col-span-2">
@@ -159,7 +125,7 @@ function BusinessSection({ profile, fallbackName }: { profile: ProviderProfileVi
           <ChipToggle label="Service areas" options={providerServiceAreas} value={form.serviceAreas} onChange={(serviceAreas) => setForm((current) => ({ ...current, serviceAreas }))} />
         </div>
 
-        <Button type="button" className="w-full rounded-full sm:w-auto" disabled={save.isPending || uploading} onClick={() => save.mutate()} data-testid="button-save-business">
+        <Button type="button" className="w-full rounded-full sm:w-auto" disabled={save.isPending} onClick={() => save.mutate()} data-testid="button-save-business">
           {save.isPending ? "Saving…" : "Save business details"}
         </Button>
       </div>

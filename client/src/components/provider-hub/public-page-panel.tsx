@@ -1,0 +1,109 @@
+// "Your public page" in Share & grow: where it is, whether it's live and why
+// not, a preview, the provider's own switch (on only after a preview), and
+// sharing the page with the same tracked links as listings.
+import { useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { CheckCircle2, ExternalLink, Eye, Globe2 } from "lucide-react";
+import { HubPanel } from "@/components/provider-hub/hub-ui";
+import { ListingShareSheet } from "@/components/listing-share-sheet";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { ProviderPageSettingsView } from "@/lib/provider-page";
+import { providerPageBlockerLabels } from "@shared/provider-public";
+
+const errorText = (error: Error) => error.message.replace(/^\d+:\s*/, "").replace(/^\{"error":"(.*)"\}$/, "$1");
+
+export function PublicPagePanel({ services }: { services: string }) {
+  const { toast } = useToast();
+  const { data: settings, isLoading } = useQuery<ProviderPageSettingsView>({ queryKey: ["/api/provider/public-page"] });
+  const [previewed, setPreviewed] = useState(false);
+  const toggle = useMutation({
+    mutationFn: async (enabled: boolean) => (await apiRequest("PUT", "/api/provider/public-page", { enabled })).json(),
+    onSuccess: (next: ProviderPageSettingsView) => {
+      queryClient.setQueryData(["/api/provider/public-page"], next);
+      toast({ title: next.enabled ? "Your page is switched on" : "Your page is switched off", description: next.enabled && !next.live ? "It goes live once everything below is ready." : undefined });
+    },
+    onError: (error: Error) => toast({ title: "Couldn't change your page", description: errorText(error), variant: "destructive" }),
+  });
+
+  if (isLoading || !settings) {
+    return <HubPanel title="Your public page"><p className="text-sm text-muted-foreground">Loading…</p></HubPanel>;
+  }
+
+  const origin = typeof window === "undefined" ? "" : window.location.origin;
+  const otherBlockers = settings.blockers.filter((blocker) => blocker !== "switched-off");
+  const canPreview = !settings.blockers.includes("suspended") && !settings.blockers.includes("not-provider");
+
+  return (
+    <HubPanel
+      id="public-page"
+      tone="accent"
+      title="Your public page"
+      description="One link for all your services, with your photo or logo, your reviews and TBM's booking support. It never shows your phone number or email."
+    >
+      <div className="space-y-4" data-testid="public-page-panel">
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          {settings.live ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 font-medium text-emerald-800 ring-1 ring-emerald-200" data-testid="text-page-live"><CheckCircle2 className="h-4 w-4" aria-hidden="true" />Live</span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-stone-100 px-3 py-1 font-medium text-stone-700" data-testid="text-page-not-live"><Globe2 className="h-4 w-4" aria-hidden="true" />Not live</span>
+          )}
+          <span className="break-all text-stone-600">{origin}{settings.path}</span>
+        </div>
+
+        {otherBlockers.length ? (
+          <ul className="list-disc space-y-1 pl-5 text-sm text-stone-700" data-testid="list-page-blockers">
+            {otherBlockers.map((blocker) => <li key={blocker}>{providerPageBlockerLabels[blocker]}</li>)}
+            {settings.blockedNote ? <li>TBM's note: {settings.blockedNote}</li> : null}
+          </ul>
+        ) : null}
+
+        <div className="flex flex-wrap gap-2">
+          {canPreview ? (
+            <Button asChild variant="outline" className="rounded-full">
+              <a href={settings.path} target="_blank" rel="noreferrer" onClick={() => setPreviewed(true)} data-testid="link-preview-page">
+                <Eye className="mr-2 h-4 w-4" aria-hidden="true" />{settings.live ? "Open your page" : "Preview your page"}
+              </a>
+            </Button>
+          ) : null}
+          {settings.enabled ? (
+            <Button type="button" variant="ghost" className="rounded-full" disabled={toggle.isPending} onClick={() => toggle.mutate(false)} data-testid="button-page-off">
+              Switch my page off
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              className="rounded-full"
+              disabled={toggle.isPending || !previewed || !canPreview || settings.blockers.includes("blocked-by-tbm")}
+              onClick={() => toggle.mutate(true)}
+              data-testid="button-page-on"
+            >
+              Switch my page on
+            </Button>
+          )}
+          {settings.live ? (
+            <ListingShareSheet
+              kind="provider"
+              id={settings.code}
+              name={settings.displayName}
+              pagePath={settings.path}
+              services={services}
+              isPublic
+              source="provider"
+              triggerLabel="Share your page"
+              size="default"
+              triggerClassName="border-[#1f7a4d] bg-[#1f7a4d] text-white hover:bg-[#19663f] hover:text-white"
+            />
+          ) : null}
+        </div>
+        {!settings.enabled && !previewed && canPreview ? (
+          <p className="text-xs text-muted-foreground">Preview your page first, then switch it on. You can switch it off at any time.</p>
+        ) : null}
+        <p className="text-xs text-muted-foreground">
+          Guests reach you through TBM. Visits, Book taps, "Ask TBM" taps and bookings from your page link show in Your shares below.
+        </p>
+      </div>
+    </HubPanel>
+  );
+}

@@ -498,7 +498,7 @@ export const guestContactReleaseSchema = z.object({
 // Protected files (vehicle documents, fleet-application files, guests'
 // attachments) live in private storage, never the public media bucket. Each is
 // opened through /api/files/<key>, which checks who is asking and logs it.
-export const privateFileKinds = ["vehicle-document", "fleet-application", "guest-attachment", "quarantine"] as const;
+export const privateFileKinds = ["vehicle-document", "fleet-application", "guest-attachment", "provider-photo", "quarantine"] as const;
 export type PrivateFileKind = typeof privateFileKinds[number];
 export const privateFiles = pgTable("private_files", {
   key: varchar("key").primaryKey(),
@@ -1100,9 +1100,30 @@ export const providerProfiles = pgTable("provider_profiles", {
   verificationNote: text("verification_note"),
   verifiedAt: text("verified_at"),
   verifiedBy: varchar("verified_by"),
+  // The public provider page (migration 0026): a random code for its address,
+  // the provider's own switch, and TBM's switch, which wins.
+  publicCode: varchar("public_code"),
+  publicEnabled: boolean("public_enabled").notNull().default(false),
+  publicEnabledAt: text("public_enabled_at"),
+  publicBlockedAt: text("public_blocked_at"),
+  publicBlockedBy: varchar("public_blocked_by"),
+  publicBlockedNote: text("public_blocked_note"),
+  // photo_url is public only once TBM approves it (photo_approved_at). A newer
+  // photo waits in private storage (photo_pending_key) until it's reviewed.
+  photoStatus: varchar("photo_status").notNull().default("none"),
+  photoKind: varchar("photo_kind"),
+  photoApprovedAt: text("photo_approved_at"),
+  photoPendingKey: varchar("photo_pending_key"),
+  photoPendingKind: varchar("photo_pending_kind"),
+  photoSubmittedAt: text("photo_submitted_at"),
+  photoReviewedAt: text("photo_reviewed_at"),
+  photoReviewedBy: varchar("photo_reviewed_by"),
+  photoReviewNote: text("photo_review_note"),
+  foundingProviderAt: text("founding_provider_at"),
+  foundingCohort: varchar("founding_cohort"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
-});
+}, (table) => [uniqueIndex("provider_profiles_public_code_idx").on(table.publicCode)]);
 
 // Dates a provider has blocked on a home help or experience listing
 // (migration 0022). Stays, cars and chefs keep theirs with their reservations.

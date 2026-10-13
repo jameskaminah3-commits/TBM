@@ -28,6 +28,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { StayMediaCarousel } from "@/components/stay-media-carousel";
 import { CurrencyAmount } from "@/components/currency-amount";
 import { PublicReviewPreview } from "@/components/public-review-preview";
+import { YourHost } from "@/components/your-host";
 import { DateRangePicker, countTripUnits, describeTripRange, formatTripDate } from "@/components/date-range-picker";
 import { StayRefundNote } from "@/components/stay-refund-note";
 import { readStaySearchState, toSearchSuffix } from "@/lib/stay-search";
@@ -464,6 +465,8 @@ export default function AccommodationDetail() {
             ) : null}
 
             <PublicReviewPreview targetType="stay" targetId={accommodation.id} variant="open" maxItems={4} />
+
+            <YourHost kind="stay" listingId={accommodation.id} />
 
             {accommodation.features.length > 0 ? (
               <section aria-labelledby="features-heading">

@@ -98,9 +98,12 @@ import {
   shareListingKinds,
   stopShareLink,
 } from "./share-links";
-import { shareChannels } from "@shared/share-attribution";
+import { shareChannels, shareEventTypes } from "@shared/share-attribution";
 import { getCarDisplayName } from "@shared/listing-share";
 import { isPublicReviewTarget, listPublicReviews } from "./public-reviews";
+import { isProviderSuspendedNow, isSuspendedProvider, noteProviderSuspension, startSuspendedProviderRefresh } from "./provider-status";
+import { registerProviderPageRoutes } from "./provider-page-routes";
+import { clearProviderPageCache } from "./provider-pages";
 import { clearRatingSummaries, ensureReviewColumns, getRatingSummary, reviewSource, withPublicRatings } from "./review-ratings";
 import { createRateLimitMiddleware, getRequestIp } from "./middleware/rate-limit";
 import { toPublicListing, withoutProviderProtectedFields } from "./listing-privacy";
@@ -343,8 +346,9 @@ function hasAssignedManagerUserId(value: string | null | undefined) {
   return Boolean(normalizeAssignedUserId(value));
 }
 
+// Public, with a provider, and that provider isn't suspended (plan decision 1).
 function isBookablePublicListing(listing: { isPublic: boolean; managerUserId?: string | null } | null | undefined) {
-  return Boolean(listing?.isPublic && hasAssignedManagerUserId(listing.managerUserId));
+  return Boolean(listing?.isPublic && hasAssignedManagerUserId(listing.managerUserId) && !isSuspendedProvider(listing.managerUserId));
 }
 
 function logPublicFetchFailure(resource: string, error: unknown) {
@@ -3224,7 +3228,7 @@ function sitemapEntry(params: {
 }
 
 function isPublicManagedItem(item: { isPublic?: boolean | null; managerUserId?: string | null }) {
-  return Boolean(item.isPublic && item.managerUserId?.trim());
+  return Boolean(item.isPublic && item.managerUserId?.trim() && !isSuspendedProvider(item.managerUserId));
 }
 
 async function buildSitemapXml() {
@@ -3321,9 +3325,11 @@ async function buildSitemapXml() {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  startSuspendedProviderRefresh();
   setupAuth(app);
   registerAuthRoutes(app);
   registerProviderHubRoutes(app);
+  registerProviderPageRoutes(app);
   registerZainaRoutes(app);
   registerZainaAgentRoutes(app);
   // Review columns from migration 0024, in case the deploy step hasn't added them.
@@ -4234,7 +4240,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!stay || !stay.isPublic) {
           return res.status(404).json({ error: "Stay not found" });
         }
-        if (!hasAssignedManagerUserId(stay.managerUserId)) {
+        if (!hasAssignedManagerUserId(stay.managerUserId) || await isProviderSuspendedNow(stay.managerUserId)) {
           return res.status(409).json({ error: getUnavailableBookingMessage(stay.title) });
         }
 
@@ -4411,7 +4417,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (!car.isPublic) {
             return res.status(404).json({ error: "Car not found" });
           }
-          if (!hasAssignedManagerUserId(car.managerUserId)) {
+          if (!hasAssignedManagerUserId(car.managerUserId) || await isProviderSuspendedNow(car.managerUserId)) {
             return res.status(409).json({ error: getUnavailableBookingMessage(car.model) });
           }
 
@@ -4506,7 +4512,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             if (!cook.isPublic) {
               return res.status(404).json({ error: "Chef not found" });
             }
-            if (!hasAssignedManagerUserId(cook.managerUserId)) {
+            if (!hasAssignedManagerUserId(cook.managerUserId) || await isProviderSuspendedNow(cook.managerUserId)) {
               return res.status(409).json({ error: getUnavailableBookingMessage(cook.title) });
             }
 
@@ -4602,7 +4608,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               if (!errand.isPublic) {
                 return res.status(404).json({ error: "Errand service not found" });
               }
-              if (!hasAssignedManagerUserId(errand.managerUserId)) {
+              if (!hasAssignedManagerUserId(errand.managerUserId) || await isProviderSuspendedNow(errand.managerUserId)) {
                 return res.status(409).json({ error: getUnavailableBookingMessage(errand.serviceName) });
               }
 
@@ -4690,7 +4696,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 if (!experience.isPublic) {
                   return res.status(404).json({ error: "Experience not found" });
                 }
-                if (!hasAssignedManagerUserId(experience.managerUserId)) {
+                if (!hasAssignedManagerUserId(experience.managerUserId) || await isProviderSuspendedNow(experience.managerUserId)) {
                   return res.status(409).json({ error: getUnavailableBookingMessage(experience.title) });
                 }
 
@@ -5597,10 +5603,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // R1: a share code for the listing's own provider, asked for when the share sheet opens.
   app.post("/api/provider/share-links", requireProviderOrAdmin, async (req: any, res) => {
     try {
+      // kind "provider": a link to the provider's own page (listingId is ignored).
       const { kind, listingId } = z.object({
-        kind: z.enum(shareListingKinds),
-        listingId: z.string().trim().min(1).max(120),
+        kind: z.enum([...shareListingKinds, "provider"]),
+        listingId: z.string().trim().max(120).optional().default(""),
       }).parse(req.body ?? {});
+      if (kind !== "provider" && !listingId) {
+        return res.status(400).json({ error: "Choose a listing to share." });
+      }
       const result = await issueShareLink(req.user.claims.sub, kind, listingId);
       if ("error" in result) {
         return res.status(403).json({ error: result.error });
@@ -5656,7 +5666,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/share-links/visit", shareEventRateLimit, async (req, res) => {
     const parsed = z.object({
       code: z.string().regex(/^[a-z0-9]{10}$/),
-      event: z.enum(["visit", "book"]).optional().default("visit"),
+      event: z.enum(shareEventTypes).optional().default("visit"),
       deviceId: z.string().trim().min(8).max(120).nullable().optional(),
       channel: z.string().trim().max(20).nullable().optional(),
     }).safeParse(req.body ?? {});
@@ -6070,6 +6080,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const updated = await storage.updateUser(req.params.id, updates);
+      // Their listings leave public lists, and stop taking bookings, at once.
+      if (typeof updates.isSuspended === "boolean") {
+        noteProviderSuspension(req.params.id, updates.isSuspended);
+        clearProviderPageCache();
+      }
       res.json(updated);
     } catch (error) {
       res.status(500).json({ error: "Failed to update provider account" });

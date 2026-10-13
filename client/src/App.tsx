@@ -57,6 +57,7 @@ const AdminListingVerifications = lazy(() => import("@/pages/admin/listing-verif
 const PartnerLanding = lazy(() => import("@/pages/partner/index"));
 const PartnerApplicationStatus = lazy(() => import("@/pages/partner/application-status"));
 const SetUpAccount = lazy(() => import("@/pages/set-up-account"));
+const ProviderPublicPage = lazy(() => import("@/pages/provider-public"));
 const PartnerApplyService = lazy(() => import("@/pages/partner/apply-service"));
 const AdminProviderApplications = lazy(() => import("@/pages/admin/provider-applications"));
 const Blog = lazy(() => import("@/pages/blog"));
@@ -138,6 +139,8 @@ function Router() {
         <AppRoute path="/contact" element={<ContactPage />} />
         <AppRoute path="/faq" element={<FaqPage />} />
         <AppRoute path="/privacy" element={<PrivacyPage />} />
+        <AppRoute path="/p/:code" element={<ProviderPublicPage />} />
+        <AppRoute path="/p/:code/:slug" element={<ProviderPublicPage />} />
         <AppRoute path="/terms" element={<TermsPage />} />
         <AppRoute path="/refund-cancellation" element={<RefundCancellationPage />} />
         <AppRoute path="/partner" element={<PartnerLanding />} />

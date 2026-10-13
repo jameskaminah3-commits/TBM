@@ -14,6 +14,7 @@ import { privateFileKeyFromUrl } from "./private-file-key";
 import { isAuthenticated, issueAccountSetupLink, requireAdmin, requireProviderOrAdmin } from "./middleware/auth";
 import { providerAppUrl, queueNotificationTask, sendSimpleEmail } from "./notifications";
 import { emailPayoutDetailsConfirmed, emailProviderVerified } from "./provider-emails";
+import { clearProviderPageCache } from "./provider-pages";
 import {
   confirmPayoutDetails,
   createProviderApplication,
@@ -138,7 +139,9 @@ export function registerProviderHubRoutes(app: Express) {
   app.put("/api/provider/profile/business", requireProviderOrAdmin, async (req: any, res) => {
     try {
       const input = providerBusinessProfileSchema.parse(req.body ?? {});
-      res.json({ profile: await saveBusinessProfile(userIdOf(req), input) });
+      const profile = await saveBusinessProfile(userIdOf(req), input);
+      clearProviderPageCache();
+      res.json({ profile });
     } catch (error) {
       res.status(400).json({ error: zodMessage(error) });
     }
@@ -237,6 +240,8 @@ export function registerProviderHubRoutes(app: Express) {
     try {
       const before = await getProviderProfile(req.params.id);
       const profile = await setVerification(req.params.id, status, note, userIdOf(req));
+      // The Verified badge on their public page follows straight away.
+      clearProviderPageCache();
       if (status === "verified" || note) {
         queueNotificationTask(`verification result for ${req.params.id}`, storage.notifyProviderOfAccount({
           providerUserId: req.params.id,

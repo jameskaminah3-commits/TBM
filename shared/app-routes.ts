@@ -55,6 +55,8 @@ export const appRoutePaths = [
   "/partner/apply",
   "/partner/apply/:type",
   "/partner/application",
+  "/p/:code",
+  "/p/:code/:slug",
   "/privacy",
   "/provider/availability",
   "/provider/cars/:id/availability",

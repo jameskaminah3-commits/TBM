@@ -12,13 +12,23 @@ export function buildListingShareUrl(
   // code: the provider's random share code (Phase 3), when they have one.
   options: { source: ShareSource; channel: ShareChannel; code?: string | null },
 ) {
-  const url = new URL(getPublicListingPath(listing.kind, listing.id, listing.name), origin);
+  return buildShareUrl(origin, getPublicListingPath(listing.kind, listing.id, listing.name), { ...options, campaign: "listing_share" });
+}
+
+// A provider's whole page (/p/<code>/<slug>), shared by the provider. Its own
+// campaign tag, so it's never mistaken for an older listing link (R1).
+export function buildProviderPageShareUrl(origin: string, path: string, options: { channel: ShareChannel; code?: string | null }) {
+  return buildShareUrl(origin, path, { ...options, source: "provider", campaign: "provider_page" });
+}
+
+function buildShareUrl(origin: string, path: string, options: { source: ShareSource; channel: ShareChannel; code?: string | null; campaign: string }) {
+  const url = new URL(path, origin);
   if (options.code) {
     url.searchParams.set("ref", options.code);
   }
   url.searchParams.set("utm_source", options.source === "provider" ? "provider" : "share");
   url.searchParams.set("utm_medium", options.channel);
-  url.searchParams.set("utm_campaign", "listing_share");
+  url.searchParams.set("utm_campaign", options.campaign);
   return url.toString();
 }
 
@@ -69,6 +79,15 @@ export function buildListingShareMessage(args: {
     args.priceLine ?? "",
     `View details: ${args.url}`,
   ].filter(Boolean).join("\n");
+}
+
+// No personal number: guests reach the provider through TBM.
+export function buildProviderPageShareMessage(args: { name: string; services?: string | null; url: string }) {
+  return [
+    `${args.name}${args.services ? `: ${args.services}` : ""}, on Tembea Bila Matata.`,
+    "See my services and book through TBM, with M-Pesa or card and TBM's support throughout.",
+    args.url,
+  ].join("\n");
 }
 
 export function buildWhatsAppShareHref(message: string) {
