@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import type { Express, RequestHandler } from "express";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
@@ -28,10 +29,13 @@ import {
 import { db, sessionPool } from "../db";
 import {
   isTransactionalEmailConfigured,
+  providerAppUrl,
   queueNotificationTask,
   sendSignupNotificationEmails,
+  sendSimpleEmail,
   sendVerificationCode,
 } from "../notifications";
+import { ACCOUNT_SETUP_LINK_HOURS, officialContactLine } from "@shared/provider-applications";
 import supabase from "../supabase";
 import { storage } from "../storage";
 import { createRateLimitMiddleware, getRequestIp } from "./rate-limit";
@@ -234,6 +238,55 @@ const resetPasswordRateLimit = createRateLimitMiddleware([
     message: "Too many password reset attempts for that account. Please try again later.",
   },
 ]);
+
+const accountSetupRateLimit = createRateLimitMiddleware([
+  {
+    id: "auth:account-setup:ip",
+    key: (req) => getRequestIp(req),
+    max: 20,
+    windowMs: authRateLimitWindowMs,
+    message: "Too many attempts. Please try again later, or call TBM.",
+  },
+]);
+
+// ── Account set-up links ──────────────────────────────────────────────────
+// When TBM approves a provider, they get a one-time link to choose their own
+// password. Nobody at TBM knows it. The link works once, for 72 hours, and
+// only its hash is stored (in password_reset_otps, purpose "account-setup").
+
+const setupLinkTtlMs = ACCOUNT_SETUP_LINK_HOURS * 60 * 60 * 1000;
+
+/** A new set-up link for this account. Earlier unused links stop working. */
+export async function issueAccountSetupLink(email: string) {
+  const normalized = email.trim().toLowerCase();
+  const token = crypto.randomBytes(32).toString("base64url");
+  await db.update(passwordResetOtps)
+    .set({ usedAt: new Date() })
+    .where(and(eq(passwordResetOtps.email, normalized), eq(passwordResetOtps.purpose, "account-setup"), isNull(passwordResetOtps.usedAt)));
+  await db.insert(passwordResetOtps).values({
+    email: normalized,
+    otpHash: hashOtp(token),
+    expiresAt: new Date(Date.now() + setupLinkTtlMs),
+    purpose: "account-setup",
+  });
+  return { token, url: providerAppUrl(`/set-up-account#${token}`) };
+}
+
+async function findSetupLink(token: unknown) {
+  if (typeof token !== "string" || token.length < 32 || token.length > 100) return null;
+  const [record] = await db.select().from(passwordResetOtps)
+    .where(and(eq(passwordResetOtps.otpHash, hashOtp(token)), eq(passwordResetOtps.purpose, "account-setup")))
+    .limit(1);
+  if (!record) return null;
+  const state = record.usedAt ? "used" : record.expiresAt.getTime() < Date.now() ? "expired" : "ok";
+  return { record, state } as const;
+}
+
+function maskEmail(email: string) {
+  const [name, domain] = email.split("@");
+  if (!domain) return "your email";
+  return `${name.slice(0, 2)}${"•".repeat(Math.max(1, Math.min(6, name.length - 2)))}@${domain}`;
+}
 
 const verifyEmailRateLimit = createRateLimitMiddleware([
   {
@@ -848,6 +901,7 @@ export function registerAuthRoutes(app: Express) {
             and(
               eq(passwordResetOtps.email, email),
               eq(passwordResetOtps.otpHash, hashOtp(input.otp)),
+              eq(passwordResetOtps.purpose, "password-reset"),
               gt(passwordResetOtps.expiresAt, new Date()),
               isNull(passwordResetOtps.usedAt),
             ),
@@ -896,6 +950,70 @@ export function registerAuthRoutes(app: Express) {
       return res.status(400).json({
         message: error instanceof Error ? error.message : "Failed to reset password",
       });
+    }
+  });
+
+  // Is this set-up link still good? Says whose account, masked, and nothing else.
+  app.post("/api/auth/account-setup/check", accountSetupRateLimit, async (req, res) => {
+    const found = await findSetupLink(req.body?.token);
+    if (!found) return res.status(404).json({ state: "invalid" });
+    const [user] = await db.select().from(users).where(eq(users.email, found.record.email)).limit(1);
+    if (!user) return res.status(404).json({ state: "invalid" });
+    return res.json({ state: found.state, firstName: user.firstName ?? null, email: maskEmail(found.record.email) });
+  });
+
+  app.post("/api/auth/account-setup", accountSetupRateLimit, async (req, res) => {
+    try {
+      const password = z.string().min(8, "Use at least 8 characters").max(200).parse(req.body?.password);
+      const found = await findSetupLink(req.body?.token);
+      if (!found) return res.status(404).json({ message: "This link isn't valid. Ask TBM for a new one." });
+      if (found.state === "used") return res.status(410).json({ message: "This link has already been used. Sign in with your password." });
+      if (found.state === "expired") return res.status(410).json({ message: "This link has expired. Ask for a new one below." });
+      // Used once, even if two tabs submit together.
+      const claimed = await db.update(passwordResetOtps)
+        .set({ usedAt: new Date() })
+        .where(and(eq(passwordResetOtps.id, found.record.id), isNull(passwordResetOtps.usedAt)))
+        .returning({ id: passwordResetOtps.id });
+      if (!claimed.length) return res.status(410).json({ message: "This link has already been used. Sign in with your password." });
+      const [updatedUser] = await db.update(users)
+        .set({ passwordHash: hashPassword(password), emailVerifiedAt: new Date(), updatedAt: new Date() })
+        .where(eq(users.email, found.record.email))
+        .returning();
+      if (!updatedUser) return res.status(404).json({ message: "Account not found" });
+      const authenticated = await authenticateSessionUser(req, updatedUser.id, "Account not found");
+      if (!authenticated.ok) return res.status(authenticated.status).json(authenticated.body);
+      return res.json(authenticated.sessionUser);
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ message: error.issues[0]?.message ?? "Choose a password" });
+      console.error("[AUTH] Account set-up failed:", formatAuthError(error));
+      return res.status(500).json({ message: "Couldn't set up your account. Please try again." });
+    }
+  });
+
+  // An expired link: a new one goes to the account's own email, never to whoever asks.
+  app.post("/api/auth/account-setup/renew", accountSetupRateLimit, async (req, res) => {
+    const reply = { message: "If that link was yours, we've emailed you a new one." };
+    try {
+      const found = await findSetupLink(req.body?.token);
+      if (!found || found.state !== "expired") return res.json(reply);
+      const [user] = await db.select().from(users).where(eq(users.email, found.record.email)).limit(1);
+      if (!user) return res.json(reply);
+      const { url } = await issueAccountSetupLink(found.record.email);
+      queueNotificationTask(`account setup renew ${user.id}`, sendSimpleEmail({
+        to: [found.record.email],
+        greetingName: user.firstName ?? undefined,
+        subject: "Your new link to set up your TBM account",
+        paragraphs: [
+          `Here's a new link to choose your password. It works once, for the next ${ACCOUNT_SETUP_LINK_HOURS} hours.`,
+          "If this email address is a Gmail one, you can also tap Continue with Google on the sign-in page.",
+          officialContactLine,
+        ],
+        link: { label: "Set up your account", url },
+      }));
+      return res.json(reply);
+    } catch (error) {
+      console.error("[AUTH] Account set-up renew failed:", formatAuthError(error));
+      return res.json(reply);
     }
   });
 

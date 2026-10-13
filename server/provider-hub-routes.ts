@@ -11,12 +11,13 @@ import { hashPassword } from "./auth-utils";
 import { createRateLimitMiddleware, getRequestIp } from "./middleware/rate-limit";
 import { getPrivateFile } from "./private-files";
 import { privateFileKeyFromUrl } from "./private-file-key";
-import { isAuthenticated, requireAdmin, requireProviderOrAdmin } from "./middleware/auth";
+import { isAuthenticated, issueAccountSetupLink, requireAdmin, requireProviderOrAdmin } from "./middleware/auth";
 import { providerAppUrl, queueNotificationTask, sendSimpleEmail } from "./notifications";
 import { emailPayoutDetailsConfirmed, emailProviderVerified } from "./provider-emails";
 import {
   confirmPayoutDetails,
   createProviderApplication,
+  getApplicationByStatusToken,
   getProviderApplication,
   listProviderApplications,
   updateProviderApplication,
@@ -37,7 +38,19 @@ import {
   type VerificationStatus,
 } from "@shared/provider-profile";
 import { listingBlockInputSchema, type ListingBlockKind } from "@shared/listing-blocks";
-import { applicationDetailFields, PROVIDER_STATS_THRESHOLD, providerApplicationSchema } from "@shared/provider-applications";
+import {
+  ACCOUNT_SETUP_LINK_HOURS,
+  applicationDeclineReasonLabels,
+  applicationDeclineReasons,
+  applicationDetailFields,
+  applicationStage,
+  officialContactLine,
+  PROVIDER_STATS_THRESHOLD,
+  providerApplicationSchema,
+  verificationDocuments,
+  verificationDocumentsWhy,
+  type ApplicationServiceType,
+} from "@shared/provider-applications";
 import { providerWorkspaces } from "@shared/provider-workspaces";
 
 // Applications come from anyone, so each address can send only a few.
@@ -50,6 +63,26 @@ const applicationRateLimit = createRateLimitMiddleware([
     message: "Too many applications from here. Please try again later, or call TBM.",
   },
 ]);
+
+const applicationStatusRateLimit = createRateLimitMiddleware([
+  {
+    id: "provider-applications:status:ip",
+    key: (req) => getRequestIp(req),
+    max: 30,
+    windowMs: 60 * 60 * 1000,
+    message: "Too many checks from here. Please try again later.",
+  },
+]);
+
+const statusLinkFor = (token: string) => providerAppUrl(`/partner/application#${token}`);
+
+function firstNameOf(fullName: string) {
+  return fullName.trim().split(/\s+/)[0] || undefined;
+}
+
+function serviceLabelOf(serviceType: string) {
+  return (providerWorkspaces[serviceType as keyof typeof providerWorkspaces]?.label ?? "your service").toLowerCase();
+}
 
 function describeAnswers(serviceType: keyof typeof applicationDetailFields, details: Record<string, unknown>) {
   return applicationDetailFields[serviceType]
@@ -283,7 +316,7 @@ export function registerProviderHubRoutes(app: Express) {
         }
         photos.push({ label: photo.label || "Photo", url: photo.url });
       }
-      const application = await createProviderApplication({
+      const { application, statusToken } = await createProviderApplication({
         serviceType: input.serviceType,
         fullName: input.fullName,
         phone: input.phone,
@@ -303,9 +336,9 @@ export function registerProviderHubRoutes(app: Express) {
       }));
       queueNotificationTask(`provider application team email ${application.id}`, sendSimpleEmail({
         to: "team",
-        subject: `New provider application: ${label} from ${input.fullName}`,
+        subject: `New provider application ${application.reference}: ${label} from ${input.fullName}`,
         paragraphs: [
-          `${input.fullName} (${input.town}) applied to offer ${label.toLowerCase()} through TBM.`,
+          `${input.fullName} (${input.town}) applied to offer ${label.toLowerCase()} through TBM. Reference ${application.reference}.`,
           `Phone ${input.phone}, email ${input.email}.`,
           ...answers,
           `${photos.length} photo${photos.length === 1 ? "" : "s"} attached (private).`,
@@ -315,19 +348,49 @@ export function registerProviderHubRoutes(app: Express) {
       queueNotificationTask(`provider application receipt ${application.id}`, sendSimpleEmail({
         to: [input.email],
         greetingName: input.fullName.split(/\s+/)[0],
-        subject: "We've got your application",
+        subject: `We've got your application (${application.reference})`,
         paragraphs: [
-          `Asante for applying to offer ${label.toLowerCase()} with Tembea Bila Matata.`,
-          "Our team reviews applications in the order they arrive. We'll call or WhatsApp you to talk it through and arrange a check. If you're approved, we'll email you how to sign in to your Provider Hub.",
+          `Asante for applying to offer ${label.toLowerCase()} with Tembea Bila Matata. Your reference is ${application.reference}.`,
+          "Our team reviews applications in the order they arrive. We'll call or WhatsApp you to talk it through. You can check where your application is at any time with the link below.",
+          `You don't need any documents yet. Before your listing goes live, TBM checks your ID and ${verificationDocuments[input.serviceType as ApplicationServiceType]}, ${verificationDocumentsWhy[input.serviceType as ApplicationServiceType]}. You'll add them in your Provider Hub, where only TBM's team sees them.`,
           "There's no joining fee and no monthly subscription fee. TBM earns a commission on bookings made through TBM, agreed with you before your first payout.",
-          "Once you're approved you'll get your own Provider Hub: add your listing, set your prices, block the dates you're away and share your link.",
+          officialContactLine,
         ],
-        link: { label: "See how it works", url: providerAppUrl("/partner") },
+        link: { label: "Check your application", url: statusLinkFor(statusToken) },
       }));
-      res.status(201).json({ id: application.id });
+      res.status(201).json({ reference: application.reference, statusToken });
     } catch (error) {
       console.error("[PROVIDER_APPLICATIONS] Create failed:", error);
       res.status(500).json({ error: "Couldn't send your application. Please try again, or call TBM." });
+    }
+  });
+
+  // The applicant's status page. The link's token is the only key; the answer
+  // names the service and the stage, and nothing personal beyond a first name.
+  app.post("/api/provider-applications/status", applicationStatusRateLimit, async (req, res) => {
+    try {
+      res.setHeader("Cache-Control", "private, no-store");
+      const application = await getApplicationByStatusToken(req.body?.token);
+      if (!application) return res.status(404).json({ error: "This link isn't valid or has expired. Call or WhatsApp TBM and quote your reference." });
+      const stage = applicationStage(application.status);
+      const reason = application.status === "declined" && application.declineReason && application.declineReason in applicationDeclineReasonLabels
+        ? applicationDeclineReasonLabels[application.declineReason as keyof typeof applicationDeclineReasonLabels]
+        : null;
+      res.json({
+        reference: application.reference,
+        firstName: firstNameOf(application.fullName) ?? null,
+        service: serviceLabelOf(application.serviceType),
+        status: application.status,
+        stageLabel: stage.label,
+        next: stage.next,
+        message: application.status === "needs-info" || application.status === "declined" ? application.applicantMessage : null,
+        reason,
+        appliedAt: application.createdAt,
+        updatedAt: application.updatedAt,
+      });
+    } catch (error) {
+      console.error("[PROVIDER_APPLICATIONS] Status failed:", error);
+      res.status(500).json({ error: "Couldn't load your application. Please try again." });
     }
   });
 
@@ -340,15 +403,91 @@ export function registerProviderHubRoutes(app: Express) {
     }
   });
 
+  // Status changes. "More information needed" and "declined" are emailed to the
+  // applicant with the message TBM writes for them; the team note stays internal.
   app.post("/api/admin/provider-applications/:id/status", requireAdmin, async (req: any, res) => {
     const status = req.body?.status;
-    if (status !== "contacted" && status !== "declined" && status !== "new") {
-      return res.status(400).json({ error: "Choose contacted, declined or new." });
+    if (status !== "contacted" && status !== "declined" && status !== "new" && status !== "needs-info") {
+      return res.status(400).json({ error: "Choose in review, more information needed, declined or new." });
     }
     const note = typeof req.body?.note === "string" && req.body.note.trim() ? req.body.note.trim().slice(0, 500) : undefined;
-    const updated = await updateProviderApplication(req.params.id, { status, reviewNote: note, reviewedBy: userIdOf(req) });
+    const applicantMessage = typeof req.body?.applicantMessage === "string" && req.body.applicantMessage.trim()
+      ? req.body.applicantMessage.trim().slice(0, 800)
+      : null;
+    const declineReason = typeof req.body?.declineReason === "string" && (applicationDeclineReasons as readonly string[]).includes(req.body.declineReason)
+      ? req.body.declineReason
+      : null;
+    if (status === "needs-info" && !applicantMessage) {
+      return res.status(400).json({ error: "Write what you need from the applicant. It's emailed to them." });
+    }
+    if (status === "declined" && !declineReason) {
+      return res.status(400).json({ error: "Choose a reason. It's emailed to the applicant." });
+    }
+    const current = await getProviderApplication(req.params.id);
+    if (!current) return res.status(404).json({ error: "Application not found" });
+    if (current.status === "approved") return res.status(409).json({ error: "This application is already approved." });
+    const updated = await updateProviderApplication(req.params.id, {
+      status,
+      reviewNote: note,
+      reviewedBy: userIdOf(req),
+      applicantMessage: status === "needs-info" || status === "declined" ? applicantMessage : null,
+      declineReason: status === "declined" ? declineReason : null,
+    });
     if (!updated) return res.status(404).json({ error: "Application not found" });
+    const label = serviceLabelOf(updated.serviceType);
+    if (status === "needs-info") {
+      queueNotificationTask(`provider application needs info ${updated.id}`, sendSimpleEmail({
+        to: [updated.email],
+        greetingName: firstNameOf(updated.fullName),
+        subject: `TBM needs a little more information (${updated.reference})`,
+        paragraphs: [
+          `Thank you for applying to offer ${label} with Tembea Bila Matata. To keep going, we need:`,
+          applicantMessage!,
+          "Reply to this email, or call or WhatsApp TBM and quote your reference.",
+          officialContactLine,
+        ],
+      }));
+    }
+    if (status === "declined" && current.status !== "declined") {
+      queueNotificationTask(`provider application declined ${updated.id}`, sendSimpleEmail({
+        to: [updated.email],
+        greetingName: firstNameOf(updated.fullName),
+        subject: `Your TBM application (${updated.reference})`,
+        paragraphs: [
+          `Thank you for applying to offer ${label} with Tembea Bila Matata, and for your time.`,
+          `We can't take your application further at the moment. ${applicationDeclineReasonLabels[declineReason as keyof typeof applicationDeclineReasonLabels]}`,
+          ...(applicantMessage ? [applicantMessage] : []),
+          "You're welcome to apply again when things change. If you think we've got something wrong, reply to this email.",
+          officialContactLine,
+        ],
+      }));
+    }
     res.json(updated);
+  });
+
+  // A new account set-up link, for an approved applicant who hasn't used theirs.
+  app.post("/api/admin/provider-applications/:id/setup-link", requireAdmin, async (req: any, res) => {
+    try {
+      const application = await getProviderApplication(req.params.id);
+      if (!application) return res.status(404).json({ error: "Application not found" });
+      if (application.status !== "approved" || !application.createdUserId) return res.status(409).json({ error: "Approve the application first." });
+      const { url } = await issueAccountSetupLink(application.email);
+      queueNotificationTask(`account setup resend ${application.id}`, sendSimpleEmail({
+        to: [application.email],
+        greetingName: firstNameOf(application.fullName),
+        subject: "Your link to set up your TBM account",
+        paragraphs: [
+          `Here's your link to choose a password for your Provider Hub. It works once, for the next ${ACCOUNT_SETUP_LINK_HOURS} hours.`,
+          "If this email address is a Gmail one, you can also tap Continue with Google on the sign-in page.",
+          officialContactLine,
+        ],
+        link: { label: "Set up your account", url },
+      }));
+      res.json({ sent: true });
+    } catch (error) {
+      console.error("[PROVIDER_APPLICATIONS] Setup link failed:", error);
+      res.status(500).json({ error: "Couldn't send the link" });
+    }
   });
 
   // Approving makes the provider's account with the service they applied for.
@@ -373,18 +512,21 @@ export function registerProviderHubRoutes(app: Express) {
         role: "provider",
         providerType: application.serviceType,
       }).returning();
-      const updated = await updateProviderApplication(application.id, { status: "approved", createdUserId: created.id, reviewedBy: userIdOf(req) });
-      const label = providerWorkspaces[application.serviceType as keyof typeof providerWorkspaces]?.label ?? "your service";
+      const updated = await updateProviderApplication(application.id, { status: "approved", createdUserId: created.id, reviewedBy: userIdOf(req), applicantMessage: null, declineReason: null });
+      const label = serviceLabelOf(application.serviceType);
+      const service = application.serviceType as ApplicationServiceType;
+      const { url } = await issueAccountSetupLink(application.email);
       queueNotificationTask(`provider application approved ${application.id}`, sendSimpleEmail({
         to: [application.email],
         greetingName: nameParts[0],
         subject: "Karibu: your Provider Hub is ready",
         paragraphs: [
-          `You're approved to offer ${label.toLowerCase()} with Tembea Bila Matata.`,
-          `To sign in the first time, open the link below, choose "Forgot password?" and enter ${application.email}. You'll get a code to set your own password.`,
-          "Then add your first listing with photos and your price. TBM checks it and publishes it for guests, and you can share it straight away.",
+          `You're approved to offer ${label} with Tembea Bila Matata.`,
+          `Start by choosing your password with the link below. It's yours alone: nobody at TBM knows it. The link works once, for the next ${ACCOUNT_SETUP_LINK_HOURS} hours. If this email address is a Gmail one, you can also tap Continue with Google on the sign-in page.`,
+          `Then add your first listing with photos and your price, and upload your ID and ${verificationDocuments[service] ?? "your documents"} in the Hub. TBM checks them, publishes your listing, and you can share it straight away.`,
+          officialContactLine,
         ],
-        link: { label: "Open Provider Hub", url: providerAppUrl("/auth?next=%2Fprovider%2Fdashboard") },
+        link: { label: "Set up your account", url },
       }));
       res.json(updated);
     } catch (error) {
