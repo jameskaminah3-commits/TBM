@@ -10,6 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import { StayMediaCarousel } from "@/components/stay-media-carousel";
 import { CurrencyAmount } from "@/components/currency-amount";
 import { PublicReviewPreview } from "@/components/public-review-preview";
+import { YourHost } from "@/components/your-host";
 import {
   formatStaySearchDate,
   getStaySearchNights,
@@ -338,6 +339,8 @@ export default function AccommodationDetail() {
             </div>
 
             <PublicReviewPreview targetType="stay" targetId={accommodation.id} variant="full" maxItems={4} />
+
+            <YourHost kind="stay" listingId={accommodation.id} />
           </div>
 
           {/* Booking Sidebar */}

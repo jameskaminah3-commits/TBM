@@ -13,13 +13,14 @@ type ProviderShareRow = {
   stoppedLinks: number;
   visits: number;
   bookTaps: number;
+  enquiries: number;
   bookings: Counts;
   olderLinkBookings: Counts;
   assisted: number;
   lastActivityAt: string | null;
 };
 
-const kindLabel: Record<string, string> = { stay: "Stay", car: "Car", cook: "Chef", errand: "Errand", experience: "Experience" };
+const kindLabel: Record<string, string> = { stay: "Stay", car: "Car", cook: "Chef", errand: "Errand", experience: "Experience", provider: "Provider page" };
 
 // TBM's view of every provider's share links (Phase 3). Reporting only: no
 // money is paid on attribution.
@@ -44,7 +45,7 @@ export function AdminProviderShares() {
         {!isLoading && !isError && !rows.length ? <p className="text-sm text-muted-foreground">No provider has shared a tracked link yet.</p> : null}
         {rows.length ? (
           <div className="overflow-x-auto rounded-2xl border border-stone-200">
-            <table className="w-full min-w-[720px] text-left text-sm">
+            <table className="w-full min-w-[780px] text-left text-sm">
               <thead className="bg-stone-50 text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2 font-semibold">Provider</th>
@@ -52,6 +53,7 @@ export function AdminProviderShares() {
                   <th className="px-3 py-2 text-right font-semibold">Links</th>
                   <th className="px-3 py-2 text-right font-semibold">Visits</th>
                   <th className="px-3 py-2 text-right font-semibold">Book taps</th>
+                  <th className="px-3 py-2 text-right font-semibold">Ask TBM</th>
                   <th className="px-3 py-2 text-right font-semibold">Paid / deposit</th>
                   <th className="px-3 py-2 text-right font-semibold">Unpaid · cancelled</th>
                   <th className="px-3 py-2 text-right font-semibold">Older links</th>
@@ -64,11 +66,12 @@ export function AdminProviderShares() {
                     <td className="px-3 py-2">{row.providerName}</td>
                     <td className="px-3 py-2">
                       <div className="font-medium">{row.name}</div>
-                      <div className="text-xs text-muted-foreground">{kindLabel[row.kind] ?? row.kind}{row.isPublic ? "" : " · not public"}</div>
+                      <div className="text-xs text-muted-foreground">{kindLabel[row.kind] ?? row.kind}{row.isPublic ? "" : row.kind === "provider" ? " · not live" : " · not public"}</div>
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">{row.linkCount}{row.stoppedLinks ? ` (${row.stoppedLinks} stopped)` : ""}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{row.visits}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{row.bookTaps}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{row.enquiries ?? 0}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{row.bookings.confirmed}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{row.bookings.pending} · {row.bookings.cancelled}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{row.olderLinkBookings.confirmed + row.olderLinkBookings.pending + row.olderLinkBookings.cancelled}</td>

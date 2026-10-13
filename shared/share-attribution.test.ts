@@ -126,6 +126,40 @@ test("R9: the shared listing must be in the booking; another listing counts as a
   assert.equal(decision.creditedUserId, null);
 });
 
+test("R9b: a provider page link credits a booking of any listing that provider manages", () => {
+  const pageLink = { code: "p4g3l1nk8z", listingKind: "provider" as const, listingId: "k7m2q9xw", createdByUserId: "provider-kassim", stoppedAt: null };
+  const page = (overrides: Partial<Parameters<typeof decideShareCredit>[0]> = {}) => decide({
+    claim: { code: pageLink.code, olderLink: null, assistedCodes: [] },
+    link: pageLink,
+    listing: { isPublic: true, managerUserId: "provider-kassim" },
+    ...overrides,
+  });
+  // The car is also Kassim's: credited, with the page as the source.
+  const credited = page({ booking: { bookingType: "service", selectedServices: ["ux-car-prado"] }, bookingManagerUserIds: ["provider-kassim"] });
+  assert.equal(credited.credit, "credited");
+  assert.equal(credited.creditedUserId, "provider-kassim");
+  assert.deepEqual([credited.listingKind, credited.listingId], ["provider", "k7m2q9xw"]);
+  // A stay with another provider's chef: still credited, because the stay is Kassim's.
+  assert.equal(page({ bookingManagerUserIds: ["provider-amina", "provider-kassim"] }).credit, "credited");
+  // Someone else's listing only: helped, not credited.
+  const other = page({ bookingManagerUserIds: ["provider-amina"] });
+  assert.equal(other.credit, "assisted");
+  assert.equal(other.creditedUserId, null);
+  assert.equal(page({ bookingManagerUserIds: [] }).credit, "assisted");
+  assert.equal(page({ bookingManagerUserIds: undefined }).credit, "assisted");
+  // R8, R10 and R3 apply as for listing links.
+  assert.equal(page({ listing: { isPublic: false, managerUserId: "provider-kassim" }, bookingManagerUserIds: ["provider-kassim"] }).reason, "not-public");
+  assert.equal(page({ link: { ...pageLink, stoppedAt: new Date(start).toISOString() }, bookingManagerUserIds: ["provider-kassim"] }).reason, "stopped");
+  assert.equal(page({ bookerUserId: "provider-kassim", bookingManagerUserIds: ["provider-kassim"] }).reason, "own-link");
+  assert.equal(page({ lastVisitAt: null, bookingManagerUserIds: ["provider-kassim"] }).reason, "no-recent-visit");
+});
+
+test("a provider page link is never read as an older listing link", () => {
+  const touch = touchFromParams(new URLSearchParams("ref=p4g3l1nk8z&utm_source=provider&utm_medium=qr&utm_campaign=provider_page"), { path: "/p/k7m2q9xw/kassim-stays" }, start);
+  assert.equal(touch?.shareCode, "p4g3l1nk8z");
+  assert.deepEqual(getShareClaim([touch!], start + day), { code: "p4g3l1nk8z", olderLink: null, assistedCodes: [] });
+});
+
 test("R10: the person who created the link gets the credit, but not for their own booking", () => {
   const decision = decide();
   assert.equal(decision.credit, "credited");

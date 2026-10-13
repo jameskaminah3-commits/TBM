@@ -31,6 +31,7 @@ type ShareLink = {
   stoppedAt: string | null;
   visits: number;
   bookTaps: number;
+  enquiries: number;
   bookings: Counts;
   assisted: number;
   lastActivityAt: string | null;
@@ -53,6 +54,7 @@ type ListingShares = {
   linksShared: Record<"whatsapp" | "copy" | "native" | "qr", number>;
   visits: number;
   bookTaps: number;
+  enquiries: number;
   bookings: Counts;
   olderLinkBookings: Counts;
   assisted: number;
@@ -122,24 +124,25 @@ function ListingRow({ listing }: { listing: ListingShares }) {
       <div className="flex flex-col gap-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="font-medium">{listing.name}</div>
+            <div className="font-medium">{listing.kind === "provider" ? `Your page · ${listing.name}` : listing.name}</div>
             <div className="text-sm text-muted-foreground">
               {linkCount} {linkCount === 1 ? "link" : "links"} shared{channels ? ` · ${channels}` : ""}
               {listing.lastActivityAt ? ` · last activity ${shortDate(listing.lastActivityAt)}` : ""}
             </div>
           </div>
-          {!listing.isPublic ? <Badge variant="secondary" className="shrink-0 rounded-full">Not public</Badge> : null}
+          {!listing.isPublic ? <Badge variant="secondary" className="shrink-0 rounded-full">{listing.kind === "provider" ? "Not live" : "Not public"}</Badge> : null}
         </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
           <Stat label="Visits" value={listing.visits} />
           <Stat label="Book taps" value={listing.bookTaps} />
+          <Stat label={"\"Ask TBM\" taps"} value={listing.enquiries ?? 0} />
           <Stat label="Bookings paid or deposit paid" value={listing.bookings.confirmed} />
           <Stat label="Not paid yet · cancelled" value={`${listing.bookings.pending} · ${listing.bookings.cancelled}`} />
         </div>
         {listing.assisted > 0 || olderTotal > 0 ? (
           <ul className="space-y-1 text-sm text-muted-foreground">
             {listing.assisted > 0 ? (
-              <li>Your links also helped with {listing.assisted} other {listing.assisted === 1 ? "booking" : "bookings"}, for other listings or after another link.</li>
+              <li>Your links also helped with {listing.assisted} other {listing.assisted === 1 ? "booking" : "bookings"}, {listing.kind === "provider" ? "for listings that aren't yours" : "for other listings"} or after another link.</li>
             ) : null}
             {olderTotal > 0 ? (
               <li>{olderTotal} {olderTotal === 1 ? "booking" : "bookings"} from links you shared before tracking started (not verified).</li>
@@ -166,7 +169,7 @@ function ListingRow({ listing }: { listing: ListingShares }) {
                   <span className="whitespace-nowrap font-normal text-muted-foreground">· ends …{link.code.slice(-4)}</span>
                 </div>
                 <div className="text-muted-foreground">
-                  {link.visits} {link.visits === 1 ? "visit" : "visits"} · {link.bookTaps} Book {link.bookTaps === 1 ? "tap" : "taps"} · {total(link.bookings)} {total(link.bookings) === 1 ? "booking" : "bookings"}
+                  {link.visits} {link.visits === 1 ? "visit" : "visits"} · {link.bookTaps} Book {link.bookTaps === 1 ? "tap" : "taps"}{link.enquiries ? ` · ${link.enquiries} "Ask TBM"` : ""} · {total(link.bookings)} {total(link.bookings) === 1 ? "booking" : "bookings"}
                   {link.assisted ? ` · helped with ${link.assisted}` : ""}
                 </div>
               </div>

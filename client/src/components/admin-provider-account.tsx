@@ -13,6 +13,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { formatKenyaDateTime } from "@shared/calendar-dates";
 import type { ProviderProfileView, VerificationStatus } from "@shared/provider-profile";
+import { AdminProviderPublicPage } from "@/components/admin-provider-public-page";
 
 const verificationLabels: Record<VerificationStatus, string> = {
   "not-started": "Not verified",
@@ -60,7 +61,7 @@ export function AdminProviderAccount({ providerId, defaultOpen = false }: { prov
     <Collapsible open={open} onOpenChange={setOpen} className="rounded-2xl border border-stone-200 bg-stone-50/60" id={`provider-account-${providerId}`}>
       <CollapsibleTrigger asChild>
         <button type="button" className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-medium" data-testid={`button-provider-account-${providerId}`}>
-          <span className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-muted-foreground" />Business, payouts and verification</span>
+          <span className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-muted-foreground" />Business, payouts, verification and public page</span>
           <ChevronDown className={cn("h-4 w-4 transition-transform", open && "rotate-180")} />
         </button>
       </CollapsibleTrigger>
@@ -132,6 +133,7 @@ export function AdminProviderAccount({ providerId, defaultOpen = false }: { prov
                 ) : null}
               </div>
             </div>
+            <AdminProviderPublicPage providerId={providerId} />
           </>
         )}
       </CollapsibleContent>

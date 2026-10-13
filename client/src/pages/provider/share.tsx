@@ -5,6 +5,7 @@ import { HubPageHeader, HubPanel, WorkspaceIcon } from "@/components/provider-hu
 import { QrShareCard } from "@/components/provider-hub/qr-share-card";
 import { ListingShareSheet } from "@/components/listing-share-sheet";
 import { YourShares } from "@/components/your-shares";
+import { PublicPagePanel } from "@/components/provider-hub/public-page-panel";
 import { Button } from "@/components/ui/button";
 import { useProviderHub } from "@/hooks/use-provider-hub";
 import { toHubListings } from "@/lib/provider-listings";
@@ -33,6 +34,8 @@ export default function ProviderShare() {
           title="Bring your own guests"
           description="Share your listings anywhere. Guests see your photos and prices, pay securely through TBM, and every visit and booking from your links is counted for you."
         />
+
+        <PublicPagePanel services={Array.from(new Set(live.map((listing) => providerWorkspaces[listing.workspace].label))).join(" · ")} />
 
         <HubPanel tone="accent" title="Your listings, ready to share" description="WhatsApp in two taps, a copied link, or a printed QR card.">
           {hub.isLoading ? (

@@ -7,6 +7,13 @@ import type { PublicListingKind } from "./seo.ts";
 export const shareChannels = ["whatsapp", "copy", "native", "qr"] as const;
 export type ShareChannel = typeof shareChannels[number];
 
+// What a share link points at: one listing, or a provider's whole page
+// (listing_kind 'provider', listing_id = the page code).
+export type ShareTargetKind = PublicListingKind | "provider";
+// Visits, Book taps, and taps on "Ask TBM about this provider".
+export const shareEventTypes = ["visit", "book", "enquire"] as const;
+export type ShareEventType = typeof shareEventTypes[number];
+
 // R3: credit lasts 30 days from the latest share visit on the device.
 export const SHARE_CREDIT_DAYS = 30;
 const dayMs = 24 * 60 * 60 * 1000;
@@ -144,7 +151,7 @@ export type ShareCreditDecision = {
   reason: ShareCreditReason;
   creditedUserId: string | null;
   code: string | null;
-  listingKind: PublicListingKind | null;
+  listingKind: ShareTargetKind | null;
   listingId: string | null;
 };
 
@@ -160,11 +167,19 @@ export function bookingIncludesListing(booking: BookedListingFields, kind: Publi
   return (booking.selectedServices ?? []).includes(id);
 }
 
+// R9b: does this booking include any listing the provider manages now?
+export function bookingIncludesProvider(bookingManagerUserIds: string[] | null | undefined, providerUserId: string | null) {
+  return Boolean(providerUserId && (bookingManagerUserIds ?? []).includes(providerUserId));
+}
+
 export function decideShareCredit(input: {
   claim: ShareClaim;
-  link: { code: string; listingKind: PublicListingKind; listingId: string; createdByUserId: string; stoppedAt: string | null } | null;
-  // The link's listing (or, for an older link, the listing it names), as it is now.
+  link: { code: string; listingKind: ShareTargetKind; listingId: string; createdByUserId: string; stoppedAt: string | null } | null;
+  // The link's listing (or, for an older link, the listing it names), as it is
+  // now. For a provider page link: whether the page is live, and whose it is.
   listing: { isPublic: boolean; managerUserId: string | null } | null;
+  // Who manages each listing in the booking, at booking time (for R9b).
+  bookingManagerUserIds?: string[];
   // The latest visit recorded on the server for this code from this device or address.
   lastVisitAt: string | null;
   bookerUserId: string;
@@ -189,7 +204,11 @@ export function decideShareCredit(input: {
     // R8: the listing must be public when the booking is made.
     if (!listing?.isPublic) return none("not-public", where);
     // R9: the shared listing is in the booking; anything else counts as assisted.
-    if (!bookingIncludesListing(input.booking, link.listingKind, link.listingId)) {
+    // R9b: a provider page link covers any listing that provider manages.
+    const covered = link.listingKind === "provider"
+      ? bookingIncludesProvider(input.bookingManagerUserIds, listing.managerUserId)
+      : bookingIncludesListing(input.booking, link.listingKind, link.listingId);
+    if (!covered) {
       return { credit: "assisted", reason: "other-listing", creditedUserId: null, code: link.code, ...where };
     }
     return { credit: "credited", reason: "credited", creditedUserId: link.createdByUserId, code: link.code, ...where };

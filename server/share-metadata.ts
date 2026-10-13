@@ -9,6 +9,8 @@ import {
 } from "@shared/seo";
 import { storage } from "./storage";
 import { getRatingSummary } from "./review-ratings";
+import { isSuspendedProvider } from "./provider-status";
+import { getPublicProviderPage } from "./provider-pages";
 import { getCarDisplayName } from "@shared/listing-share";
 
 type ListingKind = "stay" | "car" | "cook" | "errand" | "experience";
@@ -34,10 +36,11 @@ const defaultDescription =
   "Book curated stays, cars, private chefs, errands, and experiences across Kenya with Tembea Bila Matata.";
 const defaultImagePath = "/tembeabilamatata-logo.jpg";
 
+// Public, with a provider who isn't suspended.
 function isPublicListing<T extends { isPublic: boolean; managerUserId?: string | null }>(
   listing: T | null | undefined,
 ): listing is T {
-  return Boolean(listing?.isPublic && listing.managerUserId?.trim());
+  return Boolean(listing?.isPublic && listing.managerUserId?.trim() && !isSuspendedProvider(listing.managerUserId));
 }
 
 function stripHtml(value: string) {
@@ -538,6 +541,11 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
     }
   }
 
+  const providerCode = /^\/p\/([^/?#]+)(?:\/[^/?#]+)?\/?$/.exec(req.path)?.[1];
+  if (providerCode) {
+    return resolveProviderPageMetadata(decodeURIComponent(providerCode), req, fallback);
+  }
+
   const route = parseListingRoute(req.path);
   if (!route) {
     return fallback;
@@ -606,6 +614,41 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
   } catch (error) {
     console.error("[SEO] Failed to resolve listing share metadata:", error);
     return fallback;
+  }
+}
+
+// A provider's public page: their name, services and approved photo in link
+// previews. A page that isn't live is left out by search engines; an unknown
+// code is a 404. Both still open a page that points guests to similar services.
+async function resolveProviderPageMetadata(code: string, req: Request, fallback: ShareMetadata): Promise<ShareMetadata> {
+  const baseUrl = getRequestBaseUrl(req);
+  try {
+    const result = await getPublicProviderPage(code, { userId: null, isAdmin: false });
+    if (result.status !== "ok") {
+      const unavailable: ShareMetadata = {
+        ...fallback,
+        title: `Not taking bookings right now | ${siteName}`,
+        description: "This provider isn't taking bookings on TBM right now. See similar stays and services on Tembea Bila Matata.",
+        robots: "noindex,follow",
+      };
+      return result.status === "not-found" ? { ...unavailable, statusCode: 404 } : unavailable;
+    }
+    const provider = result.profile;
+    const services = provider.serviceTypes.join(", ");
+    const areas = provider.serviceAreas.slice(0, 3).join(", ");
+    const lead = [services, areas ? `in ${areas}` : ""].filter(Boolean).join(" ");
+    const imageUrl = provider.photoUrl || provider.listings.find((listing) => listing.imageUrl)?.imageUrl || null;
+    return {
+      title: `${provider.displayName}${services ? ` · ${services}` : ""} | ${siteName}`,
+      description: truncate(`${lead ? `${lead}. ` : ""}Book through TBM: pay by M-Pesa or card, with TBM's support throughout.${provider.about ? ` ${provider.about}` : ""}`, 220),
+      imageUrl: toAbsoluteUrl(imageUrl, baseUrl),
+      canonicalUrl: `${baseUrl}${provider.path}`,
+      type: "website",
+      robots: "index,follow",
+    };
+  } catch (error) {
+    console.error("[SEO] Failed to resolve provider page metadata:", error);
+    return { ...fallback, robots: "noindex,follow" };
   }
 }
 

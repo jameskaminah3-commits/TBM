@@ -17,6 +17,7 @@ import { useOwnsListing } from "@/hooks/use-owns-listing";
 import { captureListingVisit, trackShareEvent, withShareRef } from "@/lib/marketing-attribution";
 import { getCarDisplayName, getListingSharePrice } from "@shared/listing-share";
 import { ListingUnavailable } from "@/components/listing-unavailable";
+import { YourHost } from "@/components/your-host";
 import { formatRating, hasPublicRating } from "@shared/review-eligibility";
 import {
   buildListingSeoDescription,
@@ -278,6 +279,10 @@ export default function PublicListingDetail({ kind }: { kind: Exclude<PublicList
                 {listing.features.map((feature) => <li key={feature} className="flex items-start gap-2 text-sm leading-6"><CheckCircle2 className="mt-1 h-4 w-4 flex-shrink-0 text-primary" />{feature}</li>)}
               </ul>
             </section>
+
+            <div className="mt-8">
+              <YourHost kind={kind} listingId={listing.id} />
+            </div>
           </main>
 
           <aside>

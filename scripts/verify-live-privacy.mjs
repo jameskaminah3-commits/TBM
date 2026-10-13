@@ -150,10 +150,11 @@ for (const id of (sampleIds.experiences ?? []).slice(0, 3)) {
 }
 
 // ── R. Public reviews ───────────────────────────────────────────────────
-// A review in public carries its rating, comment, date and "Amina W." only:
+// A review in public carries its rating, comment, date and "Amina W." only,
+// plus the provider's reply once TBM has approved it ({ text, createdAt }):
 // no account, booking or review IDs, no full names, no contact details.
 section("R. Public reviews show \"First L.\" and no IDs");
-const publicReviewKeys = new Set(["rating", "comment", "createdAt", "guestName"]);
+const publicReviewKeys = new Set(["rating", "comment", "createdAt", "guestName", "reply", "text"]);
 const reviewKind = { stays: "stay", cars: "car", cooks: "cook", errands: "errand", experiences: "experience" };
 let reviewsChecked = 0;
 for (const [kind, ids] of Object.entries(reviewedIds)) {
@@ -174,6 +175,55 @@ for (const [kind, ids] of Object.entries(reviewedIds)) {
   }
 }
 if (!reviewsChecked) report("SKIP", "public reviews", "no listing with reviews was found to check");
+
+// ── P. Public provider pages ────────────────────────────────────────────
+// A provider page (/p/<code>) and the "Your host" block on a listing carry
+// only the allowlisted fields (shared/provider-public.ts): no account IDs,
+// contact details, payout fields or private photo links. Pages are found
+// through the "Your host" block of the listings sampled above.
+section("P. Public provider pages carry only allowlisted fields");
+const providerPageKeys = new Set([
+  "code", "slug", "path", "displayName", "serviceTypes", "serviceAreas", "languages", "about", "photoUrl", "photoKind",
+  "verified", "verifiedSince", "memberSince", "foundingProvider", "rating", "average", "count", "listings", "reviews",
+  "kind", "name", "area", "priceFrom", "priceUnit", "imageUrl",
+  "comment", "createdAt", "guestName", "reply", "text", "listingName", "provider",
+]);
+const providerSummaryKeys = new Set(["provider", "code", "path", "displayName", "serviceTypes", "languages", "photoUrl", "photoKind", "verified", "memberSince", "foundingProvider", "rating", "average", "count"]);
+const uuidPattern = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+// Listing addresses carry listing IDs, as every public listing page does.
+const withoutListingPaths = (json) => JSON.stringify({ ...json, provider: { ...json.provider, listings: (json.provider?.listings ?? []).map(({ path: _path, ...rest }) => rest) } });
+const providerCodes = new Set();
+let hostsChecked = 0;
+for (const [kind, ids] of Object.entries(sampleIds)) {
+  for (const id of ids) {
+    const host = await get(`/api/public/providers/by-listing/${reviewKind[kind]}/${encodeURIComponent(id)}`);
+    if (host.status !== 200 || !host.json?.provider) continue;
+    hostsChecked += 1;
+    const extraKeys = [...keysDeep(host.json)].filter((key) => !providerSummaryKeys.has(key));
+    const contacts = contactFindings(host.text);
+    check(extraKeys.length === 0 && !uuidPattern.test(host.text) && contacts.emails + contacts.phones === 0 && !host.text.includes("/api/files/"),
+      `"Your host" on ${reviewKind[kind]} ${id.slice(0, 12)}…: allowlisted fields only, no IDs, contact details or private files`,
+      [extraKeys.length ? `extra fields: ${extraKeys.join(", ")}` : "", contacts.emails + contacts.phones ? describeContacts(contacts) : ""].filter(Boolean).join("; "));
+    if (host.json.provider.code) providerCodes.add(host.json.provider.code);
+  }
+}
+for (const code of providerCodes) {
+  const page = await get(`/api/public/providers/${encodeURIComponent(code)}`);
+  if (page.status !== 200 || !page.json?.provider) { report("SKIP", `/api/public/providers/${code}`, `status ${page.status}`); continue; }
+  const extraKeys = [...keysDeep(page.json)].filter((key) => !providerPageKeys.has(key));
+  const scanned = withoutListingPaths(page.json);
+  const contacts = contactFindings(scanned);
+  check(extraKeys.length === 0 && !uuidPattern.test(scanned) && contacts.emails + contacts.phones === 0 && !page.text.includes("/api/files/"),
+    `provider page ${code}: allowlisted fields only, no IDs, contact details or private files`,
+    [`${page.json.provider.listings?.length ?? 0} listing(s), ${page.json.provider.reviews?.length ?? 0} review(s)`, extraKeys.length ? `extra fields: ${extraKeys.join(", ")}` : "",
+      contacts.emails + contacts.phones ? describeContacts(contacts) : ""].filter(Boolean).join("; "));
+}
+const unknownPage = await get("/api/public/providers/zzzzzzzz");
+if (unknownPage.html) report("SKIP", "provider pages", "this release doesn't have provider pages yet");
+else {
+  check(unknownPage.status === 404, "an unknown provider page code is a 404", `status ${unknownPage.status}`);
+  if (!hostsChecked) report("SKIP", "provider pages", "none of the sampled listings has a live provider page yet");
+}
 
 // ── D. Private endpoints refuse signed-out visitors ──────────────────────
 section("D. Provider, guest and admin data refuse signed-out visitors");

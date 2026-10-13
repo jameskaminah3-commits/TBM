@@ -2,7 +2,7 @@
 // (kind/month/random) and checked before any use, so a link can't reach
 // outside private storage.
 export const PRIVATE_FILE_ROUTE = "/api/files/";
-const keyPattern = /^(vehicle-document|fleet-application|guest-attachment|quarantine)\/[A-Za-z0-9._\-/]+$/;
+const keyPattern = /^(vehicle-document|fleet-application|guest-attachment|provider-photo|quarantine)\/[A-Za-z0-9._\-/]+$/;
 
 export function privateFileUrl(key: string) {
   return `${PRIVATE_FILE_ROUTE}${key}`;

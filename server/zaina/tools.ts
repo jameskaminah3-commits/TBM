@@ -55,6 +55,7 @@ import {
 } from "./custom-offer-intake";
 import { getPublicListingPath } from "@shared/seo";
 import { getRatingSummary } from "../review-ratings";
+import { isProviderSuspendedNow, managerNotSuspended } from "../provider-status";
 import { addCalendarDays, kenyaDateTimeToIso } from "@shared/calendar-dates";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -423,6 +424,7 @@ export async function searchStays(
   const conditions: any[] = [
     eq(stays.isPublic, true),
     isNotNull(stays.managerUserId),
+    managerNotSuspended(stays.managerUserId),
   ];
   if (args.region) {
     conditions.push(sql`${stays.location} ILIKE ${"%" + args.region + "%"}`);
@@ -488,6 +490,7 @@ export async function searchCooks(
   const conditions: any[] = [
     eq(cooks.isPublic, true),
     isNotNull(cooks.managerUserId),
+    managerNotSuspended(cooks.managerUserId),
   ];
   if (args.region) {
     conditions.push(sql`${cooks.location} ILIKE ${"%" + args.region + "%"}`);
@@ -577,6 +580,7 @@ export async function searchCars(
   const conditions: any[] = [
     eq(cars.isPublic, true),
     isNotNull(cars.managerUserId),
+    managerNotSuspended(cars.managerUserId),
   ];
   if (args.region) {
     conditions.push(sql`${cars.location} ILIKE ${"%" + args.region + "%"}`);
@@ -659,6 +663,7 @@ export async function searchErrands(
   const conditions: any[] = [
     eq(errands.isPublic, true),
     isNotNull(errands.managerUserId),
+    managerNotSuspended(errands.managerUserId),
   ];
   if (args.region) {
     conditions.push(sql`${errands.location} ILIKE ${"%" + args.region + "%"}`);
@@ -746,6 +751,7 @@ export async function searchExperiences(
   const conditions: any[] = [
     eq(experiences.isPublic, true),
     isNotNull(experiences.managerUserId),
+    managerNotSuspended(experiences.managerUserId),
   ];
   if (args.region) {
     conditions.push(sql`${experiences.location} ILIKE ${"%" + args.region + "%"}`);
@@ -841,7 +847,7 @@ export async function checkStayAvailability(
     .where(eq(stays.id, args.stay_id))
     .limit(1);
   if (!stay) return { ok: false, error: "stay_not_found" };
-  if (!stay.isPublic || !stay.managerUserId) {
+  if (!stay.isPublic || !stay.managerUserId || await isProviderSuspendedNow(stay.managerUserId)) {
     return { ok: false, error: "stay_not_bookable" };
   }
 
@@ -902,7 +908,7 @@ export async function checkServiceAvailability(
   const [experience] = await db.select().from(experiences).where(eq(experiences.id, args.service_id)).limit(1);
   const service = car || cook || errand || experience;
   if (!service) return { ok: false, error: "service_not_found" };
-  if (!service.isPublic || !service.managerUserId) return { ok: false, error: "service_not_bookable" };
+  if (!service.isPublic || !service.managerUserId || await isProviderSuspendedNow(service.managerUserId)) return { ok: false, error: "service_not_bookable" };
 
   if (experience && args.mode === "experience-shared") {
     const departure = (experience.sharedDepartures || []).find((item) => item.id === args.service_departure_id);
@@ -1169,6 +1175,7 @@ export async function composeTripPackage(
     .where(and(
       eq(stays.isPublic, true),
       isNotNull(stays.managerUserId),
+      managerNotSuspended(stays.managerUserId),
       gte(stays.maxOccupancy, args.people),
       args.destination_preference
         ? sql`${stays.location} ILIKE ${"%" + args.destination_preference + "%"}`
@@ -1215,6 +1222,7 @@ export async function composeTripPackage(
     .where(and(
       eq(cars.isPublic, true),
       isNotNull(cars.managerUserId),
+      managerNotSuspended(cars.managerUserId),
       gte(cars.seats, args.people),
     ))
     .orderBy(cars.priceWithDriver)
@@ -1253,6 +1261,7 @@ export async function composeTripPackage(
       .where(and(
         eq(experiences.isPublic, true),
         isNotNull(experiences.managerUserId),
+        managerNotSuspended(experiences.managerUserId),
         eq(experiences.privateEnabled, true),
         gte(experiences.maxGuests, args.people),
         lte(experiences.privateMinimumGuests, args.people),
@@ -1455,7 +1464,7 @@ export async function createDraftBooking(
   // 4. Validate stay
   const [stay] = await db.select().from(stays).where(eq(stays.id, args.stay_id)).limit(1);
   if (!stay) return { ok: false, error: "stay_not_found" };
-  if (!stay.isPublic || !stay.managerUserId) {
+  if (!stay.isPublic || !stay.managerUserId || await isProviderSuspendedNow(stay.managerUserId)) {
     return { ok: false, error: "stay_not_bookable" };
   }
   if (args.guests > stay.maxOccupancy) {
@@ -1510,7 +1519,7 @@ export async function createDraftBooking(
   for (const serviceId of serviceIds) {
     const [cook] = await db.select().from(cooks).where(eq(cooks.id, serviceId)).limit(1);
     if (cook) {
-      if (!cook.isPublic || !cook.managerUserId) {
+      if (!cook.isPublic || !cook.managerUserId || await isProviderSuspendedNow(cook.managerUserId)) {
         return { ok: false, error: "service_not_bookable", service_id: serviceId };
       }
       const sessionRate = cook.serviceFee || cook.pricePerSession;
@@ -1530,7 +1539,7 @@ export async function createDraftBooking(
 
     const [car] = await db.select().from(cars).where(eq(cars.id, serviceId)).limit(1);
     if (car) {
-      if (!car.isPublic || !car.managerUserId) {
+      if (!car.isPublic || !car.managerUserId || await isProviderSuspendedNow(car.managerUserId)) {
         return { ok: false, error: "service_not_bookable", service_id: serviceId };
       }
       if (args.guests > car.seats) {
@@ -1544,7 +1553,7 @@ export async function createDraftBooking(
 
     const [experience] = await db.select().from(experiences).where(eq(experiences.id, serviceId)).limit(1);
     if (experience) {
-      if (!experience.isPublic || !experience.managerUserId) {
+      if (!experience.isPublic || !experience.managerUserId || await isProviderSuspendedNow(experience.managerUserId)) {
         return { ok: false, error: "service_not_bookable", service_id: serviceId };
       }
       if (args.guests < experience.privateMinimumGuests || args.guests > experience.maxGuests) {
@@ -1558,7 +1567,7 @@ export async function createDraftBooking(
 
     const [errand] = await db.select().from(errands).where(eq(errands.id, serviceId)).limit(1);
     if (errand) {
-      if (!errand.isPublic || !errand.managerUserId) {
+      if (!errand.isPublic || !errand.managerUserId || await isProviderSuspendedNow(errand.managerUserId)) {
         return { ok: false, error: "service_not_bookable", service_id: serviceId };
       }
       const subtotal = errand.basePrice;
@@ -1928,7 +1937,7 @@ export async function createServiceBooking(
 
   // ─── Car rental / chauffeur ────────────────────────────────────
   if (car) {
-    if (!car.isPublic || !car.managerUserId) {
+    if (!car.isPublic || !car.managerUserId || await isProviderSuspendedNow(car.managerUserId)) {
       return { ok: false, error: "service_not_bookable" };
     }
     if (guestCount > car.seats) {
@@ -1969,7 +1978,7 @@ export async function createServiceBooking(
   }
   // ─── Errand: MamaCare ─────────────────────────────────────────
   else if (errand && args.mode === "errand-childcare") {
-    if (!errand.isPublic || !errand.managerUserId) {
+    if (!errand.isPublic || !errand.managerUserId || await isProviderSuspendedNow(errand.managerUserId)) {
       return { ok: false, error: "service_not_bookable" };
     }
     const pricing = errand.helpMamaPricing;
@@ -2039,7 +2048,7 @@ export async function createServiceBooking(
   }
   // ─── Errands ──────────────────────────────────────────────────
   else if (errand && ["errand-base", "errand-shopping", "errand-laundry", "errand-house-cleaning"].includes(args.mode)) {
-    if (!errand.isPublic || !errand.managerUserId) {
+    if (!errand.isPublic || !errand.managerUserId || await isProviderSuspendedNow(errand.managerUserId)) {
       return { ok: false, error: "service_not_bookable" };
     }
     const packageCount = positiveIntegerOrDefault(args.quantity, 1);
@@ -2100,7 +2109,7 @@ export async function createServiceBooking(
   }
   // ─── Cook ─────────────────────────────────────────────────────
   else if (cook) {
-    if (!cook.isPublic || !cook.managerUserId) {
+    if (!cook.isPublic || !cook.managerUserId || await isProviderSuspendedNow(cook.managerUserId)) {
       return { ok: false, error: "service_not_bookable" };
     }
     if (guestCount < cook.minimumGuests || guestCount > cook.maxGuests) {
@@ -2137,7 +2146,7 @@ export async function createServiceBooking(
   }
   // ─── Experience ───────────────────────────────────────────────
   else if (experience) {
-    if (!experience.isPublic || !experience.managerUserId) {
+    if (!experience.isPublic || !experience.managerUserId || await isProviderSuspendedNow(experience.managerUserId)) {
       return { ok: false, error: "service_not_bookable" };
     }
     if (args.mode === "experience-private") {
