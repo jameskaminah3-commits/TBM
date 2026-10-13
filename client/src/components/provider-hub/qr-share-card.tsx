@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
+import { loadImage, newCanvas, roundedRect, wrapText } from "@/lib/card-canvas";
 import { buildListingShareUrl } from "@shared/listing-share";
 import type { PublicListingKind } from "@shared/seo";
 
@@ -18,39 +19,10 @@ const cardTagline: Record<PublicListingKind, string> = {
   experience: "Scan to see this experience and book",
 };
 
-function wrapText(context: CanvasRenderingContext2D, text: string, maxWidth: number) {
-  const words = text.split(/\s+/);
-  const lines: string[] = [];
-  let line = "";
-  for (const word of words) {
-    const next = line ? `${line} ${word}` : word;
-    if (context.measureText(next).width > maxWidth && line) {
-      lines.push(line);
-      line = word;
-    } else {
-      line = next;
-    }
-  }
-  if (line) lines.push(line);
-  return lines;
-}
-
-// Rounded where the browser can draw it, square where it can't.
-function roundedRect(context: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
-  context.beginPath();
-  if (typeof context.roundRect === "function") context.roundRect(x, y, w, h, r);
-  else context.rect(x, y, w, h);
-  context.fill();
-}
-
 async function composeCard(args: { qrDataUrl: string; name: string; tagline: string }) {
   const width = 1080;
   const height = 1350;
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext("2d");
-  if (!context) throw new Error("Your browser couldn't draw the card");
+  const { canvas, context } = newCanvas(width, height);
 
   const gradient = context.createLinearGradient(0, 0, 0, height);
   gradient.addColorStop(0, "#0f3d3a");
@@ -71,12 +43,7 @@ async function composeCard(args: { qrDataUrl: string; name: string; tagline: str
   const nameLines = wrapText(context, args.name, width - 260).slice(0, 2);
   nameLines.forEach((line, index) => context.fillText(line, width / 2, 250 + index * 72));
 
-  const qr = await new Promise<HTMLImageElement>((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error("Couldn't draw the QR code"));
-    image.src = args.qrDataUrl;
-  });
+  const qr = await loadImage(args.qrDataUrl);
   const qrSize = 600;
   const qrTop = 250 + nameLines.length * 72 + 30;
   context.fillStyle = "#ffffff";
