@@ -245,6 +245,9 @@ const privatePaths = [
   "/api/admin/fleet-applications", "/api/admin/provider-applications", "/api/admin/payments", "/api/admin/marketing/shares",
   "/api/bookings/zzzzzzzz/carers", "/api/bookings/zzzzzzzz/carers/0/photo", "/api/admin/provider-photos", "/api/admin/ratings/check",
 ];
+const spotlightProbe = await get("/api/admin/providers/zzzzzzzz/spotlight-link", { method: "POST" });
+check(spotlightProbe.status === 401 || spotlightProbe.status === 403 || spotlightProbe.status === 404 || spotlightProbe.html, "TBM's Spotlight links can't be made signed out",
+  spotlightProbe.html ? "no such API on this release" : `status ${spotlightProbe.status}`);
 for (const path of privatePaths) {
   const response = await get(path);
   const ok = response.status === 401 || response.status === 403 || response.status === 404 || response.html;

@@ -12,6 +12,7 @@ export type ProviderPageSettingsView = {
   publicListingCount: number;
   offersHomeHelp: boolean;
   verified: boolean;
+  spotlightAllowed: boolean;
   photo: {
     status: string;
     approvedUrl: string | null;

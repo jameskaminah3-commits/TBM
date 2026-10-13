@@ -3,15 +3,17 @@
 // sharing the page with the same tracked links as listings.
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { CheckCircle2, ExternalLink, Eye, Globe2 } from "lucide-react";
+import { CheckCircle2, Eye, Globe2, Sparkles } from "lucide-react";
 import { HubPanel } from "@/components/provider-hub/hub-ui";
 import { ListingShareSheet } from "@/components/listing-share-sheet";
 import { BusinessCard } from "@/components/provider-hub/business-card";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { ProviderPageSettingsView } from "@/lib/provider-page";
 import { providerPageBlockerLabels } from "@shared/provider-public";
+import { spotlightExplainer } from "@shared/spotlight";
 
 const errorText = (error: Error) => error.message.replace(/^\d+:\s*/, "").replace(/^\{"error":"(.*)"\}$/, "$1");
 
@@ -26,6 +28,14 @@ export function PublicPagePanel({ services }: { services: string }) {
       toast({ title: next.enabled ? "Your page is switched on" : "Your page is switched off", description: next.enabled && !next.live ? "It goes live once everything below is ready." : undefined });
     },
     onError: (error: Error) => toast({ title: "Couldn't change your page", description: errorText(error), variant: "destructive" }),
+  });
+  const spotlight = useMutation({
+    mutationFn: async (allowed: boolean) => (await apiRequest("PUT", "/api/provider/public-page", { spotlight: allowed })).json(),
+    onSuccess: (next: ProviderPageSettingsView) => {
+      queryClient.setQueryData(["/api/provider/public-page"], next);
+      toast({ title: next.spotlightAllowed ? "TBM can feature your page" : "TBM won't feature your page" });
+    },
+    onError: (error: Error) => toast({ title: "Couldn't save your choice", description: errorText(error), variant: "destructive" }),
   });
 
   if (isLoading || !settings) {
@@ -105,6 +115,19 @@ export function PublicPagePanel({ services }: { services: string }) {
         <p className="text-xs text-muted-foreground">
           Guests reach you through TBM. Visits, Book taps, "Ask TBM" taps and bookings from your page link show in Your shares below.
         </p>
+        <div className="flex items-start justify-between gap-4 rounded-2xl border border-amber-200/70 bg-amber-50/60 p-3" data-testid="spotlight-choice">
+          <div className="min-w-0 space-y-1">
+            <div className="flex items-center gap-1.5 text-sm font-medium text-stone-900"><Sparkles className="h-4 w-4 text-amber-600" aria-hidden="true" />Let TBM feature my page in its Spotlight</div>
+            <p className="text-xs leading-5 text-stone-600">{spotlightExplainer}</p>
+          </div>
+          <Switch
+            checked={settings.spotlightAllowed}
+            disabled={spotlight.isPending}
+            onCheckedChange={(checked) => spotlight.mutate(checked)}
+            aria-label="Let TBM feature my page in its Spotlight"
+            data-testid="switch-spotlight"
+          />
+        </div>
       </div>
     </HubPanel>
   );
