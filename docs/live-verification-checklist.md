@@ -55,6 +55,7 @@ What it checks, and the safe response for each:
 | B2 | `GET /api/<kind>/:id` for up to 8 listings of each kind | signed out | As B1 |
 | C1 | `GET /api/stays/:id/availability`, `/api/cars/:id/availability`, `/api/cooks/:id/availability` | signed out | 200. Every taken range has `id` `taken-N` and `guestName` `"Booked"`. No booking IDs, names, emails or phone numbers. |
 | C2 | `GET /api/experiences/:id/shared-departures` | signed out | No guest email, phone or contact fields |
+| R1 | `GET /api/reviews/:kind/:id` for listings that have reviews | signed out | 200. Each review has only `rating`, `comment`, `createdAt` and `guestName`. `guestName` is "Amina W." (first name and surname initial) or "Verified guest". No `id`, `userId`, `bookingId`, `targetId`, full names or contact details. |
 | D1 | `/api/provider/booking-assignments`, `/api/provider/{stay,car,cook,errand,experience}-bookings`, `/api/provider/notifications`, `/api/provider/payments`, `/api/provider/contact-releases`, `/api/provider/shares` | signed out | **401** (or 403/404). Never 200 with data. |
 | D2 | `/api/inbox`, `/api/bookings` | signed out | 401 |
 | D3 | `/api/admin/bookings`, `/api/admin/media`, `/api/admin/fleet-applications`, `/api/admin/payments`, `/api/admin/marketing/shares` | signed out | 401 or 403 |
@@ -136,8 +137,10 @@ Fill in one row per check. Keep the script output (status codes and paths only) 
 | | | 3 Existing documents, after `--remove-public` | | |
 | | | 4 Upload smoke tests | | |
 | | | 5 Guest contact | | |
+| | | 2 Script R (public reviews) | | |
 
 Mark an issue resolved only when its rows all pass:
 - **Calendars:** C1.
 - **Provider booking data:** D1, G1, G2 and section 5.
 - **Documents:** A1, B1, B2, G3, G5 and sections 3 and 4.
+- **Public reviews** (found 13 October 2026): R1. Also open one listing with reviews in a browser and check each reviewer shows as "Amina W.".

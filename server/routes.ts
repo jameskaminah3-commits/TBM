@@ -83,6 +83,7 @@ import {
 } from "./share-links";
 import { shareChannels } from "@shared/share-attribution";
 import { getCarDisplayName } from "@shared/listing-share";
+import { isPublicReviewTarget, listPublicReviews } from "./public-reviews";
 import { createRateLimitMiddleware, getRequestIp } from "./middleware/rate-limit";
 import { toPublicListing, withoutProviderProtectedFields } from "./listing-privacy";
 import { partnerGuestName, toPartnerInboxItem, toProviderAssignment, toProviderBooking, toProviderPaymentData } from "./provider-booking-view";
@@ -5350,24 +5351,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const targetType = req.params.targetType;
       const targetId = req.params.targetId;
 
-      if (!["stay", "car", "cook", "errand", "experience"].includes(targetType)) {
+      if (!isPublicReviewTarget(targetType)) {
         return res.status(400).json({ error: "Invalid review target type." });
       }
 
-      const reviews = await storage.getReviewsByTarget(targetType, targetId);
-      const enrichedReviews = await Promise.all(
-        reviews.map(async (review) => {
-          const booking = await storage.getBooking(review.bookingId);
-          return {
-            ...review,
-            guestName: booking?.guestName ?? "Verified Guest",
-          };
-        }),
-      );
-
-      res.json(
-        enrichedReviews.sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-      );
+      // Public: only the allowlisted fields leave the server ("Amina W.", no IDs).
+      res.json(await listPublicReviews(storage, targetType, targetId));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch reviews" });
     }

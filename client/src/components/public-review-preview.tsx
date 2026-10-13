@@ -3,11 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ChevronDown, Star } from "lucide-react";
 import { useState } from "react";
-import type { Review, ReviewTargetType } from "@shared/schema";
-
-type PublicReview = Review & {
-  guestName?: string | null;
-};
+import type { ReviewTargetType } from "@shared/schema";
+import { publicReviewerName, type PublicReview } from "@shared/public-review";
 
 function formatReviewDate(value: string) {
   return new Date(value).toLocaleDateString("en-US", {
@@ -17,8 +14,9 @@ function formatReviewDate(value: string) {
   });
 }
 
+/** "Amina W.": first name and surname initial, never a full name. */
 function formatGuestName(value?: string | null) {
-  return value?.trim() || "Verified Guest";
+  return publicReviewerName(value);
 }
 
 export function PublicReviewPreview({
@@ -80,8 +78,8 @@ export function PublicReviewPreview({
         <CollapsibleContent className="pt-5">
           <div className="max-h-[24rem] overflow-y-auto pr-2">
             <div className="space-y-4">
-              {visibleReviews.map((review) => (
-                <div key={review.id} className="rounded-[22px] border border-border/60 bg-background/58 p-5 shadow-[0_16px_30px_-28px_rgba(15,23,42,0.22)]">
+              {visibleReviews.map((review, index) => (
+                <div key={`${review.createdAt}-${index}`} className="rounded-[22px] border border-border/60 bg-background/58 p-5 shadow-[0_16px_30px_-28px_rgba(15,23,42,0.22)]">
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <div className="flex items-center gap-1">
                       {Array.from({ length: 5 }).map((_, index) => (
@@ -127,8 +125,8 @@ export function PublicReviewPreview({
       <CollapsibleContent className="pt-3">
         <div className="max-h-40 overflow-y-auto pr-3">
           <div className="space-y-3">
-            {visibleReviews.map((review) => (
-              <div key={review.id} className="rounded-2xl border border-border/60 bg-background/55 px-4 py-3">
+            {visibleReviews.map((review, index) => (
+              <div key={`${review.createdAt}-${index}`} className="rounded-2xl border border-border/60 bg-background/55 px-4 py-3">
                 <div className="mb-2 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-1">
                     {Array.from({ length: 5 }).map((_, index) => (
