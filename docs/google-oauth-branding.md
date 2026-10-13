@@ -1,6 +1,21 @@
 # Google sign-in branding
 
-**Status: not started on the live accounts.** The code and policy changes are on the dev branch. Every step below is done by the owner in Google Cloud, Google Search Console, Supabase, Apple Developer (if Apple sign-in is on) and Railway. Nobody else should need the passwords.
+**Status (13 October 2026): brand verified without the custom domain.** Google Cloud › Google Auth Platform › Verification Center says "Your branding has been verified and is being shown to users."
+
+The owner did this in project `my-project-tembeabilamatata`, client "Tembea Bila Matata Web". They:
+- filled in the home page, privacy and terms links;
+- added `tembeabilamatata.com` as an authorised domain, keeping the Supabase address;
+- published the app, which had been in Testing.
+
+What's left:
+- **Confirm Google's screen.** Open `/auth` in a private window, preferably with a Google account that isn't the owner's, and check that Google's screen names **Tembea Bila Matata**.
+- **Release the privacy-policy section** to `main`.
+
+The Supabase custom domain (steps C to F) is **optional now**. It would only change the address that flashes in the browser bar during sign-in.
+
+Don't change the app name, logo or links in Google Cloud: that triggers a new verification. Don't remove the Supabase address from the authorised domains or the client's redirect URIs, because sign-in depends on it.
+
+The rest of this guide is the original plan, kept for reference.
 
 ## The problem
 
