@@ -3,11 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ChevronDown, Star } from "lucide-react";
 import { useState } from "react";
-import type { Review, ReviewTargetType } from "@shared/schema";
-
-type PublicReview = Review & {
-  guestName?: string | null;
-};
+import type { ReviewTargetType } from "@shared/schema";
+import { publicReviewerName, type PublicReview } from "@shared/public-review";
 
 function formatReviewDate(value: string) {
   return new Date(value).toLocaleDateString("en-US", {
@@ -17,13 +14,9 @@ function formatReviewDate(value: string) {
   });
 }
 
+/** "Amina W.": first name and surname initial, never a full name. */
 function formatGuestName(value?: string | null) {
-  return value?.trim() || "Verified Guest";
-}
-
-/** "Amina", for a review shown in public: the first name only. */
-function firstName(value?: string | null) {
-  return value?.trim().split(/\s+/)[0] || "A guest";
+  return publicReviewerName(value);
 }
 
 function formatReviewMonth(value: string) {
@@ -77,10 +70,10 @@ export function PublicReviewPreview({
           <span className="text-sm text-muted-foreground">From guests who booked with us</span>
         </div>
         <ul className="grid gap-3 md:grid-cols-2">
-          {shown.map((review) => (
-            <li key={review.id} className="rounded-2xl border border-border/60 bg-card/70 p-4">
+          {shown.map((review, index) => (
+            <li key={`${review.createdAt}-${index}`} className="rounded-2xl border border-border/60 bg-card/70 p-4">
               <div className="flex items-baseline justify-between gap-3">
-                <span className="font-medium text-foreground">{firstName(review.guestName)}</span>
+                <span className="font-medium text-foreground">{formatGuestName(review.guestName)}</span>
                 <span className="text-xs text-muted-foreground">{formatReviewMonth(review.createdAt)}</span>
               </div>
               <div className="mt-1 flex items-center gap-0.5" role="img" aria-label={`${review.rating} out of 5 stars`}>
@@ -127,8 +120,8 @@ export function PublicReviewPreview({
         <CollapsibleContent className="pt-5">
           <div className="max-h-[24rem] overflow-y-auto pr-2">
             <div className="space-y-4">
-              {visibleReviews.map((review) => (
-                <div key={review.id} className="rounded-[22px] border border-border/60 bg-background/58 p-5 shadow-[0_16px_30px_-28px_rgba(15,23,42,0.22)]">
+              {visibleReviews.map((review, index) => (
+                <div key={`${review.createdAt}-${index}`} className="rounded-[22px] border border-border/60 bg-background/58 p-5 shadow-[0_16px_30px_-28px_rgba(15,23,42,0.22)]">
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <div className="flex items-center gap-1">
                       {Array.from({ length: 5 }).map((_, index) => (
@@ -174,8 +167,8 @@ export function PublicReviewPreview({
       <CollapsibleContent className="pt-3">
         <div className="max-h-40 overflow-y-auto pr-3">
           <div className="space-y-3">
-            {visibleReviews.map((review) => (
-              <div key={review.id} className="rounded-2xl border border-border/60 bg-background/55 px-4 py-3">
+            {visibleReviews.map((review, index) => (
+              <div key={`${review.createdAt}-${index}`} className="rounded-2xl border border-border/60 bg-background/55 px-4 py-3">
                 <div className="mb-2 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-1">
                     {Array.from({ length: 5 }).map((_, index) => (

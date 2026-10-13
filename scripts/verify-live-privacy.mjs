@@ -103,11 +103,13 @@ const kinds = [
   ["stays", "/api/stays"], ["cars", "/api/cars"], ["cooks", "/api/cooks"], ["errands", "/api/errands"], ["experiences", "/api/experiences"],
 ];
 const sampleIds = {};
+const reviewedIds = {};
 for (const [kind, path] of kinds) {
   const list = await get(path);
   if (list.status !== 200 || !list.json) { check(false, `${path} answers`, `status ${list.status}`); continue; }
   const items = listOf(list.json);
   sampleIds[kind] = items.slice(0, MAX_LISTINGS).map((item) => item.id).filter(Boolean);
+  reviewedIds[kind] = items.filter((item) => Number(item.reviewCount) > 0).slice(0, MAX_LISTINGS).map((item) => item.id).filter(Boolean);
   const leaked = privateListingFields.filter((field) => keysDeep(list.json).has(field));
   check(leaked.length === 0, `${path}: no private listing fields`, leaked.length ? leaked.join(", ") : `${items.length} listings`);
   check(!list.text.includes("/api/files/"), `${path}: no protected file links`);
@@ -146,6 +148,32 @@ for (const id of (sampleIds.experiences ?? []).slice(0, 3)) {
   check(contacts.emails + contacts.phones === 0 && !keysDeep(departures.json).has("guestEmail") && !keysDeep(departures.json).has("guestPhone"),
     `/api/experiences/${id.slice(0, 12)}…/shared-departures: no guest contact`, describeContacts(contacts));
 }
+
+// ── R. Public reviews ───────────────────────────────────────────────────
+// A review in public carries its rating, comment, date and "Amina W." only:
+// no account, booking or review IDs, no full names, no contact details.
+section("R. Public reviews show \"First L.\" and no IDs");
+const publicReviewKeys = new Set(["rating", "comment", "createdAt", "guestName"]);
+const reviewKind = { stays: "stay", cars: "car", cooks: "cook", errands: "errand", experiences: "experience" };
+let reviewsChecked = 0;
+for (const [kind, ids] of Object.entries(reviewedIds)) {
+  for (const id of ids) {
+    const response = await get(`/api/reviews/${reviewKind[kind]}/${encodeURIComponent(id)}`);
+    if (response.status !== 200 || !Array.isArray(response.json)) { report("SKIP", `/api/reviews/${reviewKind[kind]}/:id answers`, `status ${response.status}`); continue; }
+    const extraKeys = [...keysDeep(response.json)].filter((key) => !publicReviewKeys.has(key));
+    const fullNames = response.json.filter((review) => typeof review.guestName === "string"
+      && !/^verified guest$/i.test(review.guestName.trim())
+      && !/^\S+( \S\.)?$/.test(review.guestName.trim())).length;
+    const uuids = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(response.text);
+    const contacts = contactFindings(response.text);
+    reviewsChecked += response.json.length;
+    check(extraKeys.length === 0 && fullNames === 0 && !uuids && contacts.emails + contacts.phones === 0,
+      `/api/reviews/${reviewKind[kind]}/${id.slice(0, 12)}…: names shortened, no IDs or contact details`,
+      [`${response.json.length} review(s)`, extraKeys.length ? `extra fields: ${extraKeys.join(", ")}` : "", fullNames ? `${fullNames} full name(s)` : "", uuids ? "IDs present" : "",
+        contacts.emails + contacts.phones ? describeContacts(contacts) : ""].filter(Boolean).join("; "));
+  }
+}
+if (!reviewsChecked) report("SKIP", "public reviews", "no listing with reviews was found to check");
 
 // ── D. Private endpoints refuse signed-out visitors ──────────────────────
 section("D. Provider, guest and admin data refuse signed-out visitors");
