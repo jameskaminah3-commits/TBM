@@ -380,13 +380,14 @@ Every phase also re-runs the existing suites: privacy access, provider end-to-en
 | Phase | Contents | Status (13 October 2026) |
 |---|---|---|
 | 0 | Public reviews fix | On `main` (96cd989). **Not verified on the live site**: needs check R1. |
-| 1 | Onboarding fixes (section 8) and review integrity (eligibility, self-review check, unique index, one decimal place, comment cleaning) | Built on the dev branch (9142713, e9dd10f). Not released. |
-| 2 | Public provider pages, "Your host" block, photo approval, suspension handling, provider links (R9b and `enquire`) and their reporting | Built on the dev branch (5423275). Not released. |
-| 3 | Rating display and replies, Founding Provider badge | Built on the dev branch (67fff02). Not released. |
-| 4 | Smart business card, in every format | Built on the dev branch (8ed303d). Not released. |
-| Gaps | Carer details after booking, listing publish dates, provider pages in the sitemap, the photo queue, the stored-rating check and recount, and the card redesign with the new back wording | Built on the dev branch. Not released. |
+| 1 | Onboarding fixes (section 8) and review integrity (eligibility, self-review check, unique index, one decimal place, comment cleaning) | Released to `main` on 13 October 2026. |
+| 2 | Public provider pages, "Your host" block, photo approval, suspension handling, provider links (R9b and `enquire`) and their reporting | Released to `main` on 13 October 2026. |
+| 3 | Rating display and replies, Founding Provider badge | Released to `main` on 13 October 2026. |
+| 4 | Smart business card, in every format | Released to `main` on 13 October 2026. |
+| Gaps | Carer details after booking, listing publish dates, provider pages in the sitemap, the photo queue, the stored-rating check and recount, and the card redesign with the new back wording | Released to `main` on 13 October 2026. |
+| Spotlight | TBM shares provider pages on its own channels (section 6) | Released to `main` on 13 October 2026. |
 
-Nothing from phases 1 to 4 goes to `main` without the owner's approval.
+The owner approved the release on 13 October 2026. On `main`, the older page designs got the same rating rules (a number only from 3 eligible reviews), "Ask TBM about this provider" opens WhatsApp to TBM, and "Your host" sits after the reviews. What to check after deploy: `docs/provider-pages-release-runbook.md`. **Not yet verified on the live site.**
 
 ### As built: where it differs from this plan
 
