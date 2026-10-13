@@ -17,7 +17,7 @@ const kindLabels: Record<ProviderPhotoKind, string> = { logo: "Logo", work: "The
 
 const errorText = (error: Error) => error.message.replace(/^\d+:\s*/, "").replace(/^\{"error":"(.*)"\}$/, "$1");
 
-export function AdminProviderPublicPage({ providerId }: { providerId: string }) {
+export function AdminProviderPublicPage({ providerId, onChanged }: { providerId: string; onChanged?: () => void }) {
   const { toast } = useToast();
   const queryKey = [`/api/admin/providers/${providerId}/public-page`];
   const { data: settings } = useQuery<ProviderPageSettingsView>({ queryKey });
@@ -32,9 +32,11 @@ export function AdminProviderPublicPage({ providerId }: { providerId: string }) 
 
   const done = (next: ProviderPageSettingsView, title: string) => {
     queryClient.setQueryData(queryKey, next);
+    void queryClient.invalidateQueries({ queryKey: ["/api/admin/provider-photos"] });
     setNote("");
     setPageNote("");
     toast({ title });
+    onChanged?.();
   };
   const review = useMutation({
     mutationFn: async (decision: "approve" | "reject") => (await apiRequest("POST", `/api/admin/providers/${providerId}/photo`, { decision, note: note.trim() || null, kind })).json(),
@@ -69,7 +71,7 @@ export function AdminProviderPublicPage({ providerId }: { providerId: string }) 
                 </button>
               ))}
             </div>
-            {settings.offersHomeHelp && kind === "face" ? <p className="text-xs text-amber-800">This provider offers home help: a face is never shown publicly, even if approved.</p> : null}
+            {settings.offersHomeHelp && kind === "face" ? <p className="text-xs text-amber-800">This provider offers home help: a face is never shown publicly, even if approved. Approved, it's shown only to a guest whose home-help booking with them is confirmed.</p> : null}
           </div>
         ) : settings.photo.approvedUrl ? (
           <img src={settings.photo.approvedUrl} alt="Approved photo" className="h-24 w-24 rounded-2xl border object-cover" />

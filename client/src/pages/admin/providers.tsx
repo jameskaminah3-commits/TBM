@@ -10,6 +10,7 @@ import { AdminLayout } from "@/components/admin-layout";
 import { PartnerAdminThread } from "@/components/partner-admin-thread";
 import { AdminProviderAccount } from "@/components/admin-provider-account";
 import { AdminFoundingProviders } from "@/components/admin-founding-providers";
+import { AdminPhotoQueue } from "@/components/admin-photo-queue";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -380,6 +381,8 @@ export default function AdminProviders() {
             className="border-amber-200/80 bg-amber-50/70 shadow-sm"
           />
         </section>
+
+        <AdminPhotoQueue />
 
         <AdminFoundingProviders />
 

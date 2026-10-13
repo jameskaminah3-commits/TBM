@@ -45,8 +45,10 @@ export type FoundingCandidateInput = {
   // When TBM approved their application, or when TBM created the account.
   approvedAt: string;
   verifiedAt: string | null;
-  // The earliest public listing's creation date (when it was published isn't recorded).
+  // When their earliest public listing was first published. For a listing
+  // public before that was recorded (migration 0027), its creation date.
   firstPublicListingAt: string | null;
+  firstPublicListingEstimated?: boolean;
   isSuspended: boolean;
   grantedAt: string | null;
   revokedAt: string | null;

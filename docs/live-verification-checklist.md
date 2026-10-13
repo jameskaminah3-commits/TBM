@@ -51,15 +51,16 @@ What it checks, and the safe response for each:
 | # | Endpoint or path | As | Safe response |
 |---|---|---|---|
 | A1 | `GET /api/files/<made-up key>` | signed out | **401** JSON. (The web page instead means the private-files code isn't deployed.) |
-| B1 | `GET /api/stays`, `/api/cars`, `/api/cooks`, `/api/errands`, `/api/experiences` | signed out | 200. No `managerUserId`, `documents`, `registrationNumber`, `ownershipType`, `mileage`, `availabilityPreference` or `chauffeurArrangement` field. No `/api/files/` link. No email address or phone number other than TBM's own. |
+| B1 | `GET /api/stays`, `/api/cars`, `/api/cooks`, `/api/errands`, `/api/experiences` | signed out | 200. No `managerUserId`, `documents`, `registrationNumber`, `ownershipType`, `mileage`, `availabilityPreference`, `chauffeurArrangement` or `firstPublishedAt` field. No `/api/files/` link. No email address or phone number other than TBM's own. |
 | B2 | `GET /api/<kind>/:id` for up to 8 listings of each kind | signed out | As B1 |
 | C1 | `GET /api/stays/:id/availability`, `/api/cars/:id/availability`, `/api/cooks/:id/availability` | signed out | 200. Every taken range has `id` `taken-N` and `guestName` `"Booked"`. No booking IDs, names, emails or phone numbers. |
 | C2 | `GET /api/experiences/:id/shared-departures` | signed out | No guest email, phone or contact fields |
 | R1 | `GET /api/reviews/:kind/:id` for listings that have reviews | signed out | 200. Each review has only `rating`, `comment`, `createdAt` and `guestName`, plus `reply` (`text`, `createdAt`) once that release is live; a reply appears only after TBM approves it. `guestName` is "Amina W." (first name and surname initial) or "Verified guest". No `id`, `userId`, `bookingId`, `targetId`, full names or contact details. |
 | P1 | `GET /api/public/providers/by-listing/:kind/:id` for the sampled listings, and `GET /api/public/providers/:code` for each page found | signed out | Only the fields in `shared/provider-public.ts`. No account, review or booking IDs (listing addresses aside), no email or phone number other than TBM's, no payout fields, no `/api/files/` link. An unknown code is a 404. SKIP until provider pages are released and a provider has switched one on. |
 | D1 | `/api/provider/booking-assignments`, `/api/provider/{stay,car,cook,errand,experience}-bookings`, `/api/provider/notifications`, `/api/provider/payments`, `/api/provider/contact-releases`, `/api/provider/shares` | signed out | **401** (or 403/404). Never 200 with data. |
-| D2 | `/api/inbox`, `/api/bookings` | signed out | 401 |
-| D3 | `/api/admin/bookings`, `/api/admin/media`, `/api/admin/fleet-applications`, `/api/admin/payments`, `/api/admin/marketing/shares` | signed out | 401 or 403 |
+| D2 | `/api/inbox`, `/api/bookings`, `/api/bookings/:id/carers` and its photo link | signed out | 401 |
+| D3 | `/api/admin/bookings`, `/api/admin/media`, `/api/admin/fleet-applications`, `/api/admin/payments`, `/api/admin/marketing/shares`, `/api/admin/provider-photos`, `/api/admin/ratings/check` | signed out | 401 or 403 |
+| S1 | `GET /sitemap.xml` | signed out | Provider pages appear as `/p/<code>/<name>` only, never with an account ID, and only while live. No contact details. |
 | E1 | `HEAD /uploads/<made-up file>.pdf` | signed out | 4xx, never a file |
 | G1 | `GET /api/provider/booking-assignments` | test provider | 200. No `guestPhone`, `guestEmail`, `userId`, payment fields, `totalPrice`, `adminLockNote` or `marketingAttribution`. Guests shown as first name and initial ("Jane W."). |
 | G2 | The provider's booking lists, notifications, `/api/inbox` and `/api/provider/payments` | test provider | No guest phone number or email address anywhere. TBM's own number is allowed. |

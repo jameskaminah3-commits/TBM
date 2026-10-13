@@ -26,7 +26,7 @@ import { getProviderPageBlockers, toPublicProviderProfile, toPublicProviderSumma
 
 let columnsReady: Promise<void> | null = null;
 
-// The columns from migration 0026, added here too so an older database keeps
+// The columns from migrations 0026 and 0027, added here too so an older database keeps
 // working before the deploy step has run.
 export function ensureProviderPageColumns(): Promise<void> {
   columnsReady ??= ensureProviderHubTables().then(() => pool.query(`
@@ -49,6 +49,7 @@ export function ensureProviderPageColumns(): Promise<void> {
     ALTER TABLE provider_profiles ADD COLUMN IF NOT EXISTS founding_cohort varchar;
     ALTER TABLE provider_profiles ADD COLUMN IF NOT EXISTS founding_revoked_at text;
     ALTER TABLE provider_profiles ADD COLUMN IF NOT EXISTS founding_revoked_reason varchar;
+    ALTER TABLE provider_profiles ADD COLUMN IF NOT EXISTS photo_private_key varchar;
     CREATE UNIQUE INDEX IF NOT EXISTS provider_profiles_public_code_idx ON provider_profiles (public_code);
   `)).then(() => undefined).catch((error) => {
     columnsReady = null;
@@ -227,6 +228,48 @@ export async function getPublicProviderSummaryForListing(kind: PublicListingKind
   return summary;
 }
 
+// TBM's queue: every provider with a photo waiting, newest sent last, and
+// photos saved before checks began (never public until approved).
+export async function listWaitingProviderPhotos() {
+  await ensureProviderPageColumns();
+  const { rows } = await pool.query<{ user_id: string; business_name: string | null; first_name: string | null; last_name: string | null; photo_pending_key: string | null; photo_submitted_at: string | null; legacy: boolean }>(`
+    SELECT p.user_id, p.business_name, u.first_name, u.last_name, p.photo_pending_key, p.photo_submitted_at,
+           (p.photo_pending_key IS NULL) AS legacy
+    FROM provider_profiles p JOIN users u ON u.id = p.user_id
+    WHERE p.photo_pending_key IS NOT NULL
+       OR (p.photo_approved_at IS NULL AND COALESCE(p.photo_url, '') <> '' AND p.photo_status <> 'rejected')
+    ORDER BY (p.photo_pending_key IS NULL), p.photo_submitted_at NULLS LAST, p.user_id`);
+  return rows.map((row) => ({
+    providerId: row.user_id,
+    name: row.business_name?.trim() || [row.first_name, row.last_name].filter(Boolean).join(" ") || "Provider",
+    submittedAt: row.photo_submitted_at,
+    legacy: row.legacy,
+  }));
+}
+
+// Live pages for the sitemap: switched on, not blocked by TBM, a provider in
+// good standing, and at least one public listing (the same rules as the page).
+export async function listLiveProviderPages(): Promise<Array<{ path: string; lastmod: string | null }>> {
+  await ensureProviderPageColumns();
+  const { rows } = await pool.query<{ public_code: string; business_name: string | null; first_name: string | null; updated_at: string | null }>(`
+    SELECT p.public_code, p.business_name, u.first_name, p.updated_at
+    FROM provider_profiles p JOIN users u ON u.id = p.user_id
+    WHERE p.public_code IS NOT NULL AND p.public_enabled AND p.public_blocked_at IS NULL
+      AND u.role = 'provider' AND NOT COALESCE(u.is_suspended, false)
+      AND (EXISTS (SELECT 1 FROM stays WHERE manager_user_id = p.user_id AND is_public)
+        OR EXISTS (SELECT 1 FROM cars WHERE manager_user_id = p.user_id AND is_public)
+        OR EXISTS (SELECT 1 FROM cooks WHERE manager_user_id = p.user_id AND is_public)
+        OR EXISTS (SELECT 1 FROM errands WHERE manager_user_id = p.user_id AND is_public)
+        OR EXISTS (SELECT 1 FROM experiences WHERE manager_user_id = p.user_id AND is_public))
+    ORDER BY p.public_code`);
+  return rows
+    .filter((row) => isProviderPublicCode(row.public_code))
+    .map((row) => ({
+      path: providerPublicPath(row.public_code, publicProviderDisplayName({ businessName: row.business_name ?? "", firstName: row.first_name })),
+      lastmod: row.updated_at,
+    }));
+}
+
 // For provider share links (share-links.ts): who the page belongs to, and
 // whether it's live. No reviews needed.
 export async function getProviderShareTarget(code: string) {
@@ -365,7 +408,7 @@ export async function removeProviderPhoto(userId: string) {
   const now = new Date().toISOString();
   await pool.query(
     `UPDATE provider_profiles SET photo_url = '', photo_kind = NULL, photo_approved_at = NULL, photo_pending_key = NULL,
-       photo_pending_kind = NULL, photo_status = 'none', photo_review_note = NULL, updated_at = $2 WHERE user_id = $1`,
+       photo_pending_kind = NULL, photo_private_key = NULL, photo_status = 'none', photo_review_note = NULL, updated_at = $2 WHERE user_id = $1`,
     [userId, now],
   );
   clearProviderPageCache();
@@ -382,9 +425,13 @@ export async function reviewProviderPhoto(userId: string, args: { decision: "app
   if (args.decision === "approve") {
     let url: string;
     let kind: ProviderPhotoKind;
+    // The private copy stays too: a confirmed home-help guest sees the photo
+    // from there, without a public link.
+    let privateKey: string | null = null;
     if (row.photo_pending_key) {
       url = await publishPrivatePhoto(row.photo_pending_key);
       kind = args.kind ?? asPhotoKind(row.photo_pending_kind) ?? "face";
+      privateKey = row.photo_pending_key;
     } else if (row.photo_url && !row.photo_approved_at) {
       url = row.photo_url;
       // An older photo has no kind: treated as a face unless TBM says otherwise.
@@ -394,9 +441,9 @@ export async function reviewProviderPhoto(userId: string, args: { decision: "app
     }
     await pool.query(
       `UPDATE provider_profiles SET photo_url = $2, photo_kind = $3, photo_approved_at = $4, photo_status = 'approved',
-         photo_pending_key = NULL, photo_pending_kind = NULL, photo_reviewed_at = $4, photo_reviewed_by = $5,
+         photo_pending_key = NULL, photo_pending_kind = NULL, photo_private_key = $7, photo_reviewed_at = $4, photo_reviewed_by = $5,
          photo_review_note = $6, updated_at = $4 WHERE user_id = $1`,
-      [userId, url, kind, now, args.adminId, args.note],
+      [userId, url, kind, now, args.adminId, args.note, privateKey],
     );
   } else if (row.photo_pending_key) {
     await pool.query(
@@ -406,7 +453,7 @@ export async function reviewProviderPhoto(userId: string, args: { decision: "app
     );
   } else {
     await pool.query(
-      `UPDATE provider_profiles SET photo_url = '', photo_kind = NULL, photo_approved_at = NULL, photo_status = 'rejected',
+      `UPDATE provider_profiles SET photo_url = '', photo_kind = NULL, photo_approved_at = NULL, photo_private_key = NULL, photo_status = 'rejected',
          photo_reviewed_at = $2, photo_reviewed_by = $3, photo_review_note = $4, updated_at = $2 WHERE user_id = $1`,
       [userId, now, args.adminId, args.note],
     );

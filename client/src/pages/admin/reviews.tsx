@@ -6,6 +6,7 @@ import { useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { EyeOff, Star } from "lucide-react";
 import { AdminLayout } from "@/components/admin-layout";
+import { AdminStoredRatings } from "@/components/admin-stored-ratings";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -146,6 +147,7 @@ export default function AdminReviews() {
         {isLoading ? <p className="text-sm text-muted-foreground">Loading reviews…</p> : null}
         {!isLoading && !shown.length ? <p className="text-sm text-muted-foreground">{filter === "replies" ? "No replies are waiting." : "Nothing here."}</p> : null}
         <ul className="space-y-3">{shown.map((review) => <ReviewRow key={review.id} review={review} />)}</ul>
+        <AdminStoredRatings />
       </div>
     </AdminLayout>
   );

@@ -104,7 +104,7 @@ export function ProviderPhotoField({ fallbackName }: { fallbackName: string }) {
             </button>
           ))}
         </div>
-        {homeHelp ? <p className="text-xs text-muted-foreground">For your safety, TBM never shows the face of a home-help or childcare provider in public.</p> : null}
+        {homeHelp ? <p className="text-xs text-muted-foreground">For your safety, TBM never shows the face of a home-help or childcare provider in public. Once a booking is confirmed, the guest who booked sees your first name and approved face photo in their bookings, so they know who's coming.</p> : null}
       </fieldset>
 
       <div className="flex flex-wrap gap-2">
