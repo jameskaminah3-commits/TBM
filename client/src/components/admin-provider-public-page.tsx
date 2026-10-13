@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import type { ProviderPageSettingsView } from "@/lib/provider-page";
+import { AdminSpotlight } from "@/components/admin-spotlight";
 import { providerPageBlockerLabels, providerPhotoChecklist, providerPhotoKinds, type ProviderPhotoKind } from "@shared/provider-public";
 
 const kindLabels: Record<ProviderPhotoKind, string> = { logo: "Logo", work: "Their work", face: "Their face" };
@@ -116,6 +117,7 @@ export function AdminProviderPublicPage({ providerId, onChanged }: { providerId:
             <Button type="button" size="sm" variant="outline" className="rounded-full text-rose-700" disabled={block.isPending} onClick={() => block.mutate(true)} data-testid={`button-block-page-${providerId}`}>Switch the page off (TBM)</Button>
           </>
         )}
+        <AdminSpotlight providerId={providerId} settings={settings} />
       </div>
     </div>
   );

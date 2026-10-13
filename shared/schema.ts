@@ -1122,6 +1122,8 @@ export const providerProfiles = pgTable("provider_profiles", {
   // The approved photo's private copy (migration 0027), shown to a confirmed
   // home-help guest without a public link.
   photoPrivateKey: varchar("photo_private_key"),
+  // When the provider said no to TBM featuring their page (migration 0028).
+  spotlightOptOutAt: text("spotlight_opt_out_at"),
   foundingProviderAt: text("founding_provider_at"),
   foundingCohort: varchar("founding_cohort"),
   // Removed permanently (fraud, safety, impersonation, account removed).

@@ -19,7 +19,7 @@ import {
 } from "@shared/share-attribution";
 import { getPublicListingPath, type PublicListingKind } from "@shared/seo";
 import { getCarDisplayName } from "@shared/listing-share";
-import { ensurePublicCode, getProviderShareTarget } from "./provider-pages";
+import { ensurePublicCode, getProviderPageSettings, getProviderShareTarget } from "./provider-pages";
 
 export const shareListingKinds = ["stay", "car", "cook", "errand", "experience"] as const satisfies readonly PublicListingKind[];
 
@@ -161,6 +161,40 @@ export async function issueShareLink(userId: string, kind: ShareTargetKind, requ
   if (!listing.isPublic) {
     return { error: kind === "provider" ? "Your page isn't live yet." as const : "This listing isn't public yet." as const };
   }
+  return { code: await reuseOrCreateLink(userId, kind, listingId), listingId };
+}
+
+// TBM's Spotlight: a link to a provider's live page, made by TBM, in the same
+// table as every other share link. Only while the page is live and the
+// provider hasn't said no. Visits and bookings from it are reported to TBM and
+// to the provider; the bookings are the provider's, and nothing about
+// commission changes.
+export async function issueSpotlightLink(adminUserId: string, providerUserId: string) {
+  const settings = await getProviderPageSettings(providerUserId);
+  if (!settings.live) return { error: "This provider's page isn't live, so it can't be featured." as const };
+  if (!settings.spotlightAllowed) return { error: "This provider has asked TBM not to feature their page." as const };
+  return { code: await reuseOrCreateLink(adminUserId, "provider", settings.code), pageCode: settings.code, path: settings.path };
+}
+
+// A Spotlight link's first share: the provider hears about it, at most once a
+// week, so they know TBM is sending guests their way.
+export async function markSpotlightShared(code: string, adminUserId: string, channel: ShareChannel) {
+  const link = await getShareLink(code);
+  if (!link || link.listing_kind !== "provider" || link.created_by_user_id !== adminUserId) return null;
+  const target = await getProviderShareTarget(link.listing_id);
+  if (!target || target.userId === adminUserId) return null;
+  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const recent = await pool.query(
+    `SELECT 1 FROM listing_share_links WHERE listing_kind = 'provider' AND listing_id = $1 AND created_by_user_id <> $2
+       AND shared_at IS NOT NULL AND shared_at > $3 LIMIT 1`,
+    [link.listing_id, target.userId, weekAgo],
+  );
+  const firstThisWeek = !link.shared_at && recent.rowCount === 0;
+  await markShareLinkShared(code, adminUserId, channel);
+  return { providerUserId: target.userId, notify: firstThisWeek };
+}
+
+async function reuseOrCreateLink(userId: string, kind: ShareTargetKind, listingId: string) {
   await ensureShareTables();
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const unused = await pool.query<{ code: string }>(
@@ -171,7 +205,7 @@ export async function issueShareLink(userId: string, kind: ShareTargetKind, requ
      ORDER BY l.created_at DESC LIMIT 1`,
     [userId, kind, listingId, since],
   );
-  if (unused.rows[0]) return { code: unused.rows[0].code, listingId };
+  if (unused.rows[0]) return unused.rows[0].code;
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const code = newShareCode();
     const inserted = await pool.query(
@@ -179,7 +213,7 @@ export async function issueShareLink(userId: string, kind: ShareTargetKind, requ
        VALUES ($1, $2, $3, $4, $5) ON CONFLICT (code) DO NOTHING`,
       [code, kind, listingId, userId, new Date().toISOString()],
     );
-    if (inserted.rowCount) return { code, listingId };
+    if (inserted.rowCount) return code;
   }
   throw new Error("Couldn't make a share link.");
 }
@@ -489,10 +523,60 @@ export async function getShareSummaries(ownerUserIds: string[] | null) {
   return result.sort((left, right) => (right.lastActivityAt ?? "").localeCompare(left.lastActivityAt ?? ""));
 }
 
-// "Your shares": only the signed-in provider's own links and credit (R12).
+// What TBM's Spotlight has done for one provider: visits to their page from
+// TBM's links, and bookings of their services those links brought. Counts only.
+export async function getProviderSpotlightSummary(userId: string) {
+  await ensureShareTables();
+  const code = (await pool.query<{ public_code: string | null }>("SELECT public_code FROM provider_profiles WHERE user_id = $1", [userId])).rows[0]?.public_code;
+  if (!code) return null;
+  const links = (await pool.query<ShareLinkRow>(
+    `SELECT * FROM listing_share_links WHERE listing_kind = 'provider' AND listing_id = $1 AND created_by_user_id <> $2 AND shared_at IS NOT NULL`,
+    [code, userId],
+  )).rows;
+  if (!links.length) return null;
+  const codes = links.map((link) => link.code);
+  const events = (await pool.query<{ event_type: string; count: string }>(
+    "SELECT event_type, count(*) AS count FROM listing_share_events WHERE code = ANY($1) GROUP BY event_type",
+    [codes],
+  )).rows;
+  const bookings = emptyCounts();
+  const attributions = (await pool.query<AttributionRow>(
+    `SELECT ba.booking_id, ba.share_code, ba.share_credit, ba.share_listing_kind, ba.share_listing_id, ba.credited_user_id,
+            ba.assisted_share_codes, b.created_at, b.check_in, b.check_out, b.status, b.payment_status, b.payment_amount_paid,
+            b.total_price, b.payment_deposit_amount, b.service_mode
+     FROM booking_attributions ba JOIN bookings b ON b.id = ba.booking_id
+     WHERE ba.share_credit = 'credited' AND ba.share_code = ANY($1)`,
+    [codes],
+  )).rows;
+  for (const row of attributions) {
+    bookings[getShareBookingState({
+      status: row.status,
+      paymentStatus: row.payment_status,
+      paymentAmountPaid: row.payment_amount_paid,
+      totalPrice: row.total_price,
+      paymentDepositAmount: row.payment_deposit_amount,
+      serviceMode: row.service_mode,
+    })] += 1;
+  }
+  const count = (type: string) => Number(events.find((event) => event.event_type === type)?.count ?? 0);
+  return {
+    timesShared: links.length,
+    firstSharedAt: links.map((link) => link.shared_at!).sort()[0],
+    visits: count("visit"),
+    bookTaps: count("book"),
+    enquiries: count("enquire"),
+    bookings,
+  };
+}
+
+// "Your shares": only the signed-in provider's own links and credit (R12),
+// and what TBM's Spotlight brought them.
 export async function getProviderShares(userId: string) {
   const listings = await getShareSummaries([userId]);
-  return { listings: listings.map(({ ownerUserId: _owner, ...listing }) => listing) };
+  return {
+    listings: listings.map(({ ownerUserId: _owner, ...listing }) => listing),
+    spotlight: await getProviderSpotlightSummary(userId),
+  };
 }
 
 // TBM's view: every provider's shares, with the provider's name.
@@ -500,12 +584,13 @@ export async function getAdminShareSummary() {
   const listings = await getShareSummaries(null);
   const ownerIds = Array.from(new Set(listings.map((listing) => listing.ownerUserId)));
   const names = ownerIds.length
-    ? (await pool.query<{ id: string; name: string }>(
-      "SELECT id, trim(concat_ws(' ', first_name, last_name)) AS name FROM users WHERE id = ANY($1)",
+    ? (await pool.query<{ id: string; name: string; role: string | null }>(
+      "SELECT id, trim(concat_ws(' ', first_name, last_name)) AS name, role FROM users WHERE id = ANY($1)",
       [ownerIds],
     )).rows
     : [];
-  const nameById = new Map(names.map((row) => [row.id, row.name || "Provider"]));
+  // A link TBM made (the Spotlight) is labelled as TBM's, not the admin's name.
+  const nameById = new Map(names.map((row) => [row.id, row.role === "admin" ? "TBM Spotlight" : row.name || "Provider"]));
   return {
     rows: listings.map(({ links, creditedBookings, ownerUserId, ...listing }) => ({
       ...listing,

@@ -244,6 +244,26 @@ It has no rating and no personal phone number.
 
 **What doesn't change:** there are no referral payments, and commission is unchanged.
 
+### TBM's Spotlight: promoting TBM through providers, never against them
+
+TBM also shares providers' pages on its own channels (WhatsApp, social media, newsletters), and will do the same for partners' pages once they have them. The aim is to grow TBM by showing the people on it, without TBM ever looking like a competitor to them.
+
+**How it's built** (`shared/spotlight.ts`, Admin › Providers › a provider's account):
+- TBM makes a Spotlight link from the provider's account panel. It's an ordinary row in `listing_share_links` (`listing_kind = 'provider'`, made by a TBM admin): no separate sharing or tracking system.
+- Only while the page is live, and only if the provider hasn't said no. Providers choose in Share & grow ("Let TBM feature my page in its Spotlight", on by default, `spotlight_opt_out_at`, migration 0028). Saying no stops new links; it never removes what earlier links brought.
+- TBM gets the message, a Copy button, WhatsApp, and a 1080 × 1920 "TBM SPOTLIGHT" image with a QR code. Links carry `utm_source=tbm`, `utm_campaign=spotlight`.
+- The first share in any week tells the provider: "TBM is featuring your page… Bookings from it are yours, and your commission doesn't change."
+- The provider's Your shares shows what the Spotlight brought them: times shared, visits, Book taps, and bookings paid or not paid yet. Counts only.
+- TBM's share report labels these links "TBM Spotlight".
+
+**Why it reads as promotion, not competition:**
+- **The provider is the hero.** The message opens with their name ("TBM Spotlight: Kassim Coast Stays"), says what and where, and invites guests to "book with them through TBM". TBM appears as the stage and the support ("pay safely in your My Bookings checkout, with our team supporting you throughout"), never as the seller.
+- **The link goes to their page, and only their services are on it.** The live provider page never shows other providers or TBM alternatives. (The unavailable state suggests similar services, because then there's nothing of theirs to book.)
+- **Bookings stay theirs.** Credit for a Spotlight link is reporting only, like every share credit: the booking is the provider's job, their payout is unchanged, and there's no referral payment either way.
+- **Only checked facts.** "Verified by TBM" only while verified; a rating only from 3 eligible reviews, to one decimal place; the Founding badge only once granted. No urgency, scarcity or invented numbers.
+- **Reciprocity and consent.** The provider can say no, hears when they're featured, and sees the guests it sent them. That makes them likely to share TBM's post themselves, which reaches their own audience.
+- **Partners later.** `buildSpotlightMessage` already words a partner's Spotlight as "Meet our partner: …", "We're proud to partner with …". It needs partner pages before it can be offered.
+
 ## 7. Founding Provider badge (proposal)
 
 **Who's eligible.** All of these:
@@ -325,6 +345,7 @@ The numbers below are the files as built (they were built in a different order f
 | `0024_review_integrity.sql` (Phase 1) | `reviews`: adds `status` (default `published`), `hidden_reason`, `hidden_by`, `hidden_at`, `provider_reply`, `provider_reply_status`, `provider_reply_at`, `provider_reply_reviewed_by` and `provider_reply_reviewed_at`. Adds a unique index on (`booking_id`, `user_id`, `target_type`, `target_id`). Check for duplicates before adding it (query below). |
 | `0025_provider_application_tracking.sql` (Phase 1) | `provider_applications`: adds `reference` (unique, filled in for existing rows), `status_token_hash`, `applicant_message`, `decline_reason` and `decided_at`. Adds the status `needs-info`. `password_reset_otps`: adds `purpose` (default `password-reset`). |
 | `0026_provider_public_pages.sql` (Phase 2) | `provider_profiles`: adds `public_code` (unique), `public_enabled` (default false), `public_enabled_at`, TBM's switch (`public_blocked_at`, `public_blocked_by`, `public_blocked_note`), photo approval (`photo_status`, `photo_kind`, `photo_approved_at`, `photo_pending_key`, `photo_pending_kind`, `photo_submitted_at`, `photo_reviewed_at`, `photo_reviewed_by`, `photo_review_note`) and `founding_provider_at`, `founding_cohort`. The slug isn't stored: it's made from the display name each time, and the code alone finds the page. |
+| `0028_provider_spotlight.sql` (Spotlight) | `provider_profiles`: adds `spotlight_opt_out_at`, when the provider said no to TBM featuring their page. Empty means TBM may feature it while it's live. |
 | `0027_listing_published_and_carer_photo.sql` (gap fixes) | `stays`, `cars`, `cooks`, `errands`, `experiences`: adds `first_published_at`, set by a database trigger the first time a listing goes from private to public and never changed afterwards. A value sent in a request is ignored. Listings already public before this ran have no date. `provider_profiles`: adds `photo_private_key`, the approved photo's private copy. Needs Postgres 14 or later (`CREATE OR REPLACE TRIGGER`). |
 | No change | `listing_share_links` and `listing_share_events`: the kind and event-type columns are free text, so `provider` and `enquire` are new values in code only. |
 

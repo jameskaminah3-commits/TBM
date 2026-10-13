@@ -302,7 +302,9 @@ function inkBackground(context: Context, width: number, height: number) {
 
 // ── WhatsApp Status image ────────────────────────────────────────────────────
 
-export async function renderStatusImage(content: BusinessCardContent, qr: QrMatrix, pageLabel: string) {
+// eyebrow: the small capitals at the top ("TBM SPOTLIGHT" when TBM features
+// the provider); the brand name otherwise.
+export async function renderStatusImage(content: BusinessCardContent, qr: QrMatrix, pageLabel: string, options: { eyebrow?: string } = {}) {
   await fontsReady();
   const { width, height } = STATUS_PIXELS;
   const { canvas, context } = newCanvas(width, height);
@@ -317,7 +319,7 @@ export async function renderStatusImage(content: BusinessCardContent, qr: QrMatr
   context.textBaseline = "alphabetic";
   context.font = `600 26px ${SANS}`;
   context.fillStyle = goldGradient(context, 300, 0, 780, 0);
-  const brandWidth = drawTracked(context, "TEMBEA BILA MATATA", width / 2, 150, 7, "center");
+  const brandWidth = drawTracked(context, (options.eyebrow ?? "Tembea Bila Matata").toUpperCase(), width / 2, 150, 7, "center");
   goldRule(context, width / 2 - brandWidth / 2 - 130, 141, 100, false, 2);
   goldRule(context, width / 2 + brandWidth / 2 + 30, 141, 100, false, 2);
 

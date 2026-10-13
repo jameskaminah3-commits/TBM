@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ChevronDown, Link2, Share2 } from "lucide-react";
+import { ChevronDown, Link2, Share2, Sparkles } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -211,12 +211,53 @@ function ListingRow({ listing }: { listing: ListingShares }) {
 
 // "Your shares": what the provider's own share links brought in. Counts,
 // booking references and dates only; no guest details or amounts.
+type SpotlightSummary = {
+  timesShared: number;
+  firstSharedAt: string;
+  visits: number;
+  bookTaps: number;
+  enquiries: number;
+  bookings: Counts;
+};
+
+// What TBM's Spotlight brought this provider: TBM sharing their page, so
+// they see TBM sending guests their way.
+function SpotlightRow({ spotlight }: { spotlight: SpotlightSummary }) {
+  const paid = spotlight.bookings.confirmed;
+  const waiting = spotlight.bookings.pending;
+  return (
+    <div className="rounded-2xl border border-amber-200/80 bg-[linear-gradient(135deg,rgba(255,251,235,0.95),rgba(254,243,199,0.55))] p-4" data-testid="your-shares-spotlight">
+      <div className="flex items-center gap-2 font-medium text-amber-950">
+        <Sparkles className="h-4 w-4 text-amber-600" aria-hidden="true" />
+        TBM featured your page in its Spotlight
+      </div>
+      <p className="mt-1 text-sm text-amber-950/80">
+        Shared {spotlight.timesShared === 1 ? "once" : `${spotlight.timesShared} times`} since {formatKenyaDateTime(spotlight.firstSharedAt, { day: "numeric", month: "short", year: "numeric" }, "en-GB")}. These are your guests: bookings are yours and your commission doesn't change.
+      </p>
+      <dl className="mt-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+        {([
+          ["Visits", spotlight.visits],
+          ["Book taps", spotlight.bookTaps],
+          ["Bookings paid", paid],
+          ["Not paid yet", waiting],
+        ] as const).map(([label, value]) => (
+          <div key={label} className="rounded-xl bg-white/80 px-3 py-2">
+            <dt className="text-xs text-stone-600">{label}</dt>
+            <dd className="text-lg font-semibold tabular-nums text-stone-900">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
 export function YourShares() {
-  const { data, isLoading, isError } = useQuery<{ listings: ListingShares[] }>({
+  const { data, isLoading, isError } = useQuery<{ listings: ListingShares[]; spotlight?: SpotlightSummary | null }>({
     queryKey: ["/api/provider/shares"],
     staleTime: 60_000,
   });
   const listings = data?.listings ?? [];
+  const spotlight = data?.spotlight ?? null;
 
   return (
     <Card id="provider-shares" className="border-stone-200/70 bg-white/82 shadow-[0_24px_70px_-42px_rgba(92,73,47,0.34)] scroll-mt-24">
@@ -232,6 +273,7 @@ export function YourShares() {
       <CardContent className="space-y-3">
         {isLoading ? <p className="text-sm text-muted-foreground">Loading your shares…</p> : null}
         {isError ? <p className="text-sm text-muted-foreground">Your shares couldn't load. Please refresh the page.</p> : null}
+        {spotlight ? <SpotlightRow spotlight={spotlight} /> : null}
         {!isLoading && !isError && !listings.length ? (
           <p className="text-sm text-muted-foreground">
             Use Share on any of your public listings below. Visits and bookings from those links will show here.

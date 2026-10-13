@@ -26,7 +26,7 @@ import { getProviderPageBlockers, toPublicProviderProfile, toPublicProviderSumma
 
 let columnsReady: Promise<void> | null = null;
 
-// The columns from migrations 0026 and 0027, added here too so an older database keeps
+// The columns from migrations 0026 to 0028, added here too so an older database keeps
 // working before the deploy step has run.
 export function ensureProviderPageColumns(): Promise<void> {
   columnsReady ??= ensureProviderHubTables().then(() => pool.query(`
@@ -50,6 +50,7 @@ export function ensureProviderPageColumns(): Promise<void> {
     ALTER TABLE provider_profiles ADD COLUMN IF NOT EXISTS founding_revoked_at text;
     ALTER TABLE provider_profiles ADD COLUMN IF NOT EXISTS founding_revoked_reason varchar;
     ALTER TABLE provider_profiles ADD COLUMN IF NOT EXISTS photo_private_key varchar;
+    ALTER TABLE provider_profiles ADD COLUMN IF NOT EXISTS spotlight_opt_out_at text;
     CREATE UNIQUE INDEX IF NOT EXISTS provider_profiles_public_code_idx ON provider_profiles (public_code);
   `)).then(() => undefined).catch((error) => {
     columnsReady = null;
@@ -81,6 +82,7 @@ type PageRow = {
   verification_status: string;
   verified_at: string | null;
   founding_provider_at: string | null;
+  spotlight_opt_out_at: string | null;
   role: string | null;
   is_suspended: boolean | null;
   first_name: string | null;
@@ -91,7 +93,7 @@ const pageRowSql = `
   SELECT p.user_id, p.public_code, p.public_enabled, p.public_enabled_at, p.public_blocked_at, p.public_blocked_note,
          p.business_name, p.bio, p.photo_url, p.photo_status, p.photo_kind, p.photo_approved_at, p.photo_pending_key,
          p.photo_pending_kind, p.photo_submitted_at, p.photo_reviewed_at, p.photo_review_note, p.languages, p.service_areas,
-         p.verification_status, p.verified_at, p.founding_provider_at,
+         p.verification_status, p.verified_at, p.founding_provider_at, p.spotlight_opt_out_at,
          u.role, u.is_suspended, u.first_name, u.created_at AS account_created_at
   FROM provider_profiles p JOIN users u ON u.id = p.user_id`;
 
@@ -319,6 +321,8 @@ export type ProviderPageSettings = {
   publicListingCount: number;
   offersHomeHelp: boolean;
   verified: boolean;
+  // Whether TBM may feature the page in its Spotlight (the provider's choice).
+  spotlightAllowed: boolean;
   photo: {
     status: string;
     approvedUrl: string | null;
@@ -352,6 +356,7 @@ export async function getProviderPageSettings(userId: string): Promise<ProviderP
     publicListingCount: source.listings.length,
     offersHomeHelp: source.listings.some((listing) => listing.kind === "errand"),
     verified: row.verification_status === "verified",
+    spotlightAllowed: !row.spotlight_opt_out_at,
     photo: {
       status: row.photo_status,
       approvedUrl: row.photo_approved_at && row.photo_url ? row.photo_url : null,
@@ -374,6 +379,16 @@ export async function setPublicPageEnabled(userId: string, enabled: boolean) {
     [userId, enabled, now],
   );
   clearProviderPageCache();
+}
+
+// The provider's say over TBM's Spotlight: on unless they turn it off.
+export async function setSpotlightAllowed(userId: string, allowed: boolean) {
+  await ensurePublicCode(userId);
+  const now = new Date().toISOString();
+  await pool.query(
+    "UPDATE provider_profiles SET spotlight_opt_out_at = CASE WHEN $2 THEN NULL ELSE COALESCE(spotlight_opt_out_at, $3) END, updated_at = $3 WHERE user_id = $1",
+    [userId, allowed, now],
+  );
 }
 
 // TBM's switch wins over the provider's: a blocked page stays off until TBM unblocks it.

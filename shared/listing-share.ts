@@ -3,8 +3,9 @@
 import { getPublicListingPath, type PublicListingKind } from "./seo.ts";
 
 export type ShareChannel = "whatsapp" | "copy" | "native" | "qr";
-// "provider" when the listing's own provider shares it; "visitor" for anyone else.
-export type ShareSource = "provider" | "visitor";
+// "provider" when the listing's own provider shares it; "tbm" for TBM's
+// Spotlight; "visitor" for anyone else.
+export type ShareSource = "provider" | "tbm" | "visitor";
 
 export function buildListingShareUrl(
   origin: string,
@@ -21,12 +22,17 @@ export function buildProviderPageShareUrl(origin: string, path: string, options:
   return buildShareUrl(origin, path, { ...options, source: "provider", campaign: "provider_page" });
 }
 
+// TBM's Spotlight: TBM shares a provider's page (shared/spotlight.ts).
+export function buildSpotlightShareUrl(origin: string, path: string, options: { channel: ShareChannel; code?: string | null }) {
+  return buildShareUrl(origin, path, { ...options, source: "tbm", campaign: "spotlight" });
+}
+
 function buildShareUrl(origin: string, path: string, options: { source: ShareSource; channel: ShareChannel; code?: string | null; campaign: string }) {
   const url = new URL(path, origin);
   if (options.code) {
     url.searchParams.set("ref", options.code);
   }
-  url.searchParams.set("utm_source", options.source === "provider" ? "provider" : "share");
+  url.searchParams.set("utm_source", options.source === "visitor" ? "share" : options.source);
   url.searchParams.set("utm_medium", options.channel);
   url.searchParams.set("utm_campaign", options.campaign);
   return url.toString();

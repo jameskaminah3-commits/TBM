@@ -4,6 +4,9 @@
 import type { Express } from "express";
 import { z } from "zod";
 import { providerPhotoKinds } from "@shared/provider-public";
+import { shareChannels } from "@shared/share-attribution";
+import { spotlightProviderNotice } from "@shared/spotlight";
+import { issueSpotlightLink, markSpotlightShared } from "./share-links";
 import type { PublicListingKind } from "@shared/seo";
 import { createRateLimitMiddleware, getRequestIp } from "./middleware/rate-limit";
 import { requireAdmin, requireProviderOrAdmin } from "./middleware/auth";
@@ -19,6 +22,7 @@ import {
   reviewProviderPhoto,
   setPublicPageBlocked,
   setPublicPageEnabled,
+  setSpotlightAllowed,
   submitProviderPhoto,
 } from "./provider-pages";
 
@@ -94,12 +98,16 @@ export function registerProviderPageRoutes(app: Express) {
     }
   });
 
-  // On after a preview (decision 2), or off. TBM's switch still wins.
+  // On after a preview (decision 2), or off. TBM's switch still wins. The
+  // provider also says whether TBM may feature the page in its Spotlight.
   app.put("/api/provider/public-page", requireProviderOrAdmin, async (req: any, res) => {
-    const parsed = z.object({ enabled: z.boolean() }).safeParse(req.body ?? {});
+    const parsed = z.object({ enabled: z.boolean().optional(), spotlight: z.boolean().optional() })
+      .refine((value) => value.enabled !== undefined || value.spotlight !== undefined)
+      .safeParse(req.body ?? {});
     if (!parsed.success) return res.status(400).json({ error: "Choose on or off." });
     try {
-      await setPublicPageEnabled(userIdOf(req), parsed.data.enabled);
+      if (parsed.data.enabled !== undefined) await setPublicPageEnabled(userIdOf(req), parsed.data.enabled);
+      if (parsed.data.spotlight !== undefined) await setSpotlightAllowed(userIdOf(req), parsed.data.spotlight);
       return res.json(await getProviderPageSettings(userIdOf(req)));
     } catch (error) {
       console.error("[PROVIDER_PAGES] Switch failed:", error);
@@ -143,6 +151,40 @@ export function registerProviderPageRoutes(app: Express) {
   });
 
   // ── TBM's side ─────────────────────────────────────────────────────────
+  // TBM's Spotlight: a tracked link to a provider's live page, in the same
+  // share-link table as the provider's own links (spotlight.ts has the rules).
+  app.post("/api/admin/providers/:id/spotlight-link", requireAdmin, async (req: any, res) => {
+    try {
+      const result = await issueSpotlightLink(userIdOf(req), req.params.id);
+      if ("error" in result) return res.status(409).json({ error: result.error });
+      return res.status(201).json(result);
+    } catch (error) {
+      console.error("[SPOTLIGHT] Couldn't make a link:", error);
+      return res.status(500).json({ error: "Couldn't make the Spotlight link" });
+    }
+  });
+
+  app.post("/api/admin/spotlight-links/:code/shared", requireAdmin, async (req: any, res) => {
+    const parsed = z.object({ channel: z.enum(shareChannels) }).safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ error: "Unknown share channel" });
+    try {
+      const result = await markSpotlightShared(req.params.code, userIdOf(req), parsed.data.channel);
+      if (!result) return res.status(404).json({ error: "Spotlight link not found" });
+      if (result.notify) {
+        queueNotificationTask(`spotlight notice for ${result.providerUserId}`, storage.notifyProviderOfAccount({
+          providerUserId: result.providerUserId,
+          title: spotlightProviderNotice.title,
+          body: spotlightProviderNotice.body,
+          actionUrl: "/provider/share#provider-shares",
+        }));
+      }
+      return res.json({ ok: true });
+    } catch (error) {
+      console.error("[SPOTLIGHT] Couldn't record the share:", error);
+      return res.status(500).json({ error: "Couldn't record the share" });
+    }
+  });
+
   // Every provider with a photo waiting for a check, in one list.
   app.get("/api/admin/provider-photos", requireAdmin, async (_req, res) => {
     try {
