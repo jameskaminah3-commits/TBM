@@ -3,6 +3,7 @@ import { Link, useLocation } from "wouter";
 import { Share2, Star } from "lucide-react";
 import { PremiumMediaGallery } from "@/components/premium-media-gallery";
 import { cn } from "@/lib/utils";
+import { hasPublicRating } from "@shared/review-eligibility";
 
 type ListingCardProps = {
   /** The listing's own page; the whole card leads there. */
@@ -98,7 +99,7 @@ export function ListingCard({
             </Link>
           </h2>
           <span className="flex shrink-0 items-center gap-1 pt-0.5 text-sm">
-            {reviewCount > 0 ? (
+            {hasPublicRating({ rating, reviewCount }) ? (
               <>
                 <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" aria-hidden="true" />
                 <span aria-hidden="true" className="font-medium text-foreground">{rating.toFixed(1)}</span>

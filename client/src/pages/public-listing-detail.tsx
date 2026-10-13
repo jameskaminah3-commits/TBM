@@ -55,6 +55,7 @@ import { useOwnsListing } from "@/hooks/use-owns-listing";
 import { captureListingVisit, trackShareEvent, withShareRef } from "@/lib/marketing-attribution";
 import { getCarDisplayName, getListingSharePrice } from "@shared/listing-share";
 import { ListingUnavailable } from "@/components/listing-unavailable";
+import { hasPublicRating, summarizeRatings } from "@shared/review-eligibility";
 import {
   buildListingSeoDescription,
   formatSeoLocation,
@@ -270,7 +271,7 @@ function getStructuredData(kind: ListingKind, listing: PublicListing, canonicalU
   };
 
   if (listing.imageUrl) data.image = listing.imageUrl;
-  if (listing.rating > 0 && listing.reviewCount > 0) {
+  if (hasPublicRating(listing)) {
     data.aggregateRating = { "@type": "AggregateRating", ratingValue: listing.rating, reviewCount: listing.reviewCount };
   }
   if (leadPrice > 0) {
@@ -355,8 +356,10 @@ export default function PublicListingDetail({ kind }: { kind: ListingKind }) {
   const cook = kind === "cook" ? (listing as Cook) : null;
   const errand = kind === "errand" ? (listing as Errand) : null;
   const experience = kind === "experience" ? (listing as Experience) : null;
-  const reviewCount = reviews ? reviews.length : listing.reviewCount;
-  const averageRating = reviews?.length ? reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length : listing.rating;
+  // The reviews endpoint returns eligible reviews only, so this agrees with the listing's rating.
+  const ratingSummary = reviews ? summarizeRatings(reviews.map((review) => review.rating)) : { count: listing.reviewCount, average: listing.rating || null };
+  const reviewCount = ratingSummary.count;
+  const averageRating = ratingSummary.average ?? 0;
   const hasWrittenReviews = Boolean(reviews?.some((review) => review.comment?.trim()));
   const bookingHref = `${getBookingPath(kind, listing.id)}${selected?.mode ? `?mode=${selected.mode}` : ""}`;
   // The Book link carries the share code too, for browsers that block storage (R6).
@@ -413,7 +416,7 @@ export default function PublicListingDetail({ kind }: { kind: ListingKind }) {
               />
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-              {reviewCount > 0 ? (
+              {hasPublicRating({ rating: averageRating, reviewCount }) ? (
                 hasWrittenReviews ? (
                   <a href="#reviews" className="inline-flex min-h-11 items-center gap-1 font-medium text-foreground underline underline-offset-4 hover:text-primary" data-testid="link-listing-rating">
                     <Star className="h-4 w-4 fill-amber-400 text-amber-400" aria-hidden="true" />
@@ -426,7 +429,7 @@ export default function PublicListingDetail({ kind }: { kind: ListingKind }) {
                   </span>
                 )
               ) : (
-                <span>No reviews yet</span>
+                <span>{reviewCount > 0 ? `New on TBM · ${reviewCount} review${reviewCount === 1 ? "" : "s"}` : "New on TBM"}</span>
               )}
               <span aria-hidden="true">·</span>
               <span className="inline-flex items-center gap-1"><MapPin className="h-4 w-4" aria-hidden="true" />{location}</span>

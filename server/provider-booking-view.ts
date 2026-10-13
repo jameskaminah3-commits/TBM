@@ -85,23 +85,10 @@ export function withPartnerGuestName(text: string, fullName: string | null | und
   return name ? text.split(name).join(partnerGuestName(name)) : text;
 }
 
-export const CONTACT_REMOVED = "[contact details removed – message TBM]";
-
-const emailPattern = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
-// Nine or more digits, allowing a leading +, spaces, dots, dashes and brackets
-// between them: 0712 345 678, +254 (0) 712-345-678, wa.me/254712345678.
-const phonePattern = /\+?\d(?:[\s().-]*\d){8,}/g;
-
 // Guests sometimes type their number or email into a request. Providers reach
 // guests through TBM, so those details are taken out of what a provider reads.
-export function removeContactDetails(text: string): string;
-export function removeContactDetails(text: string | null | undefined): string | null | undefined;
-export function removeContactDetails(text: string | null | undefined) {
-  if (!text) {
-    return text;
-  }
-  return text.replace(emailPattern, CONTACT_REMOVED).replace(phonePattern, CONTACT_REMOVED);
-}
+export { CONTACT_REMOVED, removeContactDetails } from "../shared/contact-redaction.ts";
+import { removeContactDetails } from "../shared/contact-redaction.ts";
 
 function withoutContactInSelections(selections: unknown) {
   if (!Array.isArray(selections)) {

@@ -101,6 +101,7 @@ import {
 import { shareChannels } from "@shared/share-attribution";
 import { getCarDisplayName } from "@shared/listing-share";
 import { isPublicReviewTarget, listPublicReviews } from "./public-reviews";
+import { clearRatingSummaries, ensureReviewColumns, getRatingSummary, reviewSource, withPublicRatings } from "./review-ratings";
 import { createRateLimitMiddleware, getRequestIp } from "./middleware/rate-limit";
 import { toPublicListing, withoutProviderProtectedFields } from "./listing-privacy";
 import { partnerGuestName, toPartnerInboxItem, toProviderAssignment, toProviderBooking, toProviderPaymentData } from "./provider-booking-view";
@@ -3126,12 +3127,22 @@ async function assertCanAccessBookingThread(req: any, bookingId: string) {
   return { error: { status: 403, body: { error: "Forbidden" } } } as const;
 }
 
+// The listing's stored rating and count, kept for TBM's admin pages and
+// sorting. What guests see comes from eligible reviews (review-ratings.ts).
+async function getReviewTargetListing(targetType: string, targetId: string): Promise<{ managerUserId?: string | null } | undefined> {
+  if (targetType === "stay") return storage.getStay(targetId);
+  if (targetType === "car") return storage.getCar(targetId);
+  if (targetType === "cook") return storage.getCook(targetId);
+  if (targetType === "errand") return storage.getErrand(targetId);
+  if (targetType === "experience") return storage.getExperience(targetId);
+  return undefined;
+}
+
 async function refreshTargetRating(targetType: string, targetId: string) {
-  const targetReviews = await storage.getReviewsByTarget(targetType, targetId);
-  const reviewCount = targetReviews.length;
-  const rating = reviewCount > 0
-    ? Math.round(targetReviews.reduce((sum, review) => sum + review.rating, 0) / reviewCount)
-    : 5;
+  clearRatingSummaries();
+  const summary = await getRatingSummary(targetType, targetId);
+  const reviewCount = summary.count;
+  const rating = summary.average === null ? 0 : Math.round(summary.average);
 
   if (targetType === "stay") {
     await storage.updateStay(targetId, { rating, reviewCount });
@@ -3315,6 +3326,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerProviderHubRoutes(app);
   registerZainaRoutes(app);
   registerZainaAgentRoutes(app);
+  // Review columns from migration 0024, in case the deploy step hasn't added them.
+  void ensureReviewColumns().catch((error) => console.error("[REVIEWS] Couldn't check review columns:", error));
 
   app.get("/robots.txt", (_req, res) => {
     const baseUrl = getPublicSiteBaseUrl();
@@ -5539,6 +5552,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "That item is not part of this booking." });
       }
 
+      // A provider can't review their own listing, and TBM's admin accounts don't review.
+      if (req.user.claims.role === "admin") {
+        return res.status(403).json({ error: "TBM accounts can't leave reviews." });
+      }
+      const reviewedListing = await getReviewTargetListing(targetType, targetId);
+      if (reviewedListing?.managerUserId && reviewedListing.managerUserId === req.user.claims.sub) {
+        return res.status(403).json({ error: "You can't review your own listing." });
+      }
+
       const existingReview = (await storage.getReviewsByBookingId(req.params.id)).find(
         (review) => review.userId === req.user.claims.sub && review.targetType === targetType && review.targetId === targetId,
       );
@@ -5556,9 +5578,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         comment,
       });
 
+      clearRatingSummaries();
       await refreshTargetRating(targetType, targetId);
       res.status(201).json(review);
     } catch (error) {
+      // Two taps at once: the database keeps one review per booking and item.
+      if ((error as { code?: string } | null)?.code === "23505") {
+        return res.status(400).json({ error: "This item has already been rated and is now closed." });
+      }
       if (error instanceof Error) {
         res.status(400).json({ error: error.message });
       } else {
@@ -5734,7 +5761,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Public: only the allowlisted fields leave the server ("Amina W.", no IDs).
-      res.json(await listPublicReviews(storage, targetType, targetId));
+      res.json(await listPublicReviews(reviewSource, targetType, targetId));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch reviews" });
     }
@@ -9220,7 +9247,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const stays = await storage.getStays();
       const visibleStays = stays.filter((stay: any) => isBookablePublicListing(stay));
-      res.json((await withHotelRooms(visibleStays, "public")).map(toPublicListing));
+      res.json((await withPublicRatings("stay", await withHotelRooms(visibleStays, "public"))).map(toPublicListing));
     } catch (error) {
       sendPublicCatalogFailure("stays", res, error);
     }
@@ -9236,7 +9263,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!visible) {
         return res.status(404).json({ error: "Stay not found" });
       }
-      res.json(toPublicListing(visible));
+      const [rated] = await withPublicRatings("stay", [visible]);
+      res.json(toPublicListing(rated));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch stay" });
     }
@@ -9281,7 +9309,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/cars", async (_req, res) => {
     try {
       const cars = await storage.getCars();
-      res.json(cars.filter((car: any) => isBookablePublicListing(car)).map(toPublicListing));
+      res.json((await withPublicRatings("car", cars.filter((car: any) => isBookablePublicListing(car)))).map(toPublicListing));
     } catch (error) {
       sendPublicCatalogFailure("cars", res, error);
     }
@@ -9306,7 +9334,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!isBookablePublicListing(car)) {
         return res.status(404).json({ error: "Car not found" });
       }
-      res.json(toPublicListing(car!));
+      const [rated] = await withPublicRatings("car", [car!]);
+      res.json(toPublicListing(rated));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch car" });
     }
@@ -9375,7 +9404,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/cooks", async (_req, res) => {
     try {
       const cooks = await storage.getCooks();
-      res.json(cooks.filter((cook: any) => isBookablePublicListing(cook)).map(toPublicListing));
+      res.json((await withPublicRatings("cook", cooks.filter((cook: any) => isBookablePublicListing(cook)))).map(toPublicListing));
     } catch (error) {
       sendPublicCatalogFailure("cooks", res, error);
     }
@@ -9387,7 +9416,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!isBookablePublicListing(cook)) {
         return res.status(404).json({ error: "Chef not found" });
       }
-      res.json(toPublicListing(cook!));
+      const [rated] = await withPublicRatings("cook", [cook!]);
+      res.json(toPublicListing(rated));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch chef" });
     }
@@ -9396,7 +9426,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/errands", async (_req, res) => {
     try {
       const errands = await storage.getErrands();
-      res.json(errands.filter((errand: any) => isBookablePublicListing(errand)).map(toPublicListing));
+      res.json((await withPublicRatings("errand", errands.filter((errand: any) => isBookablePublicListing(errand)))).map(toPublicListing));
     } catch (error) {
       sendPublicCatalogFailure("errands", res, error);
     }
@@ -9408,7 +9438,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!isBookablePublicListing(errand)) {
         return res.status(404).json({ error: "Errand service not found" });
       }
-      res.json(toPublicListing(errand!));
+      const [rated] = await withPublicRatings("errand", [errand!]);
+      res.json(toPublicListing(rated));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch errand service" });
     }
@@ -9417,7 +9448,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/experiences", async (_req, res) => {
     try {
       const experiences = await storage.getExperiences();
-      res.json(experiences.filter((experience: any) => isBookablePublicListing(experience)).map(toPublicListing));
+      res.json((await withPublicRatings("experience", experiences.filter((experience: any) => isBookablePublicListing(experience)))).map(toPublicListing));
     } catch (error) {
       sendPublicCatalogFailure("experiences", res, error);
     }
@@ -9429,7 +9460,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!isBookablePublicListing(experience)) {
         return res.status(404).json({ error: "Experience not found" });
       }
-      res.json(toPublicListing(experience!));
+      const [rated] = await withPublicRatings("experience", [experience!]);
+      res.json(toPublicListing(rated));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch experience" });
     }

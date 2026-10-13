@@ -53,6 +53,7 @@ import { useOwnsListing } from "@/hooks/use-owns-listing";
 import { captureListingVisit, trackShareEvent, withShareRef } from "@/lib/marketing-attribution";
 import { getListingSharePrice } from "@shared/listing-share";
 import { ListingUnavailable } from "@/components/listing-unavailable";
+import { hasPublicRating, summarizeRatings } from "@shared/review-eligibility";
 
 type StayAvailability = {
   propertyType?: "hotel" | "entire_place";
@@ -263,7 +264,7 @@ export default function AccommodationDetail() {
     checkinTime: accommodation.checkInTime ?? undefined,
     checkoutTime: accommodation.checkOutTime ?? undefined,
     address: { "@type": "PostalAddress", addressLocality: location, addressCountry: "KE" },
-    aggregateRating: accommodation.reviewCount > 0 ? {
+    aggregateRating: hasPublicRating(accommodation) ? {
       "@type": "AggregateRating",
       ratingValue: accommodation.rating,
       reviewCount: accommodation.reviewCount,
@@ -288,7 +289,7 @@ export default function AccommodationDetail() {
     occupancy: { "@type": "QuantitativeValue", maxValue: accommodation.maxOccupancy },
     address: { "@type": "PostalAddress", addressLocality: location, addressCountry: "KE" },
     areaServed: { "@type": "Place", name: location },
-    aggregateRating: accommodation.reviewCount > 0 ? {
+    aggregateRating: hasPublicRating(accommodation) ? {
       "@type": "AggregateRating",
       ratingValue: accommodation.rating,
       reviewCount: accommodation.reviewCount,
@@ -313,10 +314,10 @@ export default function AccommodationDetail() {
   const dueToday = calculateBookingDepositAmount(stayTotal);
   const extraOptions = tripExtraOptions.filter((option) => !isHotel || !option.homeOnly);
   const addedOptions = extraOptions.filter((option) => addedExtras.has(option.key));
-  const reviewCount = reviews ? reviews.length : accommodation.reviewCount;
-  const averageRating = reviews?.length
-    ? reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length
-    : accommodation.rating;
+  // The reviews endpoint returns eligible reviews only, so this agrees with the listing's rating.
+  const ratingSummary = reviews ? summarizeRatings(reviews.map((review) => review.rating)) : { count: accommodation.reviewCount, average: accommodation.rating || null };
+  const reviewCount = ratingSummary.count;
+  const averageRating = ratingSummary.average ?? 0;
   const hasWrittenReviews = Boolean(reviews?.some((review) => review.comment?.trim()));
   const kindLine = isHotel
     ? accommodation.starRating ? `${accommodation.starRating}-star hotel` : "Hotel"
@@ -381,7 +382,7 @@ export default function AccommodationDetail() {
               />
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-              {reviewCount > 0 ? (
+              {hasPublicRating({ rating: averageRating, reviewCount }) ? (
                 hasWrittenReviews ? (
                   <a href="#reviews" className="inline-flex min-h-11 items-center gap-1 font-medium text-foreground underline underline-offset-4 hover:text-primary" data-testid="link-stay-rating">
                     <Star className="h-4 w-4 fill-amber-400 text-amber-400" aria-hidden="true" />
@@ -394,7 +395,7 @@ export default function AccommodationDetail() {
                   </span>
                 )
               ) : (
-                <span>No reviews yet</span>
+                <span>{reviewCount > 0 ? `New on TBM · ${reviewCount} review${reviewCount === 1 ? "" : "s"}` : "New on TBM"}</span>
               )}
               <span aria-hidden="true">·</span>
               <span className="inline-flex items-center gap-1">

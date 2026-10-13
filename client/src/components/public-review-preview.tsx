@@ -5,6 +5,7 @@ import { ChevronDown, Star } from "lucide-react";
 import { useState } from "react";
 import type { ReviewTargetType } from "@shared/schema";
 import { publicReviewerName, type PublicReview } from "@shared/public-review";
+import { formatRating, summarizeRatings } from "@shared/review-eligibility";
 
 function formatReviewDate(value: string) {
   return new Date(value).toLocaleDateString("en-US", {
@@ -50,9 +51,10 @@ export function PublicReviewPreview({
 
   const commentReviews = reviews.filter((review) => review.comment?.trim());
   const visibleReviews = commentReviews.slice(0, maxItems);
-  const averageRating = reviews.length
-    ? (reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length).toFixed(1)
-    : "5.0";
+  // Eligible reviews only (the endpoint filters them); a number from three reviews.
+  const summary = summarizeRatings(reviews.map((review) => review.rating));
+  const averageRating = summary.average === null ? null : formatRating(summary.average);
+  const ratedLine = averageRating ? `Rated ${averageRating}/5 by verified guests` : "From guests who booked with TBM";
 
   if (visibleReviews.length === 0) {
     return null;
@@ -65,7 +67,7 @@ export function PublicReviewPreview({
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
           <h2 id="reviews-heading" className="flex items-center gap-2 font-serif text-2xl font-medium">
             <Star className="h-5 w-5 fill-amber-400 text-amber-400" />
-            {averageRating} · {reviews.length} review{reviews.length === 1 ? "" : "s"}
+            {averageRating ? `${averageRating} · ` : ""}{reviews.length} review{reviews.length === 1 ? "" : "s"}
           </h2>
           <span className="text-sm text-muted-foreground">From guests who booked with us</span>
         </div>
@@ -105,10 +107,10 @@ export function PublicReviewPreview({
           <div className="min-w-0">
             <div className="mb-2 flex items-center gap-1">
               {Array.from({ length: 5 }).map((_, index) => (
-                <Star key={index} className={`h-4 w-4 ${index < Math.round(Number(averageRating)) ? "fill-amber-400 text-amber-400" : "text-muted-foreground/35"}`} />
+                <Star key={index} className={`h-4 w-4 ${index < Math.round(Number(averageRating ?? 0)) ? "fill-amber-400 text-amber-400" : "text-muted-foreground/35"}`} />
               ))}
             </div>
-            <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Rated {averageRating}/5 by verified guests</div>
+            <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{ratedLine}</div>
           </div>
           <CollapsibleTrigger asChild>
             <Button variant="outline" className="rounded-full border-border/70 bg-background/72 hover:bg-background/90">
@@ -155,7 +157,7 @@ export function PublicReviewPreview({
               <Star key={index} className={`h-4 w-4 ${index < topReview.rating ? "fill-amber-400 text-amber-400" : "text-muted-foreground/35"}`} />
             ))}
           </div>
-          <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Rated {averageRating}/5 by verified guests</div>
+          <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{ratedLine}</div>
         </div>
         <CollapsibleTrigger asChild>
           <Button variant="outline" size="sm" className="rounded-full border-border/70 bg-background/72 hover:bg-background/90">
