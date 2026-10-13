@@ -10,6 +10,7 @@ import { CustomServiceCta } from "@/components/custom-service-cta";
 import { PublicReviewPreview } from "@/components/public-review-preview";
 import { PremiumMediaGallery } from "@/components/premium-media-gallery";
 import type { Car as CarType } from "@shared/schema";
+import { formatRating, hasPublicRating } from "@shared/review-eligibility";
 import { getPublicListingPath } from "@/lib/public-listing";
 
 function getLeadPrice(car: CarType) {
@@ -61,7 +62,7 @@ function CarShowcaseCard({
             </div>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
-              <span>Rated {car.rating.toFixed(1)}/5 by verified guests</span>
+              <span>{hasPublicRating(car) ? `Rated ${formatRating(car.rating)}/5 from ${car.reviewCount} reviews` : "New on TBM"}</span>
             </div>
             <div className="mt-1.5 flex items-center gap-2 text-sm text-muted-foreground">
               <MapPin className="h-4 w-4" />

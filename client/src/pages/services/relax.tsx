@@ -11,6 +11,7 @@ import { filterErrands, useConciergeSearch } from "@/lib/concierge-search";
 import { HOUSE_CLEANING_BASE_ROOM_LABEL, getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
 import { PremiumMediaGallery } from "@/components/premium-media-gallery";
 import type { Errand } from "@shared/schema";
+import { formatRating, hasPublicRating } from "@shared/review-eligibility";
 import { getPublicListingPath } from "@/lib/public-listing";
 
 const helpMamaPublicSummary =
@@ -113,7 +114,7 @@ export default function RelaxPage() {
                       <h3 className="mb-1 font-serif text-xl font-medium tracking-tight">{errand.serviceName}</h3>
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
                         <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
-                        <span>Rated {errand.rating.toFixed(1)}/5 by verified guests</span>
+                        <span>{hasPublicRating(errand) ? `Rated ${formatRating(errand.rating)}/5 from ${errand.reviewCount} reviews` : "New on TBM"}</span>
                       </div>
                     </div>
                   </div>

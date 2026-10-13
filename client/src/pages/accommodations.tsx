@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { formatRating, hasPublicRating } from "@shared/review-eligibility";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
 import { ArrowUpDown, Bath, BedDouble, CalendarDays, ConciergeBell, MapPin, Search, SlidersHorizontal, Star, Users, WalletCards } from "lucide-react";
@@ -435,7 +436,7 @@ export default function Accommodations() {
                 <div className="mb-3 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                   <div className="flex items-center gap-1">
                     <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
-                    <span>Rated {accommodation.rating.toFixed(1)}/5</span>
+                    <span>{hasPublicRating(accommodation) ? `Rated ${formatRating(accommodation.rating)}/5` : "New on TBM"}</span>
                   </div>
                   <span>•</span>
                   <div className="flex items-center gap-1">

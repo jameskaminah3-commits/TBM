@@ -5,6 +5,7 @@ import { ChevronDown, Star } from "lucide-react";
 import { useState } from "react";
 import type { ReviewTargetType } from "@shared/schema";
 import { publicReviewerName, type PublicReview } from "@shared/public-review";
+import { formatRating, summarizeRatings } from "@shared/review-eligibility";
 
 function formatReviewDate(value: string) {
   return new Date(value).toLocaleDateString("en-US", {
@@ -44,9 +45,10 @@ export function PublicReviewPreview({
 
   const commentReviews = reviews.filter((review) => review.comment?.trim());
   const visibleReviews = commentReviews.slice(0, maxItems);
-  const averageRating = reviews.length
-    ? (reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length).toFixed(1)
-    : "5.0";
+  // Eligible reviews only (the endpoint filters them); a number from three reviews.
+  const summary = summarizeRatings(reviews.map((review) => review.rating));
+  const averageRating = summary.average === null ? null : formatRating(summary.average);
+  const ratedLine = averageRating ? `Rated ${averageRating}/5 by verified guests` : "From guests who booked with TBM";
 
   if (visibleReviews.length === 0) {
     return null;
@@ -63,10 +65,10 @@ export function PublicReviewPreview({
           <div className="min-w-0">
             <div className="mb-2 flex items-center gap-1">
               {Array.from({ length: 5 }).map((_, index) => (
-                <Star key={index} className={`h-4 w-4 ${index < Math.round(Number(averageRating)) ? "fill-amber-400 text-amber-400" : "text-muted-foreground/35"}`} />
+                <Star key={index} className={`h-4 w-4 ${index < Math.round(Number(averageRating ?? 0)) ? "fill-amber-400 text-amber-400" : "text-muted-foreground/35"}`} />
               ))}
             </div>
-            <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Rated {averageRating}/5 by verified guests</div>
+            <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{ratedLine}</div>
           </div>
           <CollapsibleTrigger asChild>
             <Button variant="outline" className="rounded-full border-border/70 bg-background/72 hover:bg-background/90">
@@ -113,7 +115,7 @@ export function PublicReviewPreview({
               <Star key={index} className={`h-4 w-4 ${index < topReview.rating ? "fill-amber-400 text-amber-400" : "text-muted-foreground/35"}`} />
             ))}
           </div>
-          <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Rated {averageRating}/5 by verified guests</div>
+          <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{ratedLine}</div>
         </div>
         <CollapsibleTrigger asChild>
           <Button variant="outline" size="sm" className="rounded-full border-border/70 bg-background/72 hover:bg-background/90">

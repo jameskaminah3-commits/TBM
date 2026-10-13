@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, boolean, jsonb, index, bigserial, bigint, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, boolean, jsonb, index, uniqueIndex, bigserial, bigint, primaryKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -1850,7 +1850,23 @@ export const reviews = pgTable("reviews", {
   comment: text("comment"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
-});
+  // Moderation (migration 0024): TBM hides a review only for abuse, personal
+  // details or the wrong booking, with the reason kept.
+  status: varchar("status").notNull().default("published"),
+  hiddenReason: varchar("hidden_reason"),
+  hiddenBy: varchar("hidden_by"),
+  hiddenAt: text("hidden_at"),
+  // One reply per review from the listing's provider, public once TBM approves it.
+  providerReply: text("provider_reply"),
+  providerReplyStatus: varchar("provider_reply_status"),
+  providerReplyAt: text("provider_reply_at"),
+  providerReplyReviewedBy: varchar("provider_reply_reviewed_by"),
+  providerReplyReviewedAt: text("provider_reply_reviewed_at"),
+}, (table) => [
+  // One review per booking, guest and item.
+  uniqueIndex("reviews_one_per_item_idx").on(table.bookingId, table.userId, table.targetType, table.targetId),
+  index("reviews_target_idx").on(table.targetType, table.targetId),
+]);
 
 export const insertReviewSchema = createInsertSchema(reviews).omit({
   id: true,
@@ -1858,6 +1874,15 @@ export const insertReviewSchema = createInsertSchema(reviews).omit({
   userId: true,
   createdAt: true,
   updatedAt: true,
+  status: true,
+  hiddenReason: true,
+  hiddenBy: true,
+  hiddenAt: true,
+  providerReply: true,
+  providerReplyStatus: true,
+  providerReplyAt: true,
+  providerReplyReviewedBy: true,
+  providerReplyReviewedAt: true,
 }).extend({
   rating: z.coerce.number().min(1).max(5),
   comment: z.string().max(1000).optional(),

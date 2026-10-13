@@ -1,4 +1,5 @@
 import * as React from "react";
+import { formatRating, hasPublicRating } from "@shared/review-eligibility";
 import { useMemo } from "react";
 import { useLocation, useParams } from "wouter";
 import { useQuery } from "@tanstack/react-query";
@@ -271,10 +272,10 @@ export default function ShortBookingLink() {
                         {location}
                       </span>
                     ) : null}
-                    {"rating" in matchingListing ? (
+                    {"rating" in matchingListing && hasPublicRating(matchingListing) ? (
                       <span className="inline-flex items-center gap-1.5">
                         <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
-                        {Number(matchingListing.rating || 5).toFixed(1)}
+                        {formatRating(Number(matchingListing.rating))}
                       </span>
                     ) : null}
                     {"maxOccupancy" in matchingListing ? (

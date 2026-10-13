@@ -17,6 +17,7 @@ import { useOwnsListing } from "@/hooks/use-owns-listing";
 import { captureListingVisit, trackShareEvent, withShareRef } from "@/lib/marketing-attribution";
 import { getCarDisplayName, getListingSharePrice } from "@shared/listing-share";
 import { ListingUnavailable } from "@/components/listing-unavailable";
+import { formatRating, hasPublicRating } from "@shared/review-eligibility";
 import {
   buildListingSeoDescription,
   formatSeoLocation,
@@ -126,12 +127,8 @@ function getStructuredData(kind: Exclude<PublicListingKind, "stay">, listing: Pu
   };
 
   if (listing.imageUrl) data.image = listing.imageUrl;
-  if (listing.rating > 0 && listing.reviewCount > 0) {
-    data.aggregateRating = {
-      "@type": "AggregateRating",
-      ratingValue: listing.rating,
-      reviewCount: listing.reviewCount,
-    };
+  if (hasPublicRating(listing)) {
+    data.aggregateRating = { "@type": "AggregateRating", ratingValue: listing.rating, reviewCount: listing.reviewCount };
   }
 
   const price = getLeadPrice(kind, listing);
@@ -227,7 +224,7 @@ export default function PublicListingDetail({ kind }: { kind: Exclude<PublicList
             <header className="mt-8">
               <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
                 <span className="inline-flex items-center gap-1"><MapPin className="h-4 w-4" />{location}</span>
-                <span className="inline-flex items-center gap-1"><Star className="h-4 w-4 fill-amber-400 text-amber-400" />{listing.rating.toFixed(1)}/5 from {listing.reviewCount} reviews</span>
+                <span className="inline-flex items-center gap-1"><Star className="h-4 w-4 fill-amber-400 text-amber-400" />{hasPublicRating(listing) ? `${formatRating(listing.rating)}/5 from ${listing.reviewCount} reviews` : "New on TBM"}</span>
               </div>
               <div className="mt-3 flex items-start justify-between gap-3">
                 <h1 className="min-w-0 font-serif text-3xl font-medium leading-tight sm:text-5xl" data-testid="text-listing-title">{listingName} in {location}</h1>

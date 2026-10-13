@@ -29,6 +29,7 @@ import tailoredTripImageLarge from "@assets/generated_images/tailored-trip-1280.
 import tailoredTripImageSmall from "@assets/generated_images/tailored-trip-768.jpg";
 import type { Stay, Car as CarType, Cook, Errand, Experience } from "@shared/schema";
 import { todayInKenya } from "@shared/calendar-dates";
+import { formatRating, hasPublicRating } from "@shared/review-eligibility";
 
 type ShowcaseItem = {
   id: string;
@@ -133,9 +134,15 @@ function ServiceShowcaseCard({
                 <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(14,23,35,0.06)_0%,rgba(14,23,35,0.12)_38%,rgba(14,23,35,0.74)_100%)]" />
                 <div className="absolute inset-x-0 bottom-0 p-4 text-white">
                   <div className="mb-2 flex items-center gap-2 text-sm font-medium">
-                    <Star className="h-4 w-4 fill-[#f4c95d] text-[#f4c95d]" />
-                    <span>{item.rating.toFixed(1)}</span>
-                    <span className="text-white/70">{item.reviewCount} reviews</span>
+                    {hasPublicRating(item) ? (
+                      <>
+                        <Star className="h-4 w-4 fill-[#f4c95d] text-[#f4c95d]" />
+                        <span>{formatRating(item.rating)}</span>
+                        <span className="text-white/70">{item.reviewCount} reviews</span>
+                      </>
+                    ) : (
+                      <span className="text-white/80">New on TBM</span>
+                    )}
                   </div>
                   <div className="line-clamp-1 font-serif text-lg leading-tight">{item.title}</div>
                 </div>

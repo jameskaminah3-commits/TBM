@@ -33,6 +33,7 @@ import { useOwnsListing } from "@/hooks/use-owns-listing";
 import { captureListingVisit, trackShareEvent, withShareRef } from "@/lib/marketing-attribution";
 import { getListingSharePrice } from "@shared/listing-share";
 import { ListingUnavailable } from "@/components/listing-unavailable";
+import { formatRating, hasPublicRating } from "@shared/review-eligibility";
 
 type StayAvailability = {
   blockedRanges: Array<{
@@ -140,7 +141,7 @@ export default function AccommodationDetail() {
     occupancy: { "@type": "QuantitativeValue", maxValue: accommodation.maxOccupancy },
     address: { "@type": "PostalAddress", addressLocality: location, addressCountry: "KE" },
     areaServed: { "@type": "Place", name: location },
-    aggregateRating: accommodation.reviewCount > 0 ? {
+    aggregateRating: hasPublicRating(accommodation) ? {
       "@type": "AggregateRating",
       ratingValue: accommodation.rating,
       reviewCount: accommodation.reviewCount,
@@ -217,7 +218,7 @@ export default function AccommodationDetail() {
                     </div>
                     <div className="flex items-center gap-1">
                       <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
-                      <span className="break-words">Rated {accommodation.rating.toFixed(1)}/5 by verified guests</span>
+                      <span className="break-words">{hasPublicRating(accommodation) ? `Rated ${formatRating(accommodation.rating)}/5 from ${accommodation.reviewCount} reviews` : "New on TBM"}</span>
                     </div>
                   </div>
                 </div>

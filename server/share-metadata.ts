@@ -8,6 +8,7 @@ import {
   getPublicListingPath,
 } from "@shared/seo";
 import { storage } from "./storage";
+import { getRatingSummary } from "./review-ratings";
 import { getCarDisplayName } from "@shared/listing-share";
 
 type ListingKind = "stay" | "car" | "cook" | "errand" | "experience";
@@ -209,7 +210,7 @@ function getListingName(kind: ListingKind, listing: Stay | Car | Cook | Errand |
   return (listing as Experience).title;
 }
 
-function getListingStructuredData(
+async function getListingStructuredData(
   kind: ListingKind,
   listing: Stay | Car | Cook | Errand | Experience,
   canonicalUrl: string,
@@ -240,11 +241,13 @@ function getListingStructuredData(
 
   const imageUrl = getListingImage(listing, canonicalUrl.split("/").slice(0, 3).join("/"));
   if (imageUrl) structuredData.image = imageUrl;
-  if (listing.rating > 0 && listing.reviewCount > 0) {
+  // Only from eligible reviews, and only from the same threshold guests see.
+  const ratingSummary = await getRatingSummary(kind, listing.id).catch(() => null);
+  if (ratingSummary?.average !== null && ratingSummary?.average !== undefined) {
     structuredData.aggregateRating = {
       "@type": "AggregateRating",
-      ratingValue: listing.rating,
-      reviewCount: listing.reviewCount,
+      ratingValue: ratingSummary.average,
+      reviewCount: ratingSummary.count,
     };
   }
 
@@ -551,7 +554,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
       const canonicalUrl = `${baseUrl}${getPublicListingPath("stay", stay.id, stay.title)}`;
       const metadata = buildStayMetadata(stay, baseUrl, canonicalUrl);
       metadata.robots = route.publicPath ? "index,follow" : "noindex,follow";
-      metadata.structuredData = getListingStructuredData("stay", stay, canonicalUrl);
+      metadata.structuredData = await getListingStructuredData("stay", stay, canonicalUrl);
       return metadata;
     }
 
@@ -563,7 +566,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
       const canonicalUrl = `${baseUrl}${getPublicListingPath("car", car.id, getListingName("car", car))}`;
       const metadata = buildCarMetadata(car, baseUrl, canonicalUrl);
       metadata.robots = route.publicPath ? "index,follow" : "noindex,follow";
-      metadata.structuredData = getListingStructuredData("car", car, canonicalUrl);
+      metadata.structuredData = await getListingStructuredData("car", car, canonicalUrl);
       return metadata;
     }
 
@@ -575,7 +578,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
       const canonicalUrl = `${baseUrl}${getPublicListingPath("cook", cook.id, cook.title)}`;
       const metadata = buildCookMetadata(cook, baseUrl, canonicalUrl);
       metadata.robots = route.publicPath ? "index,follow" : "noindex,follow";
-      metadata.structuredData = getListingStructuredData("cook", cook, canonicalUrl);
+      metadata.structuredData = await getListingStructuredData("cook", cook, canonicalUrl);
       return metadata;
     }
 
@@ -587,7 +590,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
       const canonicalUrl = `${baseUrl}${getPublicListingPath("errand", errand.id, errand.serviceName)}`;
       const metadata = buildErrandMetadata(errand, baseUrl, canonicalUrl);
       metadata.robots = route.publicPath ? "index,follow" : "noindex,follow";
-      metadata.structuredData = getListingStructuredData("errand", errand, canonicalUrl);
+      metadata.structuredData = await getListingStructuredData("errand", errand, canonicalUrl);
       return metadata;
     }
 
@@ -598,7 +601,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
     const canonicalUrl = `${baseUrl}${getPublicListingPath("experience", experience.id, experience.title)}`;
     const metadata = buildExperienceMetadata(experience, baseUrl, canonicalUrl);
     metadata.robots = route.publicPath ? "index,follow" : "noindex,follow";
-    metadata.structuredData = getListingStructuredData("experience", experience, canonicalUrl);
+    metadata.structuredData = await getListingStructuredData("experience", experience, canonicalUrl);
     return metadata;
   } catch (error) {
     console.error("[SEO] Failed to resolve listing share metadata:", error);

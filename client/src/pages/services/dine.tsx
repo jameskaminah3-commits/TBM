@@ -16,6 +16,7 @@ import {
 import { filterCooks, useConciergeSearch } from "@/lib/concierge-search";
 import { PremiumMediaGallery } from "@/components/premium-media-gallery";
 import type { Cook } from "@shared/schema";
+import { formatRating, hasPublicRating } from "@shared/review-eligibility";
 import { getPublicListingPath } from "@/lib/public-listing";
 
 function CookCard({
@@ -48,7 +49,7 @@ function CookCard({
             <h3 className="mb-1 font-serif text-xl font-medium tracking-tight">{cook.title}</h3>
             <div className="mb-1.5 flex items-center gap-2 text-sm text-muted-foreground">
               <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
-              <span>Rated {cook.rating.toFixed(1)}/5 by verified guests</span>
+              <span>{hasPublicRating(cook) ? `Rated ${formatRating(cook.rating)}/5 from ${cook.reviewCount} reviews` : "New on TBM"}</span>
             </div>
             <Badge variant="secondary" className="text-xs capitalize">
               <Utensils className="mr-1 h-3 w-3" />

@@ -54,6 +54,7 @@ import {
   type RequestDetail,
 } from "./custom-offer-intake";
 import { getPublicListingPath } from "@shared/seo";
+import { getRatingSummary } from "../review-ratings";
 import { addCalendarDays, kenyaDateTimeToIso } from "@shared/calendar-dates";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -156,6 +157,14 @@ type AvailabilityBooking = {
  * same rule used by the main booking routes and prevents abandoned Zaina
  * drafts from making inventory appear permanently unavailable.
  */
+
+// The rating guests see: eligible reviews only, a number from three reviews
+// (null below that), never the stored columns.
+async function publicRatingFor(kind: string, id: string) {
+  const summary = await getRatingSummary(kind, id).catch(() => ({ count: 0, average: null }));
+  return { rating: summary.average, review_count: summary.count };
+}
+
 export function bookingBlocksAvailability(booking: AvailabilityBooking): boolean {
   if (booking.status === "cancelled" || booking.status === "completed") return false;
   if (getBookingAmountPaid(booking) >= Math.max(0, booking.totalPrice)) return true;
@@ -455,8 +464,7 @@ export async function searchStays(
       max_occupancy: s.maxOccupancy,
       bedrooms: s.bedrooms,
       bathrooms: s.bathrooms,
-      rating: s.rating,
-      review_count: s.reviewCount,
+      ...(await publicRatingFor("stay", s.id)),
       public_url: `${appBaseUrl()}${getPublicListingPath("stay", s.id, s.title)}`,
       features: s.features,
     })),
@@ -547,8 +555,7 @@ export async function searchCooks(
       ].filter(Boolean),
       custom_menu_available: c.customMenuEnabled,
       sample_menus: c.sampleMenus,
-      rating: c.rating,
-      review_count: c.reviewCount,
+      ...(await publicRatingFor("cook", c.id)),
     })),
   );
 
@@ -716,8 +723,7 @@ export async function searchErrands(
             }
           : null,
         description: e.description,
-        rating: e.rating,
-        review_count: e.reviewCount,
+        ...(await publicRatingFor("errand", e.id)),
       };
     }),
   );
@@ -806,8 +812,7 @@ export async function searchExperiences(
         ? (x.sharedDepartures || []).filter(isUpcomingDeparture).slice(0, 5)
         : [],
       inclusions: x.inclusions,
-      rating: x.rating,
-      review_count: x.reviewCount,
+      ...(await publicRatingFor("experience", x.id)),
     })),
   );
 
