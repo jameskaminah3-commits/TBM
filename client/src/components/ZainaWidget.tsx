@@ -18,6 +18,7 @@
 //     stays in sync if the customer toggles USD/KES mid-chat.
 
 import { useEffect, useRef, useState } from "react";
+import { useLocation } from "wouter";
 import { ZainaAvatar } from "./ZainaAvatar";
 import { WHATSAPP_URL } from "@/lib/contact-info";
 import { safeLocalStorage, safeSessionStorage } from "@/lib/safe-storage";
@@ -204,7 +205,13 @@ function renderAssistantMessage(content: string): JSX.Element[] {
 type WidgetState = "loading" | "ready" | "disabled" | "handed_off";
 type AvatarState = "idle" | "thinking" | "speaking";
 
+// Pages where a guest is booking or paying: Zaina stays available, but its
+// "need a hand?" bubble doesn't pop up over the form or the pay button.
+const QUIET_PATHS = ["/book/", "/bookings", "/auth", "/inbox"];
+
 export function ZainaWidget() {
+  const [location] = useLocation();
+  const quietPage = QUIET_PATHS.some((path) => location.startsWith(path));
   const [widgetState, setWidgetState] = useState<WidgetState>("loading");
   const [open, setOpen] = useState(false);
   const [msgs, setMsgs] = useState<Msg[]>(() => {
@@ -632,9 +639,9 @@ export function ZainaWidget() {
       `}</style>
 
       {/* Floating tooltip — once per session */}
-      {showTooltip && !open && (
+      {showTooltip && !open && !quietPage && (
  <div
-          className="zaina-tooltip-enter fixed bottom-60 right-4 sm:bottom-44 sm:right-6 z-[9999] max-w-[240px]
+          className="zaina-tooltip-enter fixed bottom-60 right-4 sm:bottom-44 sm:right-6 z-40 max-w-[240px]
                      rounded-2xl rounded-br-sm bg-white px-4 py-3 text-sm text-gray-800 shadow-xl"
         >
           {TOOLTIP_COPY}
@@ -655,7 +662,7 @@ export function ZainaWidget() {
           setShowTooltip(false);
         }}
         aria-label={open ? "Close Zaina" : "Open Zaina"}
-        className="fixed bottom-40 right-4 sm:bottom-24 sm:right-6 z-[9999] flex h-16 w-16 items-center justify-center rounded-full bg-emerald-700 shadow-xl transition-transform hover:scale-105"
+        className={`fixed bottom-40 right-4 sm:bottom-24 sm:right-6 ${open ? "z-[9999]" : "z-40"} flex h-16 w-16 items-center justify-center rounded-full bg-emerald-700 shadow-xl transition-transform hover:scale-105`}
       >
         {open ? (
           <span className="text-2xl font-light text-white">✕</span>

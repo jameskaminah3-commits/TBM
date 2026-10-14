@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { formatRating, hasPublicRating } from "@shared/review-eligibility";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
-import { ArrowUpDown, Bath, BedDouble, CalendarDays, ConciergeBell, MapPin, Search, SlidersHorizontal, Star, Users, WalletCards } from "lucide-react";
+import { ArrowUpDown, Bath, BedDouble, CalendarDays, ConciergeBell, MapPin, Search, SlidersHorizontal, Sparkles, Star, Users, WalletCards } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -177,7 +177,7 @@ export default function Accommodations() {
     }
 
     if (staySearch.maxPrice) {
-      chips.push(`Up to $${staySearch.maxPrice}/day`);
+      chips.push(`Up to $${staySearch.maxPrice}/night`);
     }
 
     if (staySearch.minRating) {
@@ -356,7 +356,7 @@ export default function Accommodations() {
                     min="1"
                     value={staySearch.maxPrice ?? ""}
                     onChange={(event) => updateNumberFilter("maxPrice", event.target.value)}
-                    placeholder="USD / day"
+                    placeholder="USD / night"
                     className="h-9 rounded-full"
                     data-testid="input-stay-filter-max-price"
                   />
@@ -435,14 +435,20 @@ export default function Accommodations() {
 
                 <div className="mb-3 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                   <div className="flex items-center gap-1">
-                    <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
+                    {hasPublicRating(accommodation)
+                      ? <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
+                      : <Sparkles className="h-4 w-4 text-primary" />}
                     <span>{hasPublicRating(accommodation) ? `Rated ${formatRating(accommodation.rating)}/5` : "New on TBM"}</span>
                   </div>
-                  <span>•</span>
-                  <div className="flex items-center gap-1">
-                    <Users className="h-4 w-4" />
-                    <span>Up to {accommodation.maxOccupancy}</span>
-                  </div>
+                  {accommodation.maxOccupancy > 0 ? (
+                    <>
+                      <span>•</span>
+                      <div className="flex items-center gap-1">
+                        <Users className="h-4 w-4" />
+                        <span>Up to {accommodation.maxOccupancy}</span>
+                      </div>
+                    </>
+                  ) : null}
                 </div>
 
                 <div className="flex flex-wrap gap-2 mb-3">
@@ -471,7 +477,7 @@ export default function Accommodations() {
                         amountUsd={accommodation.price}
                         primaryClassName="text-lg font-semibold tracking-tight"
                       />
-                      <div className="text-xs text-muted-foreground">per day</div>
+                      <div className="text-xs text-muted-foreground">per night</div>
                     </div>
                     <Button
                       className="w-full rounded-full px-5 min-[460px]:w-auto"

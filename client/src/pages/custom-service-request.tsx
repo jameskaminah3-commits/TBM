@@ -5,7 +5,7 @@ import { useMutation } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -153,7 +153,7 @@ export default function CustomServiceRequestPage() {
       <div className="container mx-auto max-w-3xl px-4 md:px-8">
         <Card>
           <CardHeader>
-            <CardTitle className="font-serif text-2xl leading-tight sm:text-3xl">Request a Custom Service</CardTitle>
+            <h1 className="font-serif text-2xl font-semibold leading-tight tracking-tight sm:text-3xl">Request a Custom Service</h1>
             <CardDescription>
               Can&apos;t find what you need? No problem.
               <br />

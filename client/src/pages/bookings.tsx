@@ -38,6 +38,8 @@ import {
 } from "@shared/booking-payments";
 import { formatCalendarDate, formatCalendarDateRange, formatKenyaClockTime, formatKenyaDateTime, isOnKenyaTime } from "@shared/calendar-dates";
 import { customServiceRequestFeeUsd } from "@shared/custom-service";
+import { ListingShareSheet } from "@/components/listing-share-sheet";
+import { shareOfferValue, type ShareOffer } from "@shared/share-offer";
 import type { Booking, BookingWithMarketing, Stay, Car as CarType, Cook, Errand, Experience, Review, CustomerPaymentMethod, ListingVerificationTask } from "@shared/schema";
 import { CONTACT_PHONE, CONTACT_PHONE_DISPLAY, WHATSAPP_URL } from "@/lib/contact-info";
 
@@ -165,6 +167,8 @@ const getRequestPreview = (details?: string | null) => {
 const formatTimelineDateRange = (start: string, end: string) => formatCalendarDateRange(start, end);
 
 function BookingTimeline({ booking }: { booking: Booking }) {
+  // A booking is confirmed when it's paid (or its deposit has locked the dates), not before.
+  const bookingIsSecured = booking.paymentStatus === "paid" || hasLockedInBookingDeposit(booking);
   const items = [
     {
       title: "Requested",
@@ -186,13 +190,17 @@ function BookingTimeline({ booking }: { booking: Booking }) {
               : booking.experienceCustomOfferStatus === "pending-admin-approval"
                 ? "Under admin review"
                 : "Waiting for provider response"
-            : "Confirmed",
+            : bookingIsSecured
+              ? "Paid and confirmed"
+              : booking.paymentStatus === "processing"
+                ? "Checking your payment"
+                : "Confirmed once you pay",
       active:
         booking.serviceMode === "cook-custom-menu"
           ? booking.customMenuProposalStatus !== "pending"
           : booking.serviceMode === "experience-custom-offer"
             ? booking.experienceCustomOfferStatus !== "pending"
-            : true,
+            : bookingIsSecured,
     },
     {
       title: "Schedule",
@@ -338,6 +346,15 @@ function BookingReviewSection({ booking, targets }: { booking: Booking; targets:
     onError: (error: Error) => toast({ title: "Could not save review", description: error.message.replace(/^\d+:\s*/, ""), variant: "destructive" }),
   });
 
+  // After a good review, the moment to share: the guest is happiest now.
+  const { formatAmount } = useCurrency();
+  const { data: shareOffer } = useQuery<ShareOffer | null>({
+    queryKey: ["/api/marketing/share-offer"],
+    enabled: booking.status === "completed",
+    staleTime: 120_000,
+  });
+  const shareTarget = targets.find((target) => reviews.some((review) => review.targetType === target.targetType && review.targetId === target.targetId && review.rating >= 4)) ?? null;
+
   if (booking.status !== "completed" || targets.length === 0) return null;
 
   const openTargetId = activeTargetId
@@ -351,7 +368,7 @@ function BookingReviewSection({ booking, targets }: { booking: Booking; targets:
   const activeRating = Math.min(5, Math.max(1, hoverRating ?? (Number(rating) || 5)));
 
   return (
-    <div className="mt-4 overflow-hidden rounded-[28px] border border-amber-200/60 bg-[linear-gradient(135deg,rgba(255,251,235,0.92),rgba(255,255,255,0.96),rgba(245,247,250,0.92))] p-5 shadow-[0_22px_50px_-34px_rgba(120,53,15,0.24)] dark:border-border/60 dark:bg-card">
+    <div id={`booking-review-${booking.id}`} className="mt-4 scroll-mt-24 overflow-hidden rounded-[28px] border border-amber-200/60 bg-[linear-gradient(135deg,rgba(255,251,235,0.92),rgba(255,255,255,0.96),rgba(245,247,250,0.92))] p-5 shadow-[0_22px_50px_-34px_rgba(120,53,15,0.24)] dark:border-border/60 dark:bg-card">
       <div className="mb-3 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-amber-700/80 dark:text-primary/80">Feedback</div>
@@ -483,6 +500,26 @@ function BookingReviewSection({ booking, targets }: { booking: Booking; targets:
           </div>
         );
       })}
+      {shareTarget ? (
+        <div className="mt-4 flex flex-col gap-3 rounded-[22px] border border-emerald-200 bg-emerald-50/80 p-4 sm:flex-row sm:items-center sm:justify-between" data-testid="review-share">
+          <div className="min-w-0 text-sm leading-6 text-emerald-950">
+            <div className="font-semibold">Thank you! Know someone who'd love {shareTarget.label}?</div>
+            <div className="text-emerald-900/80">
+              {shareOffer ? `Share it on WhatsApp and they get ${shareOfferValue(shareOffer, formatAmount)} off their booking.` : "Share it on WhatsApp in one tap."}
+            </div>
+          </div>
+          <ListingShareSheet
+            kind={shareTarget.targetType}
+            id={shareTarget.targetId}
+            name={shareTarget.label}
+            isPublic
+            source="visitor"
+            triggerLabel="Share with friends"
+            size="default"
+            triggerClassName="min-h-11 shrink-0"
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -498,6 +535,7 @@ function readBookingsPageIntent(search: string) {
     activeTab,
     bookingId: params.get("bookingId"),
     openThread: params.get("openThread") === "1",
+    review: params.get("review") === "1",
   };
 }
 
@@ -662,6 +700,25 @@ export default function Bookings() {
     [sortedBookings],
   );
 
+  // The most recent completed booking not yet reviewed: asked once, at the top.
+  const latestCompletedBooking = useMemo(
+    () => historyBookings.find((booking) => booking.status === "completed" && booking.serviceMode !== "listing-verification") ?? null,
+    [historyBookings],
+  );
+  const { data: latestCompletedReviews } = useQuery<Review[]>({
+    queryKey: ["/api/bookings", latestCompletedBooking?.id, "reviews"],
+    enabled: Boolean(latestCompletedBooking),
+    queryFn: async () => {
+      const response = await fetch(`/api/bookings/${latestCompletedBooking!.id}/reviews`, { credentials: "include" });
+      if (!response.ok) throw new Error("Failed to load reviews");
+      return response.json();
+    },
+  });
+  const reviewPromptBooking = latestCompletedBooking && latestCompletedReviews && latestCompletedReviews.length === 0 ? latestCompletedBooking : null;
+  const reviewPromptTitle = reviewPromptBooking
+    ? stays?.find((stay) => stay.id === reviewPromptBooking.accommodationId)?.title ?? "your booking"
+    : null;
+
   const openRetryCheckout = (booking: Booking) => {
     setRetryCheckoutBooking(booking);
     setRetryPaymentMethod(getPaymentChoiceForProvider(booking.paymentProvider));
@@ -711,11 +768,13 @@ export default function Bookings() {
     }
 
     const timer = window.setTimeout(() => {
-      document.getElementById(`booking-card-${pageIntent.bookingId}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 140);
+      const target = (pageIntent.review && document.getElementById(`booking-review-${pageIntent.bookingId}`))
+        || document.getElementById(`booking-card-${pageIntent.bookingId}`);
+      target?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, pageIntent.review ? 450 : 140);
 
     return () => window.clearTimeout(timer);
-  }, [pageIntent.activeTab, pageIntent.bookingId, sortedBookings]);
+  }, [pageIntent.activeTab, pageIntent.bookingId, pageIntent.review, sortedBookings]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1043,6 +1102,18 @@ export default function Bookings() {
           </div>
         </AccordionTrigger>
         <AccordionContent className="px-4 pb-6 pt-0 sm:px-5 lg:px-6">
+          {canRetryBookingPayment(booking) ? (
+            // The next step first: pay, without scrolling past the details.
+            <div className="mb-5 flex flex-col gap-3 rounded-[22px] border border-amber-200/80 bg-amber-50/80 p-4 sm:flex-row sm:items-center sm:justify-between" data-testid={`pay-now-${booking.id}`}>
+              <div className="min-w-0 text-sm leading-6 text-amber-950">
+                <div className="font-semibold">Pay {formatPayable(checkoutAmountDue, quotedFeeKes)} to confirm</div>
+                <div className="text-amber-900/80">Card, Apple Pay or M-Pesa in TBM's secure checkout. We hold your dates while you pay.</div>
+              </div>
+              <Button className="min-h-11 shrink-0 rounded-full px-6" disabled={startPaymentMutation.isPending} onClick={() => openRetryCheckout(booking)} data-testid="button-pay-now">
+                Pay now
+              </Button>
+            </div>
+          ) : null}
           <div className="border-t border-border/60 pt-6">
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
               <div className="space-y-4">
@@ -1323,7 +1394,7 @@ export default function Bookings() {
                 <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.24em] text-amber-700 dark:text-primary/80">Payment</div>
                 <div className="text-sm leading-6 text-muted-foreground">
                   {manualMpesaPending
-                    ? "We have your temporary M-Pesa submission and are confirming it now. If you need to, you can still reopen secure checkout below."
+                    ? "We have your M-Pesa payment details and are confirming the payment now. If you need to, you can still reopen secure checkout below."
                     : hasLockedInBookingDeposit(booking)
                     ? booking.paymentStatus === "failed"
                       ? "Your deposit is safe, but the remaining balance payment did not complete. Reopen checkout to finish it."
@@ -1366,7 +1437,7 @@ export default function Bookings() {
                       ? "Pay deposit to lock dates"
                       : "Open payment when you're ready"}
                   description={manualMpesaPending
-                    ? "Your temporary send-money payment has been submitted. Secure checkout is still available if you need it."
+                    ? "Your M-Pesa payment has been submitted and our team is confirming it. Secure checkout is still available if you need it."
                     : hasLockedInBookingDeposit(booking)
                     ? "Choose your payment method and finish the outstanding balance."
                     : fullPaymentOnlyBooking
@@ -1402,14 +1473,14 @@ export default function Bookings() {
                 >
                   <Smartphone className="mr-2 h-4 w-4" />
                   {manualMpesaBookingId === booking.id
-                    ? "Hide temporary M-Pesa"
+                    ? "Hide M-Pesa Send Money"
                     : holdForManualMpesaMutation.isPending && holdForManualMpesaMutation.variables?.id === booking.id
                       ? "Checking your dates..."
-                      : "Temporary M-Pesa send money"}
+                      : "Pay by M-Pesa Send Money"}
                 </Button>
                 {manualMpesaBookingId === booking.id ? (
                   <div className="mt-4 rounded-[22px] border border-emerald-200 bg-emerald-50/80 p-4">
-                    <div className="text-sm font-semibold text-emerald-950">Temporary M-Pesa instructions</div>
+                    <div className="text-sm font-semibold text-emerald-950">Pay by M-Pesa Send Money</div>
                     <div className="mt-2 text-sm leading-6 text-emerald-900">
                       Send <span className="font-semibold">{formatPayable(checkoutAmountDue, quotedFeeKes, "KES")}</span> to <span className="font-semibold">{TEMP_MPESA_SEND_MONEY_NUMBER}</span>, then submit the M-Pesa code below for confirmation.
                     </div>
@@ -1547,13 +1618,36 @@ export default function Bookings() {
               </div>
               <Button variant="outline" className="rounded-full bg-background/85" onClick={() => setLocation("/inbox")}>Open Inbox Center</Button>
             </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:min-w-[460px] xl:grid-cols-3">
-              <Card className="border-border/60 bg-background/85 shadow-[0_18px_36px_-30px_rgba(15,23,42,0.4)]"><CardContent className="p-4"><div className="text-sm text-muted-foreground">Open</div><div className="mt-1 text-2xl font-semibold">{activeBookings.length}</div></CardContent></Card>
-              <Card className="border-border/60 bg-background/85 shadow-[0_18px_36px_-30px_rgba(15,23,42,0.4)]"><CardContent className="p-4"><div className="text-sm text-muted-foreground">Needs action</div><div className="mt-1 text-2xl font-semibold">{attentionBookingsCount}</div></CardContent></Card>
-              <Card className="border-border/60 bg-background/85 shadow-[0_18px_36px_-30px_rgba(15,23,42,0.4)]"><CardContent className="p-4"><div className="text-sm text-muted-foreground">Past</div><div className="mt-1 text-2xl font-semibold">{historyBookings.length}</div></CardContent></Card>
+            {/* One compact row on phones, so the bookings themselves start on the first screen. */}
+            <div className="grid grid-cols-3 gap-2 sm:gap-3 xl:min-w-[460px]">
+              <Card className="border-border/60 bg-background/85 shadow-[0_18px_36px_-30px_rgba(15,23,42,0.4)]"><CardContent className="p-3 sm:p-4"><div className="text-xs text-muted-foreground sm:text-sm">Open</div><div className="mt-1 text-xl font-semibold sm:text-2xl">{activeBookings.length}</div></CardContent></Card>
+              <Card className="border-border/60 bg-background/85 shadow-[0_18px_36px_-30px_rgba(15,23,42,0.4)]"><CardContent className="p-3 sm:p-4"><div className="text-xs text-muted-foreground sm:text-sm">Needs action</div><div className="mt-1 text-xl font-semibold sm:text-2xl">{attentionBookingsCount}</div></CardContent></Card>
+              <Card className="border-border/60 bg-background/85 shadow-[0_18px_36px_-30px_rgba(15,23,42,0.4)]"><CardContent className="p-3 sm:p-4"><div className="text-xs text-muted-foreground sm:text-sm">Past</div><div className="mt-1 text-xl font-semibold sm:text-2xl">{historyBookings.length}</div></CardContent></Card>
             </div>
           </div>
         </div>
+
+        {reviewPromptBooking ? (
+          <div className="mb-6 flex flex-col gap-3 rounded-[24px] border border-amber-200/80 bg-[linear-gradient(135deg,rgba(255,251,235,0.96),rgba(255,255,255,0.96))] p-5 sm:flex-row sm:items-center sm:justify-between" data-testid="review-prompt">
+            <div className="min-w-0">
+              <div className="flex items-center gap-0.5 text-amber-400" aria-hidden="true">
+                {Array.from({ length: 5 }).map((_, index) => <Star key={index} className="h-4 w-4 fill-current" />)}
+              </div>
+              <div className="mt-2 text-base font-semibold text-foreground">How was {reviewPromptTitle}?</div>
+              <p className="text-sm leading-6 text-muted-foreground">It takes 30 seconds, helps other travellers choose with confidence, and tells your host what they did well.</p>
+            </div>
+            <Button
+              className="min-h-11 shrink-0 rounded-full px-6"
+              onClick={() => {
+                setActiveTab("history");
+                setLocation(`/bookings?bookingId=${reviewPromptBooking.id}&review=1`);
+              }}
+              data-testid="button-review-prompt"
+            >
+              Rate it
+            </Button>
+          </div>
+        ) : null}
 
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "overview" | "active" | "history" | "profile")} className="space-y-6">
           <TabsList className="grid h-auto w-full grid-cols-2 rounded-[22px] border border-border/60 bg-background/85 p-1 shadow-[0_16px_36px_-28px_rgba(15,23,42,0.34)] sm:grid-cols-4">

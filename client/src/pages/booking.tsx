@@ -1920,7 +1920,7 @@ export default function Booking() {
       </div>
       </div>
       {/* Sits above the phone tab bar (h-16), which would otherwise cover Book. */}
-      <div className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-40 border-t border-border/70 bg-background/92 px-4 py-3 shadow-[0_-18px_40px_rgba(15,23,42,0.16)] backdrop-blur lg:hidden">
+      <div className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-40 border-t border-border/70 bg-background px-4 py-3 shadow-[0_-18px_40px_rgba(15,23,42,0.16)] backdrop-blur lg:hidden">
         <div className="mx-auto flex w-full max-w-7xl items-center gap-3">
           <div className="min-w-0 flex-1">
             <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">

@@ -7,7 +7,7 @@ import { CurrencyAmount } from "@/components/currency-amount";
 import { CustomServiceCta } from "@/components/custom-service-cta";
 import { PublicReviewPreview } from "@/components/public-review-preview";
 import { useCurrency } from "@/lib/currency";
-import { ChefHat, Clock, MapPin, Star, Users, Utensils } from "lucide-react";
+import { ChefHat, Clock, MapPin, Star, Users, Utensils, Sparkles } from "lucide-react";
 import {
   getCookCustomMenuRequestFee,
   getCookMinimumGuests,
@@ -48,7 +48,7 @@ function CookCard({
           <div className="flex-1">
             <h3 className="mb-1 font-serif text-xl font-medium tracking-tight">{cook.title}</h3>
             <div className="mb-1.5 flex items-center gap-2 text-sm text-muted-foreground">
-              <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
+              {hasPublicRating(cook) ? <Star className="h-4 w-4 fill-amber-400 text-amber-400" /> : <Sparkles className="h-4 w-4 text-primary" />}
               <span>{hasPublicRating(cook) ? `Rated ${formatRating(cook.rating)}/5 from ${cook.reviewCount} reviews` : "New on TBM"}</span>
             </div>
             <Badge variant="secondary" className="text-xs capitalize">

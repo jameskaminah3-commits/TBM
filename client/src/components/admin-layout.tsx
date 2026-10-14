@@ -140,7 +140,8 @@ function AdminSidebar() {
   const [location] = useLocation();
 
   return (
-    <Sidebar>
+    // Starts under the site header (4.7rem + border), which used to cover its top.
+    <Sidebar className="!top-[calc(4.7rem+1px)] !h-[calc(100svh-4.7rem-1px)]">
       <SidebarHeader>
         <div className="flex items-center gap-2 px-2 py-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground">

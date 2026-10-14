@@ -42,14 +42,27 @@ const routeMetadata: Record<string, { title: string; description: string }> = {
     title: "Frequently Asked Questions | Tembea Bila Matata",
     description: "Find answers about booking stays, transport, chefs, errands, experiences and concierge services in Mombasa and the Kenyan Coast.",
   },
+  "/request-custom-service": {
+    title: "Request a Custom Service | Tembea Bila Matata",
+    description: "Tell TBM what you need on the Kenyan Coast, from a full trip plan to a one-off arrangement, and our team will put it together for you.",
+  },
 };
+
+// Private pages: named, never indexed.
+const privateTitles: Array<[RegExp, string]> = [
+  [/^\/auth/, "Sign in or create an account | Tembea Bila Matata"],
+  [/^\/bookings/, "My Bookings | Tembea Bila Matata"],
+  [/^\/book\//, "Complete your booking | Tembea Bila Matata"],
+  [/^\/inbox/, "Messages | Tembea Bila Matata"],
+];
 
 export function RouteSeo({ pathname }: { pathname: string }) {
   const key = pathname.split("?")[0].replace(/\/$/, "") || "/";
   const metadata = routeMetadata[key];
   if (!metadata) {
     if (/^\/(?:book(?:ings)?|b\/|auth(?:\/|$)|admin(?:\/|$)|provider(?:\/|$)|inbox(?:\/|$))/.test(key)) {
-      return <SeoHead title="Tembea Bila Matata" robots="noindex,follow" canonicalUrl={buildCanonicalUrl(key)} />;
+      const title = privateTitles.find(([pattern]) => pattern.test(key))?.[1] ?? "Tembea Bila Matata";
+      return <SeoHead title={title} robots="noindex,follow" canonicalUrl={buildCanonicalUrl(key)} />;
     }
     return null;
   }

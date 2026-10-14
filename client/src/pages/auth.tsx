@@ -4,7 +4,7 @@ import { FaApple } from "react-icons/fa";
 import { FcGoogle } from "react-icons/fc";
 import type { IconType } from "react-icons";
 import { Link, useLocation } from "wouter";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -146,17 +146,17 @@ function getNextPath() {
   return next && next.startsWith("/") ? next : "/";
 }
 
+// Where the guest goes next, in words ("your booking"), not the address.
 function formatNextPathLabel(path: string) {
-  if (path === "/" || !path) {
-    return "home";
-  }
-
-  return path
-    .replace(/^\//, "")
-    .split("?")[0]
-    .split("/")
-    .map((part) => part.replace(/-/g, " "))
-    .join(" / ");
+  const route = (path || "/").split("?")[0];
+  if (route === "/") return "the home page";
+  if (route.startsWith("/book/")) return "your booking";
+  if (route.startsWith("/bookings")) return "My Bookings";
+  if (route.startsWith("/inbox")) return "your messages";
+  if (route.startsWith("/provider")) return "Provider Hub";
+  if (route.startsWith("/admin")) return "TBM Admin";
+  if (route.startsWith("/request-custom-service")) return "your custom request";
+  return "where you were";
 }
 
 function resolvePostAuthPath(nextPath: string, isAdmin: boolean, role?: string | null) {
@@ -554,15 +554,15 @@ export default function AuthPage() {
               </Link>
 
               {nextPath !== "/" ? (
-                <div className="inline-flex w-fit rounded-full border border-stone-200 bg-stone-50 px-3 py-1.5 text-xs font-medium capitalize text-muted-foreground">
-                  Continue to {nextPathLabel}
+                <div className="inline-flex w-fit rounded-full border border-stone-200 bg-stone-50 px-3 py-1.5 text-xs font-medium text-muted-foreground" data-testid="text-auth-next">
+                  Then back to {nextPathLabel}
                 </div>
               ) : null}
 
               <div className="space-y-2">
-                <CardTitle className="text-2xl tracking-tight text-stone-950 sm:text-[2rem]">
+                <h1 className="text-2xl font-semibold leading-none tracking-tight text-stone-950 sm:text-[2rem]">
                   {currentMode.title}
-                </CardTitle>
+                </h1>
                 <CardDescription className="text-sm leading-6 sm:text-base">
                   {currentMode.description}
                 </CardDescription>

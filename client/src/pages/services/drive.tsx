@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CurrencyAmount } from "@/components/currency-amount";
-import { Car, MapPin, Star } from "lucide-react";
+import { Car, MapPin, Star, Sparkles } from "lucide-react";
 import { filterCars, useConciergeSearch } from "@/lib/concierge-search";
 import { CustomServiceCta } from "@/components/custom-service-cta";
 import { PublicReviewPreview } from "@/components/public-review-preview";
@@ -61,7 +61,7 @@ function CarShowcaseCard({
               <h3 className="font-serif text-xl font-medium tracking-tight text-foreground">{car.model}</h3>
             </div>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
+              {hasPublicRating(car) ? <Star className="h-4 w-4 fill-amber-400 text-amber-400" /> : <Sparkles className="h-4 w-4 text-primary" />}
               <span>{hasPublicRating(car) ? `Rated ${formatRating(car.rating)}/5 from ${car.reviewCount} reviews` : "New on TBM"}</span>
             </div>
             <div className="mt-1.5 flex items-center gap-2 text-sm text-muted-foreground">

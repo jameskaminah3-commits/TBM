@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { CurrencyAmount } from "@/components/currency-amount";
 import { CustomServiceCta } from "@/components/custom-service-cta";
 import { PublicReviewPreview } from "@/components/public-review-preview";
-import { MapPin, ShoppingBag, Star } from "lucide-react";
+import { MapPin, ShoppingBag, Star, Sparkles } from "lucide-react";
 import { filterErrands, useConciergeSearch } from "@/lib/concierge-search";
 import { HOUSE_CLEANING_BASE_ROOM_LABEL, getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
 import { PremiumMediaGallery } from "@/components/premium-media-gallery";
@@ -113,7 +113,7 @@ export default function RelaxPage() {
                     <div className="flex-1">
                       <h3 className="mb-1 font-serif text-xl font-medium tracking-tight">{errand.serviceName}</h3>
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
+                        {hasPublicRating(errand) ? <Star className="h-4 w-4 fill-amber-400 text-amber-400" /> : <Sparkles className="h-4 w-4 text-primary" />}
                         <span>{hasPublicRating(errand) ? `Rated ${formatRating(errand.rating)}/5 from ${errand.reviewCount} reviews` : "New on TBM"}</span>
                       </div>
                     </div>

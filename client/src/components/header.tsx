@@ -84,7 +84,7 @@ export function Header() {
   ];
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-border/60 bg-background/94 shadow-[0_16px_40px_-32px_rgba(15,23,42,0.28)] backdrop-blur-xl supports-[backdrop-filter]:bg-background/84">
+    <header className="sticky top-0 z-50 w-full border-b border-border/60 bg-background/97 shadow-[0_16px_40px_-32px_rgba(15,23,42,0.28)] backdrop-blur-xl supports-[backdrop-filter]:bg-background/92">
       <div className="container mx-auto flex h-[4.7rem] min-w-0 items-center gap-2 px-4 md:gap-3 md:px-6 xl:gap-4 xl:px-8">
         <div className="flex min-w-0 flex-1 items-center xl:min-w-[18rem] xl:flex-none xl:pr-2 2xl:min-w-[20rem]">
           <Link

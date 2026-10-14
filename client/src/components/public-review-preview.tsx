@@ -41,7 +41,8 @@ export function PublicReviewPreview({
   variant?: "compact" | "full";
   maxItems?: number;
 }) {
-  const [open, setOpen] = useState(false);
+  // On a listing page the reviews are the proof: open from the start.
+  const [open, setOpen] = useState(variant === "full");
   const { data: reviews = [] } = useQuery<PublicReview[]>({
     queryKey: ["/api/reviews", targetType, targetId],
     queryFn: async () => {
@@ -73,12 +74,15 @@ export function PublicReviewPreview({
       >
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <div className="mb-2 flex items-center gap-1">
-              {Array.from({ length: 5 }).map((_, index) => (
-                <Star key={index} className={`h-4 w-4 ${index < Math.round(Number(averageRating ?? 0)) ? "fill-amber-400 text-amber-400" : "text-muted-foreground/35"}`} />
-              ))}
-            </div>
-            <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{ratedLine}</div>
+            {averageRating ? (
+              <div className="mb-2 flex items-center gap-1">
+                {Array.from({ length: 5 }).map((_, index) => (
+                  <Star key={index} className={`h-4 w-4 ${index < Math.round(Number(averageRating)) ? "fill-amber-400 text-amber-400" : "text-muted-foreground/35"}`} />
+                ))}
+              </div>
+            ) : null}
+            <h2 className="font-serif text-2xl font-medium text-foreground">Guest reviews</h2>
+            <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{ratedLine}</div>
           </div>
           <CollapsibleTrigger asChild>
             <Button variant="outline" className="rounded-full border-border/70 bg-background/72 hover:bg-background/90">

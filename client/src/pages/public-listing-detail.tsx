@@ -2,7 +2,7 @@ import { useEffect, useMemo } from "react";
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useParams } from "wouter";
-import { ArrowRight, Car, CheckCircle2, ChefHat, Clock3, MapPin, ShoppingBag, Star, Users } from "lucide-react";
+import { ArrowRight, Car, CheckCircle2, ChefHat, Clock3, MapPin, ShoppingBag, Sparkles, Star, Users } from "lucide-react";
 import type { Car as CarType, Cook, Errand, Experience } from "@shared/schema";
 import type { PublicListingKind } from "@shared/seo";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,13 @@ import { getCarDisplayName, getListingSharePrice } from "@shared/listing-share";
 import { ListingUnavailable } from "@/components/listing-unavailable";
 import { YourHost } from "@/components/your-host";
 import { formatRating, hasPublicRating } from "@shared/review-eligibility";
+
+// "Sunset Dhow Cruise – Tudor Creek", not "… Tudor Creek in Tudor Creek, Mombasa".
+function listingHeading(name: string, location: string) {
+  const place = location.split(",")[0]?.trim().toLowerCase();
+  return place && name.toLowerCase().includes(place) ? name : `${name} in ${location}`;
+}
+import { ShareGiftBanner } from "@/components/share-gift-banner";
 import {
   buildListingSeoDescription,
   formatSeoLocation,
@@ -212,12 +219,13 @@ export default function PublicListingDetail({ kind }: { kind: Exclude<PublicList
 
       <div className="container mx-auto max-w-6xl px-4 md:px-8">
         <nav aria-label="Breadcrumb" className="mb-6 text-sm text-muted-foreground">
-          <Link href="/"><a className="hover:text-foreground">Home</a></Link>
+          <Link href="/" className="hover:text-foreground">Home</Link>
           <span className="mx-2">/</span>
-          <Link href={category.href}><a className="hover:text-foreground">{category.label}</a></Link>
+          <Link href={category.href} className="hover:text-foreground">{category.label}</Link>
           <span className="mx-2">/</span>
           <span className="text-foreground">{listingName}</span>
         </nav>
+        <ShareGiftBanner className="mb-6" />
 
         <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]">
           <main>
@@ -225,10 +233,10 @@ export default function PublicListingDetail({ kind }: { kind: Exclude<PublicList
             <header className="mt-8">
               <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
                 <span className="inline-flex items-center gap-1"><MapPin className="h-4 w-4" />{location}</span>
-                <span className="inline-flex items-center gap-1"><Star className="h-4 w-4 fill-amber-400 text-amber-400" />{hasPublicRating(listing) ? `${formatRating(listing.rating)}/5 from ${listing.reviewCount} reviews` : "New on TBM"}</span>
+                <span className="inline-flex items-center gap-1">{hasPublicRating(listing) ? <Star className="h-4 w-4 fill-amber-400 text-amber-400" /> : <Sparkles className="h-4 w-4 text-primary" />}{hasPublicRating(listing) ? `${formatRating(listing.rating)}/5 from ${listing.reviewCount} reviews` : "New on TBM"}</span>
               </div>
               <div className="mt-3 flex items-start justify-between gap-3">
-                <h1 className="min-w-0 font-serif text-3xl font-medium leading-tight sm:text-5xl" data-testid="text-listing-title">{listingName} in {location}</h1>
+                <h1 className="min-w-0 font-serif text-3xl font-medium leading-tight sm:text-5xl" data-testid="text-listing-title">{listingHeading(listingName, location)}</h1>
                 <ListingShareSheet
                   kind={kind}
                   id={listing.id}
@@ -291,7 +299,7 @@ export default function PublicListingDetail({ kind }: { kind: Exclude<PublicList
               <div className="mt-1"><CurrencyAmount amountUsd={price} primaryClassName="text-2xl font-semibold" /></div>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">Confirm dates, guest details and final availability in the secure booking flow.</p>
               <Button className="mt-5 w-full rounded-full" onClick={bookListing} data-testid="button-book-listing">Book this service</Button>
-              <Link href={category.href}><a className="mt-4 flex items-center justify-center gap-2 text-sm text-primary hover:underline">Browse more services <ArrowRight className="h-4 w-4" /></a></Link>
+              <Link href={category.href} className="mt-4 flex items-center justify-center gap-2 text-sm text-primary hover:underline">Browse more services <ArrowRight className="h-4 w-4" /></Link>
             </Card>
           </aside>
         </div>

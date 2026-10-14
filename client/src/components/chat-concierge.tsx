@@ -49,11 +49,12 @@ export function ChatConcierge() {
 
   return (
     <>
-      {/* Floating trigger button */}
+      {/* Floating trigger button. Phones and tablets get one floating helper,
+          Zaina (who hands over to WhatsApp), so content and forms stay clear. */}
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="bottom-above-tab fixed right-4 z-40 flex items-center gap-2 rounded-full bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground shadow-[0_8px_30px_-8px_rgba(13,148,136,0.65)] transition-all duration-200 hover:bg-primary/90 hover:shadow-[0_12px_36px_-8px_rgba(13,148,136,0.75)] active:scale-95"
+        className="bottom-above-tab fixed right-4 z-40 hidden items-center gap-2 rounded-full xl:flex bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground shadow-[0_8px_30px_-8px_rgba(13,148,136,0.65)] transition-all duration-200 hover:bg-primary/90 hover:shadow-[0_12px_36px_-8px_rgba(13,148,136,0.75)] active:scale-95"
         aria-label="Open chat concierge"
       >
                 {/* Pulse rings */}

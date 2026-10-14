@@ -118,9 +118,11 @@ import {
   verifyPesapalPayment,
   type VerifiedHostedPayment,
 } from "./customer-payments";
+import { pickShareOffer } from "@shared/share-offer";
 import {
   queueNotificationTask,
   sendBookingCreatedNotificationEmails,
+  sendReviewRequestEmail,
   sendBookingDatesTakenEmails,
   sendBookingPaymentNotificationEmails,
   sendOpsAlertEmail,
@@ -2215,10 +2217,14 @@ async function reconcileParentBookingStatusFromAssignments(bookingId: string) {
     return booking;
   }
 
-  return await storage.updateBooking(bookingId, {
+  const updated = await storage.updateBooking(bookingId, {
     status: nextStatus,
     ...resetProviderStatusRequestFields(),
   });
+  if (updated && nextStatus === "completed" && booking.status !== "completed") {
+    queueNotificationTask(`review request ${bookingId}`, sendReviewRequestEmail(updated));
+  }
+  return updated;
 }
 
 async function getVisibleProviderAssignment(req: any, assignmentId: string) {
@@ -5376,6 +5382,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // The friend's discount on a guest's share link (shared/share-offer.ts):
+  // the live "Guest shares" promo, with public fields only.
+  app.get("/api/marketing/share-offer", async (_req, res) => {
+    try {
+      const promos = await storage.getMarketingPromos();
+      res.setHeader("Cache-Control", "public, max-age=120");
+      res.json(pickShareOffer(promos.filter((promo) => isPromoLive(promo))));
+    } catch (error) {
+      console.error("[MARKETING] Failed to load the share offer:", error);
+      res.json(null);
+    }
+  });
+
   app.post("/api/marketing/promos/preview", async (req, res) => {
     try {
       const payload = z.object({
@@ -6140,6 +6159,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           : changes,
       );
+      if (booking && requestedStatus === "completed" && existingBooking.status !== "completed") {
+        queueNotificationTask(`review request ${booking.id}`, sendReviewRequestEmail(booking, req));
+      }
       res.json(booking);
     } catch (error) {
       res.status(500).json({ error: "Failed to update booking" });
@@ -6848,6 +6870,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           providerUserId: partnerUserId,
           name: [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim() || user?.email || "Provider",
           services: assignments.filter((assignment) => assignment.providerUserId === partnerUserId).map((assignment) => assignment.serviceName),
+          // Did they take the job, and how far along is it?
+          response: assignments.find((assignment) => assignment.providerUserId === partnerUserId)?.providerResponse ?? null,
+          jobStatus: assignments.find((assignment) => assignment.providerUserId === partnerUserId)?.status ?? null,
           contactReleases: releases.filter((release) => release.providerUserId === partnerUserId),
         };
       }));

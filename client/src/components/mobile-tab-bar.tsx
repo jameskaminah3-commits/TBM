@@ -14,7 +14,8 @@ const TABS = [
     href: "/accommodations",
     label: "Stay",
     icon: Building2,
-    match: (loc: string) => loc === "/accommodations" || loc.startsWith("/accommodation/"),
+    // Booking a stay (/book/<stay>) is still the Stay tab.
+    match: (loc: string) => loc === "/accommodations" || loc.startsWith("/accommodation/") || /^\/book\/[^/]+\/?$/.test(loc),
   },
   {
     href: "/services",
@@ -23,10 +24,8 @@ const TABS = [
     match: (loc: string) =>
       loc === "/services" ||
       loc.startsWith("/services/") ||
-      loc.startsWith("/book/experience/") ||
-      loc.startsWith("/book/drive/") ||
-      loc.startsWith("/book/dine/") ||
-      loc.startsWith("/book/relax/"),
+      /^\/book\/[^/]+\/[^/]+/.test(loc) ||
+      /^\/(transport|chef|errand|experience)\//.test(loc),
   },
   {
     href: "/bookings",

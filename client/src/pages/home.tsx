@@ -164,7 +164,7 @@ function ServiceShowcaseCard({
       </div>
 
       <div className="px-6 pb-6 pt-1">
-        <div className="text-sm font-medium text-primary">{seeAllLabel} -&gt;</div>
+        <div className="text-sm font-medium text-primary">{seeAllLabel} →</div>
       </div>
     </Card>
   );
@@ -399,7 +399,7 @@ export default function Home() {
           className="absolute inset-0 h-full w-full object-cover"
           loading="eager"
           decoding="async"
-          fetchPriority="high"
+          {...{ fetchpriority: "high" }}
         />
         <div className="absolute inset-0 bg-gradient-to-b from-black/52 via-black/40 to-black/58" />
 

@@ -7,7 +7,7 @@ import { CurrencyAmount } from "@/components/currency-amount";
 import { filterExperiences, useConciergeSearch } from "@/lib/concierge-search";
 import { CustomServiceCta } from "@/components/custom-service-cta";
 import { PublicReviewPreview } from "@/components/public-review-preview";
-import { Clock3, Compass, MapPin, Star, Users } from "lucide-react";
+import { Clock3, Compass, MapPin, Star, Users, Sparkles } from "lucide-react";
 import { PremiumMediaGallery } from "@/components/premium-media-gallery";
 import type { Experience } from "@shared/schema";
 import { formatRating, hasPublicRating } from "@shared/review-eligibility";
@@ -54,7 +54,7 @@ function ExperienceCard({
 
         <div className="grid gap-2 text-sm text-muted-foreground">
           <div className="flex items-center gap-2">
-            <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
+            {hasPublicRating(experience) ? <Star className="h-4 w-4 fill-amber-400 text-amber-400" /> : <Sparkles className="h-4 w-4 text-primary" />}
             <span>{hasPublicRating(experience) ? `Rated ${formatRating(experience.rating)}/5 from ${experience.reviewCount} reviews` : "New on TBM"}</span>
           </div>
           {experience.experienceLocation ? (

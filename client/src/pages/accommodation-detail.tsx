@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useLocation, useSearch, Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { Star, MapPin, Users, Bed, Bath, Car, ChefHat, ShoppingBag, CheckCircle2, CalendarDays } from "lucide-react";
+import { Star, Sparkles, MapPin, Users, Bed, Bath, Car, ChefHat, ShoppingBag, CheckCircle2, CalendarDays } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -11,6 +11,7 @@ import { StayMediaCarousel } from "@/components/stay-media-carousel";
 import { CurrencyAmount } from "@/components/currency-amount";
 import { PublicReviewPreview } from "@/components/public-review-preview";
 import { YourHost } from "@/components/your-host";
+import { ShareGiftBanner } from "@/components/share-gift-banner";
 import {
   formatStaySearchDate,
   getStaySearchNights,
@@ -35,6 +36,14 @@ import { captureListingVisit, trackShareEvent, withShareRef } from "@/lib/market
 import { getListingSharePrice } from "@shared/listing-share";
 import { ListingUnavailable } from "@/components/listing-unavailable";
 import { formatRating, hasPublicRating } from "@shared/review-eligibility";
+import { CONTACT_PHONE_DISPLAY } from "@/lib/contact-info";
+
+// "today", or "Wed 14 Oct" for a later date.
+function formatAvailableFrom(value: string | undefined, today: Date) {
+  const date = value ? parseCalendarDate(value) : null;
+  if (!date || date <= today) return "today";
+  return format(date, "EEE d MMM");
+}
 
 type StayAvailability = {
   blockedRanges: Array<{
@@ -130,7 +139,14 @@ export default function AccommodationDetail() {
 
   const canonicalUrl = buildCanonicalUrl(getPublicListingPath("stay", accommodation.id, accommodation.title));
   const location = formatSeoLocation(accommodation.location);
-  const semanticSummary = `${accommodation.bedrooms}-bedroom accommodation in ${location}, with ${accommodation.bathrooms} bathrooms and space for up to ${accommodation.maxOccupancy} guests. Available from ${accommodation.price} USD per night.`;
+  const stayFacts = `${accommodation.bedrooms}-bedroom accommodation in ${location}, with ${accommodation.bathrooms} bathrooms and space for up to ${accommodation.maxOccupancy} guests.`;
+  // Search engines get the price; guests see it in their own currency below.
+  const semanticSummary = `${stayFacts} Available from ${accommodation.price} USD per night.`;
+  const availableFrom = formatAvailableFrom(availability?.availableFrom, kenyaToday);
+  const goToBooking = () => {
+    void trackShareEvent("book");
+    setLocation(withShareRef(`/book/${accommodation.id}${staySearchSuffix}`));
+  };
   const structuredData = {
     "@context": "https://schema.org",
     "@type": "LodgingBusiness",
@@ -174,12 +190,13 @@ export default function AccommodationDetail() {
       />
       <div className="container mx-auto max-w-6xl px-4 sm:px-6 md:px-8">
         <nav aria-label="Breadcrumb" className="mb-6 text-sm text-muted-foreground">
-          <Link href="/"><a className="hover:text-foreground">Home</a></Link>
+          <Link href="/" className="hover:text-foreground">Home</Link>
           <span className="mx-2">/</span>
-          <Link href="/accommodations"><a className="hover:text-foreground">Accommodation in Mombasa and Nyali</a></Link>
+          <Link href="/accommodations" className="hover:text-foreground">Accommodation in Mombasa and Nyali</Link>
           <span className="mx-2">/</span>
           <span className="text-foreground">{accommodation.title}</span>
         </nav>
+        <ShareGiftBanner className="mb-6" />
         <div className="mb-10">
           <StayMediaCarousel
             stay={accommodation}
@@ -210,7 +227,7 @@ export default function AccommodationDetail() {
                     />
                   </div>
                   <p className="max-w-3xl text-sm leading-6 text-muted-foreground sm:text-base">
-                    {semanticSummary}
+                    {stayFacts}
                   </p>
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-muted-foreground">
                     <div className="flex items-center gap-1">
@@ -218,7 +235,9 @@ export default function AccommodationDetail() {
                       <span className="break-words">{location}</span>
                     </div>
                     <div className="flex items-center gap-1">
-                      <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
+                      {hasPublicRating(accommodation)
+                        ? <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
+                        : <Sparkles className="h-4 w-4 text-primary" />}
                       <span className="break-words">{hasPublicRating(accommodation) ? `Rated ${formatRating(accommodation.rating)}/5 from ${accommodation.reviewCount} reviews` : "New on TBM"}</span>
                     </div>
                   </div>
@@ -249,7 +268,7 @@ export default function AccommodationDetail() {
                 <Card className="p-4">
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <CalendarDays className="h-4 w-4 text-primary" />
-                    <span>Available from {availability?.availableFrom ?? "today"}</span>
+                    <span>Available from {availableFrom}</span>
                   </div>
                 </Card>
               </div>
@@ -390,7 +409,7 @@ export default function AccommodationDetail() {
                   primaryClassName="text-3xl font-semibold"
                   className="mb-1"
                 />
-                <div className="text-sm text-muted-foreground">per day</div>
+                <div className="text-sm text-muted-foreground">per night</div>
               </div>
 
               <div className="space-y-3 mb-6 rounded-xl border bg-muted/30 p-4 text-sm">
@@ -400,7 +419,7 @@ export default function AccommodationDetail() {
                 </div>
                 <div className="flex flex-col gap-1 min-[360px]:flex-row min-[360px]:items-center min-[360px]:justify-between">
                   <span className="font-medium">Next available</span>
-                  <span className="text-muted-foreground">{availability?.availableFrom ?? "Today"}</span>
+                  <span className="text-muted-foreground first-letter:uppercase">{availableFrom}</span>
                 </div>
                 <div className="rounded-xl border bg-background p-2">
                   <div className="mb-2 flex items-center justify-between px-1">
@@ -447,10 +466,7 @@ export default function AccommodationDetail() {
               <Button
                 className="w-full"
                 size="lg"
-                onClick={() => {
-                  void trackShareEvent("book");
-                  setLocation(withShareRef(`/book/${accommodation.id}${staySearchSuffix}`));
-                }}
+                onClick={goToBooking}
                 data-testid="button-book-now"
               >
                 Book Now
@@ -458,26 +474,41 @@ export default function AccommodationDetail() {
 
               <Separator className="my-6" />
 
-              <div className="space-y-3 text-sm">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <CheckCircle2 className="h-4 w-4 text-primary" />
-                  <span>Free cancellation up to 48 hours</span>
+              <div className="space-y-3 text-sm" data-testid="stay-assurances">
+                <div className="flex items-start gap-2 text-muted-foreground">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                  <span>Pay securely in your My Bookings checkout: card or M-Pesa</span>
                 </div>
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <CheckCircle2 className="h-4 w-4 text-primary" />
-                  <span>24/7 customer support</span>
+                <div className="flex items-start gap-2 text-muted-foreground">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                  <span>Hosts are approved by TBM before they can list</span>
                 </div>
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <CheckCircle2 className="h-4 w-4 text-primary" />
-                  <span>Verified service providers</span>
+                <div className="flex items-start gap-2 text-muted-foreground">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                  <span>TBM's team on WhatsApp or {CONTACT_PHONE_DISPLAY} before, during and after your stay</span>
                 </div>
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <CheckCircle2 className="h-4 w-4 text-primary" />
-                  <span>Clear SLA agreements</span>
+                <div className="flex items-start gap-2 text-muted-foreground">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                  <span>
+                    Refunds follow our{" "}
+                    <Link href="/refund-cancellation" className="underline underline-offset-2 hover:text-foreground">cancellation policy</Link>
+                  </span>
                 </div>
               </div>
             </Card>
           </div>
+        </div>
+      </div>
+      <div className="h-20 lg:hidden" aria-hidden="true" />
+      <div className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-40 border-t border-border/70 bg-background px-4 py-3 shadow-[0_-18px_40px_rgba(15,23,42,0.16)] lg:hidden" data-testid="stay-book-bar">
+        <div className="mx-auto flex w-full max-w-6xl items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <CurrencyAmount amountUsd={accommodation.price} primaryClassName="text-base font-semibold text-foreground" />
+            <div className="truncate text-xs text-muted-foreground">per night · available from {availableFrom}</div>
+          </div>
+          <Button className="min-h-11 shrink-0 px-6" onClick={goToBooking} data-testid="button-book-now-bar">
+            Book
+          </Button>
         </div>
       </div>
     </div>

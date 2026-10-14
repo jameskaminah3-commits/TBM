@@ -89,6 +89,7 @@ const promoChannelLabels: Record<MarketingPromoChannel, string> = {
   social: "Social",
   whatsapp: "WhatsApp",
   partner: "Partner",
+  "guest-share": "Guest shares (friend's discount)",
 };
 
 const promoCostAbsorptionLabels: Record<MarketingPromoCostAbsorption, string> = {
@@ -620,6 +621,11 @@ function PromoForm({
                     ))}
                   </SelectContent>
                 </Select>
+                {field.value === "guest-share" ? (
+                  <FormDescription data-testid="text-guest-share-hint">
+                    Guests' share links carry this code, and the friend who books through one gets the discount. The guest who shares gets nothing back, so it isn't a referral payment. Needs a code; the newest active one is used. Choose "Platform only" below to leave providers' earnings unchanged.
+                  </FormDescription>
+                ) : null}
                 <FormMessage />
               </FormItem>
             )}
@@ -1764,7 +1770,7 @@ export default function AdminMarketing() {
                       </div>
                     ) : attributionSummary.topContent.length > 0 ? attributionSummary.topContent.slice(0, 4).map((item, index) => (
                       <div
-                        key={`${item.sourceId ?? item.sourcePath ?? item.sourceSlug ?? index}`}
+                        key={`${item.sourceId ?? item.sourcePath ?? item.sourceSlug ?? ""}-${index}`}
                         className="rounded-2xl border border-stone-200 bg-stone-50 p-4"
                       >
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">

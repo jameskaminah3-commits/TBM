@@ -5,6 +5,10 @@ export default {
   content: ["./client/index.html", "./client/src/**/*.{js,jsx,ts,tsx}"],
   theme: {
     extend: {
+      // Every whole-number opacity (bg-background/94, border-white/18 …).
+      // Tailwind's default scale only has steps of 5, and classes off the
+      // scale silently produced no CSS: see-through headers and Book bars.
+      opacity: Object.fromEntries(Array.from({ length: 101 }, (_, value) => [String(value), String(value / 100)])),
       borderRadius: {
         lg: ".5625rem", /* 9px */
         md: ".375rem", /* 6px */
