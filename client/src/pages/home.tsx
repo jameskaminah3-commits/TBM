@@ -163,7 +163,7 @@ function ServiceShowcaseCard({
       </div>
 
       <div className="px-6 pb-6 pt-1">
-        <div className="text-sm font-medium text-primary">{seeAllLabel} -&gt;</div>
+        <div className="text-sm font-medium text-primary">{seeAllLabel} →</div>
       </div>
     </Card>
   );

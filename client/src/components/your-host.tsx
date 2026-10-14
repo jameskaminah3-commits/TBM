@@ -36,7 +36,7 @@ export function YourHost({ kind, listingId }: { kind: PublicListingKind; listing
             ) : null}
           </div>
           <ProviderBadges provider={provider} />
-          <ProviderRatingLine rating={provider.rating} />
+          <div><ProviderRatingLine rating={provider.rating} /></div>
           <Link href={withShareRef(provider.path)} className="inline-flex min-h-11 items-center gap-1 text-sm font-medium text-primary underline-offset-4 hover:underline" data-testid="link-host-page">
             See all their services<ChevronRight className="h-4 w-4" aria-hidden="true" />
           </Link>

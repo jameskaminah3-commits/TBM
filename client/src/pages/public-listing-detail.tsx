@@ -57,6 +57,7 @@ import { captureListingVisit, trackShareEvent, withShareRef } from "@/lib/market
 import { getCarDisplayName, getListingSharePrice } from "@shared/listing-share";
 import { ListingUnavailable } from "@/components/listing-unavailable";
 import { hasPublicRating, summarizeRatings } from "@shared/review-eligibility";
+import { ShareGiftBanner } from "@/components/share-gift-banner";
 import {
   buildListingSeoDescription,
   formatSeoLocation,
@@ -399,6 +400,7 @@ export default function PublicListingDetail({ kind }: { kind: ListingKind }) {
           <span className="mx-2">/</span>
           <span className="text-foreground">{listingName}</span>
         </nav>
+        <ShareGiftBanner className="mb-6" />
 
         <div className="flex flex-col gap-5 md:gap-6">
           <header className="order-2 md:order-1">

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Copy, ExternalLink, MessageCircle, Share2 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Copy, ExternalLink, Gift, MessageCircle, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -27,6 +28,7 @@ import {
   type ShareSource,
 } from "@shared/listing-share";
 import { getPublicListingPath, type PublicListingKind } from "@shared/seo";
+import { shareOfferMessageLine, shareOfferTerms, shareOfferValue, withPromoCode, type ShareOffer } from "@shared/share-offer";
 
 type ListingShareSheetProps = {
   // "provider": the provider's own public page (pagePath), not one listing.
@@ -66,7 +68,7 @@ export function ListingShareSheet({
   size = "sm",
 }: ListingShareSheetProps) {
   const { toast } = useToast();
-  const { usdToKes } = useCurrency();
+  const { usdToKes, formatAmount } = useCurrency();
   const [open, setOpen] = useState(false);
   const [includePrice, setIncludePrice] = useState(false);
   const [message, setMessage] = useState("");
@@ -101,6 +103,17 @@ export function ListingShareSheet({
     };
   }, [open, wantsCode, shareCode, kind, id]);
 
+  // A guest sharing a listing can give the friend TBM's current gift, if TBM has one.
+  const isGuestShare = source === "visitor" && kind !== "provider" && isPublic;
+  const { data: offer } = useQuery<ShareOffer | null>({
+    queryKey: ["/api/marketing/share-offer"],
+    enabled: isGuestShare,
+    staleTime: 120_000,
+  });
+  const giftOffer = isGuestShare ? offer ?? null : null;
+  const giftValue = giftOffer ? shareOfferValue(giftOffer, formatAmount) : null;
+  const giftTerms = giftOffer ? shareOfferTerms(giftOffer, formatAmount) : "";
+
   const markShared = (channel: "whatsapp" | "copy" | "native") => {
     if (shareCode) {
       void apiRequest("POST", `/api/provider/share-links/${shareCode}/shared`, { channel }).catch(() => undefined);
@@ -110,11 +123,14 @@ export function ListingShareSheet({
   const origin = typeof window === "undefined" ? "https://tembeabilamatata.com" : window.location.origin;
   const previewPath = kind === "provider" ? pagePath ?? "/" : getPublicListingPath(kind, id, name);
   const links = useMemo(() => {
-    const build = (channel: "whatsapp" | "copy" | "native") => (kind === "provider"
-      ? buildProviderPageShareUrl(origin, pagePath ?? "/", { channel, code: shareCode })
-      : buildListingShareUrl(origin, { kind, id, name }, { source, channel, code: shareCode }));
+    const build = (channel: "whatsapp" | "copy" | "native") => {
+      const url = kind === "provider"
+        ? buildProviderPageShareUrl(origin, pagePath ?? "/", { channel, code: shareCode })
+        : buildListingShareUrl(origin, { kind, id, name }, { source, channel, code: shareCode });
+      return giftOffer ? withPromoCode(url, giftOffer.code) : url;
+    };
     return { whatsapp: build("whatsapp"), copy: build("copy"), native: build("native") };
-  }, [origin, kind, id, name, pagePath, source, shareCode]);
+  }, [origin, kind, id, name, pagePath, source, shareCode, giftOffer]);
   const priceLine = includePrice && priceUsd && priceUsd > 0 ? formatSharePriceLine(priceUsd * usdToKes, priceUnit) : null;
 
   // A fresh message each time the sheet opens or the price choice changes.
@@ -122,9 +138,9 @@ export function ListingShareSheet({
     if (open) {
       setMessage(kind === "provider"
         ? buildProviderPageShareMessage({ name, services, url: links.whatsapp })
-        : buildListingShareMessage({ kind, name, description, url: links.whatsapp, priceLine }));
+        : buildListingShareMessage({ kind, name, description, url: links.whatsapp, priceLine, offerLine: giftValue ? shareOfferMessageLine(giftValue) : null }));
     }
-  }, [open, kind, name, services, description, links.whatsapp, priceLine]);
+  }, [open, kind, name, services, description, links.whatsapp, priceLine, giftValue]);
 
   const copyLink = async () => {
     markShared("copy");
@@ -187,6 +203,17 @@ export function ListingShareSheet({
 
         {isPublic ? (
           <div className="space-y-4">
+            {giftValue ? (
+              <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950" data-testid="share-gift">
+                <Gift className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" aria-hidden="true" />
+                <div>
+                  <div className="font-semibold">Give your friends {giftValue} off</div>
+                  <div className="text-amber-900/80">
+                    Anyone who books through your link gets {giftValue} off, TBM's welcome gift to them{giftTerms ? ` (${giftTerms})` : ""}.
+                  </div>
+                </div>
+              </div>
+            ) : null}
             <div className="space-y-2">
               <Label htmlFor={`share-message-${id}`}>Message</Label>
               <Textarea

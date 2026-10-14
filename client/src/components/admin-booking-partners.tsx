@@ -17,6 +17,8 @@ type BookingPartner = {
   providerUserId: string;
   name: string;
   services: string[];
+  response: "accepted" | "declined" | null;
+  jobStatus: string | null;
   contactReleases: Array<GuestContactRelease & { views: GuestContactReleaseView[] }>;
 };
 
@@ -47,6 +49,14 @@ export function AdminBookingPartners({ bookingId, hasGuestPhone }: { bookingId: 
           <div className="text-sm">
             <span className="font-medium">{partner.name}</span>
             <span className="text-muted-foreground"> · {partner.services.join(", ")}</span>
+          </div>
+          <div className="flex flex-wrap gap-2" data-testid={`partner-response-${partner.providerUserId}`}>
+            <Badge variant={partner.response === "declined" ? "destructive" : partner.response === "accepted" ? "secondary" : "outline"} className="rounded-full">
+              {partner.response === "accepted" ? "Accepted the job" : partner.response === "declined" ? "Declined the job" : "Hasn't replied yet"}
+            </Badge>
+            {partner.jobStatus && partner.response === "accepted" ? (
+              <Badge variant="outline" className="rounded-full capitalize">{partner.jobStatus.replace("-", " ")}</Badge>
+            ) : null}
           </div>
           <BookingThread
             bookingId={bookingId}

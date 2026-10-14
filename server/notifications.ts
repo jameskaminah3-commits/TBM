@@ -9,6 +9,7 @@ import { SUPPORT_PHONE_DISPLAY } from "../shared/support-contact.ts";
 import { formatCalendarDateRange, KENYA_TIME_ZONE } from "../shared/calendar-dates.ts";
 import { describeHotelStay } from "../shared/hotel-rooms.ts";
 import { buildVerificationEmail, type VerificationPurpose } from "./verification-email.ts";
+import { getUsdToKesRate } from "./currency.ts";
 
 type RequestOriginLike = {
   protocol?: string;
@@ -83,6 +84,23 @@ function formatUsd(value: number | null | undefined) {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(amount);
+}
+
+// Guests see and pay KSh on the site, so emails lead with KSh and keep US$ alongside.
+function formatKes(amount: number) {
+  return `KSh ${Math.round(amount).toLocaleString("en-US")}`;
+}
+
+function formatWithKes(amountUsd: number, usdToKes: number | null | undefined) {
+  return usdToKes && usdToKes > 0 ? `${formatKes(amountUsd * usdToKes)} (${formatUsd(amountUsd)})` : formatUsd(amountUsd);
+}
+
+async function currentUsdToKes() {
+  try {
+    return (await getUsdToKesRate()).usdToKes;
+  } catch {
+    return null;
+  }
 }
 
 function normalizeMoney(value: number | null | undefined) {
@@ -328,7 +346,8 @@ export async function sendSignupNotificationEmails(
   return true;
 }
 
-function buildBookingSummaryLines(booking: Booking) {
+function buildBookingSummaryLines(booking: Booking, usdToKes: number | null = null) {
+  const kesQuote = booking.serviceRequestFeeKes && booking.serviceRequestFeeKes > 0 ? booking.serviceRequestFeeKes : null;
   return [
     `Booking reference: ${getShortBookingReference(booking.id)}`,
     `Booking type: ${getBookingCategoryLabel(booking)}`,
@@ -338,7 +357,7 @@ function buildBookingSummaryLines(booking: Booking) {
     `Dates: ${getBookingDateLabel(booking)}`,
     booking.hotelStay ? `Room: ${describeHotelStay(booking.hotelStay)}` : null,
     `Guests: ${booking.guests}`,
-    `Total: ${formatUsd(booking.totalPrice)}`,
+    `Total: ${kesQuote ? `${formatKes(kesQuote)} (${formatUsd(booking.totalPrice)})` : formatWithKes(booking.totalPrice, usdToKes)}`,
     `Payment status: ${booking.paymentStatus}`,
   ].filter(Boolean) as string[];
 }
@@ -359,10 +378,46 @@ function buildPaymentGuidance(booking: Booking): string[] {
   const payment = (booking.paymentDepositAmount ?? 0) > 0 ? "the deposit" : "for it";
   return [
     reservesDates(booking)
-      ? `Your dates are reserved once you pay ${payment} in My Bookings. When you press "Pay now", we hold them for you for ${bookingPaymentHoldMinutes} minutes while you complete the payment.`
+      ? `Your dates are reserved once you pay ${payment} in My Bookings. When you press "Pay now", we hold them for you for ${bookingPaymentHoldMinutes} minutes while you complete the payment by card or M-Pesa.`
       : `Your booking goes ahead once you pay ${payment} in My Bookings.`,
     `Trouble paying? Our support team can help — WhatsApp or call ${SUPPORT_PHONE_DISPLAY}.`,
   ];
+}
+
+// After the stay or service: one short, warm ask for a review, at the moment
+// the guest is most likely to say yes. Reviews also unlock the rating other
+// guests see (3 or more eligible reviews).
+export function buildReviewRequestEmail(booking: Booking, reviewUrl: string | null) {
+  const what = booking.accommodationId ? "stay" : "booking";
+  const subject = `How was your ${what}? Share a quick review`;
+  const lines = [
+    `Hi ${getPrimaryGuestLabel(booking)},`,
+    "",
+    `Thank you for booking with Tembea Bila Matata. We hope your ${what} went beautifully.`,
+    "Could you spare 30 seconds to rate it? Your review helps other travellers choose with confidence, and lets your host know what they did well.",
+    reviewUrl ? `Leave your review: ${reviewUrl}` : "",
+    "",
+    `Anything we could have done better? Reply to this email or WhatsApp us on ${SUPPORT_PHONE_DISPLAY}.`,
+  ].filter((line, index, all) => line !== "" || all[index - 1] !== "");
+  return { subject, lines };
+}
+
+export async function sendReviewRequestEmail(booking: Booking, requestLike?: RequestOriginLike) {
+  if (!booking.guestEmail) return false;
+  const reviewUrl = buildApplicationUrl(`/bookings?bookingId=${booking.id}&review=1`, requestLike);
+  const { subject, lines } = buildReviewRequestEmail(booking, reviewUrl);
+  return sendEmailMessage({
+    to: [booking.guestEmail],
+    subject,
+    text: lines.join("\n"),
+    html: [
+      "<div style=\"font-family:Arial,sans-serif;line-height:1.6;color:#0f172a;\">",
+      ...lines.filter(Boolean).map((line) => line.startsWith("Leave your review: ") && reviewUrl
+        ? `<p><a href="${escapeHtml(reviewUrl)}" style="display:inline-block;background:#0f766e;color:#fff;padding:10px 18px;border-radius:999px;text-decoration:none;">Leave your review</a></p>`
+        : `<p>${escapeHtml(line)}</p>`),
+      "</div>",
+    ].join(""),
+  });
 }
 
 export async function sendBookingCreatedNotificationEmails(booking: Booking, requestLike?: RequestOriginLike) {
@@ -370,7 +425,7 @@ export async function sendBookingCreatedNotificationEmails(booking: Booking, req
   const adminRecipients = getNotificationRecipientEmails();
   const customerUrl = buildApplicationUrl(`/bookings?bookingId=${booking.id}`, requestLike);
   const adminUrl = buildApplicationUrl(`/admin/bookings?bookingId=${booking.id}`, requestLike);
-  const summaryLines = buildBookingSummaryLines(booking);
+  const summaryLines = buildBookingSummaryLines(booking, await currentUsdToKes());
   const customerName = getPrimaryGuestLabel(booking);
   const paymentGuidance = buildPaymentGuidance(booking);
 
@@ -469,6 +524,11 @@ export function buildBookingPaymentNotificationContent(
   const latestPaymentAmount = Math.max(0, currentAmountPaid - previousAmountPaid);
   const outstandingAmount = getBookingOutstandingAmount(booking);
   const shouldSendReceipt = latestPaymentAmount > 0;
+  const chargedInKes = booking.paymentCurrency?.trim().toUpperCase() === "KES"
+    && normalizeMoney(booking.paymentAmount) > 0
+    && normalizeMoney(booking.paymentCheckoutAmount) > 0;
+  const chargedRate = chargedInKes ? normalizeMoney(booking.paymentAmount) / normalizeMoney(booking.paymentCheckoutAmount) : null;
+  const paid = (amountUsd: number) => formatWithKes(amountUsd, chargedRate);
   const shouldSendStatusUpdate = noteworthyPaymentStatuses.has(normalizedStatus) && normalizedStatus !== previousStatus;
 
   if (!shouldSendReceipt && !shouldSendStatusUpdate) {
@@ -481,38 +541,40 @@ export function buildBookingPaymentNotificationContent(
       adminSubject: hasLockedInBookingDeposit(booking) ? "Deposit received" : "Payment received",
       body: outstandingAmount > 0
         ? hasLockedInBookingDeposit(booking)
-          ? `We have received your deposit payment of ${formatUsd(latestPaymentAmount)}. Your dates remain held while the remaining balance is settled.`
-          : `We have received your payment of ${formatUsd(latestPaymentAmount)}. There is still a balance remaining on this booking.`
-        : `We have received your payment of ${formatUsd(latestPaymentAmount)}. This booking is now fully paid.`,
+          ? `We have received your deposit payment of ${paid(latestPaymentAmount)}. Your dates remain held while the remaining balance is settled.`
+          : `We have received your payment of ${paid(latestPaymentAmount)}. There is still a balance remaining on this booking.`
+        : `We have received your payment of ${paid(latestPaymentAmount)}. This booking is now fully paid.`,
     }
     : normalizedStatus === "processing" && booking.paymentProvider === "mpesa-manual"
       ? {
         customerSubject: "M-Pesa payment submitted",
         adminSubject: "Manual M-Pesa submitted",
-        body: "We have received your temporary M-Pesa payment submission and are confirming it now.",
+        body: "We have received your M-Pesa payment details and are confirming the payment now.",
       }
     : getPaymentStatusMessaging(normalizedStatus);
 
-  const providerChargeLine = booking.paymentCurrency
-    && booking.paymentCurrency.trim().toUpperCase() !== "USD"
+  // The exact charge, when it was in a currency other than KSh or US$.
+  const otherChargeLine = booking.paymentCurrency
+    && !["USD", "KES"].includes(booking.paymentCurrency.trim().toUpperCase())
     && normalizeMoney(booking.paymentAmount) > 0
-    ? `Provider charge: ${formatMoney(booking.paymentAmount, booking.paymentCurrency)}`
+    ? `Charged: ${formatMoney(booking.paymentAmount, booking.paymentCurrency)}`
     : null;
   const paidAtLine = formatTimestamp(booking.paidAt);
-  const providerLabel = booking.paymentProvider === "mpesa-manual"
-    ? "Temporary M-Pesa"
+  // "Paid with", not "Provider": on TBM a provider is the host or driver.
+  const paidWithLabel = booking.paymentProvider === "mpesa-manual"
+    ? "M-Pesa (Send Money)"
     : booking.paymentProvider ? humanizeToken(booking.paymentProvider, booking.paymentProvider) : null;
   const sharedLines = [
     `Booking reference: ${getShortBookingReference(booking.id)}`,
     `Guest: ${getPrimaryGuestLabel(booking)}`,
     `Booking type: ${getBookingCategoryLabel(booking)}`,
-    shouldSendReceipt ? `Receipt amount: ${formatUsd(latestPaymentAmount)}` : null,
-    currentAmountPaid > 0 ? `Total paid: ${formatUsd(currentAmountPaid)}` : null,
-    outstandingAmount > 0 ? `Balance remaining: ${formatUsd(outstandingAmount)}` : null,
+    shouldSendReceipt ? `Receipt amount: ${paid(latestPaymentAmount)}` : null,
+    currentAmountPaid > 0 ? `Total paid: ${paid(currentAmountPaid)}` : null,
+    outstandingAmount > 0 ? `Balance remaining: ${formatUsd(outstandingAmount)}${chargedRate ? ` (about ${formatKes(outstandingAmount * chargedRate)})` : ""}` : null,
     `Payment status: ${normalizedStatus}`,
-    providerLabel ? `Provider: ${providerLabel}` : null,
+    paidWithLabel ? `Paid with: ${paidWithLabel}` : null,
     booking.paymentReference ? `Reference: ${booking.paymentReference}` : null,
-    providerChargeLine,
+    otherChargeLine,
     paidAtLine ? `Paid at: ${paidAtLine}` : null,
   ].filter(Boolean) as string[];
 

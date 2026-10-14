@@ -99,10 +99,14 @@ export function PremiumMediaGallery({
       return;
     }
 
-    thumbnailRefs.current[activeIndex]?.scrollIntoView({
+    // Slide the thumbnail strip only. scrollIntoView would also scroll the
+    // page, which jumped stay pages down on load.
+    const thumbnail = thumbnailRefs.current[activeIndex];
+    const strip = thumbnail?.parentElement;
+    if (!thumbnail || !strip) return;
+    strip.scrollTo({
+      left: thumbnail.offsetLeft - strip.offsetLeft - (strip.clientWidth - thumbnail.clientWidth) / 2,
       behavior: "smooth",
-      block: "nearest",
-      inline: "center",
     });
   }, [activeIndex, thumbnailPlacement]);
 

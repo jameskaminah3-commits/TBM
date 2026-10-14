@@ -41,9 +41,12 @@ test("buildBookingPaymentNotificationContent creates a receipt for deposit payme
   assert.ok(email);
   assert.match(email.customerSubject, /payment receipt/i);
   assert.match(email.body, /deposit payment/i);
-  assert.ok(email.sharedLines.includes("Receipt amount: $400"));
-  assert.ok(email.sharedLines.includes("Balance remaining: $400"));
-  assert.ok(email.sharedLines.some((line) => line.startsWith("Provider charge: KES")));
+  // Paid in KSh: the receipt leads with what was charged, US$ alongside.
+  assert.ok(email.sharedLines.includes("Receipt amount: KSh 51,600 ($400)"), email.sharedLines.join(" | "));
+  assert.ok(email.sharedLines.includes("Balance remaining: $400 (about KSh 51,600)"));
+  assert.ok(email.sharedLines.includes("Paid with: Paystack"));
+  assert.match(email.body, /KSh 51,600/);
+  assert.equal(email.sharedLines.some((line) => /provider/i.test(line)), false);
 });
 
 test("buildBookingPaymentNotificationContent keeps failed updates distinct from receipts", () => {

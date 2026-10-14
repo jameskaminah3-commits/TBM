@@ -1261,6 +1261,23 @@ export default function AdminBookings() {
                           <div className="text-sm font-medium mb-1">Total Price</div>
                           <div className="text-xl font-semibold">{formatAmount(booking.totalPrice)}</div>
                         </div>
+                        <div data-testid={`admin-payment-${booking.id}`}>
+                          <div className="text-sm font-medium mb-1">Payment</div>
+                          <div className="flex flex-wrap items-center gap-2 text-sm">
+                            <Badge variant={booking.paymentStatus === "paid" ? "secondary" : booking.paymentStatus === "failed" ? "destructive" : "outline"} className="rounded-full capitalize">
+                              {booking.paymentStatus === "processing" && booking.paymentProvider === "mpesa-manual" ? "M-Pesa to confirm" : booking.paymentStatus}
+                            </Badge>
+                            {booking.paymentProvider ? (
+                              <span className="text-muted-foreground">{booking.paymentProvider === "mpesa-manual" ? "M-Pesa Send Money" : booking.paymentProvider === "paystack" ? "Paystack" : booking.paymentProvider}</span>
+                            ) : null}
+                          </div>
+                          {booking.paymentReference ? (
+                            <div className="mt-1 break-all text-xs text-muted-foreground">Ref {booking.paymentReference}</div>
+                          ) : null}
+                          {booking.paidAt ? (
+                            <div className="text-xs text-muted-foreground">Paid {formatKenyaDateTime(booking.paidAt, undefined, "en-GB")}</div>
+                          ) : null}
+                        </div>
                         {amountPaid > 0 && amountPaid < booking.totalPrice ? (
                           <>
                             <div>

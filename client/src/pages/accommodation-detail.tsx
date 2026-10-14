@@ -54,6 +54,7 @@ import { useOwnsListing } from "@/hooks/use-owns-listing";
 import { captureListingVisit, trackShareEvent, withShareRef } from "@/lib/marketing-attribution";
 import { getListingSharePrice } from "@shared/listing-share";
 import { ListingUnavailable } from "@/components/listing-unavailable";
+import { ShareGiftBanner } from "@/components/share-gift-banner";
 import { hasPublicRating, summarizeRatings } from "@shared/review-eligibility";
 
 type StayAvailability = {
@@ -361,6 +362,7 @@ export default function AccommodationDetail() {
           <span className="mx-2">/</span>
           <span className="text-foreground">{accommodation.title}</span>
         </nav>
+        <ShareGiftBanner className="mb-6" />
 
         {/* What it is, where, and what guests thought: above the photos on a
             laptop, just below them on a phone. */}

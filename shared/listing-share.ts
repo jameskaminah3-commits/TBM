@@ -78,12 +78,14 @@ export function buildListingShareMessage(args: {
   description?: string | null;
   url: string;
   priceLine?: string | null;
+  /** A guest's gift to the friend (shared/share-offer.ts), ending with a colon. */
+  offerLine?: string | null;
 }) {
   return [
     `Check out this ${kindNoun[args.kind]} on Tembea Bila Matata: ${args.name}`,
     shortShareDescription(args.description),
     args.priceLine ?? "",
-    `View details: ${args.url}`,
+    args.offerLine ? `${args.offerLine} ${args.url}` : `View details: ${args.url}`,
   ].filter(Boolean).join("\n");
 }
 
