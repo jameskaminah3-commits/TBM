@@ -344,6 +344,8 @@ function normalizeOptionalIntegerAmount(value: number | null | undefined) {
 }
 
 type BookingCheckoutResponse = {
+  /** The new booking, so My Bookings can open it with its Pay now. */
+  id?: string;
   payment?: {
     redirectUrl?: string | null;
   } | null;
@@ -1207,7 +1209,7 @@ export default function ServiceBooking() {
       });
       return response.json() as Promise<BookingCheckoutResponse>;
     },
-    onSuccess: (_, variables) => {
+    onSuccess: (created, variables) => {
       clearPendingBookingDraft();
       clearMarketingAttributionContext();
       queryClient.invalidateQueries({ queryKey: ["/api/bookings"] });
@@ -1221,7 +1223,7 @@ export default function ServiceBooking() {
           ? "We saved it to My Bookings, where you can complete the full payment whenever you're ready."
           : "Your booking is in. Secure payment stays ready in My Bookings whenever you are.",
       });
-      setLocation("/bookings");
+      setLocation(created?.id ? `/bookings?bookingId=${encodeURIComponent(created.id)}` : "/bookings");
     },
     onError: (error: Error) => {
       toast({
