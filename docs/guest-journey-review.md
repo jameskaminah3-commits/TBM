@@ -51,10 +51,48 @@ The newest active guest-share promo is the one used. To pause the gift, pause th
 - Commission arrangements don't change.
 - Framing it as a gift from the guest is more natural to share than asking for a reward, and it fits TBM's welcome.
 
+## Hotels: rooms and meal plans
+
+A stay is now either an entire place (booked whole, as before) or a hotel, which sells rooms. This came from the development branch without its site redesign.
+
+**How to add a hotel (Admin › Add Listing › Stay):**
+1. Choose **Hotel**. Fill in the name, area, description, star rating, check-in and check-out times, photos and facilities, and tick **Public Listing**.
+2. Press **Create hotel, then add rooms**.
+3. For each room type, press **Add room type** and fill in:
+    - its name;
+    - how many guests one room sleeps;
+    - how many of these rooms the hotel sells through TBM;
+    - the beds;
+    - a price per room per night for each meal plan offered: room only, bed & breakfast, half board, full board or all inclusive. A price for one guest is optional.
+4. The hotel appears on the site once it has a room with a price. Its "from" price, guests and rooms follow from its rooms.
+
+To close some rooms, or the whole hotel, for dates, use **Close rooms or the whole hotel** on the hotel's edit page.
+
+**What guests see:**
+- **Stays page:** a Hotel badge and a filter.
+- **Hotel page:** its rooms, what each meal plan includes, and how many rooms are left for their dates. The pinned phone bar says "Choose a room".
+- **Checkout:** the guest picks a room, a meal plan and the number of rooms. The number of rooms is set from the number of guests, and the price is worked out as they choose.
+- **My Bookings, emails and receipts:** these name the room and the meal plan.
+
+**Rooms left:**
+- A booking takes only its rooms.
+- When there aren't enough rooms, the next guest is told how many are left.
+- Pay now, TBM's date locks and the public calendar all count rooms.
+
+**Zaina:** she can search and book hotel rooms.
+
+**Database:** this adds columns to stays, bookings and stay blocks, and one table, `stay_room_types`. Nothing is removed or renamed. Existing stays become entire places.
+
+**Also fixed while testing hotels:**
+- After checkout, My Bookings opens the booking just made, with its Pay now. This applies to every service. A returning guest used to land on their earliest trip instead.
+- Booking a hotel room keeps the share link's credit, like Book on any stay.
+- On phones, Zaina's button steps aside on checkout, My Bookings and sign-in, so it never covers the form or Pay now.
+
 ## Tested
 
 Done locally only, with test accounts. None of this is proof of how the live site behaves.
 
-- **Full journey:** 40 of 40 checks passed across the guest, provider, admin and friend on phone and laptop, with Paystack simulated. Email verification ran through a non-local host name, so the real code path was used.
-- **Unit tests:** 260 passed.
+- **Full journey:** 40 of 40 checks passed (run again with hotels in) across the guest, provider, admin and friend on phone and laptop, with Paystack simulated. Email verification ran through a non-local host name, so the real code path was used.
+- **Hotels:** 24 of 24 checks passed. In Admin, TBM created a hotel with two room types. A guest on a phone booked 2 rooms on bed & breakfast and paid by M-Pesa (simulated). One room was left. A second guest was refused 2 rooms, then booked the last one. Admin showed the room and meal plan.
+- **Unit tests:** 271 passed (260, plus 11 for hotels).
 - **Earlier regression suites:** results are listed in the release notes for this change.
