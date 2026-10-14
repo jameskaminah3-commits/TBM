@@ -161,6 +161,8 @@ type StayBookingSubmission = BookingFormValues & {
 };
 
 type BookingCheckoutResponse = {
+  /** The new booking, so My Bookings can open it with its Pay now. */
+  id?: string;
   payment?: {
     redirectUrl?: string | null;
   } | null;
@@ -423,7 +425,7 @@ export default function Booking() {
       const response = await apiRequest("POST", "/api/bookings", data);
       return response.json() as Promise<BookingCheckoutResponse>;
     },
-    onSuccess: () => {
+    onSuccess: (created) => {
       clearPendingBookingDraft();
       clearMarketingAttributionContext();
       queryClient.invalidateQueries({ queryKey: ["/api/bookings"] });
@@ -431,7 +433,7 @@ export default function Booking() {
         title: "Booking saved",
         description: "Your booking is in. Secure payment stays ready in My Bookings whenever you are.",
       });
-      setLocation("/bookings");
+      setLocation(created?.id ? `/bookings?bookingId=${encodeURIComponent(created.id)}` : "/bookings");
     },
     onError: (error: Error) => {
       toast({

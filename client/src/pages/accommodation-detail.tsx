@@ -124,7 +124,8 @@ export default function AccommodationDetail() {
     const params = new URLSearchParams(staySearchSuffix.replace(/^\?/, ""));
     params.set("room", roomTypeId);
     params.set("plan", mealPlan);
-    setLocation(`/book/${id}?${params.toString()}`);
+    void trackShareEvent("book");
+    setLocation(withShareRef(`/book/${id}?${params.toString()}`));
   };
 
   const blockedDates = useMemo(() => {
