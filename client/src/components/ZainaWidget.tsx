@@ -205,8 +205,9 @@ function renderAssistantMessage(content: string): JSX.Element[] {
 type WidgetState = "loading" | "ready" | "disabled" | "handed_off";
 type AvatarState = "idle" | "thinking" | "speaking";
 
-// Pages where a guest is booking or paying: Zaina stays available, but its
-// "need a hand?" bubble doesn't pop up over the form or the pay button.
+// Pages where a guest is booking, paying or signing in: Zaina's "need a hand?"
+// bubble doesn't pop up, and on phones and tablets her button steps aside so it
+// never sits on the form or the Pay now button (desktop keeps it at the side).
 const QUIET_PATHS = ["/book/", "/bookings", "/auth", "/inbox"];
 
 export function ZainaWidget() {
@@ -662,7 +663,7 @@ export function ZainaWidget() {
           setShowTooltip(false);
         }}
         aria-label={open ? "Close Zaina" : "Open Zaina"}
-        className={`fixed bottom-40 right-4 sm:bottom-24 sm:right-6 ${open ? "z-[9999]" : "z-40"} flex h-16 w-16 items-center justify-center rounded-full bg-emerald-700 shadow-xl transition-transform hover:scale-105`}
+        className={`fixed bottom-40 right-4 sm:bottom-24 sm:right-6 ${open ? "z-[9999]" : `z-40${quietPage ? " max-lg:hidden" : ""}`} flex h-16 w-16 items-center justify-center rounded-full bg-emerald-700 shadow-xl transition-transform hover:scale-105`}
       >
         {open ? (
           <span className="text-2xl font-light text-white">✕</span>
