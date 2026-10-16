@@ -4,7 +4,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Briefcase, Mail, Pencil, Phone, Search, ShieldAlert, ShieldCheck, Star, Trash2, TriangleAlert, Users, type LucideIcon } from "lucide-react";
+import { Briefcase, Mail, Pencil, Phone, Search, ShieldAlert, ShieldCheck, Star, Trash2, TriangleAlert, Users, type LucideIcon, KeyRound } from "lucide-react";
 import { providerCategories, type ProviderAccountSummary } from "@shared/schema";
 import { AdminLayout } from "@/components/admin-layout";
 import { PartnerAdminThread } from "@/components/partner-admin-thread";
@@ -309,6 +309,16 @@ export default function AdminProviders() {
         description: error.message.replace(/^\d+:\s*/, ""),
         variant: "destructive",
       });
+    },
+  });
+
+  const passwordLinkMutation = useMutation({
+    mutationFn: async (id: string) => (await apiRequest("POST", `/api/admin/provider-accounts/${id}/password-link`, {})).json() as Promise<{ email: string }>,
+    onSuccess: (result) => {
+      toast({ title: "Password link sent", description: `${result.email} can choose a new password from the email. The link works once.` });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Could not send the link", description: error.message.replace(/^\d+:\s*/, ""), variant: "destructive" });
     },
   });
 
@@ -638,6 +648,16 @@ export default function AdminProviders() {
                         >
                           <Pencil className="mr-2 h-4 w-4" />
                           Edit details
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="justify-start"
+                          onClick={() => passwordLinkMutation.mutate(provider.id)}
+                          disabled={passwordLinkMutation.isPending}
+                          data-testid={`button-password-link-${provider.id}`}
+                        >
+                          <KeyRound className="mr-2 h-4 w-4" />
+                          Send password reset link
                         </Button>
                         <Button
                           variant={provider.isSuspended ? "outline" : "destructive"}
