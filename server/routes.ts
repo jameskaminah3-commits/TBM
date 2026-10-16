@@ -2,7 +2,7 @@ import crypto from "crypto";
 import type { Express, Response as ExpressResponse } from "express";
 import { createServer, type Server } from "http";
 import { PayoutRateNotAgreedError, storage } from "./storage";
-import { emailProviderAccountCreated, emailProviderNewMessage, notifyListingPublished } from "./provider-emails";
+import { emailProviderAccountCreated, emailProviderNewMessage, emailProviderPasswordLink, notifyListingPublished } from "./provider-emails";
 import { getPublicListingPath } from "@shared/seo";
 import { ACCOUNT_SETUP_LINK_HOURS } from "@shared/provider-applications";
 import {
@@ -6047,6 +6047,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("[ADMIN] Failed to fetch provider admin thread:", error);
       res.status(500).json({ error: "Failed to fetch provider messages" });
+    }
+  });
+
+  // TBM emails a provider a one-time link to choose a new password.
+  app.post("/api/admin/provider-accounts/:id/password-link", requireAdmin, async (req: any, res) => {
+    try {
+      const provider = await storage.getUser(req.params.id);
+      if (!provider || provider.role !== "provider" || !provider.email) {
+        return res.status(404).json({ error: "Provider account not found" });
+      }
+      const { url } = await issueAccountSetupLink(provider.email);
+      const sent = await emailProviderPasswordLink({ email: provider.email, firstName: provider.firstName ?? null, url, hours: ACCOUNT_SETUP_LINK_HOURS });
+      if (!sent) {
+        return res.status(502).json({ error: "The email couldn't be sent. Check the email settings in Railway and Resend, then try again." });
+      }
+      res.json({ sent: true, email: provider.email });
+    } catch (error) {
+      console.error("[PROVIDER_ACCOUNTS] Password link failed:", error);
+      res.status(500).json({ error: "Couldn't send the password link" });
     }
   });
 

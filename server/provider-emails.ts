@@ -113,3 +113,18 @@ export function emailProviderAccountCreated(args: { email: string; firstName: st
     link: { label: "Set up your account", url: args.setupUrl },
   }));
 }
+
+// TBM sent a provider a link to choose a new password (Admin › Providers).
+// Resolves false when the email couldn't be sent, so TBM can be told.
+export function emailProviderPasswordLink(args: { email: string; firstName: string | null; url: string; hours: number }) {
+  return sendSimpleEmail({
+    to: [args.email],
+    greetingName: args.firstName,
+    subject: "Reset your Provider Hub password",
+    paragraphs: [
+      "TBM has sent you a link to choose a new password for your Provider Hub.",
+      `It works once, for the next ${args.hours} hours. If you didn't ask for this, you can ignore this email: your password stays the same.`,
+    ],
+    link: { label: "Choose a new password", url: args.url },
+  });
+}
