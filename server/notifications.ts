@@ -219,9 +219,16 @@ export function queueNotificationTask(label: string, task: Promise<unknown>) {
   });
 }
 
+// Why the last email didn't go out, for TBM's screens (no secrets in it).
+let lastEmailFailure: string | null = null;
+export function getLastEmailFailure() {
+  return lastEmailFailure;
+}
+
 async function sendEmailMessage(args: SendEmailArgs) {
   const emailConfig = getResendEmailConfig();
   if (!emailConfig) {
+    lastEmailFailure = "Email isn't set up: RESEND_API_KEY and RESEND_FROM_EMAIL must both be set in Railway.";
     console.warn("[NOTIFY] Email transport is not configured. Set RESEND_API_KEY and RESEND_FROM_EMAIL.");
     return false;
   }
@@ -231,7 +238,9 @@ async function sendEmailMessage(args: SendEmailArgs) {
     return false;
   }
 
-  const response = await fetch("https://api.resend.com/emails", {
+  let response: Response;
+  try {
+    response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${emailConfig.apiKey}`,
@@ -244,14 +253,21 @@ async function sendEmailMessage(args: SendEmailArgs) {
       html: args.html,
       text: args.text,
     }),
-  });
+    });
+  } catch (error) {
+    lastEmailFailure = `Couldn't reach Resend: ${error instanceof Error ? error.message : String(error)}`;
+    console.error(`[NOTIFY] ${lastEmailFailure}`);
+    return false;
+  }
 
   if (!response.ok) {
     const responseBody = await response.text().catch(() => "");
+    lastEmailFailure = `Resend refused the email (${response.status}): ${responseBody.slice(0, 300)}`;
     console.error(`[NOTIFY] Email send failed with status ${response.status}: ${responseBody}`);
     return false;
   }
 
+  lastEmailFailure = null;
   return true;
 }
 

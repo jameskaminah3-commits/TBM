@@ -148,6 +148,7 @@ import {
   sendListingVerificationCompletedEmail,
   sendFleetApplicationReceivedEmails,
   sendProviderApprovedEmail,
+  getLastEmailFailure,
 } from "./notifications";
 import {
   buildBookingReceiptPdf,
@@ -6036,7 +6037,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // TBM emails a provider a one-time link to choose a new password.
+  // TBM emails a provider a one-time link to choose a new password. If the
+  // email can't go out, TBM gets the link and the reason, to send it another way.
   app.post("/api/admin/provider-accounts/:id/password-link", requireAdmin, async (req: any, res) => {
     try {
       const provider = await storage.getUser(req.params.id);
@@ -6044,14 +6046,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Provider account not found" });
       }
       const { url } = await issueAccountSetupLink(provider.email);
-      const sent = await emailProviderPasswordLink({ email: provider.email, firstName: provider.firstName ?? null, url, hours: ACCOUNT_SETUP_LINK_HOURS });
+      const sent = await emailProviderPasswordLink({ email: provider.email, firstName: provider.firstName ?? null, url, hours: ACCOUNT_SETUP_LINK_HOURS })
+        .catch(() => false);
       if (!sent) {
-        return res.status(502).json({ error: "The email couldn't be sent. Check the email settings in Railway and Resend, then try again." });
+        return res.json({ sent: false, email: provider.email, link: url, reason: getLastEmailFailure() ?? "The email couldn't be sent." });
       }
       res.json({ sent: true, email: provider.email });
     } catch (error) {
       console.error("[PROVIDER_ACCOUNTS] Password link failed:", error);
-      res.status(500).json({ error: "Couldn't send the password link" });
+      res.status(500).json({ error: `Couldn't create the password link: ${error instanceof Error ? error.message : "unknown error"}` });
     }
   });
 

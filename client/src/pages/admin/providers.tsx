@@ -312,13 +312,21 @@ export default function AdminProviders() {
     },
   });
 
+  // When the email can't go out, TBM gets the one-time link to send another way.
+  const [passwordLinkFallback, setPasswordLinkFallback] = useState<{ providerId: string; link: string; reason: string } | null>(null);
   const passwordLinkMutation = useMutation({
-    mutationFn: async (id: string) => (await apiRequest("POST", `/api/admin/provider-accounts/${id}/password-link`, {})).json() as Promise<{ email: string }>,
+    mutationFn: async (id: string) => ({ id, ...(await (await apiRequest("POST", `/api/admin/provider-accounts/${id}/password-link`, {})).json() as { sent: boolean; email: string; link?: string; reason?: string }) }),
     onSuccess: (result) => {
-      toast({ title: "Password link sent", description: `${result.email} can choose a new password from the email. The link works once.` });
+      if (result.sent) {
+        setPasswordLinkFallback(null);
+        toast({ title: "Password link sent", description: `${result.email} can choose a new password from the email. The link works once.` });
+        return;
+      }
+      setPasswordLinkFallback({ providerId: result.id, link: result.link ?? "", reason: result.reason ?? "The email couldn't be sent." });
+      toast({ title: "The email didn't go out", description: "Copy the link below and send it to the provider on WhatsApp.", variant: "destructive" });
     },
     onError: (error: Error) => {
-      toast({ title: "Could not send the link", description: error.message.replace(/^\d+:\s*/, ""), variant: "destructive" });
+      toast({ title: "Could not create the link", description: error.message.replace(/^\d+:\s*/, ""), variant: "destructive" });
     },
   });
 
@@ -659,6 +667,27 @@ export default function AdminProviders() {
                           <KeyRound className="mr-2 h-4 w-4" />
                           Send password reset link
                         </Button>
+                        {passwordLinkFallback?.providerId === provider.id ? (
+                          <div className="space-y-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 sm:col-span-2 xl:col-span-4" data-testid={`password-link-fallback-${provider.id}`}>
+                            <div className="font-medium">The email didn't go out. Send this one-time link to the provider on WhatsApp instead.</div>
+                            <div className="text-xs text-amber-900/80">Reason: {passwordLinkFallback.reason}</div>
+                            <div className="flex gap-2">
+                              <Input readOnly value={passwordLinkFallback.link} onFocus={(event) => event.currentTarget.select()} />
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => {
+                                  void navigator.clipboard?.writeText(passwordLinkFallback.link).then(
+                                    () => toast({ title: "Link copied" }),
+                                    () => toast({ title: "Select the link and copy it", variant: "destructive" }),
+                                  );
+                                }}
+                              >
+                                Copy
+                              </Button>
+                            </div>
+                          </div>
+                        ) : null}
                         <Button
                           variant={provider.isSuspended ? "outline" : "destructive"}
                           className="justify-start"
