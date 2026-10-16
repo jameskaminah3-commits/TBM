@@ -2,10 +2,12 @@ import crypto from "crypto";
 import type { Express, Response as ExpressResponse } from "express";
 import { createServer, type Server } from "http";
 import { PayoutRateNotAgreedError, storage } from "./storage";
-import { notifyListingPublished } from "./provider-emails";
+import { emailProviderAccountCreated, emailProviderNewMessage, notifyListingPublished } from "./provider-emails";
 import { getPublicListingPath } from "@shared/seo";
+import { ACCOUNT_SETUP_LINK_HOURS } from "@shared/provider-applications";
 import {
   isAuthenticated,
+  issueAccountSetupLink,
   registerAuthRoutes,
   requireAdmin,
   requireProviderOrAdmin,
@@ -5387,6 +5389,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         audience: conversation.conversation.audience,
         partnerUserId: conversation.conversation.audience === "partner" ? conversation.conversation.partnerUserId : null,
       });
+      // TBM wrote in a booking's TBM–provider thread: email the provider too.
+      if (conversation.conversation.audience === "partner" && conversation.conversation.partnerUserId && req.user.claims.role === "admin") {
+        emailProviderNewMessage(conversation.conversation.partnerUserId, `/provider/messages?bookingId=${encodeURIComponent(req.params.id)}`);
+      }
       res.status(201).json(message);
     } catch (error) {
       if (error instanceof Error) {
@@ -6061,6 +6067,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId: req.user.claims.sub,
         senderRole: "admin",
       });
+      emailProviderNewMessage(req.params.id);
 
       res.status(201).json(message);
     } catch (error) {
@@ -6119,6 +6126,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         role: "provider",
         providerType: validatedProviderTypes.join(","),
       }).returning();
+      const { url: setupUrl } = await issueAccountSetupLink(normalizedEmail);
+      emailProviderAccountCreated({ email: normalizedEmail, firstName: nameParts[0] ?? null, setupUrl, setupHours: ACCOUNT_SETUP_LINK_HOURS });
 
       res.status(201).json(sanitizeUserRecord(createdUser));
     } catch (error) {

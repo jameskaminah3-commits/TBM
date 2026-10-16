@@ -76,3 +76,40 @@ export function notifyListingPublished(kind: PublicListingKind, before: ListingL
     });
   })());
 }
+
+// TBM wrote to a provider (their TBM thread or a booking's TBM–provider
+// thread). The email says where to read it; the message stays in the Hub,
+// since it can carry booking details. One email per 10 minutes per provider.
+const lastMessageEmailAt = new Map<string, number>();
+export function emailProviderNewMessage(providerUserId: string, path = "/provider/messages") {
+  const now = Date.now();
+  if (now - (lastMessageEmailAt.get(providerUserId) ?? 0) < 10 * 60_000) return;
+  lastMessageEmailAt.set(providerUserId, now);
+  queueNotificationTask(`message email for ${providerUserId}`, (async () => {
+    const contact = await providerContact(providerUserId);
+    if (!contact) return;
+    await sendSimpleEmail({
+      to: [contact.email],
+      greetingName: contact.firstName,
+      subject: "New message from TBM",
+      paragraphs: ["TBM has sent you a message in your Provider Hub. Please read it and reply there."],
+      link: { label: "Read the message", url: providerAppUrl(path) },
+    });
+  })());
+}
+
+// TBM added a provider by hand (Admin › Providers): welcome them and let them
+// choose their own password with a one-time link.
+export function emailProviderAccountCreated(args: { email: string; firstName: string | null; setupUrl: string; setupHours: number }) {
+  queueNotificationTask(`provider account created email for ${args.email}`, sendSimpleEmail({
+    to: [args.email],
+    greetingName: args.firstName,
+    subject: "Karibu: your Provider Hub is ready",
+    paragraphs: [
+      "TBM has set up your provider account with Tembea Bila Matata.",
+      `Choose your password with the link below. It works once, for the next ${args.setupHours} hours. If you already have a password from TBM, you can sign in with it instead.`,
+      "In Provider Hub you can add your listings and prices, upload your documents, and see your bookings and messages from TBM.",
+    ],
+    link: { label: "Set up your account", url: args.setupUrl },
+  }));
+}
