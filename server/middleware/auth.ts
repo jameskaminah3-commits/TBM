@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import type { Express, RequestHandler } from "express";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
-import { and, desc, eq, gt, isNull, or } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   emailVerificationOtps,
@@ -257,7 +257,21 @@ const accountSetupRateLimit = createRateLimitMiddleware([
 const setupLinkTtlMs = ACCOUNT_SETUP_LINK_HOURS * 60 * 60 * 1000;
 
 /** A new set-up link for this account. Earlier unused links stop working. */
+// The live database can miss password_reset_otps.purpose (migration 0025)
+// when its schema push didn't run: add it once, at start-up and before use.
+let resetPurposeReady: Promise<void> | null = null;
+export function ensurePasswordResetPurposeColumn() {
+  resetPurposeReady ??= db.execute(sql`ALTER TABLE password_reset_otps ADD COLUMN IF NOT EXISTS purpose varchar NOT NULL DEFAULT 'password-reset'`)
+    .then(() => undefined)
+    .catch((error) => {
+      resetPurposeReady = null;
+      throw error;
+    });
+  return resetPurposeReady;
+}
+
 export async function issueAccountSetupLink(email: string) {
+  await ensurePasswordResetPurposeColumn();
   const normalized = email.trim().toLowerCase();
   const token = crypto.randomBytes(32).toString("base64url");
   await db.update(passwordResetOtps)
@@ -274,6 +288,7 @@ export async function issueAccountSetupLink(email: string) {
 
 async function findSetupLink(token: unknown) {
   if (typeof token !== "string" || token.length < 32 || token.length > 100) return null;
+  await ensurePasswordResetPurposeColumn();
   const [record] = await db.select().from(passwordResetOtps)
     .where(and(eq(passwordResetOtps.otpHash, hashOtp(token)), eq(passwordResetOtps.purpose, "account-setup")))
     .limit(1);
@@ -494,6 +509,7 @@ async function upsertSocialUser(supabaseUser: {
 }
 
 export function setupAuth(app: Express) {
+  void ensurePasswordResetPurposeColumn().catch((error) => console.error("[AUTH] Couldn't add password_reset_otps.purpose:", error));
   // Railway and similar hosts may add more than one proxy hop before the app.
   // Trusting forwarded proto headers avoids silently dropping secure session cookies.
   app.set("trust proxy", true);
