@@ -1,7 +1,6 @@
 // "Your public page" in Share & grow: where it is, whether it's live and why
 // not, a preview, the provider's own switch (on only after a preview), and
 // sharing the page with the same tracked links as listings.
-import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Eye, Globe2, Sparkles } from "lucide-react";
 import { HubPanel } from "@/components/provider-hub/hub-ui";
@@ -20,7 +19,6 @@ const errorText = (error: Error) => error.message.replace(/^\d+:\s*/, "").replac
 export function PublicPagePanel({ services }: { services: string }) {
   const { toast } = useToast();
   const { data: settings, isLoading } = useQuery<ProviderPageSettingsView>({ queryKey: ["/api/provider/public-page"] });
-  const [previewed, setPreviewed] = useState(false);
   const toggle = useMutation({
     mutationFn: async (enabled: boolean) => (await apiRequest("PUT", "/api/provider/public-page", { enabled })).json(),
     onSuccess: (next: ProviderPageSettingsView) => {
@@ -73,7 +71,7 @@ export function PublicPagePanel({ services }: { services: string }) {
         <div className="flex flex-wrap gap-2">
           {canPreview ? (
             <Button asChild variant="outline" className="rounded-full">
-              <a href={settings.path} target="_blank" rel="noreferrer" onClick={() => setPreviewed(true)} data-testid="link-preview-page">
+              <a href={settings.path} target="_blank" rel="noreferrer" data-testid="link-preview-page">
                 <Eye className="mr-2 h-4 w-4" aria-hidden="true" />{settings.live ? "Open your page" : "Preview your page"}
               </a>
             </Button>
@@ -86,7 +84,7 @@ export function PublicPagePanel({ services }: { services: string }) {
             <Button
               type="button"
               className="rounded-full"
-              disabled={toggle.isPending || !previewed || !canPreview || settings.blockers.includes("blocked-by-tbm")}
+              disabled={toggle.isPending || !canPreview || settings.blockers.includes("blocked-by-tbm")}
               onClick={() => toggle.mutate(true)}
               data-testid="button-page-on"
             >
@@ -109,8 +107,8 @@ export function PublicPagePanel({ services }: { services: string }) {
             />
           ) : null}
         </div>
-        {!settings.enabled && !previewed && canPreview ? (
-          <p className="text-xs text-muted-foreground">Preview your page first, then switch it on. You can switch it off at any time.</p>
+        {!settings.enabled && canPreview ? (
+          <p className="text-xs text-muted-foreground">Tip: preview your page to see what guests will see. You can switch it off at any time.</p>
         ) : null}
         <p className="text-xs text-muted-foreground">
           Guests reach you through TBM. Visits, Book taps, "Ask TBM" taps and bookings from your page link show in Your shares below.
