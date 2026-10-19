@@ -81,7 +81,7 @@ export function ChatConcierge() {
         className={cn(
           "fixed inset-x-0 bottom-0 z-[70] flex flex-col rounded-t-[2rem] border-t border-border/60 bg-background shadow-[0_-20px_60px_-20px_rgba(15,23,42,0.35)] transition-transform duration-300 ease-out",
           "md:inset-x-auto md:right-4 md:bottom-4 md:w-[420px] md:rounded-[2rem] md:border md:shadow-[0_24px_80px_-24px_rgba(15,23,42,0.45)]",
-          open ? "translate-y-0" : "translate-y-full md:translate-y-[110%]",
+          open ? "translate-y-0" : "invisible translate-y-full md:translate-y-[110%]",
         )}
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >

@@ -24,6 +24,8 @@ export type SpotlightSubject = {
   verified: boolean;
   rating: { average: number; count: number } | null;
   foundingProvider: boolean;
+  /** The provider's own description (their public "About"). */
+  about?: string | null;
 };
 
 const list = (items: string[], max: number) => {
@@ -54,18 +56,20 @@ export function spotlightHeadline(subject: SpotlightSubject) {
   return subject.kind === "partner" ? `Meet our partner: ${subject.name}` : `TBM Spotlight: ${subject.name}`;
 }
 
-// The message TBM posts with the link.
+// The message TBM posts with the link: who they are, in their words, the
+// checked facts, and how booking works. No stock phrases or superlatives.
 export function buildSpotlightMessage(subject: SpotlightSubject, url: string) {
   const proof = spotlightProof(subject);
-  const invitation = subject.kind === "partner"
-    ? `We're proud to partner with ${subject.name}. See what they offer and book with them through TBM: pay safely in your My Bookings checkout, with our team supporting you throughout.`
-    : `We're proud to work with ${subject.name}. See their services and book with them through TBM: pay safely in your My Bookings checkout, with our team supporting you throughout.`;
+  const about = (subject.about ?? "").replace(/\s+/g, " ").trim();
+  const firstSentence = about.match(/^.+?[.!?](?=\s|$)/)?.[0] ?? about;
+  const quote = firstSentence ? `"${firstSentence.length > 160 ? `${firstSentence.slice(0, 157).replace(/\s+\S*$/, "")}…` : firstSentence}"` : null;
   return [
     spotlightHeadline(subject),
     spotlightLine(subject),
+    quote,
     proof.length ? proof.join(" · ") : null,
     "",
-    invitation,
+    `Book with them on their page. Payment goes through TBM, by M-Pesa or card:`,
     url,
   ].filter((line) => line !== null).join("\n");
 }

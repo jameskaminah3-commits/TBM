@@ -52,7 +52,10 @@ function stripMarkdown(value: string) {
   return value
     .replace(/!\[[^\]]*]\([^)]*\)/g, " ")
     .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
-    .replace(/[`*_~>#-]+/g, " ");
+    // Markdown marks only: in-word hyphens stay ("7-seater", "M-Pesa").
+    .replace(/^[\s>#*-]+/gm, " ")
+    .replace(/[`*_~]+/g, " ")
+    .replace(/-{2,}/g, " ");
 }
 
 function normalizeWhitespace(value: string) {
@@ -654,12 +657,16 @@ async function resolveProviderPageMetadata(code: string, req: Request, fallback:
     }
     const provider = result.profile;
     const services = provider.serviceTypes.join(", ");
-    const areas = provider.serviceAreas.slice(0, 3).join(", ");
+    const areas = provider.serviceAreas.slice(0, 2).join(" and ");
     const lead = [services, areas ? `in ${areas}` : ""].filter(Boolean).join(" ");
     const imageUrl = provider.photoUrl || provider.listings.find((listing) => listing.imageUrl)?.imageUrl || null;
     return {
-      title: `${provider.displayName}${services ? ` · ${services}` : ""} | ${siteName}`,
-      description: truncate(`${lead ? `${lead}. ` : ""}Book through TBM: pay by M-Pesa or card, with TBM's support throughout.${provider.about ? ` ${provider.about}` : ""}`, 220),
+      title: `${provider.displayName}${lead ? ` · ${lead}` : ""} | ${siteName}`,
+      description: truncate([
+        provider.about?.trim() || (lead ? `${lead}.` : ""),
+        provider.verified ? "Verified by TBM." : "",
+        "Book on Tembea Bila Matata, by M-Pesa or card.",
+      ].filter(Boolean).join(" "), 220),
       imageUrl: toAbsoluteUrl(imageUrl, baseUrl),
       canonicalUrl: `${baseUrl}${provider.path}`,
       type: "website",

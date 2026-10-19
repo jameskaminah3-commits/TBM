@@ -38,6 +38,8 @@ type ListingShareSheetProps = {
   pagePath?: string;
   /** For a provider page: "Stays · Car hire". */
   services?: string;
+  /** For a provider page: where they work. */
+  areas?: string[];
   description?: string | null;
   /** The current public price in US dollars, offered as an optional line. */
   priceUsd?: number | null;
@@ -58,6 +60,7 @@ export function ListingShareSheet({
   name,
   pagePath,
   services,
+  areas,
   description,
   priceUsd,
   priceUnit = "",
@@ -137,10 +140,10 @@ export function ListingShareSheet({
   useEffect(() => {
     if (open) {
       setMessage(kind === "provider"
-        ? buildProviderPageShareMessage({ name, services, url: links.whatsapp })
+        ? buildProviderPageShareMessage({ name, services, areas, about: description, url: links.whatsapp })
         : buildListingShareMessage({ kind, name, description, url: links.whatsapp, priceLine, offerLine: giftValue ? shareOfferMessageLine(giftValue) : null }));
     }
-  }, [open, kind, name, services, description, links.whatsapp, priceLine, giftValue]);
+  }, [open, kind, name, services, areas, description, links.whatsapp, priceLine, giftValue]);
 
   const copyLink = async () => {
     markShared("copy");
