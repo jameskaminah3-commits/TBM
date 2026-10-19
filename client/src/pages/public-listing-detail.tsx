@@ -26,6 +26,7 @@ function listingHeading(name: string, location: string) {
   return place && name.toLowerCase().includes(place) ? name : `${name} in ${location}`;
 }
 import { ShareGiftBanner } from "@/components/share-gift-banner";
+import { listingBreadcrumb, listingSeoArea, toSeoListingInput, type PublicListingSeo } from "@shared/listing-seo";
 import {
   buildListingSeoDescription,
   formatSeoLocation,
@@ -34,7 +35,7 @@ import {
   getPublicListingPath,
 } from "@/lib/public-listing";
 
-type PublicListing = CarType | Cook | Errand | Experience;
+type PublicListing = (CarType | Cook | Errand | Experience) & { seo?: PublicListingSeo | null };
 
 const endpointByKind: Record<Exclude<PublicListingKind, "stay">, string> = {
   car: "/api/cars",
@@ -115,6 +116,7 @@ function getStructuredData(kind: Exclude<PublicListingKind, "stay">, listing: Pu
   const name = getListingName(kind, listing);
   const location = getListingLocation(listing);
   const description = getListingDescription(kind, listing);
+  const crumb = listingBreadcrumb(kind, listingSeoArea(toSeoListingInput(kind, listing as unknown as Record<string, unknown>)));
   const data: Record<string, unknown> = {
     "@context": "https://schema.org",
     "@type": kind === "car" ? "Car" : kind === "experience" ? "TouristAttraction" : "Service",
@@ -128,7 +130,7 @@ function getStructuredData(kind: Exclude<PublicListingKind, "stay">, listing: Pu
       "@type": "BreadcrumbList",
       itemListElement: [
         { "@type": "ListItem", position: 1, name: "Home", item: buildCanonicalUrl("/") },
-        { "@type": "ListItem", position: 2, name: categoryByKind[kind].label, item: buildCanonicalUrl(categoryByKind[kind].href) },
+        { "@type": "ListItem", position: 2, name: crumb.label, item: buildCanonicalUrl(crumb.path) },
         { "@type": "ListItem", position: 3, name, item: canonicalUrl },
       ],
     },
@@ -178,8 +180,10 @@ export default function PublicListingDetail({ kind }: { kind: Exclude<PublicList
   const listingName = listing ? getListingName(kind, listing) : category.label;
   const canonicalUrl = listing ? buildCanonicalUrl(getPublicListingPath(kind, listing.id, listingName)) : buildCanonicalUrl(`${category.href}/${id || ""}`);
   const description = listing ? getListingDescription(kind, listing) : `Explore ${category.label} with Tembea Bila Matata.`;
-  const seoTitle = listing ? getListingSeoTitle(kind, listingName, getListingLocation(listing)) : "Listing not found | Tembea Bila Matata";
-  const seoDescription = listing ? buildListingSeoDescription([description]) : description;
+  const seoTitle = listing ? listing.seo?.title || getListingSeoTitle(kind, listingName, getListingLocation(listing)) : "Listing not found | Tembea Bila Matata";
+  const seoDescription = listing ? listing.seo?.description || buildListingSeoDescription([description]) : description;
+  // Filed under its area page ("Things to do in Watamu") when the area is known, else the service page.
+  const crumb = listing ? listingBreadcrumb(kind, listingSeoArea(toSeoListingInput(kind, listing as unknown as Record<string, unknown>))) : { label: category.label, path: category.href };
   const structuredData = useMemo(
     () => (listing ? getStructuredData(kind, listing, canonicalUrl) : null),
     [canonicalUrl, kind, listing],
@@ -221,7 +225,7 @@ export default function PublicListingDetail({ kind }: { kind: Exclude<PublicList
         <nav aria-label="Breadcrumb" className="mb-6 text-sm text-muted-foreground">
           <Link href="/" className="hover:text-foreground">Home</Link>
           <span className="mx-2">/</span>
-          <Link href={category.href} className="hover:text-foreground">{category.label}</Link>
+          <Link href={crumb.path} className="hover:text-foreground">{crumb.label}</Link>
           <span className="mx-2">/</span>
           <span className="text-foreground">{listingName}</span>
         </nav>
@@ -229,7 +233,7 @@ export default function PublicListingDetail({ kind }: { kind: Exclude<PublicList
 
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]">
           <main className="min-w-0">
-            <PremiumMediaGallery item={listing} title={listingName} aspectClassName="aspect-[16/9]" thumbnailPlacement="below" />
+            <PremiumMediaGallery item={listing} title={listingName} aspectClassName="aspect-[16/9]" thumbnailPlacement="below" imageAlts={listing.seo?.imageAlts} />
             <header className="mt-8">
               <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
                 <span className="inline-flex items-center gap-1"><MapPin className="h-4 w-4" />{location}</span>

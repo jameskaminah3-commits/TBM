@@ -23,6 +23,8 @@ type PremiumMediaGalleryProps = {
   eagerFirstImage?: boolean;
   zoomLabel?: string;
   showArrows?: boolean;
+  /** TBM's text for each photo (admin SEO page), by URL. Photos without it are described by the title. */
+  imageAlts?: Record<string, string> | null;
 };
 
 function getGalleryImages(item: GallerySource) {
@@ -42,8 +44,10 @@ export function PremiumMediaGallery({
   eagerFirstImage = true,
   zoomLabel = "Tap to zoom",
   showArrows = true,
+  imageAlts,
 }: PremiumMediaGalleryProps) {
   const galleryImages = React.useMemo(() => getGalleryImages(item), [item]);
+  const altFor = (imageUrl: string | undefined, index: number) => (imageUrl && imageAlts?.[imageUrl]) || `${title} photo ${index + 1}`;
   const [carouselApi, setCarouselApi] = React.useState<CarouselApi>();
   const [activeIndex, setActiveIndex] = React.useState(0);
   const [lightboxOpen, setLightboxOpen] = React.useState(false);
@@ -144,7 +148,7 @@ export function PremiumMediaGallery({
                   >
                     <ListingMedia
                       src={imageUrl}
-                      alt={`${title} photo ${index + 1}`}
+                      alt={altFor(imageUrl, index)}
                       mediaType={item.mediaType}
                       className={cn(
                         "h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]",
@@ -358,7 +362,7 @@ export function PremiumMediaGallery({
                     <div className="flex max-w-full items-center justify-center overflow-auto rounded-[1.5rem]">
                       <ListingMedia
                         src={galleryImages[lightboxIndex]}
-                        alt={`${title} photo ${lightboxIndex + 1}`}
+                        alt={altFor(galleryImages[lightboxIndex], lightboxIndex)}
                         mediaType={item.mediaType}
                         style={
                           showZoomControls

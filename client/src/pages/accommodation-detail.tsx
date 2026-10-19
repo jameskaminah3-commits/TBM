@@ -40,6 +40,7 @@ import { getListingSharePrice } from "@shared/listing-share";
 import { ListingUnavailable } from "@/components/listing-unavailable";
 import { formatRating, hasPublicRating } from "@shared/review-eligibility";
 import { CONTACT_PHONE_DISPLAY } from "@/lib/contact-info";
+import { listingBreadcrumb, listingSeoArea, toSeoListingInput, type PublicListingSeo } from "@shared/listing-seo";
 
 // "today", or "Wed 14 Oct" for a later date.
 function formatAvailableFrom(value: string | undefined, today: Date) {
@@ -74,7 +75,7 @@ export default function AccommodationDetail() {
   const hasTripFilters = hasStructuredStayFilters(staySearch);
   const stayNights = getStaySearchNights(staySearch.checkIn, staySearch.checkOut);
   
-  const { data: accommodation, isLoading } = useQuery<StayWithRooms>({
+  const { data: accommodation, isLoading } = useQuery<StayWithRooms & { seo?: PublicListingSeo | null }>({
     queryKey: ["/api/stays", id],
     queryFn: async () => {
       const response = await fetch(`/api/stays/${id}`);
@@ -169,6 +170,8 @@ export default function AccommodationDetail() {
 
   const canonicalUrl = buildCanonicalUrl(getPublicListingPath("stay", accommodation.id, accommodation.title));
   const location = formatSeoLocation(accommodation.location);
+  // Filed under its area page ("Places to stay in Diani") when the area is known.
+  const crumb = listingBreadcrumb("stay", listingSeoArea(toSeoListingInput("stay", accommodation as unknown as Record<string, unknown>)));
   const roomTypes = accommodation.roomTypes ?? [];
   const hotelSummary = summarizeHotelRooms(roomTypes);
   const stayFacts = isHotel
@@ -207,7 +210,7 @@ export default function AccommodationDetail() {
       "@type": "BreadcrumbList",
       itemListElement: [
         { "@type": "ListItem", position: 1, name: "Home", item: buildCanonicalUrl("/") },
-        { "@type": "ListItem", position: 2, name: "Accommodation in Mombasa and Nyali", item: buildCanonicalUrl("/accommodations") },
+        { "@type": "ListItem", position: 2, name: crumb.label, item: buildCanonicalUrl(crumb.path) },
         { "@type": "ListItem", position: 3, name: accommodation.title, item: canonicalUrl },
       ],
     },
@@ -237,7 +240,7 @@ export default function AccommodationDetail() {
       "@type": "BreadcrumbList",
       itemListElement: [
         { "@type": "ListItem", position: 1, name: "Home", item: buildCanonicalUrl("/") },
-        { "@type": "ListItem", position: 2, name: "Accommodation in Mombasa and Nyali", item: buildCanonicalUrl("/accommodations") },
+        { "@type": "ListItem", position: 2, name: crumb.label, item: buildCanonicalUrl(crumb.path) },
         { "@type": "ListItem", position: 3, name: accommodation.title, item: canonicalUrl },
       ],
     },
@@ -246,8 +249,8 @@ export default function AccommodationDetail() {
   return (
     <div className="min-h-screen py-12">
       <SeoHead
-        title={getListingSeoTitle("stay", accommodation.title, accommodation.location)}
-        description={buildListingSeoDescription([semanticSummary, accommodation.description])}
+        title={accommodation.seo?.title || getListingSeoTitle("stay", accommodation.title, accommodation.location)}
+        description={accommodation.seo?.description || buildListingSeoDescription([semanticSummary, accommodation.description])}
         image={accommodation.imageUrl}
         canonicalUrl={canonicalUrl}
         structuredData={structuredData}
@@ -256,7 +259,7 @@ export default function AccommodationDetail() {
         <nav aria-label="Breadcrumb" className="mb-6 text-sm text-muted-foreground">
           <Link href="/" className="hover:text-foreground">Home</Link>
           <span className="mx-2">/</span>
-          <Link href="/accommodations" className="hover:text-foreground">Accommodation in Mombasa and Nyali</Link>
+          <Link href={crumb.path} className="hover:text-foreground">{crumb.label}</Link>
           <span className="mx-2">/</span>
           <span className="text-foreground">{accommodation.title}</span>
         </nav>
@@ -264,6 +267,7 @@ export default function AccommodationDetail() {
         <div className="mb-10">
           <StayMediaCarousel
             stay={accommodation}
+            imageAlts={accommodation.seo?.imageAlts}
             aspectClassName="aspect-[16/9]"
             thumbnailPlacement="below"
           />

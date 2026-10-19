@@ -58,6 +58,9 @@ const PartnerApplicationStatus = lazy(() => import("@/pages/partner/application-
 const SetUpAccount = lazy(() => import("@/pages/set-up-account"));
 const ProviderPublicPage = lazy(() => import("@/pages/provider-public"));
 const AdminReviews = lazy(() => import("@/pages/admin/reviews"));
+const AdminSeo = lazy(() => import("@/pages/admin/seo"));
+const AdminSeoListing = lazy(() => import("@/pages/admin/seo-listing"));
+const ExploreArea = lazy(() => import("@/pages/explore-area"));
 const ProviderReviewsPage = lazy(() => import("@/pages/provider/reviews"));
 const PartnerApplyService = lazy(() => import("@/pages/partner/apply-service"));
 const AdminProviderApplications = lazy(() => import("@/pages/admin/provider-applications"));
@@ -108,6 +111,7 @@ function Router() {
       <Switch>
         <AppRoute path="/" element={<Home />} />
         <AppRoute path="/accommodations" element={<Accommodations />} />
+        <AppRoute path="/explore/:area/:service" element={<ExploreArea />} />
         <AppRoute path="/accommodation/:id/:slug" element={<AccommodationDetail />} />
         <AppRoute path="/accommodation/:id" element={<AccommodationDetail />} />
         <AppRoute path="/book/:id" element={<Booking />} />
@@ -154,6 +158,8 @@ function Router() {
         <AppRoute path="/admin/payments" element={<AdminPayments />} />
         <AppRoute path="/admin/providers" element={<AdminProviders />} />
         <AppRoute path="/admin/reviews" element={<AdminReviews />} />
+        <AppRoute path="/admin/seo" element={<AdminSeo />} />
+        <AppRoute path="/admin/seo/:kind/:id" element={<AdminSeoListing />} />
         <AppRoute path="/admin/provider-applications" element={<AdminProviderApplications />} />
         <AppRoute path="/admin/stays/new" element={<AdminStaysNew />} />
         <AppRoute path="/admin/stays/:id/edit" element={<AdminStaysEdit />} />

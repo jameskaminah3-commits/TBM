@@ -106,6 +106,9 @@ import { isPublicReviewTarget, listPublicReviews } from "./public-reviews";
 import { isProviderSuspendedNow, isSuspendedProvider, noteProviderSuspension, startSuspendedProviderRefresh } from "./provider-status";
 import { registerProviderPageRoutes } from "./provider-page-routes";
 import { registerReviewModerationRoutes } from "./review-moderation-routes";
+import { registerSeoRoutes } from "./seo-routes";
+import { liveAreaPageCounts, publicListingSeo } from "./listing-seo-store";
+import { areaPagePath } from "@shared/listing-seo";
 import { clearProviderPageCache, listLiveProviderPages } from "./provider-pages";
 import { getBookingCarerPhoto, getBookingCarers } from "./booking-carers";
 import { ensureListingPublishedTracking } from "./listing-published";
@@ -3254,7 +3257,7 @@ async function buildSitemapXml() {
     sitemapEntry({ baseUrl, path: "/faq", changefreq: "monthly", priority: "0.5", lastmod: now }),
   ];
 
-  const [posts, stays, cars, cooks, errands, experiences, providerPages] = await Promise.all([
+  const [posts, stays, cars, cooks, errands, experiences, providerPages, areaPages] = await Promise.all([
     storage.getPublishedBlogPosts(),
     storage.getStays(),
     storage.getCars(),
@@ -3265,7 +3268,20 @@ async function buildSitemapXml() {
       console.error("[SITEMAP] Couldn't list provider pages:", error);
       return [];
     }),
+    liveAreaPageCounts().catch((error) => {
+      console.error("[SITEMAP] Couldn't list area pages:", error);
+      return [];
+    }),
   ]);
+
+  // Area pages (/explore/diani/stays) with at least one live listing.
+  const areaEntries = areaPages.map((page) => sitemapEntry({
+    baseUrl,
+    path: areaPagePath(page.areaKey, page.service),
+    changefreq: "weekly",
+    priority: "0.85",
+    lastmod: page.lastmod ?? now,
+  }));
 
   const blogEntries = posts.map((post) => sitemapEntry({
     baseUrl,
@@ -3339,6 +3355,7 @@ async function buildSitemapXml() {
     ...blogEntries,
     ...listingEntries,
     ...providerEntries,
+    ...areaEntries,
     "</urlset>",
     "",
   ].join("\n");
@@ -3351,6 +3368,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerProviderHubRoutes(app);
   registerProviderPageRoutes(app);
   registerReviewModerationRoutes(app);
+  registerSeoRoutes(app);
   registerZainaRoutes(app);
   registerZainaAgentRoutes(app);
   // Review columns from migration 0024, in case the deploy step hasn't added them.
@@ -9379,7 +9397,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Stay not found" });
       }
       const [rated] = await withPublicRatings("stay", [visible]);
-      res.json(toPublicListing(rated));
+      res.json({ ...toPublicListing(rated), seo: await publicListingSeo("stay", stay) });
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch stay" });
     }
@@ -9450,7 +9468,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Car not found" });
       }
       const [rated] = await withPublicRatings("car", [car!]);
-      res.json(toPublicListing(rated));
+      res.json({ ...toPublicListing(rated), seo: await publicListingSeo("car", car!) });
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch car" });
     }
@@ -9532,7 +9550,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Chef not found" });
       }
       const [rated] = await withPublicRatings("cook", [cook!]);
-      res.json(toPublicListing(rated));
+      res.json({ ...toPublicListing(rated), seo: await publicListingSeo("cook", cook!) });
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch chef" });
     }
@@ -9554,7 +9572,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Errand service not found" });
       }
       const [rated] = await withPublicRatings("errand", [errand!]);
-      res.json(toPublicListing(rated));
+      res.json({ ...toPublicListing(rated), seo: await publicListingSeo("errand", errand!) });
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch errand service" });
     }
@@ -9576,7 +9594,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Experience not found" });
       }
       const [rated] = await withPublicRatings("experience", [experience!]);
-      res.json(toPublicListing(rated));
+      res.json({ ...toPublicListing(rated), seo: await publicListingSeo("experience", experience!) });
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch experience" });
     }

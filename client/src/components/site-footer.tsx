@@ -1,5 +1,6 @@
 import { Facebook, Mail, MapPin, Phone } from "lucide-react";
 import { Link } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import {
   BUSINESS_REGISTRATION_NAME,
   CONTACT_EMAIL,
@@ -29,6 +30,24 @@ const companyLinks = [
   { href: "/terms", label: "Terms of Service" },
   { href: "/refund-cancellation", label: "Refund & Cancellation Policy" },
 ];
+
+// Area pages with live listings, most listings first: links from every page help
+// guests and search engines find them.
+function AreaPageLinks() {
+  const { data } = useQuery<{ pages: Array<{ path: string; heading: string; count: number }> }>({ queryKey: ["/api/seo/areas"], staleTime: 10 * 60_000 });
+  const pages = data?.pages.slice(0, 12) ?? [];
+  if (!pages.length) return null;
+  return (
+    <div className="mt-10 border-t pt-6">
+      <h4 className="mb-3 text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-foreground/80">Around the Coast</h4>
+      <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
+        {pages.map((page) => (
+          <Link key={page.path} href={page.path} className="inline-flex min-h-11 items-center text-muted-foreground transition-colors hover:text-primary md:min-h-0 md:py-1">{page.heading}</Link>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export function SiteFooter() {
   return (
@@ -110,6 +129,8 @@ export function SiteFooter() {
             </div>
           </div>
         </div>
+
+        <AreaPageLinks />
 
         <div className="mt-10 space-y-2 border-t pt-6 text-sm text-muted-foreground">
           <p>Business registration name: {BUSINESS_REGISTRATION_NAME}</p>

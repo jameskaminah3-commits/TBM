@@ -13,6 +13,18 @@ import { getRatingSummary } from "./review-ratings";
 import { isSuspendedProvider } from "./provider-status";
 import { getPublicProviderPage } from "./provider-pages";
 import { getCarDisplayName } from "@shared/listing-share";
+import {
+  areaPagePath,
+  defaultAreaPageCopy,
+  getSeoArea,
+  isSeoAreaService,
+  listingBreadcrumb,
+  listingSeoArea,
+  seoCategoryPages,
+  seoKindByService,
+  toSeoListingInput,
+} from "@shared/listing-seo";
+import { getAreaPageOverride, liveListingsInArea, publicListingSeo } from "./listing-seo-store";
 
 type ListingKind = "stay" | "car" | "cook" | "errand" | "experience";
 type ParsedListingRoute = { kind: ListingKind; id: string; isShortLink?: boolean; publicPath?: boolean };
@@ -21,6 +33,7 @@ type ShareMetadata = {
   title: string;
   description: string;
   imageUrl: string;
+  imageAlt?: string | null;
   canonicalUrl: string;
   type: "article" | "website";
   robots?: string;
@@ -230,6 +243,8 @@ async function getListingStructuredData(
   canonicalUrl: string,
 ) {
   const name = getListingName(kind, listing);
+  // The listing's area page (e.g. "Places to stay in Diani"), or its service page when the area isn't known.
+  const crumb = listingBreadcrumb(kind, listingSeoArea(toSeoListingInput(kind, listing as unknown as Record<string, unknown>)));
   const location = formatSeoLocation("experienceLocation" in listing
     ? listing.experienceLocation || listing.location
     : listing.location);
@@ -249,7 +264,7 @@ async function getListingStructuredData(
       "@type": "BreadcrumbList",
       itemListElement: [
         { "@type": "ListItem", position: 1, name: "Home", item: canonicalUrl.split("/").slice(0, 3).join("/") },
-        { "@type": "ListItem", position: 2, name: kind === "stay" ? "Accommodation in Mombasa and Nyali" : `${kind} services in Mombasa`, item: canonicalUrl.split("/").slice(0, 3).join("/") },
+        { "@type": "ListItem", position: 2, name: crumb.label, item: `${canonicalUrl.split("/").slice(0, 3).join("/")}${crumb.path}` },
         { "@type": "ListItem", position: 3, name, item: canonicalUrl },
       ],
     },
@@ -568,6 +583,11 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
     return resolveProviderPageMetadata(decodeURIComponent(providerCode), req, fallback);
   }
 
+  const explore = /^\/explore\/([a-z-]+)\/([a-z-]+)\/?$/.exec(req.path);
+  if (explore) {
+    return resolveAreaPageMetadata(explore[1], explore[2], req, fallback);
+  }
+
   const route = parseListingRoute(req.path);
   if (!route) {
     return fallback;
@@ -585,7 +605,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
       const metadata = buildStayMetadata(stay, baseUrl, canonicalUrl);
       metadata.robots = route.publicPath ? "index,follow" : "noindex,follow";
       metadata.structuredData = await getListingStructuredData("stay", stay, canonicalUrl);
-      return metadata;
+      return withListingSeo("stay", stay, metadata);
     }
 
     if (route.kind === "car") {
@@ -597,7 +617,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
       const metadata = buildCarMetadata(car, baseUrl, canonicalUrl);
       metadata.robots = route.publicPath ? "index,follow" : "noindex,follow";
       metadata.structuredData = await getListingStructuredData("car", car, canonicalUrl);
-      return metadata;
+      return withListingSeo("car", car, metadata);
     }
 
     if (route.kind === "cook") {
@@ -609,7 +629,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
       const metadata = buildCookMetadata(cook, baseUrl, canonicalUrl);
       metadata.robots = route.publicPath ? "index,follow" : "noindex,follow";
       metadata.structuredData = await getListingStructuredData("cook", cook, canonicalUrl);
-      return metadata;
+      return withListingSeo("cook", cook, metadata);
     }
 
     if (route.kind === "errand") {
@@ -621,7 +641,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
       const metadata = buildErrandMetadata(errand, baseUrl, canonicalUrl);
       metadata.robots = route.publicPath ? "index,follow" : "noindex,follow";
       metadata.structuredData = await getListingStructuredData("errand", errand, canonicalUrl);
-      return metadata;
+      return withListingSeo("errand", errand, metadata);
     }
 
     const experience = await resolveListing(route) as Experience | undefined;
@@ -632,10 +652,98 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
     const metadata = buildExperienceMetadata(experience, baseUrl, canonicalUrl);
     metadata.robots = route.publicPath ? "index,follow" : "noindex,follow";
     metadata.structuredData = await getListingStructuredData("experience", experience, canonicalUrl);
-    return metadata;
+    return withListingSeo("experience", experience, metadata);
   } catch (error) {
     console.error("[SEO] Failed to resolve listing share metadata:", error);
     return fallback;
+  }
+}
+
+// TBM's own title, description and main-photo text for a listing, when an admin
+// has written them on the SEO page (listing-seo-store.ts). Otherwise the automatic ones stay.
+async function withListingSeo(kind: ListingKind, listing: Stay | Car | Cook | Errand | Experience, metadata: ShareMetadata): Promise<ShareMetadata> {
+  const seo = await publicListingSeo(kind, listing);
+  if (!seo) return metadata;
+  const firstPhoto = toSeoListingInput(kind, listing as unknown as Record<string, unknown>).photos[0];
+  return {
+    ...metadata,
+    title: seo.title || metadata.title,
+    description: seo.description || metadata.description,
+    imageAlt: (firstPhoto && seo.imageAlts[firstPhoto]) || null,
+  };
+}
+
+/** The automatic title and description a listing gets without TBM's own. The admin SEO page shows and scores them. */
+export function getAutoListingSeoText(kind: ListingKind, listing: Stay | Car | Cook | Errand | Experience) {
+  const metadata = kind === "stay"
+    ? buildStayMetadata(listing as Stay, "", "")
+    : kind === "car"
+      ? buildCarMetadata(listing as Car, "", "")
+      : kind === "cook"
+        ? buildCookMetadata(listing as Cook, "", "")
+        : kind === "errand"
+          ? buildErrandMetadata(listing as Errand, "", "")
+          : buildExperienceMetadata(listing as Experience, "", "");
+  return { title: metadata.title, description: metadata.description };
+}
+
+// An area page (/explore/diani/stays): TBM's own text if written, else the
+// automatic copy, and the live listings as an ItemList. An area with nothing
+// live is a thin page, so it stays out of search results until it has listings.
+async function resolveAreaPageMetadata(areaKey: string, service: string, req: Request, fallback: ShareMetadata): Promise<ShareMetadata> {
+  const area = getSeoArea(areaKey);
+  if (!area || !isSeoAreaService(service)) {
+    return { ...fallback, robots: "noindex,follow", statusCode: 404 };
+  }
+  const baseUrl = getRequestBaseUrl(req);
+  try {
+    const [override, listings] = await Promise.all([
+      getAreaPageOverride(area.key, service).catch(() => null),
+      liveListingsInArea(area.key, service),
+    ]);
+    const kind = seoKindByService[service];
+    const copy = defaultAreaPageCopy(area, service);
+    const heading = override?.heading || copy.heading;
+    const title = override?.seoTitle || copy.title;
+    const description = override?.seoDescription || copy.description;
+    const canonicalUrl = `${baseUrl}${areaPagePath(area.key, service)}`;
+    const category = seoCategoryPages[kind];
+    return {
+      title,
+      description,
+      imageUrl: getListingImage(listings[0] ?? {}, baseUrl),
+      canonicalUrl,
+      type: "website",
+      robots: listings.length ? "index,follow" : "noindex,follow",
+      structuredData: {
+        "@context": "https://schema.org",
+        "@type": "CollectionPage",
+        name: heading,
+        description,
+        url: canonicalUrl,
+        mainEntity: {
+          "@type": "ItemList",
+          numberOfItems: listings.length,
+          itemListElement: listings.slice(0, 30).map((listing, index) => ({
+            "@type": "ListItem",
+            position: index + 1,
+            name: getListingName(kind, listing),
+            url: `${baseUrl}${getPublicListingPath(kind, listing.id, getListingName(kind, listing))}`,
+          })),
+        },
+        breadcrumb: {
+          "@type": "BreadcrumbList",
+          itemListElement: [
+            { "@type": "ListItem", position: 1, name: "Home", item: baseUrl },
+            { "@type": "ListItem", position: 2, name: category.label, item: `${baseUrl}${category.path}` },
+            { "@type": "ListItem", position: 3, name: heading, item: canonicalUrl },
+          ],
+        },
+      },
+    };
+  } catch (error) {
+    console.error("[SEO] Failed to resolve area page metadata:", error);
+    return { ...fallback, robots: "noindex,follow" };
   }
 }
 
@@ -715,7 +823,7 @@ export function injectShareMetadata(html: string, metadata: ShareMetadata) {
     metaTag("property", "og:url", metadata.canonicalUrl),
     metaTag("property", "og:image", metadata.imageUrl),
     metaTag("property", "og:image:secure_url", metadata.imageUrl),
-    metaTag("property", "og:image:alt", metadata.title),
+    metaTag("property", "og:image:alt", metadata.imageAlt || metadata.title),
     metaTag("name", "twitter:card", "summary_large_image"),
     metaTag("name", "twitter:title", metadata.title),
     metaTag("name", "twitter:description", metadata.description),
