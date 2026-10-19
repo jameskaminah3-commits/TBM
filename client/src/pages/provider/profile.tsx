@@ -374,6 +374,16 @@ export default function ProviderProfilePage() {
         ) : (
           <>
             <BusinessSection profile={profile} fallbackName={fallbackName} />
+            {isProvider ? (
+              <HubPanel
+                id="public-page-link"
+                title="Your public page"
+                description="One link for all your services, with your photo, reviews and TBM's booking support. Switch it on or off, preview it and share it in Share & grow."
+                action={<Button asChild className="rounded-full"><a href="/provider/share#public-page" data-testid="link-public-page-settings">Switch on or manage</a></Button>}
+              >
+                {null}
+              </HubPanel>
+            ) : null}
             <PayoutSection profile={profile} />
             <VerificationSection profile={profile} />
             <AccountSection account={account} />

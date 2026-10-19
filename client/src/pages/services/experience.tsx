@@ -93,7 +93,7 @@ function ExperienceCard({
             <p className="text-sm text-muted-foreground">per person</p>
           </div>
           <Button className="w-full rounded-full px-5 sm:w-auto" onClick={onOpen}>
-            See More
+            View details
           </Button>
         </div>
       </div>

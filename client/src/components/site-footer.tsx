@@ -50,7 +50,7 @@ export function SiteFooter() {
             <h4 className="mb-4 text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-foreground/80">Explore</h4>
             <div className="space-y-3 text-sm">
               {exploreLinks.map((link) => (
-                <Link key={link.href} href={link.href} className="block py-1 text-muted-foreground transition-colors hover:text-primary">
+                <Link key={link.href} href={link.href} className="block py-2.5 text-muted-foreground transition-colors hover:text-primary md:py-1">
                   {link.label}
                 </Link>
               ))}
@@ -61,7 +61,7 @@ export function SiteFooter() {
             <h4 className="mb-4 text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-foreground/80">Important</h4>
             <div className="space-y-3 text-sm">
               {companyLinks.map((link) => (
-                <Link key={link.href} href={link.href} className="block py-1 text-muted-foreground transition-colors hover:text-primary">
+                <Link key={link.href} href={link.href} className="block py-2.5 text-muted-foreground transition-colors hover:text-primary md:py-1">
                   {link.label}
                 </Link>
               ))}
@@ -102,7 +102,7 @@ export function SiteFooter() {
               </a>
             </div>
             <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-sm text-muted-foreground">
-              <a href={FACEBOOK_URL} target="_blank" rel="noreferrer" className="transition-colors hover:text-primary">
+              <a href={FACEBOOK_URL} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center transition-colors hover:text-primary">
                 Facebook
               </a>
               <span>Instagram</span>

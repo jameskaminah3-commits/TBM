@@ -105,10 +105,10 @@ function getLeadPrice(kind: Exclude<PublicListingKind, "stay">, listing: PublicL
 }
 
 function getPriceLabel(kind: Exclude<PublicListingKind, "stay">) {
-  if (kind === "car") return "starting rate per day or chauffeur hour";
-  if (kind === "cook") return "chef service package";
-  if (kind === "errand") return "service package starting rate";
-  return "experience rate per person";
+  if (kind === "car") return "From, per day or per hour with a driver";
+  if (kind === "cook") return "From, per chef service";
+  if (kind === "errand") return "From";
+  return "Per person";
 }
 
 function getStructuredData(kind: Exclude<PublicListingKind, "stay">, listing: PublicListing, canonicalUrl: string) {
@@ -227,8 +227,8 @@ export default function PublicListingDetail({ kind }: { kind: Exclude<PublicList
         </nav>
         <ShareGiftBanner className="mb-6" />
 
-        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]">
-          <main>
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]">
+          <main className="min-w-0">
             <PremiumMediaGallery item={listing} title={listingName} aspectClassName="aspect-[16/9]" thumbnailPlacement="below" />
             <header className="mt-8">
               <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
@@ -299,9 +299,20 @@ export default function PublicListingDetail({ kind }: { kind: Exclude<PublicList
               <div className="mt-1"><CurrencyAmount amountUsd={price} primaryClassName="text-2xl font-semibold" /></div>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">Confirm dates, guest details and final availability in the secure booking flow.</p>
               <Button className="mt-5 w-full rounded-full" onClick={bookListing} data-testid="button-book-listing">Book this service</Button>
-              <Link href={category.href} className="mt-4 flex items-center justify-center gap-2 text-sm text-primary hover:underline">Browse more services <ArrowRight className="h-4 w-4" /></Link>
+              <Link href={category.href} className="mt-2 flex min-h-11 items-center justify-center gap-2 text-sm text-primary hover:underline">Browse more services <ArrowRight className="h-4 w-4" /></Link>
             </Card>
           </aside>
+        </div>
+      </div>
+      {/* Phones: the price and Book stay in reach, above the tab bar. */}
+      <div className="h-20 lg:hidden" aria-hidden="true" />
+      <div className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-40 border-t border-border/70 bg-background px-4 py-3 shadow-[0_-18px_40px_rgba(15,23,42,0.16)] lg:hidden" data-testid="listing-book-bar">
+        <div className="mx-auto flex w-full max-w-6xl items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <CurrencyAmount amountUsd={price} primaryClassName="text-base font-semibold text-foreground" />
+            <div className="truncate text-xs text-muted-foreground">{getPriceLabel(kind)}</div>
+          </div>
+          <Button className="min-h-11 shrink-0 rounded-full px-6" onClick={bookListing} data-testid="button-book-listing-bar">Book</Button>
         </div>
       </div>
     </div>
