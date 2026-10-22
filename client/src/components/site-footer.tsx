@@ -3,6 +3,7 @@ import { FaApplePay, FaCcMastercard, FaCcVisa } from "react-icons/fa6";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 import { brandStory } from "@/lib/brand-story";
+import { useQuery } from "@tanstack/react-query";
 import {
   BUSINESS_REGISTRATION_NAME,
   CONTACT_EMAIL,
@@ -63,6 +64,26 @@ function PaymentMarks() {
           <FaApplePay className="h-6 w-6 text-foreground" aria-hidden="true" />
           <span className="sr-only">Apple Pay</span>
         </li>
+      </ul>
+    </div>
+  );
+}
+
+// Area pages with live listings, most listings first: links from every page help
+// guests and search engines find them.
+function AreaPageLinks() {
+  const { data } = useQuery<{ pages: Array<{ path: string; heading: string; count: number }> }>({ queryKey: ["/api/seo/areas"], staleTime: 10 * 60_000 });
+  const pages = data?.pages.slice(0, 12) ?? [];
+  if (!pages.length) return null;
+  return (
+    <div className="mt-10 border-t pt-6" data-testid="footer-area-pages">
+      <h2 className={footerHeadingClass}>Around the Coast</h2>
+      <ul className="flex flex-wrap gap-x-5 text-sm">
+        {pages.map((page) => (
+          <li key={page.path}>
+            <Link href={page.path} className={footerLinkClass}>{page.heading}</Link>
+          </li>
+        ))}
       </ul>
     </div>
   );
@@ -144,6 +165,8 @@ export function SiteFooter() {
             </ul>
           </div>
         </div>
+
+        <AreaPageLinks />
 
         <div className="mt-10 flex flex-col gap-4 border-t pt-6 text-sm text-muted-foreground md:flex-row md:items-center md:justify-between">
           <div className="space-y-2">

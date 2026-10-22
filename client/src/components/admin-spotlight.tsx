@@ -48,6 +48,7 @@ export function AdminSpotlight({ providerId, settings }: { providerId: string; s
           verified: profile.verified,
           rating: profile.rating,
           foundingProvider: profile.foundingProvider,
+          about: profile.about,
         },
       });
     } catch (error) {

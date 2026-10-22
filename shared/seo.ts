@@ -1,7 +1,6 @@
 export type PublicListingKind = "stay" | "car" | "cook" | "errand" | "experience";
 
 const seoSiteName = "Tembea Bila Matata";
-const seoTitleMaxLength = 75;
 const seoDescriptionMaxLength = 160;
 
 const mombasaNeighbourhoods = new Set([
@@ -106,34 +105,56 @@ export function getShortSeoLocation(value?: string | null) {
   return parts.filter((part) => !/^(kenya|ke)$/i.test(part)).slice(0, 2).join(", ") || "Mombasa";
 }
 
-function compactListingLabel(kind: PublicListingKind, label: string) {
-  const normalized = cleanSeoText(label);
-  if (kind === "stay") {
-    const beforeDivider = normalized.split(/\s+[—|]\s+/)[0]?.trim();
-    if (beforeDivider && beforeDivider.length >= 12) return beforeDivider;
-  }
-  return normalized;
+// What Google shows of a title before cutting it off.
+const listingTitleLimit = 60;
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * A listing's automatic title: its name, what it is and where, in the 60
+ * characters Google shows. "Bahari Beach Hotel – Nyali" in Nyali becomes
+ * "Bahari Beach Hotel in Nyali | Tembea Bila Matata"; a long name loses its
+ * subtitle, then the brand shortens to TBM. Never cut off mid-word with "...".
+ */
+export function buildListingSeoTitle(kind: PublicListingKind, label: string, place: string) {
+  const kindLabel = kind === "car" ? "car hire" : kind === "cook" ? "private chef" : kind === "errand" ? "home help" : "";
+  const full = cleanSeoText(label) || "Listing";
+  const placeName = cleanSeoText(place) || "Mombasa";
+  const placeKey = placeName.split(",")[0].trim();
+  // The place at the end of a name is said once, after "in".
+  const withoutPlace = (value: string) => value
+    .replace(new RegExp(`(?:\\s*[—–|,-]\\s*|\\s+in\\s+)${escapeRegExp(placeKey)}$`, "i"), "")
+    .trim() || value;
+  const head = full.split(/\s+[—–|-]\s+/)[0]?.trim() ?? full;
+  const names = [withoutPlace(full), withoutPlace(head.length >= 8 ? head : full)];
+  const describe = (name: string) => {
+    const withKind = kindLabel && !name.toLowerCase().includes(kindLabel) ? `${name}, ${kindLabel}` : name;
+    return new RegExp(`(^|[^a-z])${escapeRegExp(placeKey.toLowerCase())}([^a-z]|$)`).test(name.toLowerCase())
+      ? withKind
+      : `${withKind} in ${placeName}`;
+  };
+  const candidates = [
+    `${describe(names[0])} | ${seoSiteName}`,
+    `${describe(names[0])} | TBM`,
+    `${describe(names[1])} | ${seoSiteName}`,
+    `${describe(names[1])} | TBM`,
+  ];
+  const fits = candidates.find((candidate) => candidate.length <= listingTitleLimit);
+  if (fits) return fits;
+  // Still too long: whole words only, then the short brand.
+  const words = describe(names[1]).split(" ");
+  while (words.length > 1 && `${words.join(" ")} | TBM`.length > listingTitleLimit) words.pop();
+  return `${words.join(" ").replace(/[,–—|-]+$/, "").trim()} | TBM`;
 }
 
 export function getListingSeoTitle(
   kind: PublicListingKind,
   label: string,
   location?: string | null,
-  brand = seoSiteName,
 ) {
-  const kindLabel = kind === "car"
-    ? "car hire"
-    : kind === "cook"
-      ? "private chef"
-      : kind === "errand"
-        ? "concierge service"
-        : kind === "experience"
-          ? "coastal experience"
-          : "";
-  const name = compactListingLabel(kind, label);
-  const titlePrefix = `${name}${kindLabel && !name.toLocaleLowerCase().includes(kindLabel) ? ` ${kindLabel}` : ""} in ${getShortSeoLocation(location)}`;
-  const suffix = ` | ${brand}`;
-  return `${truncateSeoText(titlePrefix, Math.max(20, seoTitleMaxLength - suffix.length))}${suffix}`;
+  return buildListingSeoTitle(kind, label, getShortSeoLocation(location));
 }
 
 export function buildListingSeoDescription(parts: Array<string | null | undefined>) {

@@ -18,8 +18,8 @@ test("the provider is the hero: their name first, 'book with them', TBM as suppo
   const lines = message.split("\n");
   assert.equal(lines[0], "TBM Spotlight: Kassim Coast Stays");
   assert.equal(lines[1], "Stays and car hire in Diani and Mombasa");
-  assert.match(message, /book with them through TBM/);
-  assert.match(message, /pay safely in your My Bookings checkout/);
+  assert.match(message, /Book with them on their page\. Payment goes through TBM/);
+  assert.doesNotMatch(message, /proud|throughout|seamless|world-class|unforgettable/i);
   assert.doesNotMatch(message, /book with us|instead|cheaper|only \d|left|hurry|today only/i);
   assert.ok(lines.at(-1)!.startsWith("https://"));
 });
@@ -35,7 +35,7 @@ test("only checked facts: verified, a rating from 3 eligible reviews, the Foundi
 test("a partner gets the same treatment, worded as a partner", () => {
   const message = buildSpotlightMessage({ ...kassim, kind: "partner", foundingProvider: true }, "https://x.example/p/a");
   assert.match(message, /^Meet our partner: Kassim Coast Stays/);
-  assert.match(message, /proud to partner with/);
+  assert.match(message, /Book with them on their page/);
   assert.doesNotMatch(message, /Founding/);
 });
 
@@ -50,4 +50,9 @@ test("TBM's Spotlight links are tagged as TBM's, with the share code", () => {
   assert.equal(url.searchParams.get("utm_source"), "tbm");
   assert.equal(url.searchParams.get("utm_campaign"), "spotlight");
   assert.equal(url.searchParams.get("utm_medium"), "whatsapp");
+});
+
+test("the provider's own words lead, as a short quote", () => {
+  const message = buildSpotlightMessage({ ...kassim, about: "I host guests in a family-run villa on Galu Beach. Breakfast is cooked by my sister." }, "https://x.example/p/a");
+  assert.match(message, /^TBM Spotlight: Kassim Coast Stays\nStays and car hire in Diani and Mombasa\n"I host guests in a family-run villa on Galu Beach\."\n/);
 });

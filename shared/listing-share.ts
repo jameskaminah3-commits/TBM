@@ -82,20 +82,25 @@ export function buildListingShareMessage(args: {
   offerLine?: string | null;
 }) {
   return [
-    `Check out this ${kindNoun[args.kind]} on Tembea Bila Matata: ${args.name}`,
+    `${args.name}, a ${kindNoun[args.kind]} on Tembea Bila Matata`,
     shortShareDescription(args.description),
     args.priceLine ?? "",
-    args.offerLine ? `${args.offerLine} ${args.url}` : `View details: ${args.url}`,
+    args.offerLine ? `${args.offerLine} ${args.url}` : `Photos, prices and booking: ${args.url}`,
   ].filter(Boolean).join("\n");
 }
 
-// No personal number: guests reach the provider through TBM.
-export function buildProviderPageShareMessage(args: { name: string; services?: string | null; url: string }) {
+// The provider shares their own page: who they are, in their own words, and
+// where to book. No personal number: guests reach the provider through TBM.
+export function buildProviderPageShareMessage(args: { name: string; services?: string | null; areas?: string[] | null; about?: string | null; url: string }) {
+  const services = (args.services ?? "").split(/\s*[·,]\s*/).filter(Boolean).map((service, index) => index ? service.toLowerCase() : service);
+  const areas = (args.areas ?? []).map((area) => area.trim()).filter(Boolean).slice(0, 3);
+  const joinList = (items: string[]) => items.length > 1 ? `${items.slice(0, -1).join(", ")} and ${items.at(-1)}` : items[0] ?? "";
+  const what = [joinList(services), areas.length ? `in ${joinList(areas)}` : ""].filter(Boolean).join(" ");
   return [
-    `${args.name}${args.services ? `: ${args.services}` : ""}, on Tembea Bila Matata.`,
-    "See my services and book through TBM, with M-Pesa or card and TBM's support throughout.",
-    args.url,
-  ].join("\n");
+    what ? `${args.name}: ${what}` : args.name,
+    shortShareDescription(args.about),
+    `My services, prices and reviews, bookable on Tembea Bila Matata (M-Pesa or card): ${args.url}`,
+  ].filter(Boolean).join("\n");
 }
 
 export function buildWhatsAppShareHref(message: string) {

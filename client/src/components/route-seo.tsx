@@ -1,6 +1,6 @@
 import { SeoHead } from "@/components/seo-head";
 import { buildCanonicalUrl } from "@/lib/canonical-url";
-import { staticPageKey, staticPageMetadata } from "@shared/page-metadata";
+import { homeStructuredData, staticPageKey, staticPageMetadata } from "@shared/page-metadata";
 
 // Private pages: named, never indexed.
 const privateTitles: Array<[RegExp, string]> = [
@@ -26,7 +26,7 @@ export function RouteSeo({ pathname }: { pathname: string }) {
       title={metadata.title}
       description={metadata.description}
       canonicalUrl={buildCanonicalUrl(key)}
-      structuredData={{
+      structuredData={key === "/" ? homeStructuredData(buildCanonicalUrl("/").replace(/\/$/, "")) : {
         "@context": "https://schema.org",
         "@type": "WebPage",
         name: metadata.title,

@@ -21,6 +21,7 @@ type StayMediaCarouselProps = {
   layout?: "carousel" | "mosaic";
   variant?: "default" | "card";
   onOpen?: () => void;
+  imageAlts?: Record<string, string> | null;
 };
 
 export function StayMediaCarousel({
@@ -35,6 +36,7 @@ export function StayMediaCarousel({
   layout,
   variant,
   onOpen,
+  imageAlts,
 }: StayMediaCarouselProps) {
   const item = React.useMemo(() => {
     const hasGalleryMedia = Boolean(stay.imageUrl || (stay.galleryUrls && stay.galleryUrls.length > 0));
@@ -60,6 +62,7 @@ export function StayMediaCarousel({
       layout={layout}
       variant={variant}
       onOpen={onOpen}
+      imageAlts={imageAlts}
     />
   );
 }

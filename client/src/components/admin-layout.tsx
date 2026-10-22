@@ -18,6 +18,7 @@ import {
   UserPlus,
   ShieldCheck,
   Star,
+  Search,
 } from "lucide-react";
 import {
   Sidebar,
@@ -75,6 +76,11 @@ const menuItems = [
     title: "Reviews",
     url: "/admin/reviews",
     icon: Star,
+  },
+  {
+    title: "SEO",
+    url: "/admin/seo",
+    icon: Search,
   },
   {
     title: "Fleet Applications",

@@ -107,6 +107,9 @@ import { isPublicReviewTarget, listPublicReviews } from "./public-reviews";
 import { isProviderSuspendedNow, isSuspendedProvider, noteProviderSuspension, startSuspendedProviderRefresh } from "./provider-status";
 import { registerProviderPageRoutes } from "./provider-page-routes";
 import { registerReviewModerationRoutes } from "./review-moderation-routes";
+import { registerSeoRoutes } from "./seo-routes";
+import { liveAreaPageCounts, publicListingSeo } from "./listing-seo-store";
+import { areaPagePath } from "@shared/listing-seo";
 import { clearProviderPageCache, listLiveProviderPages } from "./provider-pages";
 import { getBookingCarerPhoto, getBookingCarers } from "./booking-carers";
 import { ensureListingPublishedTracking } from "./listing-published";
@@ -3245,21 +3248,25 @@ function isPublicManagedItem(item: { isPublic?: boolean | null; managerUserId?: 
 async function buildSitemapXml() {
   const baseUrl = getPublicSiteBaseUrl();
   const now = new Date().toISOString();
+  // Fixed pages carry no lastmod: a date that changes on every request teaches Google to ignore them all.
   const staticEntries = [
-    sitemapEntry({ baseUrl, path: "/", changefreq: "daily", priority: "1.0", lastmod: now }),
-    sitemapEntry({ baseUrl, path: "/accommodations", changefreq: "weekly", priority: "0.9", lastmod: now }),
-    sitemapEntry({ baseUrl, path: "/services/drive", changefreq: "weekly", priority: "0.8", lastmod: now }),
-    sitemapEntry({ baseUrl, path: "/services/dine", changefreq: "weekly", priority: "0.8", lastmod: now }),
-    sitemapEntry({ baseUrl, path: "/services/relax", changefreq: "weekly", priority: "0.8", lastmod: now }),
-    sitemapEntry({ baseUrl, path: "/services/experience", changefreq: "weekly", priority: "0.8", lastmod: now }),
-    sitemapEntry({ baseUrl, path: "/verify", changefreq: "monthly", priority: "0.8", lastmod: now }),
-    sitemapEntry({ baseUrl, path: "/blog", changefreq: "daily", priority: "0.9", lastmod: now }),
-    sitemapEntry({ baseUrl, path: "/about", changefreq: "monthly", priority: "0.5", lastmod: now }),
-    sitemapEntry({ baseUrl, path: "/contact", changefreq: "monthly", priority: "0.5", lastmod: now }),
-    sitemapEntry({ baseUrl, path: "/faq", changefreq: "monthly", priority: "0.5", lastmod: now }),
+    sitemapEntry({ baseUrl, path: "/", changefreq: "daily", priority: "1.0" }),
+    sitemapEntry({ baseUrl, path: "/accommodations", changefreq: "weekly", priority: "0.9" }),
+    sitemapEntry({ baseUrl, path: "/services", changefreq: "weekly", priority: "0.7" }),
+    sitemapEntry({ baseUrl, path: "/services/drive", changefreq: "weekly", priority: "0.8" }),
+    sitemapEntry({ baseUrl, path: "/services/dine", changefreq: "weekly", priority: "0.8" }),
+    sitemapEntry({ baseUrl, path: "/services/relax", changefreq: "weekly", priority: "0.8" }),
+    sitemapEntry({ baseUrl, path: "/services/experience", changefreq: "weekly", priority: "0.8" }),
+    sitemapEntry({ baseUrl, path: "/verify", changefreq: "monthly", priority: "0.8" }),
+    sitemapEntry({ baseUrl, path: "/blog", changefreq: "daily", priority: "0.9" }),
+    sitemapEntry({ baseUrl, path: "/request-custom-service", changefreq: "monthly", priority: "0.6" }),
+    sitemapEntry({ baseUrl, path: "/partner", changefreq: "monthly", priority: "0.6" }),
+    sitemapEntry({ baseUrl, path: "/about", changefreq: "monthly", priority: "0.5" }),
+    sitemapEntry({ baseUrl, path: "/contact", changefreq: "monthly", priority: "0.5" }),
+    sitemapEntry({ baseUrl, path: "/faq", changefreq: "monthly", priority: "0.5" }),
   ];
 
-  const [posts, stays, cars, cooks, errands, experiences, providerPages] = await Promise.all([
+  const [posts, stays, cars, cooks, errands, experiences, providerPages, areaPages] = await Promise.all([
     storage.getPublishedBlogPosts(),
     storage.getStays(),
     storage.getCars(),
@@ -3270,7 +3277,20 @@ async function buildSitemapXml() {
       console.error("[SITEMAP] Couldn't list provider pages:", error);
       return [];
     }),
+    liveAreaPageCounts().catch((error) => {
+      console.error("[SITEMAP] Couldn't list area pages:", error);
+      return [];
+    }),
   ]);
+
+  // Area pages (/explore/diani/stays) with at least one live listing.
+  const areaEntries = areaPages.map((page) => sitemapEntry({
+    baseUrl,
+    path: areaPagePath(page.areaKey, page.service),
+    changefreq: "weekly",
+    priority: "0.85",
+    lastmod: page.lastmod ?? now,
+  }));
 
   const blogEntries = posts.map((post) => sitemapEntry({
     baseUrl,
@@ -3344,6 +3364,7 @@ async function buildSitemapXml() {
     ...blogEntries,
     ...listingEntries,
     ...providerEntries,
+    ...areaEntries,
     "</urlset>",
     "",
   ].join("\n");
@@ -3356,6 +3377,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerProviderHubRoutes(app);
   registerProviderPageRoutes(app);
   registerReviewModerationRoutes(app);
+  registerSeoRoutes(app);
   registerZainaRoutes(app);
   registerZainaAgentRoutes(app);
   // Review columns from migration 0024, in case the deploy step hasn't added them.
@@ -9393,7 +9415,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Stay not found" });
       }
       const [rated] = await withPublicRatings("stay", [visible]);
-      res.json(toPublicListing(rated));
+      res.json({ ...toPublicListing(rated), seo: await publicListingSeo("stay", stay) });
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch stay" });
     }
@@ -9464,7 +9486,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Car not found" });
       }
       const [rated] = await withPublicRatings("car", [car!]);
-      res.json(toPublicListing(rated));
+      res.json({ ...toPublicListing(rated), seo: await publicListingSeo("car", car!) });
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch car" });
     }
@@ -9546,7 +9568,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Chef not found" });
       }
       const [rated] = await withPublicRatings("cook", [cook!]);
-      res.json(toPublicListing(rated));
+      res.json({ ...toPublicListing(rated), seo: await publicListingSeo("cook", cook!) });
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch chef" });
     }
@@ -9568,7 +9590,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Errand service not found" });
       }
       const [rated] = await withPublicRatings("errand", [errand!]);
-      res.json(toPublicListing(rated));
+      res.json({ ...toPublicListing(rated), seo: await publicListingSeo("errand", errand!) });
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch errand service" });
     }
@@ -9590,7 +9612,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Experience not found" });
       }
       const [rated] = await withPublicRatings("experience", [experience!]);
-      res.json(toPublicListing(rated));
+      res.json({ ...toPublicListing(rated), seo: await publicListingSeo("experience", experience!) });
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch experience" });
     }

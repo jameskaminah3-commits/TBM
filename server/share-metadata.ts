@@ -3,18 +3,30 @@ import type { BlogPost, Car, Cook, Errand, Experience, Stay } from "@shared/sche
 import { hasHelpMamaPricing } from "@shared/errand-pricing";
 import { isHotelStay } from "@shared/hotel-rooms";
 import { isKnownAppPath } from "@shared/app-routes";
-import { staticPageKey, staticPageMetadata } from "@shared/page-metadata";
+import { homeStructuredData, staticPageKey, staticPageMetadata } from "@shared/page-metadata";
 import {
   buildListingSeoDescription,
   formatSeoLocation,
-  getListingSeoTitle,
   getPublicListingPath,
 } from "@shared/seo";
+import { buildListingStructuredData } from "@shared/listing-structured-data";
 import { storage } from "./storage";
 import { getRatingSummary } from "./review-ratings";
 import { isSuspendedProvider } from "./provider-status";
 import { getPublicProviderPage } from "./provider-pages";
 import { getCarDisplayName } from "@shared/listing-share";
+import {
+  areaPagePath,
+  autoListingSeoTitle,
+  defaultAreaPageCopy,
+  getSeoArea,
+  isSeoAreaService,
+  providerPageSeoTitle,
+  seoCategoryPages,
+  seoKindByService,
+  toSeoListingInput,
+} from "@shared/listing-seo";
+import { getAreaPageOverride, liveListingsInArea, publicListingSeo } from "./listing-seo-store";
 
 type ListingKind = "stay" | "car" | "cook" | "errand" | "experience";
 type ParsedListingRoute = { kind: ListingKind; id: string; isShortLink?: boolean; publicPath?: boolean };
@@ -23,6 +35,7 @@ type ShareMetadata = {
   title: string;
   description: string;
   imageUrl: string;
+  imageAlt?: string | null;
   canonicalUrl: string;
   type: "article" | "website";
   robots?: string;
@@ -64,7 +77,10 @@ function stripMarkdown(value: string) {
   return value
     .replace(/!\[[^\]]*]\([^)]*\)/g, " ")
     .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
-    .replace(/[`*_~>#-]+/g, " ");
+    // Markdown marks only: in-word hyphens stay ("7-seater", "M-Pesa").
+    .replace(/^[\s>#*-]+/gm, " ")
+    .replace(/[`*_~]+/g, " ")
+    .replace(/-{2,}/g, " ");
 }
 
 function normalizeWhitespace(value: string) {
@@ -139,7 +155,7 @@ function buildStayMetadata(stay: Stay, baseUrl: string, canonicalUrl: string): S
     ]);
 
   return {
-    title: getListingSeoTitle("stay", stay.title, stay.location),
+    title: autoListingSeoTitle("stay", stay as unknown as Record<string, unknown>),
     description: buildListingSeoDescription([details, stay.description]),
     imageUrl: getListingImage(stay, baseUrl),
     canonicalUrl,
@@ -157,7 +173,7 @@ function buildCarMetadata(car: Car, baseUrl: string, canonicalUrl: string): Shar
   ]);
 
   return {
-    title: getListingSeoTitle("car", getCarDisplayName(car), car.location),
+    title: autoListingSeoTitle("car", car as unknown as Record<string, unknown>),
     description: buildListingSeoDescription([details, car.description]),
     imageUrl: getListingImage(car, baseUrl),
     canonicalUrl,
@@ -175,7 +191,7 @@ function buildCookMetadata(cook: Cook, baseUrl: string, canonicalUrl: string): S
   ]);
 
   return {
-    title: getListingSeoTitle("cook", cook.title, cook.location),
+    title: autoListingSeoTitle("cook", cook as unknown as Record<string, unknown>),
     description: buildListingSeoDescription([details, cook.description]),
     imageUrl: getListingImage(cook, baseUrl),
     canonicalUrl,
@@ -197,7 +213,7 @@ function buildErrandMetadata(errand: Errand, baseUrl: string, canonicalUrl: stri
   ]);
 
   return {
-    title: getListingSeoTitle("errand", errand.serviceName, errand.location),
+    title: autoListingSeoTitle("errand", errand as unknown as Record<string, unknown>),
     description: buildListingSeoDescription([details, errand.description]),
     imageUrl: getListingImage(errand, baseUrl),
     canonicalUrl,
@@ -214,7 +230,7 @@ function buildExperienceMetadata(experience: Experience, baseUrl: string, canoni
   ]);
 
   return {
-    title: getListingSeoTitle("experience", experience.title, experience.experienceLocation || experience.location),
+    title: autoListingSeoTitle("experience", experience as unknown as Record<string, unknown>),
     description: buildListingSeoDescription([details, experience.description]),
     imageUrl: getListingImage(experience, baseUrl),
     canonicalUrl,
@@ -233,83 +249,23 @@ function getListingName(kind: ListingKind, listing: Stay | Car | Cook | Errand |
   return (listing as Experience).title;
 }
 
+// The shared builder (listing-structured-data.ts), with the rating from eligible reviews only.
 async function getListingStructuredData(
   kind: ListingKind,
   listing: Stay | Car | Cook | Errand | Experience,
   canonicalUrl: string,
 ) {
-  const name = getListingName(kind, listing);
-  const location = formatSeoLocation("experienceLocation" in listing
-    ? listing.experienceLocation || listing.location
-    : listing.location);
-  const type = kind === "stay"
-    ? (isHotelStay(listing as Stay) ? "Hotel" : "LodgingBusiness")
-    : kind === "car" ? "Car" : kind === "experience" ? "TouristAttraction" : "Service";
-  const structuredData: Record<string, unknown> = {
-    "@context": "https://schema.org",
-    "@type": type,
-    name,
-    description: truncate(listing.description, 320),
-    url: canonicalUrl,
-    areaServed: { "@type": "Place", name: location || "Mombasa, Kenya" },
-    address: { "@type": "PostalAddress", addressLocality: location, addressCountry: "KE" },
-    provider: { "@type": "Organization", name: siteName, url: canonicalUrl.split("/").slice(0, 3).join("/") },
-    breadcrumb: {
-      "@type": "BreadcrumbList",
-      itemListElement: [
-        { "@type": "ListItem", position: 1, name: "Home", item: canonicalUrl.split("/").slice(0, 3).join("/") },
-        { "@type": "ListItem", position: 2, name: kind === "stay" ? "Accommodation in Mombasa and Nyali" : `${kind} services in Mombasa`, item: canonicalUrl.split("/").slice(0, 3).join("/") },
-        { "@type": "ListItem", position: 3, name, item: canonicalUrl },
-      ],
-    },
-  };
-
-  const imageUrl = getListingImage(listing, canonicalUrl.split("/").slice(0, 3).join("/"));
-  if (imageUrl) structuredData.image = imageUrl;
-  // Only from eligible reviews, and only from the same threshold guests see.
   const ratingSummary = await getRatingSummary(kind, listing.id).catch(() => null);
-  if (ratingSummary?.average !== null && ratingSummary?.average !== undefined) {
-    structuredData.aggregateRating = {
-      "@type": "AggregateRating",
-      ratingValue: ratingSummary.average,
-      reviewCount: ratingSummary.count,
-    };
-  }
-
-  if (kind === "stay" && isHotelStay(listing as Stay)) {
-    const hotel = listing as Stay;
-    structuredData.numberOfRooms = hotel.bedrooms;
-    if (hotel.starRating) structuredData.starRating = { "@type": "Rating", ratingValue: hotel.starRating };
-    if (hotel.checkInTime) structuredData.checkinTime = hotel.checkInTime;
-    if (hotel.checkOutTime) structuredData.checkoutTime = hotel.checkOutTime;
-    if (hotel.price > 0) {
-      structuredData.offers = { "@type": "AggregateOffer", priceCurrency: "USD", lowPrice: hotel.price, url: canonicalUrl };
-    }
-  } else if (kind === "stay") {
-    const stay = listing as Stay;
-    structuredData.numberOfRooms = stay.bedrooms;
-    structuredData.occupancy = { "@type": "QuantitativeValue", maxValue: stay.maxOccupancy };
-    structuredData.offers = { "@type": "Offer", priceCurrency: "USD", price: stay.price, url: canonicalUrl };
-  } else if (kind === "car") {
-    const car = listing as Car;
-    structuredData.vehicleTransmission = car.transmission;
-    structuredData.seatingCapacity = car.seats;
-    structuredData.offers = { "@type": "Offer", priceCurrency: "USD", price: car.pricePerDay || car.priceWithDriver, url: canonicalUrl };
-  } else if (kind === "cook") {
-    const cook = listing as Cook;
-    structuredData.serviceType = cook.serviceType;
-    structuredData.offers = { "@type": "Offer", priceCurrency: "USD", price: cook.serviceFee || cook.pricePerSession, url: canonicalUrl };
-  } else if (kind === "errand") {
-    const errand = listing as Errand;
-    structuredData.serviceType = "Holiday concierge and errand service";
-    structuredData.offers = { "@type": "Offer", priceCurrency: "USD", price: errand.basePrice, url: canonicalUrl };
-  } else {
-    const experience = listing as Experience;
-    structuredData.duration = `PT${experience.durationHours}H`;
-    structuredData.offers = { "@type": "Offer", priceCurrency: "USD", price: experience.privatePricePerPerson || experience.sharedPricePerPerson || experience.price, url: canonicalUrl };
-  }
-
-  return structuredData;
+  return buildListingStructuredData({
+    kind,
+    listing: listing as unknown as Record<string, unknown>,
+    name: getListingName(kind, listing),
+    url: canonicalUrl,
+    origin: new URL(canonicalUrl).origin,
+    rating: ratingSummary?.average !== null && ratingSummary?.average !== undefined
+      ? { average: ratingSummary.average, count: ratingSummary.count }
+      : null,
+  });
 }
 
 function getStaticMetadata(pathname: string, baseUrl: string): ShareMetadata | null {
@@ -320,23 +276,7 @@ function getStaticMetadata(pathname: string, baseUrl: string): ShareMetadata | n
     imageUrl: `${baseUrl}${defaultImagePath}`,
     canonicalUrl: `${baseUrl}${pathname === "/" ? "/" : pathname}`,
     type: "website",
-    structuredData: pathname === "/" ? {
-      "@context": "https://schema.org",
-      "@graph": [
-        {
-          "@type": "Organization",
-          name: siteName,
-          url: baseUrl,
-          areaServed: ["Mombasa", "Nyali", "Bamburi", "Shanzu", "Diani", "Kilifi", "Watamu", "Kenyan Coast"],
-        },
-        {
-          "@type": "WebSite",
-          name: siteName,
-          url: baseUrl,
-          description: item.description,
-        },
-      ],
-    } : null,
+    structuredData: pathname === "/" ? homeStructuredData(baseUrl) : null,
   };
 }
 
@@ -514,24 +454,30 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
       }
 
       const metadata = buildBlogMetadata(post, baseUrl);
+      // The breadcrumb is its own node: only a web page can carry one.
       metadata.structuredData = {
         "@context": "https://schema.org",
-        "@type": "Article",
-        headline: post.seoTitle || post.title,
-        description: truncate(post.seoDescription || post.excerpt || post.contentMarkdown, 320),
-        image: post.featuredImage ? [toAbsoluteUrl(post.featuredImage, baseUrl)] : undefined,
-        datePublished: post.publishedAt || undefined,
-        dateModified: post.updatedAt || undefined,
-        author: { "@type": "Person", name: post.author },
-        mainEntityOfPage: metadata.canonicalUrl,
-        breadcrumb: {
-          "@type": "BreadcrumbList",
-          itemListElement: [
-            { "@type": "ListItem", position: 1, name: "Home", item: baseUrl },
-            { "@type": "ListItem", position: 2, name: "Travel Journal", item: `${baseUrl}/blog` },
-            { "@type": "ListItem", position: 3, name: post.title, item: metadata.canonicalUrl },
-          ],
-        },
+        "@graph": [
+          {
+            "@type": "Article",
+            headline: post.seoTitle || post.title,
+            description: truncate(post.seoDescription || post.excerpt || post.contentMarkdown, 320),
+            image: post.featuredImage ? [toAbsoluteUrl(post.featuredImage, baseUrl)] : undefined,
+            datePublished: post.publishedAt || undefined,
+            dateModified: post.updatedAt || undefined,
+            author: { "@type": "Person", name: post.author },
+            publisher: { "@type": "Organization", name: siteName, logo: { "@type": "ImageObject", url: `${baseUrl}/app-icon.png` } },
+            mainEntityOfPage: metadata.canonicalUrl,
+          },
+          {
+            "@type": "BreadcrumbList",
+            itemListElement: [
+              { "@type": "ListItem", position: 1, name: "Home", item: `${baseUrl}/` },
+              { "@type": "ListItem", position: 2, name: "Travel Journal", item: `${baseUrl}/blog` },
+              { "@type": "ListItem", position: 3, name: post.title, item: metadata.canonicalUrl },
+            ],
+          },
+        ],
       };
       return metadata;
     } catch (error) {
@@ -543,6 +489,11 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
   const providerCode = /^\/p\/([^/?#]+)(?:\/[^/?#]+)?\/?$/.exec(req.path)?.[1];
   if (providerCode) {
     return resolveProviderPageMetadata(decodeURIComponent(providerCode), req, fallback);
+  }
+
+  const explore = /^\/explore\/([a-z-]+)\/([a-z-]+)\/?$/.exec(req.path);
+  if (explore) {
+    return resolveAreaPageMetadata(explore[1], explore[2], req, fallback);
   }
 
   const route = parseListingRoute(req.path);
@@ -562,7 +513,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
       const metadata = buildStayMetadata(stay, baseUrl, canonicalUrl);
       metadata.robots = route.publicPath ? "index,follow" : "noindex,follow";
       metadata.structuredData = await getListingStructuredData("stay", stay, canonicalUrl);
-      return metadata;
+      return withListingSeo("stay", stay, metadata);
     }
 
     if (route.kind === "car") {
@@ -574,7 +525,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
       const metadata = buildCarMetadata(car, baseUrl, canonicalUrl);
       metadata.robots = route.publicPath ? "index,follow" : "noindex,follow";
       metadata.structuredData = await getListingStructuredData("car", car, canonicalUrl);
-      return metadata;
+      return withListingSeo("car", car, metadata);
     }
 
     if (route.kind === "cook") {
@@ -586,7 +537,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
       const metadata = buildCookMetadata(cook, baseUrl, canonicalUrl);
       metadata.robots = route.publicPath ? "index,follow" : "noindex,follow";
       metadata.structuredData = await getListingStructuredData("cook", cook, canonicalUrl);
-      return metadata;
+      return withListingSeo("cook", cook, metadata);
     }
 
     if (route.kind === "errand") {
@@ -598,7 +549,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
       const metadata = buildErrandMetadata(errand, baseUrl, canonicalUrl);
       metadata.robots = route.publicPath ? "index,follow" : "noindex,follow";
       metadata.structuredData = await getListingStructuredData("errand", errand, canonicalUrl);
-      return metadata;
+      return withListingSeo("errand", errand, metadata);
     }
 
     const experience = await resolveListing(route) as Experience | undefined;
@@ -609,10 +560,98 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
     const metadata = buildExperienceMetadata(experience, baseUrl, canonicalUrl);
     metadata.robots = route.publicPath ? "index,follow" : "noindex,follow";
     metadata.structuredData = await getListingStructuredData("experience", experience, canonicalUrl);
-    return metadata;
+    return withListingSeo("experience", experience, metadata);
   } catch (error) {
     console.error("[SEO] Failed to resolve listing share metadata:", error);
     return fallback;
+  }
+}
+
+// TBM's own title, description and main-photo text for a listing, when an admin
+// has written them on the SEO page (listing-seo-store.ts). Otherwise the automatic ones stay.
+async function withListingSeo(kind: ListingKind, listing: Stay | Car | Cook | Errand | Experience, metadata: ShareMetadata): Promise<ShareMetadata> {
+  const seo = await publicListingSeo(kind, listing);
+  if (!seo) return metadata;
+  const firstPhoto = toSeoListingInput(kind, listing as unknown as Record<string, unknown>).photos[0];
+  return {
+    ...metadata,
+    title: seo.title || metadata.title,
+    description: seo.description || metadata.description,
+    imageAlt: (firstPhoto && seo.imageAlts[firstPhoto]) || null,
+  };
+}
+
+/** The automatic title and description a listing gets without TBM's own. The admin SEO page shows and scores them. */
+export function getAutoListingSeoText(kind: ListingKind, listing: Stay | Car | Cook | Errand | Experience) {
+  const metadata = kind === "stay"
+    ? buildStayMetadata(listing as Stay, "", "")
+    : kind === "car"
+      ? buildCarMetadata(listing as Car, "", "")
+      : kind === "cook"
+        ? buildCookMetadata(listing as Cook, "", "")
+        : kind === "errand"
+          ? buildErrandMetadata(listing as Errand, "", "")
+          : buildExperienceMetadata(listing as Experience, "", "");
+  return { title: metadata.title, description: metadata.description };
+}
+
+// An area page (/explore/diani/stays): TBM's own text if written, else the
+// automatic copy, and the live listings as an ItemList. An area with nothing
+// live is a thin page, so it stays out of search results until it has listings.
+async function resolveAreaPageMetadata(areaKey: string, service: string, req: Request, fallback: ShareMetadata): Promise<ShareMetadata> {
+  const area = getSeoArea(areaKey);
+  if (!area || !isSeoAreaService(service)) {
+    return notFoundMetadata(fallback);
+  }
+  const baseUrl = getRequestBaseUrl(req);
+  try {
+    const [override, listings] = await Promise.all([
+      getAreaPageOverride(area.key, service).catch(() => null),
+      liveListingsInArea(area.key, service),
+    ]);
+    const kind = seoKindByService[service];
+    const copy = defaultAreaPageCopy(area, service);
+    const heading = override?.heading || copy.heading;
+    const title = override?.seoTitle || copy.title;
+    const description = override?.seoDescription || copy.description;
+    const canonicalUrl = `${baseUrl}${areaPagePath(area.key, service)}`;
+    const category = seoCategoryPages[kind];
+    return {
+      title,
+      description,
+      imageUrl: getListingImage(listings[0] ?? {}, baseUrl),
+      canonicalUrl,
+      type: "website",
+      robots: listings.length ? "index,follow" : "noindex,follow",
+      structuredData: {
+        "@context": "https://schema.org",
+        "@type": "CollectionPage",
+        name: heading,
+        description,
+        url: canonicalUrl,
+        mainEntity: {
+          "@type": "ItemList",
+          numberOfItems: listings.length,
+          itemListElement: listings.slice(0, 30).map((listing, index) => ({
+            "@type": "ListItem",
+            position: index + 1,
+            name: getListingName(kind, listing),
+            url: `${baseUrl}${getPublicListingPath(kind, listing.id, getListingName(kind, listing))}`,
+          })),
+        },
+        breadcrumb: {
+          "@type": "BreadcrumbList",
+          itemListElement: [
+            { "@type": "ListItem", position: 1, name: "Home", item: baseUrl },
+            { "@type": "ListItem", position: 2, name: category.label, item: `${baseUrl}${category.path}` },
+            { "@type": "ListItem", position: 3, name: heading, item: canonicalUrl },
+          ],
+        },
+      },
+    };
+  } catch (error) {
+    console.error("[SEO] Failed to resolve area page metadata:", error);
+    return { ...fallback, robots: "noindex,follow" };
   }
 }
 
@@ -635,12 +674,16 @@ async function resolveProviderPageMetadata(code: string, req: Request, fallback:
     }
     const provider = result.profile;
     const services = provider.serviceTypes.join(", ");
-    const areas = provider.serviceAreas.slice(0, 3).join(", ");
+    const areas = provider.serviceAreas.slice(0, 2).join(" and ");
     const lead = [services, areas ? `in ${areas}` : ""].filter(Boolean).join(" ");
     const imageUrl = provider.photoUrl || provider.listings.find((listing) => listing.imageUrl)?.imageUrl || null;
     return {
-      title: `${provider.displayName}${services ? ` · ${services}` : ""} | ${siteName}`,
-      description: truncate(`${lead ? `${lead}. ` : ""}Book through TBM: pay by M-Pesa or card, with TBM's support throughout.${provider.about ? ` ${provider.about}` : ""}`, 220),
+      title: providerPageSeoTitle(provider.displayName, provider.serviceTypes, provider.serviceAreas),
+      description: truncate([
+        provider.about?.trim() || (lead ? `${lead}.` : ""),
+        provider.verified ? "Verified by TBM." : "",
+        "Book on Tembea Bila Matata, by M-Pesa or card.",
+      ].filter(Boolean).join(" "), 155),
       imageUrl: toAbsoluteUrl(imageUrl, baseUrl),
       canonicalUrl: `${baseUrl}${provider.path}`,
       type: "website",
@@ -689,7 +732,7 @@ export function injectShareMetadata(html: string, metadata: ShareMetadata) {
     metaTag("property", "og:url", metadata.canonicalUrl),
     metaTag("property", "og:image", metadata.imageUrl),
     metaTag("property", "og:image:secure_url", metadata.imageUrl),
-    metaTag("property", "og:image:alt", metadata.title),
+    metaTag("property", "og:image:alt", metadata.imageAlt || metadata.title),
     metadata.imageUrl.endsWith(defaultImagePath) ? metaTag("property", "og:image:width", "1200") : null,
     metadata.imageUrl.endsWith(defaultImagePath) ? metaTag("property", "og:image:height", "630") : null,
     metaTag("name", "twitter:card", "summary_large_image"),

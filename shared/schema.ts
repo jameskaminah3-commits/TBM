@@ -2395,3 +2395,35 @@ export const aiLeads = pgTable("ai_leads", {
 });
 export type AiLead = typeof aiLeads.$inferSelect;
 export type InsertAiLead = typeof aiLeads.$inferInsert;
+
+// TBM's search engine work on a listing (shared/listing-seo.ts): the title and
+// description Google shows, the main phrase and notes, and text for each photo.
+// Empty fields fall back to the automatic ones. Made by TBM admins only.
+export const listingSeo = pgTable("listing_seo", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  listingKind: varchar("listing_kind").notNull(),
+  listingId: varchar("listing_id").notNull(),
+  seoTitle: text("seo_title"),
+  seoDescription: text("seo_description"),
+  focusKeyword: text("focus_keyword"),
+  keywords: jsonb("keywords").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  imageAlts: jsonb("image_alts").$type<Record<string, string>>().notNull().default(sql`'{}'::jsonb`),
+  updatedBy: varchar("updated_by"),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [uniqueIndex("listing_seo_listing_idx").on(table.listingKind, table.listingId)]);
+export type ListingSeoRow = typeof listingSeo.$inferSelect;
+
+// The area pages (/explore/<area>/<service>): TBM's own heading, intro and
+// Google text for each. Empty fields fall back to the automatic copy.
+export const seoAreaPages = pgTable("seo_area_pages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  areaKey: varchar("area_key").notNull(),
+  service: varchar("service").notNull(),
+  heading: text("heading"),
+  seoTitle: text("seo_title"),
+  seoDescription: text("seo_description"),
+  intro: text("intro"),
+  updatedBy: varchar("updated_by"),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [uniqueIndex("seo_area_pages_area_service_idx").on(table.areaKey, table.service)]);
+export type SeoAreaPageRow = typeof seoAreaPages.$inferSelect;

@@ -19,6 +19,8 @@ const errorText = (error: Error) => error.message.replace(/^\d+:\s*/, "").replac
 export function PublicPagePanel({ services }: { services: string }) {
   const { toast } = useToast();
   const { data: settings, isLoading } = useQuery<ProviderPageSettingsView>({ queryKey: ["/api/provider/public-page"] });
+  // The provider's own words and areas, for the message they share.
+  const { data: own } = useQuery<{ profile: { bio: string; serviceAreas: string[] } }>({ queryKey: ["/api/provider/profile"] });
   const toggle = useMutation({
     mutationFn: async (enabled: boolean) => (await apiRequest("PUT", "/api/provider/public-page", { enabled })).json(),
     onSuccess: (next: ProviderPageSettingsView) => {
@@ -99,6 +101,8 @@ export function PublicPagePanel({ services }: { services: string }) {
               name={settings.displayName}
               pagePath={settings.path}
               services={services}
+              areas={own?.profile.serviceAreas}
+              description={own?.profile.bio}
               isPublic
               source="provider"
               triggerLabel="Share your page"

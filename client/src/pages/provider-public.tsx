@@ -21,6 +21,7 @@ import {
   type PublicProviderProfile,
 } from "@shared/provider-public";
 import { publicReviewerName } from "@shared/public-review";
+import { providerPageSeoTitle } from "@shared/listing-seo";
 import { SUPPORT_PHONE_DISPLAY, SUPPORT_WHATSAPP_URL } from "@shared/support-contact";
 
 type PageResponse = { provider: PublicProviderProfile; preview?: boolean; blockers?: ProviderPageBlocker[] };
@@ -89,7 +90,7 @@ export default function ProviderPublicPage() {
   return (
     <div className="app-shell min-h-screen pb-16 pt-4 sm:pt-6 md:pt-8" data-testid="provider-page">
       <SeoHead
-        title={`${provider.displayName}${services ? ` · ${services}` : ""} | Tembea Bila Matata`}
+        title={providerPageSeoTitle(provider.displayName, provider.serviceTypes, provider.serviceAreas)}
         description={`${services}${provider.serviceAreas.length ? ` in ${provider.serviceAreas.slice(0, 3).join(", ")}` : ""}. Book through TBM.`}
         image={provider.photoUrl ?? provider.listings.find((listing) => listing.imageUrl)?.imageUrl ?? null}
         canonicalUrl={buildCanonicalUrl(provider.path)}

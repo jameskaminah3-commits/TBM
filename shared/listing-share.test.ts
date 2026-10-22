@@ -44,9 +44,9 @@ test("the message uses the listing's own name, a short description and the link,
     url: "https://tembeabilamatata.com/accommodation/x",
   });
   assert.equal(message, [
-    "Check out this stay on Tembea Bila Matata: Beachfront Villa – Diani",
+    "Beachfront Villa – Diani, a stay on Tembea Bila Matata",
     "A whitewashed villa right on Galu Beach with a private pool.",
-    "View details: https://tembeabilamatata.com/accommodation/x",
+    "Photos, prices and booking: https://tembeabilamatata.com/accommodation/x",
   ].join("\n"));
   assert.doesNotMatch(message, /KSh|\$/);
 });
@@ -55,7 +55,7 @@ test("a chosen price carries its conditions", () => {
   const line = formatSharePriceLine(41600, "a night");
   assert.equal(line, "From KSh 41,600 a night, subject to availability and TBM's terms.");
   const message = buildListingShareMessage({ kind: "cook", name: "Chef Amina", url: "https://t.co/x", priceLine: line });
-  assert.match(message, /^Check out this chef on Tembea Bila Matata: Chef Amina\nFrom KSh 41,600 a night, subject to availability and TBM's terms\.\nView details: https:\/\/t\.co\/x$/);
+  assert.match(message, /^Chef Amina, a chef on Tembea Bila Matata\nFrom KSh 41,600 a night, subject to availability and TBM's terms\.\nPhotos, prices and booking: https:\/\/t\.co\/x$/);
 });
 
 test("long descriptions are cut at a word", () => {

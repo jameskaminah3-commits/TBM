@@ -49,7 +49,7 @@ test("the back says why paying in the checkout protects everyone, not a warning 
   const { CARD_PAY_HEADING, CARD_PAY_SAFELY } = await import("./business-card.ts");
   const { providerPaySafely, providerPaySafelyHeading } = await import("./provider-public.ts");
   assert.equal(CARD_PAY_HEADING, "Book with confidence");
-  assert.match(CARD_PAY_SAFELY, /protect hosts and guests alike from impersonation and scams/);
+  assert.match(CARD_PAY_SAFELY, /protects you and the provider from impersonation and scams/);
   assert.match(CARD_PAY_SAFELY, /payment options in your My Bookings checkout/);
   assert.doesNotMatch(CARD_PAY_SAFELY, /personal number|directly|never/i);
   // The provider's page says the same.

@@ -58,17 +58,18 @@ import { getCarDisplayName, getListingSharePrice } from "@shared/listing-share";
 import { ListingUnavailable } from "@/components/listing-unavailable";
 import { hasPublicRating, summarizeRatings } from "@shared/review-eligibility";
 import { ShareGiftBanner } from "@/components/share-gift-banner";
+import { autoListingSeoTitle, listingBreadcrumb, listingSeoArea, toSeoListingInput, type PublicListingSeo } from "@shared/listing-seo";
+import { buildListingStructuredData } from "@shared/listing-structured-data";
 import {
   buildListingSeoDescription,
   formatSeoLocation,
   getBookingPath,
-  getListingSeoTitle,
   getPublicListingPath,
   getShortSeoLocation,
 } from "@/lib/public-listing";
 
 type ListingKind = Exclude<PublicListingKind, "stay">;
-type PublicListing = CarType | Cook | Errand | Experience;
+type PublicListing = (CarType | Cook | Errand | Experience) & { seo?: PublicListingSeo | null };
 
 const endpointByKind: Record<ListingKind, string> = {
   car: "/api/cars",
@@ -249,39 +250,6 @@ function getBookingOptions(kind: ListingKind, listing: PublicListing, formatAmou
   return options.filter((option): option is BookingOption => Boolean(option) && option!.amountUsd > 0);
 }
 
-function getStructuredData(kind: ListingKind, listing: PublicListing, canonicalUrl: string, leadPrice: number) {
-  const name = getListingName(kind, listing);
-  const location = getListingLocation(listing);
-  const description = getListingDescription(kind, listing);
-  const data: Record<string, unknown> = {
-    "@context": "https://schema.org",
-    "@type": kind === "car" ? "Car" : kind === "experience" ? "TouristAttraction" : "Service",
-    name,
-    description,
-    url: canonicalUrl,
-    areaServed: { "@type": "Place", name: location },
-    address: { "@type": "PostalAddress", addressLocality: location, addressCountry: "KE" },
-    provider: { "@type": "Organization", name: "Tembea Bila Matata", url: buildCanonicalUrl("/") },
-    breadcrumb: {
-      "@type": "BreadcrumbList",
-      itemListElement: [
-        { "@type": "ListItem", position: 1, name: "Home", item: buildCanonicalUrl("/") },
-        { "@type": "ListItem", position: 2, name: categoryByKind[kind].label, item: buildCanonicalUrl(categoryByKind[kind].href) },
-        { "@type": "ListItem", position: 3, name, item: canonicalUrl },
-      ],
-    },
-  };
-
-  if (listing.imageUrl) data.image = listing.imageUrl;
-  if (hasPublicRating(listing)) {
-    data.aggregateRating = { "@type": "AggregateRating", ratingValue: listing.rating, reviewCount: listing.reviewCount };
-  }
-  if (leadPrice > 0) {
-    data.offers = { "@type": "Offer", priceCurrency: "USD", price: leadPrice, availability: "https://schema.org/InStock", url: canonicalUrl };
-  }
-  return data;
-}
-
 export default function PublicListingDetail({ kind }: { kind: ListingKind }) {
   const { id } = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
@@ -332,11 +300,21 @@ export default function PublicListingDetail({ kind }: { kind: ListingKind }) {
   const leadPrice = options.length ? Math.min(...options.map((option) => option.amountUsd)) : 0;
   const canonicalUrl = listing ? buildCanonicalUrl(getPublicListingPath(kind, listing.id, listingName)) : buildCanonicalUrl(`${category.href}/${id || ""}`);
   const description = listing ? getListingDescription(kind, listing) : `Explore ${category.label} with Tembea Bila Matata.`;
-  const seoTitle = listing ? getListingSeoTitle(kind, listingName, getListingLocation(listing)) : "Listing not found | Tembea Bila Matata";
-  const seoDescription = listing ? buildListingSeoDescription([description]) : description;
+  const seoTitle = listing ? listing.seo?.title || autoListingSeoTitle(kind, listing as unknown as Record<string, unknown>) : "Listing not found | Tembea Bila Matata";
+  const seoDescription = listing ? listing.seo?.description || buildListingSeoDescription([description]) : description;
+  // Filed under its area page ("Things to do in Watamu") when the area is known, else the service page.
+  const crumb = listing ? listingBreadcrumb(kind, listingSeoArea(toSeoListingInput(kind, listing as unknown as Record<string, unknown>))) : { label: category.label, path: category.href };
+  // The same structured data the server sends with the page (listing-structured-data.ts).
   const structuredData = useMemo(
-    () => (listing ? getStructuredData(kind, listing, canonicalUrl, leadPrice) : null),
-    [canonicalUrl, kind, leadPrice, listing],
+    () => (listing ? buildListingStructuredData({
+      kind,
+      listing: listing as unknown as Record<string, unknown>,
+      name: listingName,
+      url: canonicalUrl,
+      origin: buildCanonicalUrl("/").replace(/\/$/, ""),
+      rating: hasPublicRating(listing) ? { average: listing.rating, count: listing.reviewCount } : null,
+    }) : null),
+    [canonicalUrl, kind, listing, listingName],
   );
 
   if (isLoading) {
@@ -396,7 +374,7 @@ export default function PublicListingDetail({ kind }: { kind: ListingKind }) {
         <nav aria-label="Breadcrumb" className="mb-4 hidden text-sm text-muted-foreground md:block">
           <Link href="/" className="hover:text-foreground">Home</Link>
           <span className="mx-2">/</span>
-          <Link href={category.href} className="hover:text-foreground">{category.label}</Link>
+          <Link href={crumb.path} className="hover:text-foreground">{crumb.label}</Link>
           <span className="mx-2">/</span>
           <span className="text-foreground">{listingName}</span>
         </nav>
@@ -439,7 +417,7 @@ export default function PublicListingDetail({ kind }: { kind: ListingKind }) {
             </div>
           </header>
           <div className="order-1 md:order-2">
-            <PremiumMediaGallery item={listing} title={listingName} layout="mosaic" aspectClassName="aspect-[4/3] md:aspect-auto md:h-[26rem] lg:h-[30rem]" />
+            <PremiumMediaGallery item={listing} title={listingName} imageAlts={listing.seo?.imageAlts} layout="mosaic" aspectClassName="aspect-[4/3] md:aspect-auto md:h-[26rem] lg:h-[30rem]" />
           </div>
         </div>
 

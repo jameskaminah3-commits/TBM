@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   buildListingSeoDescription,
   formatSeoLocation,
+  buildListingSeoTitle,
   getListingSeoTitle,
   getPublicListingPath,
   slugifyForUrl,
@@ -35,8 +36,19 @@ test("keeps generated listing metadata concise while preserving search context",
     "Set within a premium beachfront property with ocean views, pool, WiFi and parking.",
   ]);
 
-  assert.ok(title.length <= 75);
-  assert.match(title, /Nyali, Mombasa/);
+  assert.ok(title.length <= 60);
+  assert.match(title, /Nyali/);
   assert.ok(description.length <= 160);
   assert.match(description, /118 USD per night/);
+});
+
+test("listing titles fit in 60 characters, say the place once and never end in ...", () => {
+  assert.equal(buildListingSeoTitle("stay", "Bahari Beach Hotel – Nyali", "Nyali"), "Bahari Beach Hotel in Nyali | Tembea Bila Matata");
+  assert.equal(buildListingSeoTitle("stay", "Garden Cottage near Turtle Bay – Watamu", "Watamu"), "Garden Cottage near Turtle Bay in Watamu | TBM");
+  assert.equal(buildListingSeoTitle("car", "Toyota Noah – 7 Seater", "Mombasa"), "Toyota Noah – 7 Seater, car hire in Mombasa | TBM");
+  assert.equal(buildListingSeoTitle("cook", "Chef Amina – Swahili Coastal Cuisine", "Diani"), "Chef Amina, private chef in Diani | Tembea Bila Matata");
+  assert.equal(buildListingSeoTitle("stay", "Diani Beach Villa", "Diani"), "Diani Beach Villa | Tembea Bila Matata");
+  const long = buildListingSeoTitle("experience", "A very long full-day guided tour of the old town, the fort and the spice market with lunch", "Mombasa");
+  assert.ok(long.length <= 60, long);
+  assert.doesNotMatch(long, /\.\.\.|…/);
 });

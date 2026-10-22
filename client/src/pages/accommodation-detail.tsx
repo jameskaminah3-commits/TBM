@@ -41,7 +41,6 @@ import { buildCanonicalUrl } from "@/lib/canonical-url";
 import {
   buildListingSeoDescription,
   formatSeoLocation,
-  getListingSeoTitle,
   getPublicListingPath,
 } from "@/lib/public-listing";
 import { formatCalendarDate, formatKenyaClockTime } from "@shared/calendar-dates";
@@ -56,6 +55,8 @@ import { getListingSharePrice } from "@shared/listing-share";
 import { ListingUnavailable } from "@/components/listing-unavailable";
 import { ShareGiftBanner } from "@/components/share-gift-banner";
 import { hasPublicRating, summarizeRatings } from "@shared/review-eligibility";
+import { autoListingSeoTitle, listingBreadcrumb, listingSeoArea, toSeoListingInput, type PublicListingSeo } from "@shared/listing-seo";
+import { buildListingStructuredData } from "@shared/listing-structured-data";
 
 type StayAvailability = {
   propertyType?: "hotel" | "entire_place";
@@ -112,7 +113,7 @@ export default function AccommodationDetail() {
   const { formatAmount } = useCurrency();
   const [datesOpen, setDatesOpen] = useState(false);
 
-  const { data: accommodation, isLoading } = useQuery<StayWithRooms>({
+  const { data: accommodation, isLoading } = useQuery<StayWithRooms & { seo?: PublicListingSeo | null }>({
     queryKey: ["/api/stays", id],
     queryFn: async () => {
       const response = await fetch(`/api/stays/${id}`);
@@ -249,68 +250,22 @@ export default function AccommodationDetail() {
 
   const canonicalUrl = buildCanonicalUrl(getPublicListingPath("stay", accommodation.id, accommodation.title));
   const location = formatSeoLocation(accommodation.location);
+  // Filed under its area page ("Places to stay in Diani") when the area is known.
+  const crumb = listingBreadcrumb("stay", listingSeoArea(toSeoListingInput("stay", accommodation as unknown as Record<string, unknown>)));
   const roomTypes = accommodation.roomTypes ?? [];
   const hotelSummary = summarizeHotelRooms(roomTypes);
   const semanticSummary = isHotel
     ? `${accommodation.starRating ? `${accommodation.starRating}-star hotel` : "Hotel"} in ${location} with ${hotelSummary.roomTypeCount} room type${hotelSummary.roomTypeCount === 1 ? "" : "s"}${hotelSummary.mealPlans.length ? ` on ${hotelSummary.mealPlans.length === 1 ? "one meal plan" : `${hotelSummary.mealPlans.length} meal plans`}` : ""}. Rooms from ${accommodation.price} USD per room per night.`
     : `${accommodation.bedrooms}-bedroom accommodation in ${location}, with ${accommodation.bathrooms} bathrooms and space for up to ${accommodation.maxOccupancy} guests. Available from ${accommodation.price} USD per night.`;
-  const structuredData = isHotel ? {
-    "@context": "https://schema.org",
-    "@type": "Hotel",
+  // The same structured data the server sends with the page (listing-structured-data.ts).
+  const structuredData = buildListingStructuredData({
+    kind: "stay",
+    listing: accommodation as unknown as Record<string, unknown>,
     name: accommodation.title,
-    description: accommodation.description,
-    image: accommodation.imageUrl ? [accommodation.imageUrl] : undefined,
     url: canonicalUrl,
-    numberOfRooms: hotelSummary.totalRooms,
-    starRating: accommodation.starRating ? { "@type": "Rating", ratingValue: accommodation.starRating } : undefined,
-    checkinTime: accommodation.checkInTime ?? undefined,
-    checkoutTime: accommodation.checkOutTime ?? undefined,
-    address: { "@type": "PostalAddress", addressLocality: location, addressCountry: "KE" },
-    aggregateRating: hasPublicRating(accommodation) ? {
-      "@type": "AggregateRating",
-      ratingValue: accommodation.rating,
-      reviewCount: accommodation.reviewCount,
-    } : undefined,
-    offers: { "@type": "AggregateOffer", priceCurrency: "USD", lowPrice: accommodation.price, url: canonicalUrl },
-    breadcrumb: {
-      "@type": "BreadcrumbList",
-      itemListElement: [
-        { "@type": "ListItem", position: 1, name: "Home", item: buildCanonicalUrl("/") },
-        { "@type": "ListItem", position: 2, name: "Accommodation in Mombasa and Nyali", item: buildCanonicalUrl("/accommodations") },
-        { "@type": "ListItem", position: 3, name: accommodation.title, item: canonicalUrl },
-      ],
-    },
-  } : {
-    "@context": "https://schema.org",
-    "@type": "LodgingBusiness",
-    name: accommodation.title,
-    description: accommodation.description,
-    image: accommodation.imageUrl ? [accommodation.imageUrl] : undefined,
-    url: canonicalUrl,
-    numberOfRooms: accommodation.bedrooms,
-    occupancy: { "@type": "QuantitativeValue", maxValue: accommodation.maxOccupancy },
-    address: { "@type": "PostalAddress", addressLocality: location, addressCountry: "KE" },
-    areaServed: { "@type": "Place", name: location },
-    aggregateRating: hasPublicRating(accommodation) ? {
-      "@type": "AggregateRating",
-      ratingValue: accommodation.rating,
-      reviewCount: accommodation.reviewCount,
-    } : undefined,
-    offers: {
-      "@type": "Offer",
-      priceCurrency: "USD",
-      price: accommodation.price,
-      url: canonicalUrl,
-    },
-    breadcrumb: {
-      "@type": "BreadcrumbList",
-      itemListElement: [
-        { "@type": "ListItem", position: 1, name: "Home", item: buildCanonicalUrl("/") },
-        { "@type": "ListItem", position: 2, name: "Accommodation in Mombasa and Nyali", item: buildCanonicalUrl("/accommodations") },
-        { "@type": "ListItem", position: 3, name: accommodation.title, item: canonicalUrl },
-      ],
-    },
-  };
+    origin: buildCanonicalUrl("/").replace(/\/$/, ""),
+    rating: hasPublicRating(accommodation) ? { average: accommodation.rating, count: accommodation.reviewCount } : null,
+  });
 
   const stayTotal = accommodation.price * nights;
   const dueToday = calculateBookingDepositAmount(stayTotal);
@@ -348,8 +303,8 @@ export default function AccommodationDetail() {
   return (
     <div className="min-h-screen pb-28 pt-4 sm:pt-6 md:pt-8 lg:pb-12">
       <SeoHead
-        title={getListingSeoTitle("stay", accommodation.title, accommodation.location)}
-        description={buildListingSeoDescription([semanticSummary, accommodation.description])}
+        title={accommodation.seo?.title || autoListingSeoTitle("stay", accommodation as unknown as Record<string, unknown>)}
+        description={accommodation.seo?.description || buildListingSeoDescription([semanticSummary, accommodation.description])}
         image={accommodation.imageUrl}
         canonicalUrl={canonicalUrl}
         structuredData={structuredData}
@@ -358,7 +313,7 @@ export default function AccommodationDetail() {
         <nav aria-label="Breadcrumb" className="mb-4 hidden text-sm text-muted-foreground md:block">
           <Link href="/" className="hover:text-foreground">Home</Link>
           <span className="mx-2">/</span>
-          <Link href={`/accommodations${staySearchSuffix}`} className="hover:text-foreground">Places to stay</Link>
+          <Link href={crumb.path} className="hover:text-foreground">{crumb.label}</Link>
           <span className="mx-2">/</span>
           <span className="text-foreground">{accommodation.title}</span>
         </nav>
@@ -411,6 +366,7 @@ export default function AccommodationDetail() {
             <StayMediaCarousel
               stay={accommodation}
               layout="mosaic"
+              imageAlts={accommodation.seo?.imageAlts}
               aspectClassName="aspect-[4/3] md:aspect-auto md:h-[26rem] lg:h-[30rem]"
             />
           </div>

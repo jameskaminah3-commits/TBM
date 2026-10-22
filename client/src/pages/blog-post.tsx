@@ -244,28 +244,35 @@ export default function BlogPostDetail() {
   }
 
   const canonicalUrl = buildCanonicalUrl(`/blog/${post.slug}`);
+  // As the server sends it: the article, and its breadcrumb as a node of its own.
   const structuredData = {
     "@context": "https://schema.org",
-    "@type": "Article",
-    headline: post.seoTitle || post.title,
-    description: post.seoDescription || post.excerpt,
-    image: post.featuredImage ? [post.featuredImage] : undefined,
-    datePublished: post.publishedAt || undefined,
-    dateModified: post.updatedAt,
-    author: {
-      "@type": "Person",
-      name: post.author,
-    },
-    mainEntityOfPage: canonicalUrl,
-    breadcrumb: {
-      "@type": "BreadcrumbList",
-      itemListElement: [
-        { "@type": "ListItem", position: 1, name: "Home", item: buildCanonicalUrl("/") },
-        { "@type": "ListItem", position: 2, name: "Travel Journal", item: buildCanonicalUrl("/blog") },
-        { "@type": "ListItem", position: 3, name: post.title, item: canonicalUrl },
-      ],
-    },
+    "@graph": [
+      {
+        "@type": "Article",
+        headline: post.seoTitle || post.title,
+        description: post.seoDescription || post.excerpt,
+        image: post.featuredImage ? [post.featuredImage] : undefined,
+        datePublished: post.publishedAt || undefined,
+        dateModified: post.updatedAt,
+        author: {
+          "@type": "Person",
+          name: post.author,
+        },
+        publisher: { "@type": "Organization", name: "Tembea Bila Matata", logo: { "@type": "ImageObject", url: buildCanonicalUrl("/app-icon.png") } },
+        mainEntityOfPage: canonicalUrl,
+      },
+      {
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Home", item: buildCanonicalUrl("/") },
+          { "@type": "ListItem", position: 2, name: "Travel Journal", item: buildCanonicalUrl("/blog") },
+          { "@type": "ListItem", position: 3, name: post.title, item: canonicalUrl },
+        ],
+      },
+    ],
   };
+
 
   const markdownComponents = {
     h1: ({ children }: { children?: ReactNode }) => <h1 className="mt-8 font-serif text-2xl font-medium leading-tight sm:mt-10 sm:text-3xl">{children}</h1>,
@@ -330,7 +337,7 @@ export default function BlogPostDetail() {
   return (
     <div className="app-shell min-h-screen">
       <SeoHead
-        title={post.seoTitle || post.title}
+        title={`${post.seoTitle || post.title} | Tembea Bila Matata`}
         description={post.seoDescription || post.excerpt}
         keywords={post.seoKeywords}
         image={post.featuredImage}
