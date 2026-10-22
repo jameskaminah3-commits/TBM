@@ -18,6 +18,20 @@ export function setZainaAvailable(available: boolean) {
   zainaAvailable = available;
 }
 
+export const ZAINA_QUIET_EVENT = "tbm:zaina-quiet";
+let zainaQuiet = false;
+
+/** A page asks Zaina's button to step aside on phones while its own way to reach her is on screen. */
+export function setZainaQuiet(quiet: boolean) {
+  if (quiet === zainaQuiet) return;
+  zainaQuiet = quiet;
+  window.dispatchEvent(new CustomEvent<{ quiet: boolean }>(ZAINA_QUIET_EVENT, { detail: { quiet } }));
+}
+
+export function isZainaQuiet() {
+  return zainaQuiet;
+}
+
 export function whatsAppUrlWithText(text: string) {
   const separator = WHATSAPP_URL.includes("?") ? "&" : "?";
   return `${WHATSAPP_URL}${separator}text=${encodeURIComponent(text)}`;

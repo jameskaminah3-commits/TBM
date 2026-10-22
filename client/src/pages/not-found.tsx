@@ -6,7 +6,8 @@ import { openZaina } from "@/lib/zaina";
 
 export default function NotFound() {
   return (
-    <div className="flex min-h-[70vh] items-center justify-center px-4 py-16">
+    // A full screen, like the loading placeholder before it, so the footer doesn't jump up.
+    <div className="flex min-h-[100svh] items-center justify-center px-4 py-16">
       <SeoHead title="Page not found | Tembea Bila Matata" robots="noindex,follow" />
       <div className="max-w-md text-center">
         <p className="text-sm font-semibold uppercase tracking-[0.2em] text-primary">Page not found</p>

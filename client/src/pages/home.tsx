@@ -1,10 +1,8 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, Link } from "wouter";
 import {
-  Search,
   MapPin,
-  Users,
   Home as HomeIcon,
   Car,
   ChefHat,
@@ -18,20 +16,17 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { ListingMedia } from "@/components/listing-media";
-import { DateRangePicker } from "@/components/date-range-picker";
-import { buildStaySearchParams } from "@/lib/stay-search";
+import { buildStaySearchParams, stayAreaCounts } from "@/lib/stay-search";
 // The hero lives in /images under fixed names, so the server can tell the
 // browser to fetch it first on the home page (see server/share-metadata.ts).
 const heroImageLarge = "/images/home-hero-1408.webp";
 const heroImageSmall = "/images/home-hero-768.webp";
 import messyWhatsappImage from "@assets/generated_images/home-whatsapp-420.jpg";
 import type { Stay, Car as CarType, Cook, Errand, Experience } from "@shared/schema";
-import { todayInKenya } from "@shared/calendar-dates";
 import { formatRating, hasPublicRating } from "@shared/review-eligibility";
 import { brandStory } from "@/lib/brand-story";
-import { openZaina, whatsAppUrlWithText } from "@/lib/zaina";
+import { openZaina, setZainaQuiet, whatsAppUrlWithText } from "@/lib/zaina";
 
 type ShowcaseItem = {
   id: string;
@@ -143,7 +138,7 @@ function ServiceShowcaseCard({
                       <span className="text-white/80">New on TBM</span>
                     )}
                   </div>
-                  <div className="line-clamp-1 font-serif text-lg leading-tight">{item.title}</div>
+                  <div className="line-clamp-2 font-serif text-lg leading-tight">{item.title}</div>
                 </div>
               </div>
             ))}
@@ -171,18 +166,12 @@ function ServiceShowcaseCard({
 
 export default function Home() {
   const [, setLocation] = useLocation();
-  const [destination, setDestination] = useState("");
-  const [checkIn, setCheckIn] = useState("");
-  const [checkOut, setCheckOut] = useState("");
-  const [guests, setGuests] = useState("2");
   const [shouldLoadShowcases, setShouldLoadShowcases] = useState(false);
   const servicesSectionRef = useRef<HTMLElement | null>(null);
   const heroServiceLabels = ["Stays", "Transport", "Private Chefs", "Experience", "Errands"];
   const heroImageSrcSet = `${heroImageSmall} 768w, ${heroImageLarge} 1408w`;
   const primaryCtaClassName =
     "w-full rounded-xl border border-white/12 bg-[#f98b5b] px-6 py-5 text-base font-semibold text-[#1f2a2e] shadow-[0_20px_44px_-24px_rgba(249,139,91,0.58),inset_0_1px_0_rgba(255,255,255,0.18)] transition-all duration-300 hover:-translate-y-0.5 hover:bg-[#f58756] hover:shadow-[0_24px_54px_-24px_rgba(249,139,91,0.66)] sm:w-auto sm:min-w-[16rem] sm:px-8 sm:py-6 sm:text-lg";
-  // Stays are on the coast: the earliest check-in is Kenya's today, wherever the guest is.
-  const todayIso = useMemo(() => todayInKenya(), []);
 
   useEffect(() => {
     if (shouldLoadShowcases) {
@@ -218,28 +207,27 @@ export default function Home() {
     return () => observer.disconnect();
   }, [shouldLoadShowcases]);
 
-  const handleAccommodationSearch = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-
-    const parsedGuests = Number.parseInt(guests, 10);
-    const safeGuests = Number.isNaN(parsedGuests) || parsedGuests < 1 ? null : parsedGuests;
-    const safeCheckOut = checkIn && checkOut && checkOut < checkIn ? checkIn : checkOut;
-    const nextSearch = buildStaySearchParams({
-      destination,
-      checkIn,
-      checkOut: safeCheckOut,
-      guests: safeGuests,
-    });
-
-    setLocation(nextSearch ? `/accommodations?${nextSearch}` : "/accommodations");
-  };
-
-  const { data: stays = [] } = useQuery<Stay[]>({
+  // Stays load straight away: the opening section lists the places that have them.
+  const { data: stays = [], isLoading: staysLoading } = useQuery<Stay[]>({
     queryKey: ["/api/stays"],
-    enabled: shouldLoadShowcases,
     staleTime: 5 * 60_000,
     refetchOnWindowFocus: false,
   });
+  const stayAreas = useMemo(() => stayAreaCounts(stays), [stays]);
+
+  // On phones Zaina's button steps aside while the opening section, with its own
+  // "Tell us what you need", is on screen.
+  const heroRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const hero = heroRef.current;
+    if (!hero || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(([entry]) => setZainaQuiet(entry.intersectionRatio > 0.2), { threshold: [0, 0.2, 0.5] });
+    observer.observe(hero);
+    return () => {
+      observer.disconnect();
+      setZainaQuiet(false);
+    };
+  }, []);
 
   const { data: cars = [] } = useQuery<CarType[]>({
     queryKey: ["/api/cars"],
@@ -320,7 +308,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen">
-      <section className="relative flex min-h-[100svh] items-center overflow-hidden py-10 sm:py-14 md:min-h-screen md:justify-center">
+      <section ref={heroRef} className="relative flex min-h-[100svh] items-center overflow-hidden py-10 max-xl:pb-24 sm:py-14 md:min-h-screen md:justify-center">
         <img
           src={heroImageLarge}
           srcSet={heroImageSrcSet}
@@ -379,63 +367,37 @@ export default function Home() {
             </Button>
           </div>
 
-          <form onSubmit={handleAccommodationSearch}>
-            <Card className="mx-auto max-w-4xl rounded-2xl border-none bg-card/95 p-4 shadow-2xl backdrop-blur-md sm:p-5 md:p-8 lg:order-last">
-              <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-4">
-                <div className="md:col-span-1">
-                  <div className="mb-2 text-sm font-medium text-muted-foreground">Destination</div>
-                  <div className="relative">
-                    <MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      value={destination}
-                      onChange={(event) => setDestination(event.target.value)}
-                      placeholder="Where to?"
-                      className="h-11 rounded-lg pl-10"
-                      data-testid="input-destination"
-                      aria-label="Destination"
-                    />
-                  </div>
-                </div>
-
-                <div className="md:col-span-2">
-                  <div className="mb-2 text-sm font-medium text-muted-foreground" id="home-dates-label">Dates</div>
-                  <DateRangePicker
-                    checkIn={checkIn}
-                    checkOut={checkOut}
-                    minDate={todayIso}
-                    onChange={(next) => {
-                      setCheckIn(next.checkIn);
-                      setCheckOut(next.checkOut);
-                    }}
-                    placeholder="Check in – check out"
-                    data-testid="input-dates"
-                  />
-                </div>
-
-                <div>
-                  <div className="mb-2 text-sm font-medium text-muted-foreground">Guests</div>
-                  <div className="relative">
-                    <Users className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      type="number"
-                      value={guests}
-                      onChange={(event) => setGuests(event.target.value)}
-                      placeholder="2"
-                      min="1"
-                      className="h-11 rounded-lg pl-10"
-                      data-testid="input-guests"
-                      aria-label="Guests"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <Button className="h-12 w-full rounded-lg text-base" size="lg" type="submit" data-testid="button-search">
-                <Search className="mr-2 h-5 w-5" aria-hidden="true" />
-                Search stays
-              </Button>
-            </Card>
-          </form>
+          {/* Where guests can stay: only places with stays right now, so a tap never
+              ends on an empty page. Dates and guests are set on the results. */}
+          <nav aria-label="Places to stay" className="mx-auto max-w-3xl rounded-2xl bg-card/95 p-4 shadow-2xl backdrop-blur-md sm:p-5" data-testid="hero-stay-areas">
+            <div className="mb-3 flex items-center justify-between gap-3 sm:justify-center">
+              <p className="text-sm font-medium text-muted-foreground">Looking for a place to stay?</p>
+              <Link href="/accommodations" className="inline-flex min-h-11 items-center text-sm font-semibold text-primary hover:underline sm:hidden" data-testid="link-hero-all-stays-phone">
+                All stays &rarr;
+              </Link>
+            </div>
+            {/* One swipeable row on phones (a fixed height, so nothing jumps when the places arrive); wrapped on wider screens. */}
+            <div className="-mx-4 flex h-11 items-center gap-2 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:h-auto sm:min-h-[2.75rem] sm:flex-wrap sm:justify-center sm:overflow-visible sm:px-0 [&::-webkit-scrollbar]:hidden">
+              {staysLoading
+                ? [0, 1, 2, 3].map((index) => <span key={index} className="h-11 w-24 shrink-0 animate-pulse rounded-full bg-muted" aria-hidden="true" />)
+                : stayAreas.map(({ area, count }) => (
+                    <Link
+                      key={area}
+                      href={`/accommodations?${buildStaySearchParams({ destination: area })}`}
+                      className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-border bg-background px-4 text-sm font-medium text-foreground transition-colors hover:border-primary/50 hover:text-primary"
+                      aria-label={`${area}: ${count} ${count === 1 ? "stay" : "stays"}`}
+                      data-testid={`link-hero-area-${area.toLowerCase()}`}
+                    >
+                      <MapPin className="h-4 w-4 text-primary" aria-hidden="true" />
+                      {area}
+                      <span className="text-xs tabular-nums text-muted-foreground">{count}</span>
+                    </Link>
+                  ))}
+              <Link href="/accommodations" className="hidden min-h-11 items-center px-3 text-sm font-semibold text-primary hover:underline sm:inline-flex" data-testid="link-hero-all-stays">
+                All stays &rarr;
+              </Link>
+            </div>
+          </nav>
         </div>
       </section>
 
@@ -519,7 +481,7 @@ export default function Home() {
           <div className="mb-16 text-center">
             <h2 className="mb-4 font-serif text-[2rem] font-medium leading-tight sm:text-4xl lg:text-5xl">Our services</h2>
             <p className="mx-auto max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">
-              Everything you need to plan, book, and enjoy the Coast with less effort and better local access
+              Book one on its own, or add it to your stay: one booking, one total.
             </p>
           </div>
 
@@ -528,7 +490,7 @@ export default function Home() {
               <ServiceShowcaseCard
                 icon={HomeIcon}
                 title="Stays"
-                description="Hand-picked villas and apartments chosen for comfort, location, and authentic coastal charm."
+                description="Villas, apartments, holiday homes and hotels along the Coast, with the price for your dates before you book."
                 items={serviceShowcases.stayItems}
                 seeAllLabel="See all stays"
               />
@@ -538,7 +500,7 @@ export default function Home() {
               <ServiceShowcaseCard
                 icon={Car}
                 title="Drive"
-                description="Trusted self-drive cars and private chauffeurs to help you move around the Coast smoothly."
+                description="Airport and SGR pickups, a driver for the day, or a car to drive yourself. You see the price before you book."
                 items={serviceShowcases.carItems}
                 seeAllLabel="See all drive options"
               />
@@ -548,7 +510,7 @@ export default function Home() {
               <ServiceShowcaseCard
                 icon={ChefHat}
                 title="Dine"
-                description="Expert Coast chefs delivering genuine Swahili cuisine and tailored dining experiences to your villa."
+                description="A private chef who cooks in your villa or apartment: Swahili, seafood, BBQ and more."
                 items={serviceShowcases.cookItems}
                 seeAllLabel="See all dining"
               />
@@ -558,7 +520,7 @@ export default function Home() {
               <ServiceShowcaseCard
                 icon={ShoppingBag}
                 title="Relax"
-                description="Shopping, laundry, cleaning, and daily tasks handled discreetly so you can fully enjoy your stay."
+                description="Help while you're on holiday: cleaning, laundry, grocery runs and a nanny for the children."
                 items={serviceShowcases.errandItems}
                 seeAllLabel="See all relax services"
               />
@@ -568,7 +530,7 @@ export default function Home() {
               <ServiceShowcaseCard
                 icon={Compass}
                 title="Experience"
-                description="Curated local moments - dhow cruises, excursions, and hosted experiences designed around your trip."
+                description="Dhow trips, snorkelling and days out with local guides, priced per person."
                 items={serviceShowcases.experienceItems}
                 seeAllLabel="See all experiences"
               />

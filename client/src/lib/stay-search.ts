@@ -193,6 +193,16 @@ export function getStaySearchNights(checkIn: string, checkOut: string) {
   return Math.max(1, differenceInCalendarDays(end, start));
 }
 
+/** The Coast's areas guests pick from, the busiest first. */
+export const coastStayAreas = ["Diani", "Nyali", "Mombasa", "Shanzu", "Mtwapa", "Kilifi", "Watamu", "Malindi", "Tiwi"];
+
+/** Areas with at least one stay and how many, counted the way the results page filters. */
+export function stayAreaCounts(stays: Array<{ location: string }>) {
+  return coastStayAreas
+    .map((area) => ({ area, count: stays.filter((stay) => matchesStayDestination(stay.location, area)).length }))
+    .filter((entry) => entry.count > 0);
+}
+
 export function matchesStayDestination(location: string, destination: string) {
   const destinationTokens = getMeaningfulTokens(destination);
   if (!destinationTokens.length) {

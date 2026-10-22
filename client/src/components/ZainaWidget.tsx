@@ -21,7 +21,7 @@ import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { ZainaAvatar } from "./ZainaAvatar";
 import { WHATSAPP_URL } from "@/lib/contact-info";
-import { ZAINA_OPEN_EVENT, setZainaAvailable, whatsAppUrlWithText, type OpenZainaDetail } from "@/lib/zaina";
+import { ZAINA_OPEN_EVENT, ZAINA_QUIET_EVENT, isZainaQuiet, setZainaAvailable, whatsAppUrlWithText, type OpenZainaDetail } from "@/lib/zaina";
 import { useCurrency } from "@/lib/currency";
 import { isListingDetailPath } from "@/lib/public-listing";
 import { safeLocalStorage, safeSessionStorage } from "@/lib/safe-storage";
@@ -293,6 +293,15 @@ export function ZainaWidget() {
   currencyRef.current = selectedCurrency;
   // Checkout pages pin their own Book bar to the bottom of small screens.
   const onCheckoutPage = location.startsWith("/book/");
+  // The home page has its own "Tell us what you need": no pop-up there, and on
+  // phones the button steps aside while that opening section is on screen.
+  const onHomePage = location === "/";
+  const [pageQuiet, setPageQuiet] = useState(isZainaQuiet);
+  useEffect(() => {
+    const onQuiet = (event: Event) => setPageQuiet(Boolean((event as CustomEvent<{ quiet: boolean }>).detail?.quiet));
+    window.addEventListener(ZAINA_QUIET_EVENT, onQuiet);
+    return () => window.removeEventListener(ZAINA_QUIET_EVENT, onQuiet);
+  }, []);
   // A listing's page pins a booking bar too; Zaina's button sits above it.
   const onListingPage = isListingDetailPath(location);
 
@@ -704,7 +713,7 @@ export function ZainaWidget() {
       `}</style>
 
       {/* Floating tooltip — once per session */}
-      {showTooltip && !open && !formFieldFocused && !overlayOpen && !onCheckoutPage && (
+      {showTooltip && !open && !formFieldFocused && !overlayOpen && !onCheckoutPage && !onHomePage && (
  <div
           className={
             "zaina-tooltip-enter zaina-above-launcher fixed right-4 xl:right-6 z-[9999] max-w-[240px] rounded-2xl rounded-br-sm bg-white px-4 py-3 text-sm text-gray-800 shadow-xl" +
@@ -736,6 +745,7 @@ export function ZainaWidget() {
           (formFieldFocused ? " max-sm:hidden" : "") +
           (overlayOpen && !open ? " hidden" : "") +
           (onCheckoutPage ? " max-lg:hidden" : "") +
+          (pageQuiet && !open ? " max-xl:hidden" : "") +
           (onListingPage ? " zaina-lifted" : "")
         }
       >

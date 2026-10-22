@@ -198,6 +198,8 @@ export function PremiumMediaGallery({
                     onClick={() => (isCard && onOpen ? onOpen() : openLightbox(index))}
                     // In a card the listing's title is the link; the photo is a larger target for the same place.
                     tabIndex={isCard ? -1 : undefined}
+                    // Named even when a photo fails to load and only the placeholder shows.
+                    aria-label={`${title}, photo ${index + 1} of ${galleryImages.length}`}
                   >
                     <ListingMedia
                       src={imageUrl}

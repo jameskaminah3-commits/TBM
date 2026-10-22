@@ -599,6 +599,14 @@
     scroll-padding-top: 5.5rem;
   }
 
+  /* Below xl the tab bar covers the bottom of the screen: a field or button
+     scrolled into view stops above it, not under it. */
+  @media (max-width: 1279px) {
+    html {
+      scroll-padding-bottom: calc(4rem + env(safe-area-inset-bottom) + 0.75rem);
+    }
+  }
+
   body {
     @apply font-sans antialiased bg-background text-foreground;
     overflow-x: hidden;

@@ -7,6 +7,7 @@ import { z } from "zod";
 import { Baby, CheckCircle2, Car, ChefHat, ShoppingBag, Compass, ChevronDown, MapPin, MessageCircle, Minus, Plus, Sparkles } from "lucide-react";
 import { AskZainaLink } from "@/components/ask-zaina-link";
 import { openZaina } from "@/lib/zaina";
+import { stayCarAddonPrice, stayCarDailyRate } from "@shared/stay-car-pricing";
 import { DateRangePicker, describeTripRange } from "@/components/date-range-picker";
 import { StayRefundNote } from "@/components/stay-refund-note";
 import { Card } from "@/components/ui/card";
@@ -481,7 +482,8 @@ export default function Booking() {
 
   const getServicePrice = (service: AddonService): number => {
     if (service.category === "cars") {
-      return service.pricePerDay ?? service.priceWithDriver;
+      // The day rate for the mode chosen (or offered first): the same rule the server charges.
+      return stayCarDailyRate(service, getExistingSelection(service.id)?.serviceMode ?? "car-chauffeur-day");
     }
     if (service.category === "cooks") {
       return getCookServiceFee(service);
@@ -591,10 +593,8 @@ export default function Booking() {
     const configured = getExistingSelection(service.id);
 
     if (service.category === "cars") {
-      if (configured?.serviceMode === "car-chauffeur-hourly") {
-        return (configured.serviceHours || configured.units || 3) * (service.priceWithDriverHourly || service.priceWithDriver);
-      }
-      return getServicePrice(service) * (configured?.units || nights);
+      // No choice made yet: priced as the server prices a car added without one.
+      return stayCarAddonPrice(service, configured ?? { serviceMode: "car-self-drive-day" }, nights).total;
     }
 
     if (service.category === "cooks") {

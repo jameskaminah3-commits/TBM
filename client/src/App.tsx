@@ -100,8 +100,10 @@ function AppRoute({ path, element }: { path?: string; element: ReactNode }) {
   return <Route path={path}>{() => element}</Route>;
 }
 
+// Holds a screen's height while a page's code loads. The footer is taller than
+// a phone screen, so without this it shows under the header, then jumps away.
 function RouteFallback() {
-  return <div data-route-fallback="true" aria-hidden="true" className="hidden" />;
+  return <div data-route-fallback="true" aria-hidden="true" className="min-h-[100svh]" />;
 }
 
 function Router() {
