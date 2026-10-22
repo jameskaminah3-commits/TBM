@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { CurrencyAmount } from "@/components/currency-amount";
 import { CustomServiceCta } from "@/components/custom-service-cta";
 import { DateRangePicker } from "@/components/date-range-picker";
+import { stayFactsLine } from "@/lib/stay-facts";
 import { ListingCard, ListingPrice } from "@/components/listing-card";
 import { useCurrency } from "@/lib/currency";
 import { filterStays, getMeaningfulTokens, normalizeConciergeQuery } from "@/lib/concierge-search";
@@ -515,7 +516,7 @@ export default function Accommodations() {
                   subtitle={`${kind} · ${getShortSeoLocation(accommodation.location)}`}
                   details={hotelSummary
                     ? `${hotelSummary.roomTypeCount} room type${hotelSummary.roomTypeCount === 1 ? "" : "s"}${hotelSummary.largestRoom ? ` · rooms for up to ${hotelSummary.largestRoom}` : ""}`
-                    : `${accommodation.bedrooms} bedroom${accommodation.bedrooms === 1 ? "" : "s"} · up to ${accommodation.maxOccupancy} guests`}
+                    : stayFactsLine(accommodation)}
                   extra={hotelSummary ? <MealPlanChips plans={hotelSummary.mealPlans} className="mt-1" /> : null}
                   rating={accommodation.rating}
                   reviewCount={accommodation.reviewCount}

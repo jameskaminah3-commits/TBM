@@ -3930,7 +3930,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
+  // The website asks "who is signed in?" on every page. A visitor with no session at
+  // all gets null when it says it can take that (X-Auth-Optional), not a 401 every
+  // browser logs as an error. An expired or suspended session still answers as before.
+  const answerVisitorWithoutSession = (req: any, res: any, next: any) => {
+    if (req.get("x-auth-optional") === "1" && !req.session?.userId) {
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.json(null);
+    }
+    return next();
+  };
+
+  app.get('/api/auth/user', answerVisitorWithoutSession, isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);

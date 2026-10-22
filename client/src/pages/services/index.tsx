@@ -1,106 +1,165 @@
 import { Link } from "wouter";
-import { CarFront, UtensilsCrossed, Sparkles, Compass, ArrowRight, ShieldCheck } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { useQuery } from "@tanstack/react-query";
+import type { LucideIcon } from "lucide-react";
+import { ArrowRight, BedDouble, CarFront, Compass, MessageCircle, ShieldCheck, Sparkles, UtensilsCrossed } from "lucide-react";
+import type { Stay, Car, Cook, Errand, Experience } from "@shared/schema";
+import { Button } from "@/components/ui/button";
+import { ListingMedia } from "@/components/listing-media";
+import { openZaina } from "@/lib/zaina";
 
-const SERVICES = [
-  {
-    href: "/services/drive",
-    icon: CarFront,
-    label: "Drive",
-    tagline: "Airport transfers & car hire",
-    description:
-      "Trusted self-drive cars and private chauffeurs to help you move around the Coast smoothly.",
-    accent: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
-    testId: "service-hub-drive",
-  },
-  {
-    href: "/services/dine",
-    icon: UtensilsCrossed,
-    label: "Dine",
-    tagline: "Private chefs & catering",
-    description:
-      "Expert Coast chefs delivering genuine Swahili cuisine and tailored dining experiences to your villa.",
-    accent: "bg-orange-500/10 text-orange-600 dark:text-orange-400",
-    testId: "service-hub-dine",
-  },
-  {
-    href: "/services/relax",
-    icon: Sparkles,
-    label: "Relax",
-    tagline: "Errands, childcare & home support",
-    description:
-      "From baby care and laundry to shopping and cleaning — the quiet things that let you be fully present on your holiday.",
-    accent: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
-    testId: "service-hub-relax",
-  },
-  {
-    href: "/services/experience",
-    icon: Compass,
-    label: "Experience",
-    tagline: "Curated outings & moments",
-    description:
-      "Curated local moments — dhow cruises, excursions, and hosted experiences designed around your trip.",
-    accent: "bg-primary/10 text-primary",
-    testId: "service-hub-experience",
-  },
-  {
-    href: "/verify",
-    icon: ShieldCheck,
-    label: "Verify",
-    tagline: "Check a place before you pay",
-    description:
-      "Found a villa on Facebook, Jiji or Instagram? Our team visits it and checks the host before you send any money.",
-    accent: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-    testId: "service-hub-verify",
-  },
-] as const;
+type ServiceTile = {
+  href: string;
+  icon: LucideIcon;
+  label: string;
+  tagline: string;
+  description: string;
+  cta: string;
+  testId: string;
+  photo: string | null;
+};
+
+type WithPhoto = { imageUrl?: string | null; galleryUrls?: string[] | null };
+
+const LISTING_QUERY = { staleTime: 5 * 60_000, refetchOnWindowFocus: false } as const;
+
+/** A real photo from the service's own listings: the first one that has one. */
+function firstPhoto(items: WithPhoto[]) {
+  for (const item of items) {
+    const photo = item.imageUrl || item.galleryUrls?.find(Boolean);
+    if (photo) return photo;
+  }
+  return null;
+}
 
 export default function ServicesHub() {
-  return (
-    <div className="container mx-auto px-4 py-10 md:py-14 max-w-2xl">
-      <div className="mb-8 text-center">
-        <h1 className="font-serif text-3xl font-medium tracking-tight text-foreground sm:text-4xl">
-          Our Services
-        </h1>
-        <p className="mt-3 text-base leading-7 text-muted-foreground">
-          Everything you need to plan, book, and enjoy the Coast — in one place.
-        </p>
-      </div>
+  const { data: stays = [] } = useQuery<Stay[]>({ queryKey: ["/api/stays"], ...LISTING_QUERY });
+  const { data: cars = [] } = useQuery<Car[]>({ queryKey: ["/api/cars"], ...LISTING_QUERY });
+  const { data: cooks = [] } = useQuery<Cook[]>({ queryKey: ["/api/cooks"], ...LISTING_QUERY });
+  const { data: errands = [] } = useQuery<Errand[]>({ queryKey: ["/api/errands"], ...LISTING_QUERY });
+  const { data: experiences = [] } = useQuery<Experience[]>({ queryKey: ["/api/experiences"], ...LISTING_QUERY });
 
-      <div className="flex flex-col gap-3">
-        {SERVICES.map(({ href, icon: Icon, label, tagline, description, accent, testId }) => (
+  const tiles: ServiceTile[] = [
+    {
+      href: "/accommodations",
+      icon: BedDouble,
+      label: "Stays",
+      tagline: "Villas, apartments & hotels",
+      description: "Holiday homes and hotels along the Coast, with the price for your dates before you book.",
+      cta: "Browse stays",
+      testId: "service-hub-stays",
+      photo: firstPhoto(stays),
+    },
+    {
+      href: "/services/drive",
+      icon: CarFront,
+      label: "Drive",
+      tagline: "Airport transfers & car hire",
+      description: "Airport and SGR pickups, a driver for the day, or a car to drive yourself.",
+      cta: "See drive options",
+      testId: "service-hub-drive",
+      photo: firstPhoto(cars),
+    },
+    {
+      href: "/services/dine",
+      icon: UtensilsCrossed,
+      label: "Dine",
+      tagline: "Private chefs",
+      description: "A private chef who cooks at your villa or apartment: Swahili, seafood, BBQ and more.",
+      cta: "Meet the chefs",
+      testId: "service-hub-dine",
+      photo: firstPhoto(cooks),
+    },
+    {
+      href: "/services/relax",
+      icon: Sparkles,
+      label: "Relax",
+      tagline: "Errands, cleaning & childcare",
+      description: "Groceries waiting when you arrive, laundry, cleaning, and a nanny for the children.",
+      cta: "See relax services",
+      testId: "service-hub-relax",
+      photo: firstPhoto(errands),
+    },
+    {
+      href: "/services/experience",
+      icon: Compass,
+      label: "Experience",
+      tagline: "Days out & trips",
+      description: "Dhow trips, snorkelling and days out with local guides, priced per person.",
+      cta: "See experiences",
+      testId: "service-hub-experience",
+      photo: firstPhoto(experiences),
+    },
+    {
+      href: "/verify",
+      icon: ShieldCheck,
+      label: "Verify",
+      tagline: "Check a place before you pay",
+      description: "Found a villa on Facebook, Jiji or Instagram? Our team visits it and checks the host before you send any money.",
+      cta: "Check a listing",
+      testId: "service-hub-verify",
+      photo: "/images/home-hero-768.webp",
+    },
+  ];
+
+  return (
+    <div className="container mx-auto max-w-6xl px-4 py-10 md:py-14">
+      <header className="mx-auto mb-10 max-w-2xl text-center">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">What we do</p>
+        <h1 className="mt-3 text-balance font-serif text-3xl font-medium leading-tight text-foreground sm:text-4xl md:text-5xl">
+          Our services
+        </h1>
+        <p className="mt-4 text-base leading-7 text-muted-foreground sm:text-lg">
+          Everything for your Coast trip, on its own or added to your stay: one booking, one total.
+        </p>
+      </header>
+
+      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        {tiles.map(({ href, icon: Icon, label, tagline, description, cta, testId, photo }) => (
           <Link
             key={href}
             href={href}
             data-testid={testId}
-            className="group flex items-center gap-4 rounded-[1.4rem] border border-border/60 bg-card/80 px-5 py-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-border hover:shadow-[0_12px_32px_-20px_rgba(15,23,42,0.35)] active:scale-[0.985]"
+            className="group flex flex-col overflow-hidden rounded-[1.6rem] border border-border/60 bg-card shadow-[0_18px_40px_-30px_rgba(15,23,42,0.38)] transition-[transform,box-shadow] duration-300 hover:-translate-y-1 hover:shadow-[0_28px_60px_-32px_rgba(15,23,42,0.5)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <div
-              className={cn(
-                "flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-[1.1rem]",
-                accent,
-              )}
-            >
-              <Icon className="h-5 w-5" strokeWidth={1.75} />
+            <div className="relative aspect-[4/3] overflow-hidden bg-muted">
+              <ListingMedia
+                src={photo}
+                alt=""
+                className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+              />
+              <span className="absolute left-4 top-4 inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/95 text-primary shadow-sm">
+                <Icon className="h-5 w-5" strokeWidth={1.8} aria-hidden="true" />
+              </span>
             </div>
-
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="font-semibold text-foreground">{label}</span>
-                <span className="text-xs text-muted-foreground">{tagline}</span>
-              </div>
-              <p className="mt-0.5 text-sm leading-5 text-muted-foreground line-clamp-2">
-                {description}
-              </p>
+            <div className="flex flex-1 flex-col p-6">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">{tagline}</p>
+              <h2 className="mt-2 font-serif text-2xl font-medium leading-tight text-foreground">{label}</h2>
+              <p className="mt-3 flex-1 text-sm leading-6 text-muted-foreground">{description}</p>
+              <span className="mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-primary">
+                {cta}
+                <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden="true" />
+              </span>
             </div>
-
-            <ArrowRight
-              className="h-4 w-4 flex-shrink-0 text-muted-foreground/50 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-foreground/60"
-              strokeWidth={1.75}
-            />
           </Link>
         ))}
       </div>
+
+      <section className="mx-auto mt-14 max-w-3xl rounded-[1.6rem] border border-border/60 bg-card/80 p-6 text-center shadow-sm sm:p-8">
+        <h2 className="font-serif text-2xl font-medium text-foreground sm:text-3xl">Not sure where to start?</h2>
+        <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-muted-foreground sm:text-base">
+          Tell us your dates, who's coming and your budget. We'll put the trip together, or find what isn't listed.
+        </p>
+        <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
+          <Button asChild size="lg" className="h-12 rounded-full px-6 text-base">
+            <Link href="/request-custom-service">Tell us what you need</Link>
+          </Button>
+          <Button size="lg" variant="outline" className="h-12 rounded-full px-6 text-base" onClick={() => openZaina()}>
+            <MessageCircle className="mr-2 h-4 w-4" aria-hidden="true" />
+            Ask Zaina
+          </Button>
+        </div>
+      </section>
     </div>
   );
 }

@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { getQueryFn } from "@/lib/queryClient";
 
 function parseProviderTypes(value: string | null | undefined) {
   if (!value) {
@@ -28,7 +27,13 @@ export function useAuth() {
   }>({
     queryKey: ["/api/auth/user"],
     retry: false,
-    queryFn: getQueryFn({ on401: "returnNull" }),
+    // Signed out is an ordinary answer (null), so it isn't logged as a failed request.
+    queryFn: async () => {
+      const response = await fetch("/api/auth/user", { credentials: "include", headers: { "X-Auth-Optional": "1" } });
+      if (response.status === 401) return null;
+      if (!response.ok) throw new Error(`${response.status}: ${(await response.text()) || response.statusText}`);
+      return response.json();
+    },
   });
 
   const providerTypes = parseProviderTypes(user?.providerType);

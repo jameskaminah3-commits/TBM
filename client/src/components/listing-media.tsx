@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type React from "react";
-import { ImageOff } from "lucide-react";
+import { BrandMark } from "@/components/brand-mark";
 import { cn } from "@/lib/utils";
 
 type ListingMediaProps = {
@@ -13,6 +13,8 @@ type ListingMediaProps = {
   decoding?: "async" | "auto" | "sync";
   /** How wide the photo shows, for picking a smaller copy: "(min-width: 1024px) 33vw, 100vw". */
   sizes?: string;
+  /** Called once if the photo can't be loaded, so a gallery can leave it out. */
+  onLoadError?: () => void;
 };
 
 // Supabase can serve a photo resized (image transformations, on its paid
@@ -39,17 +41,24 @@ export function ListingMedia({
   loading = "lazy",
   decoding = "async",
   sizes = "100vw",
+  onLoadError,
 }: ListingMediaProps) {
   const [loaded, setLoaded] = useState(false);
   const [errored, setErrored] = useState(false);
 
   if (!src || errored) {
+    // No photo: a quiet branded panel, never a broken-image icon.
     return (
       <div
-        className={cn("flex items-center justify-center bg-muted text-muted-foreground/40", className)}
+        className={cn(
+          "flex items-center justify-center bg-[radial-gradient(circle_at_30%_20%,hsl(var(--primary)/0.14),transparent_55%),linear-gradient(160deg,hsl(var(--muted)),hsl(var(--card)))]",
+          className,
+        )}
         style={style}
+        role="img"
+        aria-label={alt}
       >
-        <ImageOff className="h-8 w-8" strokeWidth={1.5} />
+        <span aria-hidden="true"><BrandMark className="h-8 opacity-40" /></span>
       </div>
     );
   }
@@ -78,7 +87,10 @@ export function ListingMedia({
       loading={loading}
       decoding={decoding}
       onLoad={() => setLoaded(true)}
-      onError={() => setErrored(true)}
+      onError={() => {
+        setErrored(true);
+        onLoadError?.();
+      }}
     />
   );
 }

@@ -161,8 +161,9 @@ export function AboutPage() {
     <div className="min-h-screen py-10 sm:py-12">
       <div className="container mx-auto max-w-4xl px-4 md:px-8">
         <header className="mb-8 sm:mb-10">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">About Tembea Bila Matata</p>
-          <h1 className="mt-3 font-serif text-3xl font-medium leading-tight sm:text-4xl md:text-5xl">{brandStory.headline}</h1>
+          {/* The page's own heading; the brand line below is the home page's, so it isn't a second h1. */}
+          <h1 className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">About Tembea Bila Matata</h1>
+          <p className="mt-3 font-serif text-3xl font-medium leading-tight text-foreground sm:text-4xl md:text-5xl">{brandStory.headline}</p>
           <p className="mt-4 text-lg leading-8 text-foreground/85 sm:text-xl">{brandStory.hook}</p>
         </header>
 
@@ -302,7 +303,7 @@ export function FaqPage() {
             value={item.question}
             className="rounded-md border border-border/70 bg-background/80 px-4 shadow-[0_12px_30px_-24px_rgba(15,23,42,0.45)] transition-colors data-[state=open]:border-primary/30 data-[state=open]:bg-primary/5 sm:px-5"
           >
-            <AccordionTrigger className="min-h-16 py-4 text-left font-serif text-base font-medium leading-snug text-foreground hover:no-underline sm:text-lg">
+            <AccordionTrigger className="min-h-16 py-4 text-left text-[0.95rem] font-medium leading-snug text-foreground hover:no-underline sm:text-base">
               {item.question}
             </AccordionTrigger>
             <AccordionContent className="space-y-3 pb-5 text-sm leading-7 text-muted-foreground sm:text-base">{item.answer}</AccordionContent>

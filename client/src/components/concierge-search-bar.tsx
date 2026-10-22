@@ -98,12 +98,13 @@ export function ConciergeSearchBar({ currentSection }: { currentSection: Concier
         <form className="space-y-2" onSubmit={submitSearch} role="search" aria-labelledby="concierge-search-label">
           <div className="flex flex-col gap-1.5 xl:flex-row xl:items-center xl:gap-3">
             <div className="min-w-0 xl:w-[220px]">
-              <p id="concierge-search-label" className="text-sm font-medium leading-6 text-foreground/88 md:text-[0.88rem] dark:text-foreground/82">
+              {/* On phones the field and its placeholder say enough: the page's own heading comes sooner. */}
+              <p id="concierge-search-label" className="sr-only text-sm font-medium leading-6 text-foreground/88 md:not-sr-only md:text-[0.88rem] dark:text-foreground/82">
                 {content.label}
               </p>
             </div>
 
-            <div className="grid min-w-0 flex-1 grid-cols-1 gap-2 min-[560px]:grid-cols-[minmax(0,1fr)_auto] min-[560px]:items-center min-[560px]:gap-1.5">
+            <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-1.5">
               <div className="relative min-w-0 flex-1">
                 <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -115,16 +116,17 @@ export function ConciergeSearchBar({ currentSection }: { currentSection: Concier
                 />
               </div>
 
-              <div className="flex flex-col gap-1.5 min-[420px]:flex-row min-[420px]:items-center min-[560px]:flex-shrink-0">
-                <Button type="submit" className="h-11 w-full rounded-full px-4 text-sm whitespace-nowrap min-[420px]:w-auto min-[560px]:h-9 min-[560px]:min-w-[104px]" data-testid="button-concierge-search">
-                  Search
+              <div className="flex flex-shrink-0 items-center gap-1.5">
+                <Button type="submit" className="h-11 w-11 shrink-0 rounded-full p-0 text-sm whitespace-nowrap min-[560px]:h-9 min-[560px]:w-auto min-[560px]:min-w-[104px] min-[560px]:px-4" data-testid="button-concierge-search">
+                  <Search className="h-4 w-4 min-[560px]:hidden" aria-hidden="true" />
+                  <span className="sr-only min-[560px]:not-sr-only">Search</span>
                 </Button>
 
                 {effectiveQuery ? (
                   <Button
                     type="button"
                     variant="ghost"
-                    className="h-11 w-full rounded-full px-3.5 text-sm whitespace-nowrap text-muted-foreground dark:text-foreground/72 min-[420px]:w-auto min-[560px]:h-9"
+                    className="h-11 rounded-full px-3.5 text-sm whitespace-nowrap text-muted-foreground dark:text-foreground/72 min-[560px]:h-9"
                     onClick={() => {
                       setDraft("");
                       if (currentSection === "stays") {

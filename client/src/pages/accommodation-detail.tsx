@@ -391,18 +391,25 @@ export default function AccommodationDetail() {
                   </>
                 ) : (
                   <>
-                    <li className="inline-flex items-center gap-2">
-                      <Users className="h-4 w-4 text-primary" aria-hidden="true" />
-                      Up to {accommodation.maxOccupancy} guests
-                    </li>
-                    <li className="inline-flex items-center gap-2">
-                      <Bed className="h-4 w-4 text-primary" aria-hidden="true" />
-                      {accommodation.bedrooms} bedroom{accommodation.bedrooms === 1 ? "" : "s"}
-                    </li>
-                    <li className="inline-flex items-center gap-2">
-                      <Bath className="h-4 w-4 text-primary" aria-hidden="true" />
-                      {accommodation.bathrooms} bathroom{accommodation.bathrooms === 1 ? "" : "s"}
-                    </li>
+                    {/* A fact not filled in yet (0) is left out, not shown as "0 bedrooms". */}
+                    {accommodation.maxOccupancy > 0 ? (
+                      <li className="inline-flex items-center gap-2">
+                        <Users className="h-4 w-4 text-primary" aria-hidden="true" />
+                        Up to {accommodation.maxOccupancy} guests
+                      </li>
+                    ) : null}
+                    {accommodation.bedrooms > 0 ? (
+                      <li className="inline-flex items-center gap-2">
+                        <Bed className="h-4 w-4 text-primary" aria-hidden="true" />
+                        {accommodation.bedrooms} bedroom{accommodation.bedrooms === 1 ? "" : "s"}
+                      </li>
+                    ) : null}
+                    {accommodation.bathrooms > 0 ? (
+                      <li className="inline-flex items-center gap-2">
+                        <Bath className="h-4 w-4 text-primary" aria-hidden="true" />
+                        {accommodation.bathrooms} bathroom{accommodation.bathrooms === 1 ? "" : "s"}
+                      </li>
+                    ) : null}
                   </>
                 )}
                 {accommodation.checkInTime ? (

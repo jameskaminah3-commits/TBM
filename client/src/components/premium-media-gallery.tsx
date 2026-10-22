@@ -64,7 +64,17 @@ export function PremiumMediaGallery({
   imageAlts,
 }: PremiumMediaGalleryProps) {
   const isCard = variant === "card";
-  const galleryImages = React.useMemo(() => getGalleryImages(item), [item]);
+  // Photos that fail to load (a deleted file, a dead link) drop out of the
+  // gallery instead of showing as empty tiles.
+  const [failedImages, setFailedImages] = React.useState<string[]>([]);
+  const markFailed = React.useCallback((imageUrl: string | undefined) => {
+    if (!imageUrl) return;
+    setFailedImages((current) => (current.includes(imageUrl) ? current : [...current, imageUrl]));
+  }, []);
+  const galleryImages = React.useMemo(
+    () => getGalleryImages(item).filter((imageUrl) => !failedImages.includes(imageUrl)),
+    [item, failedImages],
+  );
   const altFor = (imageUrl: string | undefined, index: number) => (imageUrl && imageAlts?.[imageUrl]) || `${title} photo ${index + 1}`;
   const [carouselApi, setCarouselApi] = React.useState<CarouselApi>();
   const [activeIndex, setActiveIndex] = React.useState(0);
@@ -160,6 +170,7 @@ export function PremiumMediaGallery({
           <button type="button" className="group relative overflow-hidden bg-muted" onClick={() => openLightbox(0)}>
             <ListingMedia
               src={galleryImages[0]}
+              onLoadError={() => markFailed(galleryImages[0])}
               alt={`${title} photo 1`}
               mediaType={item.mediaType}
               className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
@@ -171,6 +182,7 @@ export function PremiumMediaGallery({
               <button key={`${item.id}-mosaic-${offset}`} type="button" className="group relative overflow-hidden bg-muted" onClick={() => openLightbox(offset + 1)}>
                 <ListingMedia
                   src={imageUrl}
+                  onLoadError={() => markFailed(imageUrl)}
                   alt={`${title} photo ${offset + 2}`}
                   mediaType={item.mediaType}
                   className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
@@ -207,6 +219,7 @@ export function PremiumMediaGallery({
                   >
                     <ListingMedia
                       src={imageUrl}
+                      onLoadError={() => markFailed(imageUrl)}
                       alt={altFor(imageUrl, index)}
                       mediaType={item.mediaType}
                       className={cn(
@@ -303,7 +316,7 @@ export function PremiumMediaGallery({
                     carouselApi?.scrollTo(index);
                   }}
                 >
-                  <img src={imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" />
+                  <img src={imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" onError={() => markFailed(imageUrl)} />
                 </button>
               ))}
               {galleryImages.length > visibleThumbs.length ? (
@@ -343,7 +356,7 @@ export function PremiumMediaGallery({
                   )}
                   onClick={() => carouselApi?.scrollTo(index)}
                 >
-                  <img src={imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" />
+                  <img src={imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" onError={() => markFailed(imageUrl)} />
                 </button>
               ))}
             </div>
@@ -472,7 +485,7 @@ export function PremiumMediaGallery({
                           )}
                           onClick={() => setLightboxIndex(index)}
                         >
-                          <img src={imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" />
+                          <img src={imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" onError={() => markFailed(imageUrl)} />
                         </button>
                       ))}
                     </div>

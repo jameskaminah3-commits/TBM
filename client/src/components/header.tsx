@@ -196,12 +196,17 @@ export function Header() {
                 </Link>
               </Button>
             )}
-            {!isLoading && !isAuthenticated && (
+            {/* Held in place, unseen, while the session loads, so the menu doesn't shift when it appears. */}
+            {(isLoading || !isAuthenticated) && (
               <Button
                 variant="default"
                 size="sm"
                 asChild
-                className="min-h-10 rounded-full px-4 text-[0.9rem] shadow-[0_14px_30px_-20px_rgba(15,23,42,0.55)]"
+                className={cn(
+                  "min-h-10 rounded-full px-4 text-[0.9rem] shadow-[0_14px_30px_-20px_rgba(15,23,42,0.55)]",
+                  isLoading && "invisible",
+                )}
+                aria-hidden={isLoading || undefined}
                 data-testid="button-login"
               >
                 <Link href={`/auth?next=${encodeURIComponent(location)}`}>

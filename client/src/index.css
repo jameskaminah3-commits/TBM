@@ -607,9 +607,24 @@
     }
   }
 
+  /* Plus Jakarta Sans has a narrow word space (0.17em): on ordinary 1x
+     laptop screens it rounds to 2-3px and words run together. This brings
+     it to about 0.24em. Buttons and fields don't inherit it by default. */
   body {
     @apply font-sans antialiased bg-background text-foreground;
     overflow-x: hidden;
+    word-spacing: 0.07em;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    word-spacing: inherit;
+  }
+
+  .font-serif {
+    word-spacing: normal;
   }
 
   img,

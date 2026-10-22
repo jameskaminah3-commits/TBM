@@ -380,17 +380,17 @@ export default function Home() {
             <div className="-mx-4 flex h-11 items-center gap-2 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:h-auto sm:min-h-[2.75rem] sm:flex-wrap sm:justify-center sm:overflow-visible sm:px-0 [&::-webkit-scrollbar]:hidden">
               {staysLoading
                 ? [0, 1, 2, 3].map((index) => <span key={index} className="h-11 w-24 shrink-0 animate-pulse rounded-full bg-muted" aria-hidden="true" />)
-                : stayAreas.map(({ area, count }) => (
+                : stayAreas.map(({ area }) => (
+                    // The place only: a count of 1 or 2 undersells a short list of hand-picked stays.
                     <Link
                       key={area}
                       href={`/accommodations?${buildStaySearchParams({ destination: area })}`}
                       className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-border bg-background px-4 text-sm font-medium text-foreground transition-colors hover:border-primary/50 hover:text-primary"
-                      aria-label={`${area}: ${count} ${count === 1 ? "stay" : "stays"}`}
+                      aria-label={`Places to stay in ${area}`}
                       data-testid={`link-hero-area-${area.toLowerCase()}`}
                     >
                       <MapPin className="h-4 w-4 text-primary" aria-hidden="true" />
                       {area}
-                      <span className="text-xs tabular-nums text-muted-foreground">{count}</span>
                     </Link>
                   ))}
               <Link href="/accommodations" className="hidden min-h-11 items-center px-3 text-sm font-semibold text-primary hover:underline sm:inline-flex" data-testid="link-hero-all-stays">

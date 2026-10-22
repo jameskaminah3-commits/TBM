@@ -80,7 +80,8 @@ export function registerProviderPageRoutes(app: Express) {
     try {
       const summary = await getPublicProviderSummaryForListing(kind, id);
       res.setHeader("Cache-Control", summary ? "public, max-age=60" : "private, no-store");
-      return summary ? res.json({ provider: summary }) : res.status(404).json({ unavailable: true });
+      // No public page is an ordinary answer ("no host block"), not an error every visitor's browser logs.
+      return res.json({ provider: summary ?? null });
     } catch (error) {
       console.error("[PROVIDER_PAGES] Listing host failed:", error);
       return res.status(500).json({ error: "Couldn't load the host" });

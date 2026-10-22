@@ -16,6 +16,8 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import { stayFactsLine } from "@/lib/stay-facts";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   Dialog,
@@ -1173,10 +1175,26 @@ export default function Booking() {
   }, [authLoading, bookingPath, form, hasRestoredPendingDraft, id, isAuthenticated, toast]);
 
   if (!accommodation) {
+    // The page's own outline while it loads, so nothing jumps when it arrives.
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-2xl font-semibold mb-2">Loading...</h2>
+      <div className="app-shell min-h-screen pb-44 pt-6 sm:pt-8 lg:pb-12" aria-busy="true">
+        <span className="sr-only">Loading your trip</span>
+        <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8" aria-hidden="true">
+          <div className="mb-6 flex items-center gap-4">
+            <Skeleton className="h-16 w-16 shrink-0 rounded-2xl sm:h-20 sm:w-20" />
+            <div className="min-w-0 flex-1 space-y-2">
+              <Skeleton className="h-3 w-20" />
+              <Skeleton className="h-7 w-3/4 max-w-md" />
+              <Skeleton className="h-4 w-1/2 max-w-xs" />
+            </div>
+          </div>
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_23rem]">
+            <div className="space-y-6">
+              <Skeleton className="h-40 rounded-2xl" />
+              <Skeleton className="h-96 rounded-2xl" />
+            </div>
+            <Skeleton className="hidden h-80 rounded-2xl lg:block" />
+          </div>
         </div>
       </div>
     );
@@ -1190,7 +1208,14 @@ export default function Booking() {
             ? describeHotelStay(hotelQuote.snapshot)
             : nights > 0 ? `${accommodation.title}, ${nights} night${nights === 1 ? "" : "s"}` : accommodation.title}
         </span>
-        <span className="shrink-0"><CurrencyAmount amountUsd={accommodationTotal} /></span>
+        <span className="shrink-0">
+          {nights > 0 || (isHotel && hotelQuote?.ok) ? (
+            <CurrencyAmount amountUsd={accommodationTotal} />
+          ) : (
+            // No dates yet: the nightly rate, never "$0".
+            <>{isHotel ? "From " : ""}<CurrencyAmount amountUsd={accommodation.price} /> a night</>
+          )}
+        </span>
       </div>
       {selectedSummaryServices.map((service) => {
         const isTailored = getExistingSelection(service.id)?.serviceMode === "experience-custom-offer";
@@ -1215,12 +1240,16 @@ export default function Booking() {
       <div className="flex items-baseline justify-between gap-3 text-lg font-semibold">
         <span>Total</span>
         <div className="text-right">
-          {promoPreview ? (
+          {promoPreview && nights > 0 ? (
             <div className="text-sm font-normal text-muted-foreground line-through">
               <CurrencyAmount amountUsd={totalPrice} />
             </div>
           ) : null}
-          <CurrencyAmount amountUsd={discountedTotalPrice} data-testid="text-total-price" />
+          {nights > 0 ? (
+            <CurrencyAmount amountUsd={discountedTotalPrice} data-testid="text-total-price" />
+          ) : (
+            <span className="text-base font-medium text-muted-foreground" data-testid="text-total-price">Add your dates</span>
+          )}
         </div>
       </div>
       {nights > 0 && discountedTotalPrice > 0 ? (
@@ -1251,7 +1280,7 @@ export default function Booking() {
               <span className="inline-flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" />{accommodation.location}</span>
               {isHotel
                 ? <span>{hotelRoomTypes.length} room type{hotelRoomTypes.length === 1 ? "" : "s"}</span>
-                : <span>{accommodation.bedrooms} bedroom{accommodation.bedrooms === 1 ? "" : "s"} · up to {accommodation.maxOccupancy} guests</span>}
+                : stayFactsLine(accommodation) ? <span>{stayFactsLine(accommodation)}</span> : null}
             </p>
           </div>
         </header>
