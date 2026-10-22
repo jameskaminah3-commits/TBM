@@ -30,6 +30,15 @@ const DUMP_DIR = process.env.FAKE_GEMINI_DUMP_DIR;
 let dumped = 0;
 const realFetch = globalThis.fetch;
 
+// Booking dates a few weeks ahead of today, so a scripted chat never asks for a
+// date that has passed (fixed dates made the bookings fail once they did).
+const daysAhead = (days) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+const TRIP_DAY_1 = daysAhead(30);
+const TRIP_DAY_2 = daysAhead(31);
+const TRIP_DAY_3 = daysAhead(32);
+const TRIP_DAY_4 = daysAhead(33);
+const tripDay2Words = new Date(`${TRIP_DAY_2}T12:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone: "UTC" });
+
 const customer = {
   customer_name: "Jane Wanjiru",
   customer_email: "jane@example.com",
@@ -38,12 +47,12 @@ const customer = {
 
 const scenarios = {
   book_crash: () => scenarios.book_car(),
-  book_car: () => ({ name: "create_service_booking", args: { ...customer, service_id: "car-noah", date: "2026-10-10", check_out: "2026-10-12", mode: "car-self-drive-day", guests: 4, service_pickup_location: "Moi International Airport", service_return_location: "Nyali", idempotency_key: randomUUID() } }),
-  book_stay: () => ({ name: "create_draft_booking", args: { ...customer, stay_id: "stay-nyali-2br", check_in: "2026-10-10", check_out: "2026-10-13", guests: 3, idempotency_key: randomUUID() } }),
-  clean: () => ({ name: "create_service_booking", args: { ...customer, service_id: "errand-clean", mode: "errand-house-cleaning", date: "2026-10-10", service_location: "Nyali", service_bedrooms: 3, idempotency_key: randomUUID() } }),
-  clean_no_bedrooms: () => ({ name: "create_service_booking", args: { ...customer, service_id: "errand-clean", mode: "errand-house-cleaning", date: "2026-10-10", service_location: "Nyali", idempotency_key: randomUUID() } }),
-  shop_kes: () => ({ name: "create_service_booking", args: { ...customer, service_id: "errand-shop", mode: "errand-shopping", date: "2026-10-10", service_location: "Nyali", service_budget_amount: 5000, service_budget_currency: "KES", service_request_details: "Milk, bread, eggs and fruit", idempotency_key: randomUUID() } }),
-  shop_no_currency: () => ({ name: "create_service_booking", args: { ...customer, service_id: "errand-shop", mode: "errand-shopping", date: "2026-10-10", service_location: "Nyali", service_budget_amount: 5000, service_request_details: "Milk, bread, eggs and fruit", idempotency_key: randomUUID() } }),
+  book_car: () => ({ name: "create_service_booking", args: { ...customer, service_id: "car-noah", date: TRIP_DAY_1, check_out: TRIP_DAY_3, mode: "car-self-drive-day", guests: 4, service_pickup_location: "Moi International Airport", service_return_location: "Nyali", idempotency_key: randomUUID() } }),
+  book_stay: () => ({ name: "create_draft_booking", args: { ...customer, stay_id: "stay-nyali-2br", check_in: TRIP_DAY_1, check_out: TRIP_DAY_4, guests: 3, idempotency_key: randomUUID() } }),
+  clean: () => ({ name: "create_service_booking", args: { ...customer, service_id: "errand-clean", mode: "errand-house-cleaning", date: TRIP_DAY_1, service_location: "Nyali", service_bedrooms: 3, idempotency_key: randomUUID() } }),
+  clean_no_bedrooms: () => ({ name: "create_service_booking", args: { ...customer, service_id: "errand-clean", mode: "errand-house-cleaning", date: TRIP_DAY_1, service_location: "Nyali", idempotency_key: randomUUID() } }),
+  shop_kes: () => ({ name: "create_service_booking", args: { ...customer, service_id: "errand-shop", mode: "errand-shopping", date: TRIP_DAY_1, service_location: "Nyali", service_budget_amount: 5000, service_budget_currency: "KES", service_request_details: "Milk, bread, eggs and fruit", idempotency_key: randomUUID() } }),
+  shop_no_currency: () => ({ name: "create_service_booking", args: { ...customer, service_id: "errand-shop", mode: "errand-shopping", date: TRIP_DAY_1, service_location: "Nyali", service_budget_amount: 5000, service_request_details: "Milk, bread, eggs and fruit", idempotency_key: randomUUID() } }),
   identify: () => ({ name: "identify_customer", args: { email: "someone@example.com" } }),
   lead: () => ({ name: "create_lead", args: { name: "Jane Wanjiru", email: "jane@example.com", interest: "December family trip to Diani" } }),
   ask: (customerText) => ({ name: "search_knowledge", args: { query: customerText.replace(/TEST:ask/, "").trim() } }),
@@ -93,8 +102,8 @@ const scenarios = {
       customer_email: "guest@example.com",
     },
   }),
-  custom: () => ({ name: "create_custom_offer", args: { ...customer, category: "service", offer_type: "photographer", request_details: "Beach photographer for 2 hours on 11 October", start_date: "2026-10-11", location: "Diani beach", tier: "intake", budget_amount: 20000, budget_currency: "KES", idempotency_key: randomUUID() } }),
-  trip: () => ({ name: "compose_trip_package", args: { people: 2, check_in: "2026-10-10", check_out: "2026-10-12", budget_amount: 60000, budget_currency: "KES", destination_preference: "Diani" } }),
+  custom: () => ({ name: "create_custom_offer", args: { ...customer, category: "service", offer_type: "photographer", request_details: `Beach photographer for 2 hours on ${tripDay2Words}`, start_date: TRIP_DAY_2, location: "Diani beach", tier: "intake", budget_amount: 20000, budget_currency: "KES", idempotency_key: randomUUID() } }),
+  trip: () => ({ name: "compose_trip_package", args: { people: 2, check_in: TRIP_DAY_1, check_out: TRIP_DAY_3, budget_amount: 60000, budget_currency: "KES", destination_preference: "Diani" } }),
   search: () => ({ name: "search_stays", args: { region: "Diani" } }),
 };
 
