@@ -90,7 +90,7 @@ import {
   savePendingBookingDraft,
   isPendingBookingPathMatch,
 } from "@/lib/pending-booking";
-import { formatKenyaDateTime, isOnKenyaTime, todayInKenya } from "@shared/calendar-dates";
+import { formatCalendarDate, formatCalendarDateRange, formatKenyaDateTime, isOnKenyaTime, todayInKenya } from "@shared/calendar-dates";
 import { bookingDepositPercent, calculateBookingDepositAmount } from "@shared/booking-payments";
 
 function isDateInputValue(value: string) {
@@ -1634,13 +1634,13 @@ export default function ServiceBooking() {
                         <span>Availability</span>
                       </div>
                       <p className="text-sm text-muted-foreground">
-                        Available from {carAvailability.availableFrom}.
+                        Available from {formatCalendarDate(carAvailability.availableFrom)}.
                       </p>
                       {carAvailability.blockedRanges.length > 0 && (
                         <div className="space-y-1 text-sm text-muted-foreground">
                           {carAvailability.blockedRanges.slice(0, 3).map((range) => (
                             <div key={range.id}>
-                              {range.startDate} to {range.endDate} • reserved
+                              {formatCalendarDateRange(range.startDate, range.endDate)} · booked
                             </div>
                           ))}
                         </div>
@@ -1658,13 +1658,13 @@ export default function ServiceBooking() {
                         <span>Chef's availability</span>
                       </div>
                       <p className="text-sm text-muted-foreground">
-                        Next available date: {cookAvailability.availableFrom}.
+                        Next available date: {formatCalendarDate(cookAvailability.availableFrom)}.
                       </p>
                       {cookAvailability.blockedRanges.length > 0 && (
                         <div className="space-y-1 text-sm text-muted-foreground">
                           {cookAvailability.blockedRanges.slice(0, 3).map((range) => (
                             <div key={range.id}>
-                              {range.startDate} to {range.endDate} • reserved
+                              {formatCalendarDateRange(range.startDate, range.endDate)} · booked
                             </div>
                           ))}
                         </div>
@@ -1807,9 +1807,11 @@ export default function ServiceBooking() {
                                     <div className="text-sm text-muted-foreground">
                                       Base package at {formatAmount(getCookServiceFee(service))} for {getCookMinimumGuests(service)} guests
                                     </div>
-                                    <div className="mt-1 text-xs text-muted-foreground">
-                                      Extra guest: {formatAmount(getCookExtraGuestServiceFee(service))} each
-                                    </div>
+                                    {getCookExtraGuestServiceFee(service) > 0 ? (
+                                      <div className="mt-1 text-xs text-muted-foreground">
+                                        Extra guest: {formatAmount(getCookExtraGuestServiceFee(service))} each
+                                      </div>
+                                    ) : null}
                                   </div>
                                 </label>
 
@@ -1825,9 +1827,11 @@ export default function ServiceBooking() {
                                         {[service.ingredientsIncluded ? "Ingredients included" : null, service.shoppingIncluded ? "Shopping included" : null].filter(Boolean).join(" • ")}
                                       </div>
                                     )}
-                                    <div className="mt-1 text-xs text-muted-foreground">
-                                      Extra guest inclusive: {formatAmount(getCookExtraGuestInclusivePrice(service))} each
-                                    </div>
+                                    {getCookExtraGuestInclusivePrice(service) > 0 ? (
+                                      <div className="mt-1 text-xs text-muted-foreground">
+                                        Extra guest: {formatAmount(getCookExtraGuestInclusivePrice(service))} each
+                                      </div>
+                                    ) : null}
                                   </div>
                                 </label>
 
@@ -2290,8 +2294,8 @@ export default function ServiceBooking() {
                                   <Input
                                     className="pl-10"
                                     placeholder={serviceMode === "car-self-drive-day"
-                                      ? "Where the client will collect the car"
-                                      : "Where the client will be picked up"}
+                                      ? "Where you'll collect the car"
+                                      : "Where should we pick you up?"}
                                     data-testid="input-service-pickup-location"
                                     {...field}
                                   />
@@ -2307,15 +2311,15 @@ export default function ServiceBooking() {
                           name="serviceReturnLocation"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Drop-off Location</FormLabel>
+                              <FormLabel>Drop-off place</FormLabel>
                               <FormControl>
                                 <div className="relative">
                                   <MapPin className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                                   <Input
                                     className="pl-10"
                                     placeholder={serviceMode === "car-self-drive-day"
-                                      ? "Where the car will be returned"
-                                      : "Where the client will be dropped off"}
+                                      ? "Where you'll return the car"
+                                      : "Where should we drop you off?"}
                                     data-testid="input-service-return-location"
                                     {...field}
                                   />
@@ -2715,7 +2719,7 @@ export default function ServiceBooking() {
                         name="guests"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Number of People</FormLabel>
+                            <FormLabel>Number of people</FormLabel>
                             <FormControl>
                               <div className="relative">
                                 <Users className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -2868,7 +2872,7 @@ export default function ServiceBooking() {
                       id="service-promo-code"
                       value={promoCode}
                       onChange={(event) => setPromoCode(event.target.value.toUpperCase())}
-                      placeholder="APRIL-BUNDLE"
+                      placeholder="Enter a code"
                       className="mt-2"
                     />
                     <div className="mt-2 text-xs text-muted-foreground">
@@ -3053,7 +3057,7 @@ export default function ServiceBooking() {
                   <div className="flex justify-between">
                     <span className="font-semibold">Total</span>
                     <div className="text-right">
-                      {promoPreview ? (
+                      {promoPreview && totalPrice > 0 ? (
                         <div className="text-sm text-muted-foreground line-through">
                           <CurrencyAmount amountUsd={totalPrice} />
                         </div>
@@ -3061,6 +3065,11 @@ export default function ServiceBooking() {
                       {childcareRateMissing ? (
                         <span className="text-sm font-medium text-muted-foreground" data-testid="text-summary-total">
                           Choose a time package
+                        </span>
+                      ) : totalPrice <= 0 ? (
+                        // Nothing priced yet (no date): say what's missing, never "$0".
+                        <span className="text-sm font-medium text-muted-foreground" data-testid="text-summary-total">
+                          Add your dates
                         </span>
                       ) : serviceType === "cook" && serviceMode === "cook-custom-menu" ? (
                         <CurrencyAmount

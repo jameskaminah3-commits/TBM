@@ -1587,7 +1587,7 @@ export default function Booking() {
                     id="stay-promo-code"
                     value={promoCode}
                     onChange={(event) => setPromoCode(event.target.value.toUpperCase())}
-                    placeholder="e.g. APRIL-BUNDLE"
+                    placeholder="Enter a code"
                     className="text-base sm:text-sm"
                   />
                   <p className="mt-2 text-xs leading-5 text-muted-foreground">
