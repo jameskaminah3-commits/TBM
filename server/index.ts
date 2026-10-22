@@ -15,6 +15,7 @@ import {
   usesLocalUploadStorage,
 } from "./media";
 import { getCanonicalRedirectUrl } from "./canonical-host";
+import { getSeoRedirect } from "./seo-redirects";
 import { registerRoutes } from "./routes";
 import { applySecurityHeaders } from "./security";
 import { log, serveStatic, setupVite } from "./vite";
@@ -25,7 +26,7 @@ const urlencodedBodyLimit = process.env.URLENCODED_BODY_LIMIT ?? "1mb";
 const canonicalBaseUrl = (process.env.APP_BASE_URL?.trim() || "https://tembeabilamatata.com").replace(/\/+$/, "");
 const canonicalRedirectHosts = (
   process.env.CANONICAL_REDIRECT_HOSTS
-  ?? "tembeabilamatata.co.ke,www.tembeabilamatata.co.ke"
+  ?? "www.tembeabilamatata.com,tembeabilamatata.co.ke,www.tembeabilamatata.co.ke"
 )
   .split(",")
   .map((host) => host.trim())
@@ -99,6 +100,16 @@ app.use((req, res, next) => {
   }
 
   next();
+});
+
+// One address per page (no trailing slash, /blog not /articles...). Pages only: not the API or files.
+app.use((req, res, next) => {
+  if ((req.method !== "GET" && req.method !== "HEAD") || req.path.startsWith("/api/") || (/\.[a-z0-9]+$/i.test(req.path) && req.path !== "/index.html")) {
+    return next();
+  }
+  const search = (req.originalUrl ?? req.url).slice(req.path.length);
+  const target = getSeoRedirect(req.path, search.startsWith("?") ? search : "");
+  return target ? res.redirect(301, target) : next();
 });
 
 app.use(applySecurityHeaders);

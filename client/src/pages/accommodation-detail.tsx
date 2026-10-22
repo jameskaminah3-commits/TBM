@@ -28,7 +28,6 @@ import { buildCanonicalUrl } from "@/lib/canonical-url";
 import {
   buildListingSeoDescription,
   formatSeoLocation,
-  getListingSeoTitle,
   getPublicListingPath,
 } from "@/lib/public-listing";
 import { eachDayOfInterval, format, parseISO, startOfDay } from "date-fns";
@@ -40,7 +39,8 @@ import { getListingSharePrice } from "@shared/listing-share";
 import { ListingUnavailable } from "@/components/listing-unavailable";
 import { formatRating, hasPublicRating } from "@shared/review-eligibility";
 import { CONTACT_PHONE_DISPLAY } from "@/lib/contact-info";
-import { listingBreadcrumb, listingSeoArea, toSeoListingInput, type PublicListingSeo } from "@shared/listing-seo";
+import { autoListingSeoTitle, listingBreadcrumb, listingSeoArea, toSeoListingInput, type PublicListingSeo } from "@shared/listing-seo";
+import { buildListingStructuredData } from "@shared/listing-structured-data";
 
 // "today", or "Wed 14 Oct" for a later date.
 function formatAvailableFrom(value: string | undefined, today: Date) {
@@ -188,68 +188,20 @@ export default function AccommodationDetail() {
   };
   // At a hotel, the guest picks a room first.
   const chooseRoom = () => document.getElementById("rooms")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  const structuredData = isHotel ? {
-    "@context": "https://schema.org",
-    "@type": "Hotel",
+  // The same structured data the server sends with the page (listing-structured-data.ts).
+  const structuredData = buildListingStructuredData({
+    kind: "stay",
+    listing: accommodation as unknown as Record<string, unknown>,
     name: accommodation.title,
-    description: accommodation.description,
-    image: accommodation.imageUrl ? [accommodation.imageUrl] : undefined,
     url: canonicalUrl,
-    numberOfRooms: hotelSummary.totalRooms,
-    starRating: accommodation.starRating ? { "@type": "Rating", ratingValue: accommodation.starRating } : undefined,
-    checkinTime: accommodation.checkInTime ?? undefined,
-    checkoutTime: accommodation.checkOutTime ?? undefined,
-    address: { "@type": "PostalAddress", addressLocality: location, addressCountry: "KE" },
-    aggregateRating: hasPublicRating(accommodation) ? {
-      "@type": "AggregateRating",
-      ratingValue: accommodation.rating,
-      reviewCount: accommodation.reviewCount,
-    } : undefined,
-    offers: { "@type": "AggregateOffer", priceCurrency: "USD", lowPrice: accommodation.price, url: canonicalUrl },
-    breadcrumb: {
-      "@type": "BreadcrumbList",
-      itemListElement: [
-        { "@type": "ListItem", position: 1, name: "Home", item: buildCanonicalUrl("/") },
-        { "@type": "ListItem", position: 2, name: crumb.label, item: buildCanonicalUrl(crumb.path) },
-        { "@type": "ListItem", position: 3, name: accommodation.title, item: canonicalUrl },
-      ],
-    },
-  } : {
-    "@context": "https://schema.org",
-    "@type": "LodgingBusiness",
-    name: accommodation.title,
-    description: accommodation.description,
-    image: accommodation.imageUrl ? [accommodation.imageUrl] : undefined,
-    url: canonicalUrl,
-    numberOfRooms: accommodation.bedrooms,
-    occupancy: { "@type": "QuantitativeValue", maxValue: accommodation.maxOccupancy },
-    address: { "@type": "PostalAddress", addressLocality: location, addressCountry: "KE" },
-    areaServed: { "@type": "Place", name: location },
-    aggregateRating: hasPublicRating(accommodation) ? {
-      "@type": "AggregateRating",
-      ratingValue: accommodation.rating,
-      reviewCount: accommodation.reviewCount,
-    } : undefined,
-    offers: {
-      "@type": "Offer",
-      priceCurrency: "USD",
-      price: accommodation.price,
-      url: canonicalUrl,
-    },
-    breadcrumb: {
-      "@type": "BreadcrumbList",
-      itemListElement: [
-        { "@type": "ListItem", position: 1, name: "Home", item: buildCanonicalUrl("/") },
-        { "@type": "ListItem", position: 2, name: crumb.label, item: buildCanonicalUrl(crumb.path) },
-        { "@type": "ListItem", position: 3, name: accommodation.title, item: canonicalUrl },
-      ],
-    },
-  };
+    origin: buildCanonicalUrl("/").replace(/\/$/, ""),
+    rating: hasPublicRating(accommodation) ? { average: accommodation.rating, count: accommodation.reviewCount } : null,
+  });
 
   return (
     <div className="min-h-screen py-12">
       <SeoHead
-        title={accommodation.seo?.title || getListingSeoTitle("stay", accommodation.title, accommodation.location)}
+        title={accommodation.seo?.title || autoListingSeoTitle("stay", accommodation as unknown as Record<string, unknown>)}
         description={accommodation.seo?.description || buildListingSeoDescription([semanticSummary, accommodation.description])}
         image={accommodation.imageUrl}
         canonicalUrl={canonicalUrl}

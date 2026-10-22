@@ -245,10 +245,10 @@ export default function Accommodations() {
       <div className="container mx-auto px-4 md:px-8">
         <div className="mb-12">
           <h1 className="mb-4 font-serif text-3xl font-medium leading-tight sm:text-4xl md:text-5xl">
-            Accommodation in Mombasa and Nyali
+            Accommodation in Mombasa, Diani and Watamu
           </h1>
           <p className="max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">
-            Browse {stayTypeCounts.hotel > 0 ? "hotels, " : ""}furnished apartments, holiday homes and short-stay accommodation in Mombasa, Nyali and the wider Kenyan Coast, with practical concierge support when you need it.
+            Browse {stayTypeCounts.hotel > 0 ? "hotels, " : ""}furnished apartments, holiday homes and short-stay accommodation in Mombasa, Nyali, Diani, Watamu and the wider Kenyan Coast, with practical concierge support when you need it.
           </p>
         </div>
 

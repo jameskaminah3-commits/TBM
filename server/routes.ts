@@ -3244,17 +3244,21 @@ function isPublicManagedItem(item: { isPublic?: boolean | null; managerUserId?: 
 async function buildSitemapXml() {
   const baseUrl = getPublicSiteBaseUrl();
   const now = new Date().toISOString();
+  // Fixed pages carry no lastmod: a date that changes on every request teaches Google to ignore them all.
   const staticEntries = [
-    sitemapEntry({ baseUrl, path: "/", changefreq: "daily", priority: "1.0", lastmod: now }),
-    sitemapEntry({ baseUrl, path: "/accommodations", changefreq: "weekly", priority: "0.9", lastmod: now }),
-    sitemapEntry({ baseUrl, path: "/services/drive", changefreq: "weekly", priority: "0.8", lastmod: now }),
-    sitemapEntry({ baseUrl, path: "/services/dine", changefreq: "weekly", priority: "0.8", lastmod: now }),
-    sitemapEntry({ baseUrl, path: "/services/relax", changefreq: "weekly", priority: "0.8", lastmod: now }),
-    sitemapEntry({ baseUrl, path: "/services/experience", changefreq: "weekly", priority: "0.8", lastmod: now }),
-    sitemapEntry({ baseUrl, path: "/blog", changefreq: "daily", priority: "0.9", lastmod: now }),
-    sitemapEntry({ baseUrl, path: "/about", changefreq: "monthly", priority: "0.5", lastmod: now }),
-    sitemapEntry({ baseUrl, path: "/contact", changefreq: "monthly", priority: "0.5", lastmod: now }),
-    sitemapEntry({ baseUrl, path: "/faq", changefreq: "monthly", priority: "0.5", lastmod: now }),
+    sitemapEntry({ baseUrl, path: "/", changefreq: "daily", priority: "1.0" }),
+    sitemapEntry({ baseUrl, path: "/accommodations", changefreq: "weekly", priority: "0.9" }),
+    sitemapEntry({ baseUrl, path: "/services", changefreq: "weekly", priority: "0.7" }),
+    sitemapEntry({ baseUrl, path: "/services/drive", changefreq: "weekly", priority: "0.8" }),
+    sitemapEntry({ baseUrl, path: "/services/dine", changefreq: "weekly", priority: "0.8" }),
+    sitemapEntry({ baseUrl, path: "/services/relax", changefreq: "weekly", priority: "0.8" }),
+    sitemapEntry({ baseUrl, path: "/services/experience", changefreq: "weekly", priority: "0.8" }),
+    sitemapEntry({ baseUrl, path: "/blog", changefreq: "daily", priority: "0.9" }),
+    sitemapEntry({ baseUrl, path: "/request-custom-service", changefreq: "monthly", priority: "0.6" }),
+    sitemapEntry({ baseUrl, path: "/partner", changefreq: "monthly", priority: "0.6" }),
+    sitemapEntry({ baseUrl, path: "/about", changefreq: "monthly", priority: "0.5" }),
+    sitemapEntry({ baseUrl, path: "/contact", changefreq: "monthly", priority: "0.5" }),
+    sitemapEntry({ baseUrl, path: "/faq", changefreq: "monthly", priority: "0.5" }),
   ];
 
   const [posts, stays, cars, cooks, errands, experiences, providerPages, areaPages] = await Promise.all([

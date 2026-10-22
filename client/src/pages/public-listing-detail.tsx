@@ -26,12 +26,12 @@ function listingHeading(name: string, location: string) {
   return place && name.toLowerCase().includes(place) ? name : `${name} in ${location}`;
 }
 import { ShareGiftBanner } from "@/components/share-gift-banner";
-import { listingBreadcrumb, listingSeoArea, toSeoListingInput, type PublicListingSeo } from "@shared/listing-seo";
+import { autoListingSeoTitle, listingBreadcrumb, listingSeoArea, toSeoListingInput, type PublicListingSeo } from "@shared/listing-seo";
+import { buildListingStructuredData } from "@shared/listing-structured-data";
 import {
   buildListingSeoDescription,
   formatSeoLocation,
   getBookingPath,
-  getListingSeoTitle,
   getPublicListingPath,
 } from "@/lib/public-listing";
 
@@ -112,49 +112,6 @@ function getPriceLabel(kind: Exclude<PublicListingKind, "stay">) {
   return "Per person";
 }
 
-function getStructuredData(kind: Exclude<PublicListingKind, "stay">, listing: PublicListing, canonicalUrl: string) {
-  const name = getListingName(kind, listing);
-  const location = getListingLocation(listing);
-  const description = getListingDescription(kind, listing);
-  const crumb = listingBreadcrumb(kind, listingSeoArea(toSeoListingInput(kind, listing as unknown as Record<string, unknown>)));
-  const data: Record<string, unknown> = {
-    "@context": "https://schema.org",
-    "@type": kind === "car" ? "Car" : kind === "experience" ? "TouristAttraction" : "Service",
-    name,
-    description,
-    url: canonicalUrl,
-    areaServed: { "@type": "Place", name: location },
-    address: { "@type": "PostalAddress", addressLocality: location, addressCountry: "KE" },
-    provider: { "@type": "Organization", name: "Tembea Bila Matata", url: buildCanonicalUrl("/") },
-    breadcrumb: {
-      "@type": "BreadcrumbList",
-      itemListElement: [
-        { "@type": "ListItem", position: 1, name: "Home", item: buildCanonicalUrl("/") },
-        { "@type": "ListItem", position: 2, name: crumb.label, item: buildCanonicalUrl(crumb.path) },
-        { "@type": "ListItem", position: 3, name, item: canonicalUrl },
-      ],
-    },
-  };
-
-  if (listing.imageUrl) data.image = listing.imageUrl;
-  if (hasPublicRating(listing)) {
-    data.aggregateRating = { "@type": "AggregateRating", ratingValue: listing.rating, reviewCount: listing.reviewCount };
-  }
-
-  const price = getLeadPrice(kind, listing);
-  if (price > 0) {
-    data.offers = {
-      "@type": "Offer",
-      priceCurrency: "USD",
-      price,
-      availability: "https://schema.org/InStock",
-      url: canonicalUrl,
-    };
-  }
-
-  return data;
-}
-
 export default function PublicListingDetail({ kind }: { kind: Exclude<PublicListingKind, "stay"> }) {
   const { id } = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
@@ -180,13 +137,21 @@ export default function PublicListingDetail({ kind }: { kind: Exclude<PublicList
   const listingName = listing ? getListingName(kind, listing) : category.label;
   const canonicalUrl = listing ? buildCanonicalUrl(getPublicListingPath(kind, listing.id, listingName)) : buildCanonicalUrl(`${category.href}/${id || ""}`);
   const description = listing ? getListingDescription(kind, listing) : `Explore ${category.label} with Tembea Bila Matata.`;
-  const seoTitle = listing ? listing.seo?.title || getListingSeoTitle(kind, listingName, getListingLocation(listing)) : "Listing not found | Tembea Bila Matata";
+  const seoTitle = listing ? listing.seo?.title || autoListingSeoTitle(kind, listing as unknown as Record<string, unknown>) : "Listing not found | Tembea Bila Matata";
   const seoDescription = listing ? listing.seo?.description || buildListingSeoDescription([description]) : description;
   // Filed under its area page ("Things to do in Watamu") when the area is known, else the service page.
   const crumb = listing ? listingBreadcrumb(kind, listingSeoArea(toSeoListingInput(kind, listing as unknown as Record<string, unknown>))) : { label: category.label, path: category.href };
+  // The same structured data the server sends with the page (listing-structured-data.ts).
   const structuredData = useMemo(
-    () => (listing ? getStructuredData(kind, listing, canonicalUrl) : null),
-    [canonicalUrl, kind, listing],
+    () => (listing ? buildListingStructuredData({
+      kind,
+      listing: listing as unknown as Record<string, unknown>,
+      name: listingName,
+      url: canonicalUrl,
+      origin: buildCanonicalUrl("/").replace(/\/$/, ""),
+      rating: hasPublicRating(listing) ? { average: listing.rating, count: listing.reviewCount } : null,
+    }) : null),
+    [canonicalUrl, kind, listing, listingName],
   );
 
   if (isLoading) {

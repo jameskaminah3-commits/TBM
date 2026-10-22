@@ -10,7 +10,7 @@
 // own text backs it (a pool, a beach, a place name), so a title never promises
 // something the listing doesn't have.
 import { getCarDisplayName } from "./listing-share.ts";
-import { type PublicListingKind } from "./seo.ts";
+import { buildListingSeoTitle, getShortSeoLocation, type PublicListingKind } from "./seo.ts";
 
 // ── Places ───────────────────────────────────────────────────────────────
 
@@ -146,6 +146,17 @@ export function withSeoBrand(title: string) {
   return short.length <= seoTitleLimit ? short : title;
 }
 
+/** A provider's page title: their name, what they offer and where, within what Google shows. */
+export function providerPageSeoTitle(displayName: string, serviceTypes: string[], serviceAreas: string[]) {
+  const services = serviceTypes.join(", ");
+  const areas = serviceAreas.slice(0, 2).join(" and ");
+  const candidates = [
+    [services, areas ? `in ${areas}` : ""].filter(Boolean).join(" "),
+    services,
+  ].filter(Boolean).map((lead) => withSeoBrand(`${displayName} · ${lead}`));
+  return candidates.find((title) => title.length <= seoTitleLimit) ?? withSeoBrand(displayName);
+}
+
 export function defaultAreaPageCopy(area: SeoArea, service: SeoAreaService) {
   const landmarks = area.landmarks.slice(0, 3);
   const landmarkLine = landmarks.length
@@ -242,6 +253,13 @@ export function toSeoListingInput(kind: PublicListingKind, row: Record<string, u
 /** The area a listing belongs to: an experience's destination first, then where the listing is. */
 export function listingSeoArea(input: Pick<SeoListingInput, "kind" | "location" | "name" | "experience">) {
   return detectSeoArea(input.experience?.destination, input.location, input.name);
+}
+
+/** A listing's automatic title, placed by its area ("in Diani") when known. The server and the page both use it, so they agree. */
+export function autoListingSeoTitle(kind: PublicListingKind, row: Record<string, unknown>) {
+  const input = toSeoListingInput(kind, row);
+  const location = input.experience?.destination || input.location;
+  return buildListingSeoTitle(kind, input.name, listingSeoArea(input)?.name ?? getShortSeoLocation(location));
 }
 
 // ── Search phrases ───────────────────────────────────────────────────────

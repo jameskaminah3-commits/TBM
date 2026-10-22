@@ -5,9 +5,11 @@ import { isHotelStay } from "@shared/hotel-rooms";
 import {
   buildListingSeoDescription,
   formatSeoLocation,
-  getListingSeoTitle,
   getPublicListingPath,
 } from "@shared/seo";
+import { buildListingStructuredData } from "@shared/listing-structured-data";
+import { getStaticPageSeo, homeStructuredData } from "@shared/static-page-seo";
+import { isKnownPagePath } from "./known-routes";
 import { storage } from "./storage";
 import { getRatingSummary } from "./review-ratings";
 import { isSuspendedProvider } from "./provider-status";
@@ -15,11 +17,11 @@ import { getPublicProviderPage } from "./provider-pages";
 import { getCarDisplayName } from "@shared/listing-share";
 import {
   areaPagePath,
+  autoListingSeoTitle,
   defaultAreaPageCopy,
   getSeoArea,
   isSeoAreaService,
-  listingBreadcrumb,
-  listingSeoArea,
+  providerPageSeoTitle,
   seoCategoryPages,
   seoKindByService,
   toSeoListingInput,
@@ -143,7 +145,7 @@ function buildStayMetadata(stay: Stay, baseUrl: string, canonicalUrl: string): S
     ]);
 
   return {
-    title: getListingSeoTitle("stay", stay.title, stay.location),
+    title: autoListingSeoTitle("stay", stay as unknown as Record<string, unknown>),
     description: buildListingSeoDescription([details, stay.description]),
     imageUrl: getListingImage(stay, baseUrl),
     canonicalUrl,
@@ -161,7 +163,7 @@ function buildCarMetadata(car: Car, baseUrl: string, canonicalUrl: string): Shar
   ]);
 
   return {
-    title: getListingSeoTitle("car", getCarDisplayName(car), car.location),
+    title: autoListingSeoTitle("car", car as unknown as Record<string, unknown>),
     description: buildListingSeoDescription([details, car.description]),
     imageUrl: getListingImage(car, baseUrl),
     canonicalUrl,
@@ -179,7 +181,7 @@ function buildCookMetadata(cook: Cook, baseUrl: string, canonicalUrl: string): S
   ]);
 
   return {
-    title: getListingSeoTitle("cook", cook.title, cook.location),
+    title: autoListingSeoTitle("cook", cook as unknown as Record<string, unknown>),
     description: buildListingSeoDescription([details, cook.description]),
     imageUrl: getListingImage(cook, baseUrl),
     canonicalUrl,
@@ -201,7 +203,7 @@ function buildErrandMetadata(errand: Errand, baseUrl: string, canonicalUrl: stri
   ]);
 
   return {
-    title: getListingSeoTitle("errand", errand.serviceName, errand.location),
+    title: autoListingSeoTitle("errand", errand as unknown as Record<string, unknown>),
     description: buildListingSeoDescription([details, errand.description]),
     imageUrl: getListingImage(errand, baseUrl),
     canonicalUrl,
@@ -218,7 +220,7 @@ function buildExperienceMetadata(experience: Experience, baseUrl: string, canoni
   ]);
 
   return {
-    title: getListingSeoTitle("experience", experience.title, experience.experienceLocation || experience.location),
+    title: autoListingSeoTitle("experience", experience as unknown as Record<string, unknown>),
     description: buildListingSeoDescription([details, experience.description]),
     imageUrl: getListingImage(experience, baseUrl),
     canonicalUrl,
@@ -237,158 +239,34 @@ function getListingName(kind: ListingKind, listing: Stay | Car | Cook | Errand |
   return (listing as Experience).title;
 }
 
+// The shared builder (listing-structured-data.ts), with the rating from eligible reviews only.
 async function getListingStructuredData(
   kind: ListingKind,
   listing: Stay | Car | Cook | Errand | Experience,
   canonicalUrl: string,
 ) {
-  const name = getListingName(kind, listing);
-  // The listing's area page (e.g. "Places to stay in Diani"), or its service page when the area isn't known.
-  const crumb = listingBreadcrumb(kind, listingSeoArea(toSeoListingInput(kind, listing as unknown as Record<string, unknown>)));
-  const location = formatSeoLocation("experienceLocation" in listing
-    ? listing.experienceLocation || listing.location
-    : listing.location);
-  const type = kind === "stay"
-    ? (isHotelStay(listing as Stay) ? "Hotel" : "LodgingBusiness")
-    : kind === "car" ? "Car" : kind === "experience" ? "TouristAttraction" : "Service";
-  const structuredData: Record<string, unknown> = {
-    "@context": "https://schema.org",
-    "@type": type,
-    name,
-    description: truncate(listing.description, 320),
-    url: canonicalUrl,
-    areaServed: { "@type": "Place", name: location || "Mombasa, Kenya" },
-    address: { "@type": "PostalAddress", addressLocality: location, addressCountry: "KE" },
-    provider: { "@type": "Organization", name: siteName, url: canonicalUrl.split("/").slice(0, 3).join("/") },
-    breadcrumb: {
-      "@type": "BreadcrumbList",
-      itemListElement: [
-        { "@type": "ListItem", position: 1, name: "Home", item: canonicalUrl.split("/").slice(0, 3).join("/") },
-        { "@type": "ListItem", position: 2, name: crumb.label, item: `${canonicalUrl.split("/").slice(0, 3).join("/")}${crumb.path}` },
-        { "@type": "ListItem", position: 3, name, item: canonicalUrl },
-      ],
-    },
-  };
-
-  const imageUrl = getListingImage(listing, canonicalUrl.split("/").slice(0, 3).join("/"));
-  if (imageUrl) structuredData.image = imageUrl;
-  // Only from eligible reviews, and only from the same threshold guests see.
   const ratingSummary = await getRatingSummary(kind, listing.id).catch(() => null);
-  if (ratingSummary?.average !== null && ratingSummary?.average !== undefined) {
-    structuredData.aggregateRating = {
-      "@type": "AggregateRating",
-      ratingValue: ratingSummary.average,
-      reviewCount: ratingSummary.count,
-    };
-  }
-
-  if (kind === "stay" && isHotelStay(listing as Stay)) {
-    const hotel = listing as Stay;
-    structuredData.numberOfRooms = hotel.bedrooms;
-    if (hotel.starRating) structuredData.starRating = { "@type": "Rating", ratingValue: hotel.starRating };
-    if (hotel.checkInTime) structuredData.checkinTime = hotel.checkInTime;
-    if (hotel.checkOutTime) structuredData.checkoutTime = hotel.checkOutTime;
-    if (hotel.price > 0) {
-      structuredData.offers = { "@type": "AggregateOffer", priceCurrency: "USD", lowPrice: hotel.price, url: canonicalUrl };
-    }
-  } else if (kind === "stay") {
-    const stay = listing as Stay;
-    structuredData.numberOfRooms = stay.bedrooms;
-    structuredData.occupancy = { "@type": "QuantitativeValue", maxValue: stay.maxOccupancy };
-    structuredData.offers = { "@type": "Offer", priceCurrency: "USD", price: stay.price, url: canonicalUrl };
-  } else if (kind === "car") {
-    const car = listing as Car;
-    structuredData.vehicleTransmission = car.transmission;
-    structuredData.seatingCapacity = car.seats;
-    structuredData.offers = { "@type": "Offer", priceCurrency: "USD", price: car.pricePerDay || car.priceWithDriver, url: canonicalUrl };
-  } else if (kind === "cook") {
-    const cook = listing as Cook;
-    structuredData.serviceType = cook.serviceType;
-    structuredData.offers = { "@type": "Offer", priceCurrency: "USD", price: cook.serviceFee || cook.pricePerSession, url: canonicalUrl };
-  } else if (kind === "errand") {
-    const errand = listing as Errand;
-    structuredData.serviceType = "Holiday concierge and errand service";
-    structuredData.offers = { "@type": "Offer", priceCurrency: "USD", price: errand.basePrice, url: canonicalUrl };
-  } else {
-    const experience = listing as Experience;
-    structuredData.duration = `PT${experience.durationHours}H`;
-    structuredData.offers = { "@type": "Offer", priceCurrency: "USD", price: experience.privatePricePerPerson || experience.sharedPricePerPerson || experience.price, url: canonicalUrl };
-  }
-
-  return structuredData;
+  return buildListingStructuredData({
+    kind,
+    listing: listing as unknown as Record<string, unknown>,
+    name: getListingName(kind, listing),
+    url: canonicalUrl,
+    origin: new URL(canonicalUrl).origin,
+    rating: ratingSummary?.average !== null && ratingSummary?.average !== undefined
+      ? { average: ratingSummary.average, count: ratingSummary.count }
+      : null,
+  });
 }
 
 function getStaticMetadata(pathname: string, baseUrl: string): ShareMetadata | null {
-  const metadata: Record<string, { title: string; description: string }> = {
-    "/": {
-      title: "Mombasa Stays, Car Hire, Private Chefs & Concierge Services | Tembea Bila Matata",
-      description: "Discover curated accommodation, car hire, private chefs, holiday errands and coastal experiences in Mombasa, Nyali and across the Kenyan Coast.",
-    },
-    "/accommodations": {
-      title: "Accommodation in Mombasa & Nyali | Furnished Apartments and Holiday Stays",
-      description: "Browse curated furnished apartments, holiday homes and short-stay accommodation in Mombasa, Nyali and the Kenyan Coast.",
-    },
-    "/services/drive": {
-      title: "Car Hire, Self-Drive & Chauffeur Service in Mombasa | Tembea Bila Matata",
-      description: "Find self-drive cars, chauffeur-driven vehicles, airport transfers and coastal transport in Mombasa, Nyali and nearby destinations.",
-    },
-    "/services/dine": {
-      title: "Private Chefs and In-Villa Dining in Mombasa & Nyali",
-      description: "Book a private chef, personal cook or in-villa dining experience in Mombasa, Nyali and across the Kenyan Coast.",
-    },
-    "/services/relax": {
-      title: "Concierge, Errand and In-Villa Family Services in Mombasa",
-      description: "Arrange holiday errands, shopping, laundry, housekeeping and in-villa childcare support across Mombasa and the Kenyan Coast.",
-    },
-    "/services/experience": {
-      title: "Coastal Experiences, Tours and Activities in Mombasa",
-      description: "Explore curated coastal experiences, local activities and memorable outings from Mombasa, Nyali and the wider Kenyan Coast.",
-    },
-    "/services": {
-      title: "Coastal Travel Services in Mombasa | Tembea Bila Matata",
-      description: "Plan a smoother coastal stay with accommodation, transport, private dining, errands and experiences in Mombasa and Nyali.",
-    },
-    "/blog": {
-      title: "Mombasa and Kenyan Coast Travel Journal | Tembea Bila Matata",
-      description: "Local guides and practical travel advice for stays, transport, dining, family support and experiences in Mombasa and along the Kenyan Coast.",
-    },
-    "/about": {
-      title: "About Tembea Bila Matata | Mombasa Coastal Concierge",
-      description: "Learn how Tembea Bila Matata combines curated stays and practical concierge services for travellers in Mombasa and the Kenyan Coast.",
-    },
-    "/contact": {
-      title: "Contact Tembea Bila Matata | Mombasa and Kenyan Coast",
-      description: "Contact Tembea Bila Matata for accommodation, transport, private chef, concierge and coastal travel support.",
-    },
-    "/faq": {
-      title: "Frequently Asked Questions | Tembea Bila Matata",
-      description: "Find answers about booking stays, transport, chefs, errands, experiences and concierge services in Mombasa and the Kenyan Coast.",
-    },
-  };
-  const item = metadata[pathname];
+  const item = getStaticPageSeo(pathname);
   if (!item) return null;
   return {
     ...item,
     imageUrl: `${baseUrl}${defaultImagePath}`,
     canonicalUrl: `${baseUrl}${pathname === "/" ? "/" : pathname}`,
     type: "website",
-    structuredData: pathname === "/" ? {
-      "@context": "https://schema.org",
-      "@graph": [
-        {
-          "@type": "Organization",
-          name: siteName,
-          url: baseUrl,
-          areaServed: ["Mombasa", "Nyali", "Bamburi", "Shanzu", "Diani", "Kilifi", "Watamu", "Kenyan Coast"],
-        },
-        {
-          "@type": "WebSite",
-          name: siteName,
-          url: baseUrl,
-          description: item.description,
-        },
-      ],
-    } : null,
+    structuredData: pathname === "/" ? homeStructuredData(baseUrl) : null,
   };
 }
 
@@ -524,19 +402,27 @@ function getRobotsForPath(pathname: string) {
   return "index,follow";
 }
 
+// A page that isn't there: a 404 that search engines drop, with a title that says so.
+function notFound(fallback: ShareMetadata): ShareMetadata {
+  return { ...fallback, title: `Page not found | ${siteName}`, robots: "noindex,follow", statusCode: 404 };
+}
+
 function defaultMetadata(req: Request): ShareMetadata {
   const baseUrl = getRequestBaseUrl(req);
   const staticMetadata = getStaticMetadata(req.path, baseUrl);
   if (staticMetadata) {
     return { ...staticMetadata, robots: getRobotsForPath(req.path) };
   }
+  const known = isKnownPagePath(req.path);
   return {
-    title: defaultTitle,
+    // An address the app has no page for is a real 404, not a copy of the site.
+    title: known ? defaultTitle : `Page not found | ${siteName}`,
     description: defaultDescription,
     imageUrl: `${baseUrl}${defaultImagePath}`,
     canonicalUrl: `${baseUrl}${req.path === "/" ? "/" : req.path}`,
     type: "website",
-    robots: getRobotsForPath(req.path),
+    robots: known ? getRobotsForPath(req.path) : "noindex,follow",
+    statusCode: known ? undefined : 404,
   };
 }
 
@@ -548,28 +434,34 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
     try {
       const post = await storage.getBlogPostBySlug(blogSlug);
       if (!post || post.status !== "published") {
-        return { ...fallback, robots: "noindex,follow", statusCode: 404 };
+        return notFound(fallback);
       }
 
       const metadata = buildBlogMetadata(post, baseUrl);
+      // The breadcrumb is its own node: only a web page can carry one.
       metadata.structuredData = {
         "@context": "https://schema.org",
-        "@type": "Article",
-        headline: post.seoTitle || post.title,
-        description: truncate(post.seoDescription || post.excerpt || post.contentMarkdown, 320),
-        image: post.featuredImage ? [toAbsoluteUrl(post.featuredImage, baseUrl)] : undefined,
-        datePublished: post.publishedAt || undefined,
-        dateModified: post.updatedAt || undefined,
-        author: { "@type": "Person", name: post.author },
-        mainEntityOfPage: metadata.canonicalUrl,
-        breadcrumb: {
-          "@type": "BreadcrumbList",
-          itemListElement: [
-            { "@type": "ListItem", position: 1, name: "Home", item: baseUrl },
-            { "@type": "ListItem", position: 2, name: "Travel Journal", item: `${baseUrl}/blog` },
-            { "@type": "ListItem", position: 3, name: post.title, item: metadata.canonicalUrl },
-          ],
-        },
+        "@graph": [
+          {
+            "@type": "Article",
+            headline: post.seoTitle || post.title,
+            description: truncate(post.seoDescription || post.excerpt || post.contentMarkdown, 320),
+            image: post.featuredImage ? [toAbsoluteUrl(post.featuredImage, baseUrl)] : undefined,
+            datePublished: post.publishedAt || undefined,
+            dateModified: post.updatedAt || undefined,
+            author: { "@type": "Person", name: post.author },
+            publisher: { "@type": "Organization", name: siteName, logo: { "@type": "ImageObject", url: `${baseUrl}/app-icon.png` } },
+            mainEntityOfPage: metadata.canonicalUrl,
+          },
+          {
+            "@type": "BreadcrumbList",
+            itemListElement: [
+              { "@type": "ListItem", position: 1, name: "Home", item: `${baseUrl}/` },
+              { "@type": "ListItem", position: 2, name: "Travel Journal", item: `${baseUrl}/blog` },
+              { "@type": "ListItem", position: 3, name: post.title, item: metadata.canonicalUrl },
+            ],
+          },
+        ],
       };
       return metadata;
     } catch (error) {
@@ -599,7 +491,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
     if (route.kind === "stay") {
       const stay = await resolveListing(route) as Stay | undefined;
       if (!isPublicListing(stay)) {
-        return { ...fallback, robots: "noindex,follow", statusCode: 404 };
+        return notFound(fallback);
       }
       const canonicalUrl = `${baseUrl}${getPublicListingPath("stay", stay.id, stay.title)}`;
       const metadata = buildStayMetadata(stay, baseUrl, canonicalUrl);
@@ -611,7 +503,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
     if (route.kind === "car") {
       const car = await resolveListing(route) as Car | undefined;
       if (!isPublicListing(car)) {
-        return { ...fallback, robots: "noindex,follow", statusCode: 404 };
+        return notFound(fallback);
       }
       const canonicalUrl = `${baseUrl}${getPublicListingPath("car", car.id, getListingName("car", car))}`;
       const metadata = buildCarMetadata(car, baseUrl, canonicalUrl);
@@ -623,7 +515,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
     if (route.kind === "cook") {
       const cook = await resolveListing(route) as Cook | undefined;
       if (!isPublicListing(cook)) {
-        return { ...fallback, robots: "noindex,follow", statusCode: 404 };
+        return notFound(fallback);
       }
       const canonicalUrl = `${baseUrl}${getPublicListingPath("cook", cook.id, cook.title)}`;
       const metadata = buildCookMetadata(cook, baseUrl, canonicalUrl);
@@ -635,7 +527,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
     if (route.kind === "errand") {
       const errand = await resolveListing(route) as Errand | undefined;
       if (!isPublicListing(errand)) {
-        return { ...fallback, robots: "noindex,follow", statusCode: 404 };
+        return notFound(fallback);
       }
       const canonicalUrl = `${baseUrl}${getPublicListingPath("errand", errand.id, errand.serviceName)}`;
       const metadata = buildErrandMetadata(errand, baseUrl, canonicalUrl);
@@ -646,7 +538,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
 
     const experience = await resolveListing(route) as Experience | undefined;
     if (!isPublicListing(experience)) {
-      return { ...fallback, robots: "noindex,follow", statusCode: 404 };
+      return notFound(fallback);
     }
     const canonicalUrl = `${baseUrl}${getPublicListingPath("experience", experience.id, experience.title)}`;
     const metadata = buildExperienceMetadata(experience, baseUrl, canonicalUrl);
@@ -693,7 +585,7 @@ export function getAutoListingSeoText(kind: ListingKind, listing: Stay | Car | C
 async function resolveAreaPageMetadata(areaKey: string, service: string, req: Request, fallback: ShareMetadata): Promise<ShareMetadata> {
   const area = getSeoArea(areaKey);
   if (!area || !isSeoAreaService(service)) {
-    return { ...fallback, robots: "noindex,follow", statusCode: 404 };
+    return notFound(fallback);
   }
   const baseUrl = getRequestBaseUrl(req);
   try {
@@ -769,12 +661,12 @@ async function resolveProviderPageMetadata(code: string, req: Request, fallback:
     const lead = [services, areas ? `in ${areas}` : ""].filter(Boolean).join(" ");
     const imageUrl = provider.photoUrl || provider.listings.find((listing) => listing.imageUrl)?.imageUrl || null;
     return {
-      title: `${provider.displayName}${lead ? ` · ${lead}` : ""} | ${siteName}`,
+      title: providerPageSeoTitle(provider.displayName, provider.serviceTypes, provider.serviceAreas),
       description: truncate([
         provider.about?.trim() || (lead ? `${lead}.` : ""),
         provider.verified ? "Verified by TBM." : "",
         "Book on Tembea Bila Matata, by M-Pesa or card.",
-      ].filter(Boolean).join(" "), 220),
+      ].filter(Boolean).join(" "), 155),
       imageUrl: toAbsoluteUrl(imageUrl, baseUrl),
       canonicalUrl: `${baseUrl}${provider.path}`,
       type: "website",
