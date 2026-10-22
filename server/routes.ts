@@ -1,3 +1,4 @@
+import { stayCarAddonPrice } from "@shared/stay-car-pricing";
 import crypto from "crypto";
 import type { Express, Response as ExpressResponse } from "express";
 import { createServer, type Server } from "http";
@@ -1415,7 +1416,8 @@ async function validateAccommodationAddonSelections(params: {
         }
 
         if (selection.serviceMode === "car-chauffeur-hourly") {
-          const hours = Math.max(3, selection.serviceHours || configuredUnits || 3);
+          const price = stayCarAddonPrice(car, { ...selection, units: configuredUnits }, occupiedDays);
+          const hours = price.units;
           if (!car.priceWithDriverHourly) {
             throw new Error(`"${car.model}" does not offer hourly chauffeur booking.`);
           }
@@ -1425,7 +1427,7 @@ async function validateAccommodationAddonSelections(params: {
           if (!serviceStartTime) {
             throw new Error(`Choose a pickup time for "${car.model}".`);
           }
-          addonTotal += hours * car.priceWithDriverHourly;
+          addonTotal += price.total;
           validatedSelections.push({
             ...selection,
             serviceHours: hours,
@@ -1437,10 +1439,7 @@ async function validateAccommodationAddonSelections(params: {
             serviceStartTime,
           });
         } else {
-          const dailyRate = selection.serviceMode === "car-self-drive-day" && car.pricePerDay
-            ? car.pricePerDay
-            : car.priceWithDriver;
-          addonTotal += configuredUnits * dailyRate;
+          addonTotal += stayCarAddonPrice(car, { ...selection, units: configuredUnits }, occupiedDays).total;
           validatedSelections.push({
             ...selection,
             units: configuredUnits,
@@ -1656,7 +1655,8 @@ async function validateAccommodationAddonSelections(params: {
         throw new Error(`"${car.model}" is not available for those stay dates.`);
       }
 
-      addonTotal += occupiedDays * (car.pricePerDay || car.priceWithDriver);
+      // A car added without a choice of how: the self-drive rate where offered, as the checkout shows it.
+      addonTotal += stayCarAddonPrice(car, { serviceMode: "car-self-drive-day" }, occupiedDays).total;
       validatedServiceIds.push(car.id);
       continue;
     }
@@ -4945,7 +4945,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         paymentStatus: validatedData.totalPrice > 0 ? "pending" : "paid",
         paymentCurrency: "USD",
         paymentCheckoutAmount: null,
-        paymentDepositAmount: null,
+        // The commitment that locks the dates: 50%, as for bookings Zaina
+        // makes; the team can agree another amount. Custom requests, chef
+        // menus and listing checks are paid in full.
+        paymentDepositAmount: validatedData.totalPrice > 0 && supportsBookingDeposit(validatedData)
+          ? calculateBookingDepositAmount(validatedData.totalPrice)
+          : null,
         paymentAmountPaid: 0,
       });
       queueNotificationTask(

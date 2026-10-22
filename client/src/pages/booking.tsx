@@ -5,6 +5,8 @@ import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Calendar, Users, CheckCircle2, Car, ChefHat, ShoppingBag, Compass, Clock, ArrowRight, ChevronDown, MapPin, BedDouble, ShieldCheck } from "lucide-react";
+import { stayCarAddonPrice, stayCarDailyRate } from "@shared/stay-car-pricing";
+import { bookingDepositPercent, calculateBookingDepositAmount } from "@shared/booking-payments";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -451,7 +453,8 @@ export default function Booking() {
 
   const getServicePrice = (service: AddonService): number => {
     if (service.category === "cars") {
-      return service.pricePerDay ?? service.priceWithDriver;
+      // The day rate for the mode chosen (or offered first): the same rule the server charges.
+      return stayCarDailyRate(service, getExistingSelection(service.id)?.serviceMode ?? "car-chauffeur-day");
     }
     if (service.category === "cooks") {
       return getCookServiceFee(service);
@@ -561,10 +564,8 @@ export default function Booking() {
     const configured = getExistingSelection(service.id);
 
     if (service.category === "cars") {
-      if (configured?.serviceMode === "car-chauffeur-hourly") {
-        return (configured.serviceHours || configured.units || 3) * (service.priceWithDriverHourly || service.priceWithDriver);
-      }
-      return getServicePrice(service) * (configured?.units || nights);
+      // No choice made yet: priced as the server prices a car added without one.
+      return stayCarAddonPrice(service, configured ?? { serviceMode: "car-self-drive-day" }, nights).total;
     }
 
     if (service.category === "cooks") {
@@ -803,6 +804,8 @@ export default function Booking() {
   });
   const promoPreview = promoPreviewQuery.data?.promo ?? null;
   const discountedTotalPrice = promoPreview?.discountedSubtotal ?? totalPrice;
+  // What the guest pays now to lock the dates; the rest later, from My Bookings.
+  const dueToday = calculateBookingDepositAmount(discountedTotalPrice);
   const promoSavings = promoPreview?.discountAmount ?? 0;
   const promoRejectionReason = normalizedPromoCode ? (promoPreviewQuery.data?.rejectionReason ?? null) : null;
   const hasCustomQuoteAddon = useMemo(
@@ -979,7 +982,8 @@ export default function Booking() {
         }
 
         if (service.pricePerDay || service.priceWithDriver) {
-          const dailyPrice = service.pricePerDay ?? service.priceWithDriver;
+          // Offered with a driver, so priced with a driver.
+          const dailyPrice = stayCarDailyRate(service, "car-chauffeur-day");
           const reasons = [
             isFamilyTrip ? `Well suited for ${guestsValue} guests` : "Keeps local transport simple during the stay",
             isLongStay ? "Worth it when you have multiple days to cover" : "Good if you want flexible movement around the area",
@@ -1875,6 +1879,9 @@ export default function Booking() {
                         </div>
                       ) : null}
                       <CurrencyAmount amountUsd={discountedTotalPrice} data-testid="text-total-price-desktop-cta" />
+                      {nights > 0 && discountedTotalPrice > 0 ? (
+                        <div className="mt-1 text-xs text-muted-foreground">Pay {formatAmount(dueToday)} today</div>
+                      ) : null}
                     </div>
                   </div>
 
@@ -2042,6 +2049,12 @@ export default function Booking() {
                     <CurrencyAmount amountUsd={discountedTotalPrice} data-testid="text-total-price" />
                   </div>
                 </div>
+                {nights > 0 && discountedTotalPrice > 0 ? (
+                  <div className="flex items-baseline justify-between gap-3 rounded-xl bg-primary/10 px-3 py-2 text-sm" data-testid="text-due-today">
+                    <span className="font-medium text-foreground">Pay today to lock your dates ({bookingDepositPercent}%)</span>
+                    <span className="shrink-0 font-semibold"><CurrencyAmount amountUsd={dueToday} /></span>
+                  </div>
+                ) : null}
 
                 <CheckoutPaymentPreview
                   title={bookingCheckoutPreviewCopy.title}
@@ -2088,7 +2101,7 @@ export default function Booking() {
             </div>
             <div className="truncate text-xs text-muted-foreground">
               {nights > 0
-                ? `${nights} night${nights === 1 ? "" : "s"} - ${selectedSummaryServices.length} add-on${selectedSummaryServices.length === 1 ? "" : "s"}`
+                ? `Pay ${formatAmount(dueToday)} today - ${nights} night${nights === 1 ? "" : "s"}${selectedSummaryServices.length ? ` + ${selectedSummaryServices.length} add-on${selectedSummaryServices.length === 1 ? "" : "s"}` : ""}`
                 : "Choose dates to lock your total"}
             </div>
           </div>

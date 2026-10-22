@@ -5,6 +5,7 @@ import { useFieldArray, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import type { PublicListingKind } from "@shared/seo";
+import { bookingDepositPercent, calculateBookingDepositAmount } from "@shared/booking-payments";
 import { Calendar, Users, CheckCircle2, Car, ChefHat, ShoppingBag, Compass, ArrowLeft, Clock, MapPin, Plus, Trash2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -1302,6 +1303,9 @@ export default function ServiceBooking() {
     : undefined;
   const isCustomRequestMode = serviceMode === "cook-custom-menu" || serviceMode === "experience-custom-offer";
   const checkoutPreviewCopy = isCustomRequestMode ? customRequestCheckoutPreviewCopy : bookingCheckoutPreviewCopy;
+  // Bookings are secured with a part payment; custom requests are paid in full.
+  const showsCommitment = !isCustomRequestMode && discountedTotalPrice > 0;
+  const dueToday = calculateBookingDepositAmount(discountedTotalPrice);
   const submitActionLabel = isCustomRequestMode ? "Submit request" : "Book";
   const experienceAddonTotal = serviceType === "experience" && service && "experienceType" in service
     ? getExperienceAddonTotal(service, serviceMode as ExperienceServiceMode | undefined, form.watch("serviceAddonSelections") || [])
@@ -3041,6 +3045,12 @@ export default function ServiceBooking() {
                       )}
                     </div>
                   </div>
+                  {showsCommitment ? (
+                    <div className="flex items-baseline justify-between gap-3 text-sm" data-testid="text-summary-due-today">
+                      <span className="text-muted-foreground">Pay today to lock it in ({bookingDepositPercent}%)</span>
+                      <span className="font-semibold text-foreground"><CurrencyAmount amountUsd={dueToday} /></span>
+                    </div>
+                  ) : null}
 
                   <CheckoutPaymentPreview
                     title={checkoutPreviewCopy.title}
@@ -3081,6 +3091,7 @@ export default function ServiceBooking() {
               {discountedTotalPrice > 0 ? <CurrencyAmount amountUsd={discountedTotalPrice} /> : "Review details"}
             </div>
             <div className="truncate text-xs text-muted-foreground">
+              {showsCommitment ? <>Pay <span className="font-semibold text-foreground">{formatAmount(dueToday)}</span> today · </> : null}
               {mobileBookingSummary}
             </div>
           </div>
