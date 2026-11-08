@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { FaApple } from "react-icons/fa";
 import { FcGoogle } from "react-icons/fc";
@@ -219,13 +219,25 @@ export default function AuthPage() {
     }
   }, [isAuthenticated, isLoading, resolvedNextPath, setLocation]);
 
+  // Back from Google or Apple: trade the provider's session for TBM's own, once.
+  // The attempt must outlive this effect's re-runs: it sets state of its own
+  // ("completing"), and a re-run that cancelled it left the guest signed in on
+  // the server but stuck on this page until they refreshed.
+  const socialLoginAttempted = useRef(false);
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
   useEffect(() => {
     const supabaseClient = supabase;
-    if (!supabaseClient || isAuthenticated || isCompletingSocialLogin) {
+    if (!supabaseClient || isAuthenticated || socialLoginAttempted.current) {
       return;
     }
-
-    let cancelled = false;
+    socialLoginAttempted.current = true;
 
     async function completeSocialLogin(authClient: NonNullable<typeof supabase>) {
       const { data, error } = await authClient.auth.getSession();
@@ -238,19 +250,21 @@ export default function AuthPage() {
       try {
         const res = await apiRequest("POST", "/api/auth/social-session", { accessToken });
         const user = await readApiJson(res);
-        if (cancelled) {
+        // TBM's session cookie is set now; the provider's copy is no longer needed.
+        void authClient.auth.signOut({ scope: "local" });
+        if (!mounted.current) {
           return;
         }
 
         queryClient.setQueryData(["/api/auth/user"], user);
-        await authClient.auth.signOut();
         toast({
           title: "Signed in",
           description: "Welcome back.",
         });
-        await refreshAuthAndRedirect(user?.role);
+        refreshAuthAndRedirect(user?.role);
       } catch (error) {
-        if (!cancelled) {
+        void authClient.auth.signOut({ scope: "local" });
+        if (mounted.current) {
           toast({
             title: "Social login failed",
             description: getApiErrorMessage(error),
@@ -258,22 +272,20 @@ export default function AuthPage() {
           });
         }
       } finally {
-        if (!cancelled) {
+        if (mounted.current) {
           setIsCompletingSocialLogin(false);
         }
       }
     }
 
     void completeSocialLogin(supabaseClient);
+  }, [isAuthenticated, toast]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [isAuthenticated, isCompletingSocialLogin, toast]);
-
-  async function refreshAuthAndRedirect(userRole?: string | null) {
-    await queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+  // Every sign-in path has already put the account in the cache, so go now
+  // and refresh it in the background rather than wait a round trip.
+  function refreshAuthAndRedirect(userRole?: string | null) {
     setLocation(resolvePostAuthPath(nextPath, userRole === "admin", userRole));
+    void queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
   }
 
   async function handleSocialSignIn(provider: SocialProvider) {
@@ -337,7 +349,7 @@ export default function AuthPage() {
           title: "Account ready",
           description: data.message ?? "OTP verification is skipped for local testing.",
         });
-        await refreshAuthAndRedirect(data.user.role);
+        refreshAuthAndRedirect(data.user.role);
         return;
       }
 
@@ -393,7 +405,7 @@ export default function AuthPage() {
         description: "Welcome back.",
       });
       setResetPasswordOtpBypassed(false);
-      await refreshAuthAndRedirect(user?.role);
+      refreshAuthAndRedirect(user?.role);
     } catch (error) {
       const payload = parseApiError(error);
       if (payload?.requiresEmailVerification) {
@@ -436,7 +448,7 @@ export default function AuthPage() {
         description: "Your account is ready.",
       });
       setResetPasswordOtpBypassed(false);
-      await refreshAuthAndRedirect(user?.role);
+      refreshAuthAndRedirect(user?.role);
     } catch (error) {
       toast({
         title: "Verification failed",
@@ -521,7 +533,7 @@ export default function AuthPage() {
         description: "You are now signed in.",
       });
       setResetPasswordOtpBypassed(false);
-      await refreshAuthAndRedirect(user?.role);
+      refreshAuthAndRedirect(user?.role);
     } catch (error) {
       toast({
         title: "Could not reset password",
