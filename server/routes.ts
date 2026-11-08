@@ -81,6 +81,7 @@ import {
   type RoomClaim,
 } from "@shared/hotel-rooms";
 import { listUploads, saveBase64Upload } from "./media";
+import { warmPhotoVariants } from "./media-variants";
 import {
   getPrivateFile,
   getPrivateFileContext,
@@ -3538,6 +3539,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const mediaUrl = await saveBase64Upload(dataUrl, mimeType);
       const mediaType = mimeType.startsWith("video/") ? "video" : "image";
+      if (mediaType === "image") warmPhotoVariants(mediaUrl);
 
       res.status(201).json({ mediaUrl, mediaType });
     } catch (error) {

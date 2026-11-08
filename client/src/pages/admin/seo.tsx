@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { seoDescriptionLimit, seoTitleLimit, type SeoGrade } from "@shared/listing-seo";
+import { photoVariantPath } from "@shared/photo-variants";
 
 type SeoListingRow = {
   kind: "stay" | "car" | "cook" | "errand" | "experience";
@@ -190,7 +191,7 @@ export default function AdminSeo() {
               {shown.map((listing) => (
                 <li key={`${listing.kind}-${listing.id}`} className="flex gap-3 rounded-2xl border border-stone-200 bg-white p-3 sm:p-4" data-testid={`seo-row-${listing.kind}-${listing.id}`}>
                   <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-stone-100 sm:h-20 sm:w-20">
-                    {listing.photo ? <img src={listing.photo} alt="" className="h-full w-full object-cover" loading="lazy" /> : null}
+                    {listing.photo ? <img src={photoVariantPath(listing.photo, 240) ?? listing.photo} alt="" className="h-full w-full object-cover" loading="lazy" /> : null}
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-start justify-between gap-2">

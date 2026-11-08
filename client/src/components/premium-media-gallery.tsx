@@ -3,6 +3,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { ChevronLeft, ChevronRight, Maximize2, RotateCcw, X } from "lucide-react";
 import { Carousel, CarouselApi, CarouselContent, CarouselItem } from "@/components/ui/carousel";
 import { ListingMedia } from "@/components/listing-media";
+import { photoVariantPath } from "@shared/photo-variants";
 import { cn } from "@/lib/utils";
 
 type GallerySource = {
@@ -175,6 +176,7 @@ export function PremiumMediaGallery({
               mediaType={item.mediaType}
               className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
               loading={eagerFirstImage ? "eager" : "lazy"}
+              sizes="(min-width: 1280px) 640px, 50vw"
             />
           </button>
           <div className={cn("grid min-h-0 gap-2", mosaicRest.length >= 4 ? "grid-cols-2 grid-rows-2" : MOSAIC_ROWS[mosaicRest.length])}>
@@ -187,6 +189,7 @@ export function PremiumMediaGallery({
                   mediaType={item.mediaType}
                   className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
                   loading="lazy"
+                  sizes={mosaicRest.length >= 4 ? "(min-width: 1280px) 320px, 25vw" : "(min-width: 1280px) 640px, 50vw"}
                 />
               </button>
             ))}
@@ -227,7 +230,7 @@ export function PremiumMediaGallery({
                         imageClassName,
                       )}
                       loading={eagerFirstImage && index === 0 ? "eager" : "lazy"}
-                      sizes={imageSizes}
+                      sizes={imageSizes ?? "(min-width: 1280px) 1200px, 100vw"}
                     />
                     <div className={cn("absolute inset-0 bg-gradient-to-t to-transparent", isCard ? "from-slate-950/35 via-transparent" : "from-slate-950/70 via-slate-900/10")} />
                     {galleryImages.length > 1 && !isCard ? (
@@ -316,7 +319,7 @@ export function PremiumMediaGallery({
                     carouselApi?.scrollTo(index);
                   }}
                 >
-                  <img src={imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" onError={() => markFailed(imageUrl)} />
+                  <img src={photoVariantPath(imageUrl, 240) ?? imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" onError={() => markFailed(imageUrl)} />
                 </button>
               ))}
               {galleryImages.length > visibleThumbs.length ? (
@@ -356,7 +359,7 @@ export function PremiumMediaGallery({
                   )}
                   onClick={() => carouselApi?.scrollTo(index)}
                 >
-                  <img src={imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" onError={() => markFailed(imageUrl)} />
+                  <img src={photoVariantPath(imageUrl, 240) ?? imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" onError={() => markFailed(imageUrl)} />
                 </button>
               ))}
             </div>
@@ -485,7 +488,7 @@ export function PremiumMediaGallery({
                           )}
                           onClick={() => setLightboxIndex(index)}
                         >
-                          <img src={imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" onError={() => markFailed(imageUrl)} />
+                          <img src={photoVariantPath(imageUrl, 240) ?? imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" onError={() => markFailed(imageUrl)} />
                         </button>
                       ))}
                     </div>

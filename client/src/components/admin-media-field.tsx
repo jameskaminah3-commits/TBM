@@ -5,6 +5,7 @@ import { ListingMedia } from "@/components/listing-media";
 import { MediaLibraryPicker } from "@/components/media-library-picker";
 import { apiRequest } from "@/lib/queryClient";
 import { FolderOpen, ImagePlus, Images, Star, Trash2, UploadCloud, Video } from "lucide-react";
+import { photoVariantPath } from "@shared/photo-variants";
 
 type AdminMediaFieldProps = {
   value?: string | null;
@@ -274,7 +275,7 @@ export function AdminMediaField({ value, galleryUrls = [], mediaType = "image", 
             {imageGallery.map((url, index) => (
               <div key={url} className="overflow-hidden rounded-xl border border-border/70 bg-background shadow-sm">
                 <div className="aspect-[4/3] overflow-hidden bg-muted">
-                  <img src={url} alt={index === 0 ? "Cover image" : "Gallery image"} className="h-full w-full object-cover" loading="lazy" />
+                  <img src={photoVariantPath(url, 480) ?? url} alt={index === 0 ? "Cover image" : "Gallery image"} className="h-full w-full object-cover" loading="lazy" />
                 </div>
                 <div className="space-y-3 p-3">
                   <div className="flex items-center justify-between gap-2">

@@ -14,6 +14,7 @@ import { buildCanonicalUrl } from "@/lib/canonical-url";
 import { formatRating, hasPublicRating } from "@shared/review-eligibility";
 import { areaPagePath, seoCategoryPages, type SeoAreaService } from "@shared/listing-seo";
 import type { PublicListingKind } from "@shared/seo";
+import { photoSrcSet } from "@shared/photo-variants";
 
 type AreaCard = {
   kind: PublicListingKind;
@@ -47,7 +48,7 @@ function ListingCard({ card }: { card: AreaCard }) {
   return (
     <Link href={card.path} className="group flex min-w-0 flex-col overflow-hidden rounded-[1.5rem] border border-stone-200 bg-white transition hover:-translate-y-0.5 hover:border-teal-300 hover:shadow-[0_24px_50px_-40px_rgba(15,61,58,0.6)]" data-testid={`area-listing-${card.id}`}>
       <div className="aspect-[4/3] overflow-hidden bg-stone-100">
-        {card.imageUrl ? <img src={card.imageUrl} alt={card.imageAlt} loading="lazy" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" /> : null}
+        {card.imageUrl ? <img src={card.imageUrl} srcSet={photoSrcSet(card.imageUrl)} sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw" alt={card.imageAlt} loading="lazy" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" /> : null}
       </div>
       <div className="flex flex-1 flex-col gap-1.5 p-4">
         <h2 className="font-serif text-lg font-semibold leading-snug text-stone-950">{card.name}</h2>

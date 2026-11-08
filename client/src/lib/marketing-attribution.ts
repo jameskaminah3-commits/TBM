@@ -1,9 +1,9 @@
+import type { MarketingAttributionPayload } from "@shared/schema";
 import {
   marketingAttributionSourceTypes,
   type MarketingAttributionEventType,
-  type MarketingAttributionPayload,
   type MarketingAttributionSourceType,
-} from "@shared/schema";
+} from "@shared/marketing-attribution-types";
 import type { PublicListingKind } from "@shared/seo";
 import {
   addTouch,

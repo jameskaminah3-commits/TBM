@@ -50,6 +50,7 @@ import { getCookExtraGuestInclusivePrice, getCookExtraGuestServiceFee, getCookMi
 import { HOUSE_CLEANING_BASE_ROOM_LABEL, getHelpMamaStartingPrice, hasHelpMamaPricing } from "@shared/errand-pricing";
 import { formatCalendarDate, formatCalendarDateRange, isCalendarDate, todayInKenya } from "@shared/calendar-dates";
 import { isHotelStay } from "@shared/hotel-rooms";
+import { photoVariantPath } from "@shared/photo-variants";
 
 type ProviderAssignments = {
   stays: Stay[];
@@ -1432,7 +1433,7 @@ export default function ProviderDashboard() {
                           <article key={listing.id} className="flex flex-col overflow-hidden rounded-[1.5rem] border border-stone-200/80 bg-white shadow-[0_20px_50px_-42px_rgba(92,73,47,0.5)] sm:flex-row" data-testid={`listing-card-${listing.kind}-${listing.id}`}>
                             <div className="relative h-36 shrink-0 bg-stone-100 sm:h-auto sm:w-40">
                               {listing.imageUrl ? (
-                                <img src={listing.imageUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
+                                <img src={photoVariantPath(listing.imageUrl, 480) ?? listing.imageUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
                               ) : (
                                 <div className="flex h-full w-full items-center justify-center"><WorkspaceIcon workspace={key} className="h-14 w-14" /></div>
                               )}

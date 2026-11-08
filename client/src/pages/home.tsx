@@ -70,6 +70,14 @@ function ServiceShowcaseCard({
         },
       ];
 
+  // The photos are stacked, so each is mounted only once its turn comes (and
+  // the next one just before): stacked lazy images all sit in view and would
+  // all download at once.
+  const [shownUpTo, setShownUpTo] = useState(1);
+  useEffect(() => {
+    setShownUpTo((current) => Math.max(current, activeIndex + 1));
+  }, [activeIndex]);
+
   useEffect(() => {
     setActiveIndex(0);
   }, [safeItems.length]);
@@ -110,14 +118,15 @@ function ServiceShowcaseCard({
                 key={item.id}
                 className={`absolute inset-0 transition-[opacity,transform] duration-700 ${index === activeIndex ? "opacity-100 scale-100" : "pointer-events-none opacity-0 scale-[1.03]"}`}
               >
-                {item.imageUrl ? (
+                {item.imageUrl && index <= shownUpTo ? (
                   <ListingMedia
                     src={item.imageUrl}
                     alt={item.title}
                     mediaType={item.mediaType}
                     className="h-full w-full object-cover"
-                    loading={index === 0 ? "eager" : "lazy"}
+                    loading="lazy"
                     decoding="async"
+                    sizes="(min-width: 1280px) 20vw, (min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw"
                   />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center bg-primary/10">

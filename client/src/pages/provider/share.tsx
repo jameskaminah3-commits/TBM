@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { useProviderHub } from "@/hooks/use-provider-hub";
 import { toHubListings } from "@/lib/provider-listings";
 import { providerWorkspaces } from "@shared/provider-workspaces";
+import { photoVariantPath } from "@shared/photo-variants";
 
 // Ideas that work for each kind of service. Honest and specific: no promises
 // of bookings, just where guests already are.
@@ -54,7 +55,7 @@ export default function ProviderShare() {
               {live.map((listing) => (
                 <div key={`${listing.kind}-${listing.id}`} className="flex min-w-0 gap-3 rounded-2xl border border-stone-200 bg-white p-3" data-testid={`share-row-${listing.kind}-${listing.id}`}>
                   {listing.imageUrl ? (
-                    <img src={listing.imageUrl} alt="" loading="lazy" className="h-20 w-20 shrink-0 rounded-xl object-cover" />
+                    <img src={photoVariantPath(listing.imageUrl, 240) ?? listing.imageUrl} alt="" loading="lazy" className="h-20 w-20 shrink-0 rounded-xl object-cover" />
                   ) : (
                     <WorkspaceIcon workspace={listing.workspace} className="h-20 w-20 rounded-xl" />
                   )}

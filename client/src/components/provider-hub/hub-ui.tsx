@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { BadgeCheck, BedDouble, Car, ChefHat, Clock3, HandHelping, Sailboat, ShieldAlert } from "lucide-react";
 import type { ProviderCategory } from "@shared/schema";
 import { cn } from "@/lib/utils";
+import { photoVariantPath } from "@shared/photo-variants";
 
 export const workspaceIcons: Record<ProviderCategory, typeof Car> = {
   stays: BedDouble,
@@ -130,7 +131,7 @@ export function initialsOf(...parts: Array<string | null | undefined>) {
 
 export function HubAvatar({ photoUrl, name, className }: { photoUrl?: string | null; name: string; className?: string }) {
   return photoUrl ? (
-    <img src={photoUrl} alt="" className={cn("h-10 w-10 shrink-0 rounded-2xl object-cover ring-1 ring-stone-200", className)} />
+    <img src={photoVariantPath(photoUrl, 240) ?? photoUrl} alt="" className={cn("h-10 w-10 shrink-0 rounded-2xl object-cover ring-1 ring-stone-200", className)} />
   ) : (
     <span className={cn("inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-700 to-teal-900 text-sm font-semibold text-white", className)}>
       {initialsOf(name)}

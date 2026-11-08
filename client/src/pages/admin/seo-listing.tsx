@@ -30,6 +30,7 @@ import {
   type SeoSuggestions,
 } from "@shared/listing-seo";
 import { ScoreBadge, kindLabels } from "./seo";
+import { photoVariantPath } from "@shared/photo-variants";
 
 type SeoDetail = {
   listing: { kind: SeoListingInput["kind"]; id: string; name: string; location: string; live: boolean; path: string; editPath: string };
@@ -276,7 +277,7 @@ export default function AdminSeoListing() {
                   <ul className="space-y-3">
                     {input.photos.map((photo, index) => (
                       <li key={photo} className="flex gap-3">
-                        <img src={photo} alt="" className="h-14 w-14 shrink-0 rounded-lg bg-stone-100 object-cover sm:h-16 sm:w-20" loading="lazy" />
+                        <img src={photoVariantPath(photo, 240) ?? photo} alt="" className="h-14 w-14 shrink-0 rounded-lg bg-stone-100 object-cover sm:h-16 sm:w-20" loading="lazy" />
                         <Input value={alts[photo] ?? ""} onChange={(event) => change(setAlts)({ ...alts, [photo]: event.target.value })} placeholder={suggestions.photoAlts[photo]} aria-label={`Text for photo ${index + 1}`} className="min-w-0" />
                       </li>
                     ))}

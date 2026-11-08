@@ -17,6 +17,7 @@ import {
 } from "./media";
 import { getCanonicalRedirectUrl } from "./canonical-host";
 import { getSeoRedirect } from "./seo-redirects";
+import { registerPhotoVariantRoute } from "./media-variants";
 import { registerRoutes } from "./routes";
 import { applySecurityHeaders } from "./security";
 import { log, serveStatic, setupVite } from "./vite";
@@ -137,6 +138,7 @@ if (usesLocalUploadStorage()) {
   ensureUploadDir();
   app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
 } else if (canUseSupabaseMediaStorage()) {
+  registerPhotoVariantRoute(app);
   app.get("/uploads/*", (req, res) => {
     try {
       const uploadPath = (req.params as { 0?: string })[0] ?? "";

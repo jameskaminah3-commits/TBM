@@ -16,6 +16,7 @@ import type { HubListing } from "@/lib/provider-listings";
 import { formatKenyaDateTime } from "@shared/calendar-dates";
 import { countNoun, providerWorkspaces } from "@shared/provider-workspaces";
 import { emptyProviderProfile, getProviderSetupSteps, type ProviderProfileView } from "@shared/provider-profile";
+import { photoVariantPath } from "@shared/photo-variants";
 
 export type AttentionItem = {
   key: string;
@@ -293,7 +294,7 @@ export function ProviderOverview(props: OverviewProps) {
               <ul className="space-y-2" data-testid="card-share-your-listings">
                 {live.slice(0, 3).map((listing) => (
                   <li key={`${listing.kind}-${listing.id}`} className="flex items-center gap-3 rounded-2xl border border-stone-200/80 bg-white p-2.5">
-                    {listing.imageUrl ? <img src={listing.imageUrl} alt="" loading="lazy" className="h-11 w-11 shrink-0 rounded-xl object-cover" /> : <WorkspaceIcon workspace={listing.workspace} className="h-11 w-11" />}
+                    {listing.imageUrl ? <img src={photoVariantPath(listing.imageUrl, 240) ?? listing.imageUrl} alt="" loading="lazy" className="h-11 w-11 shrink-0 rounded-xl object-cover" /> : <WorkspaceIcon workspace={listing.workspace} className="h-11 w-11" />}
                     <span className="min-w-0 flex-1 truncate text-sm font-medium">{listing.name}</span>
                     <ListingShareSheet
                       kind={listing.kind}

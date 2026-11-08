@@ -3,6 +3,7 @@ import { pgTable, text, varchar, integer, timestamp, boolean, jsonb, index, uniq
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { mealPlanCodes, stayPropertyTypes, type HotelStaySnapshot, type RoomRate } from "./hotel-rooms.ts";
+import { marketingAttributionEventTypes, marketingAttributionSourceTypes } from "./marketing-attribution-types.ts";
 
 // Replit Auth Integration: Session storage table
 // (IMPORTANT) This table is mandatory for Replit Auth, don't drop it.
@@ -28,10 +29,12 @@ export const marketingPromoStatuses = ["draft", "scheduled", "active", "paused",
 export type MarketingPromoStatus = typeof marketingPromoStatuses[number];
 export const marketingPromoChannels = ["homepage", "blog", "email", "social", "whatsapp", "partner", "guest-share"] as const;
 export type MarketingPromoChannel = typeof marketingPromoChannels[number];
-export const marketingAttributionSourceTypes = ["blog", "promo", "homepage", "service-page", "stay-page", "campaign", "direct"] as const;
-export type MarketingAttributionSourceType = typeof marketingAttributionSourceTypes[number];
-export const marketingAttributionEventTypes = ["view", "cta-click", "booking"] as const;
-export type MarketingAttributionEventType = typeof marketingAttributionEventTypes[number];
+export {
+  marketingAttributionEventTypes,
+  marketingAttributionSourceTypes,
+  type MarketingAttributionEventType,
+  type MarketingAttributionSourceType,
+} from "./marketing-attribution-types.ts";
 export const listingMediaTypes = ["image", "video"] as const;
 export type ListingMediaType = typeof listingMediaTypes[number];
 export const customMenuProposalStatuses = ["pending", "pending-admin-approval", "proposed", "declined"] as const;

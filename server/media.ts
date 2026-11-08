@@ -2,6 +2,7 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { optimizeUploadedPhoto } from "./photo-processing";
 
 type MediaStorageBackend = "local" | "supabase";
 
@@ -201,9 +202,10 @@ async function saveSupabaseUpload(fileBuffer: Buffer, mimeType: string, filename
   const { bucket } = getSupabaseMediaStorageConfig();
   const objectPath = `${new Date().toISOString().slice(0, 10)}/${filename}`;
   const client = getSupabaseStorageClient();
+  // Every upload has its own name, so browsers may keep it for a year.
   const { error } = await client.storage.from(bucket).upload(objectPath, fileBuffer, {
     contentType: mimeType,
-    cacheControl: "3600",
+    cacheControl: "31536000",
     upsert: false,
   });
 
@@ -380,9 +382,13 @@ export function decodeUploadPayload(dataUrl: string, mimeType: string) {
 }
 
 export async function saveBase64Upload(dataUrl: string, mimeType: string) {
-  const { fileBuffer, extension } = decodeUploadPayload(dataUrl, mimeType);
-  const filename = buildUploadFilename(extension);
+  const decoded = decodeUploadPayload(dataUrl, mimeType);
+  // Photos are kept upright, at most 2560 px and without their metadata.
+  const { buffer, mimeType: storedMimeType } = mimeType.startsWith("image/")
+    ? await optimizeUploadedPhoto(decoded.fileBuffer, mimeType)
+    : { buffer: decoded.fileBuffer, mimeType };
+  const filename = buildUploadFilename(getFileExtension(storedMimeType) ?? decoded.extension);
   return usesLocalUploadStorage()
-    ? saveLocalUpload(fileBuffer, filename)
-    : saveSupabaseUpload(fileBuffer, mimeType, filename);
+    ? saveLocalUpload(buffer, filename)
+    : saveSupabaseUpload(buffer, storedMimeType, filename);
 }

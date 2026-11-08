@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import { MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getPublicListingPath, type PublicListingKind } from "@shared/seo";
+import { photoSrcSet } from "@shared/photo-variants";
 
 type ListingSummary = {
   id: string;
@@ -62,7 +63,7 @@ export function ListingUnavailable({
                   className="group block overflow-hidden rounded-2xl border bg-card transition-shadow hover:shadow-md"
                 >
                   {listing.imageUrl ? (
-                    <img src={listing.imageUrl} alt="" loading="lazy" className="aspect-[4/3] w-full object-cover" />
+                    <img src={listing.imageUrl} srcSet={photoSrcSet(listing.imageUrl)} sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw" alt="" loading="lazy" className="aspect-[4/3] w-full object-cover" />
                   ) : (
                     <div className="aspect-[4/3] w-full bg-muted" />
                   )}

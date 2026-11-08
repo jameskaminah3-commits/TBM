@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import type { ProviderPageSettingsView } from "@/lib/provider-page";
 import { AdminSpotlight } from "@/components/admin-spotlight";
 import { providerPageBlockerLabels, providerPhotoChecklist, providerPhotoKinds, type ProviderPhotoKind } from "@shared/provider-public";
+import { photoVariantPath } from "@shared/photo-variants";
 
 const kindLabels: Record<ProviderPhotoKind, string> = { logo: "Logo", work: "Their work", face: "Their face" };
 
@@ -75,7 +76,7 @@ export function AdminProviderPublicPage({ providerId, onChanged }: { providerId:
             {settings.offersHomeHelp && kind === "face" ? <p className="text-xs text-amber-800">This provider offers home help: a face is never shown publicly, even if approved. Approved, it's shown only to a guest whose home-help booking with them is confirmed.</p> : null}
           </div>
         ) : settings.photo.approvedUrl ? (
-          <img src={settings.photo.approvedUrl} alt="Approved photo" className="h-24 w-24 rounded-2xl border object-cover" />
+          <img src={photoVariantPath(settings.photo.approvedUrl, 240) ?? settings.photo.approvedUrl} alt="Approved photo" className="h-24 w-24 rounded-2xl border object-cover" />
         ) : (
           <p className="text-muted-foreground">No photo. The page shows a service icon.</p>
         )}
