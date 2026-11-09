@@ -17,7 +17,8 @@ import {
 } from "./media";
 import { getCanonicalRedirectUrl } from "./canonical-host";
 import { getSeoRedirect } from "./seo-redirects";
-import { registerPhotoVariantRoute } from "./media-variants";
+import { prepareListingPhotos, registerPhotoVariantRoute } from "./media-variants";
+import { storage } from "./storage";
 import { registerRoutes } from "./routes";
 import { applySecurityHeaders } from "./security";
 import { log, serveStatic, setupVite } from "./vite";
@@ -170,6 +171,19 @@ app.use((req, res, next) => {
   next();
 });
 
+async function collectListingPhotoUrls() {
+  const lists = await Promise.all([storage.getStays(), storage.getCars(), storage.getCooks(), storage.getErrands(), storage.getExperiences()]);
+  const urls: string[] = [];
+  for (const list of lists) {
+    for (const listing of list as Array<{ isPublic: boolean; imageUrl?: string | null; galleryUrls?: string[] | null }>) {
+      if (!listing.isPublic) continue;
+      if (listing.imageUrl) urls.push(listing.imageUrl);
+      urls.push(...(listing.galleryUrls ?? []));
+    }
+  }
+  return urls;
+}
+
 void (async () => {
   const server = await registerRoutes(app);
 
@@ -194,6 +208,16 @@ void (async () => {
     app.get("env") === "development" && !process.env.PORT,
   );
   log(`serving on port ${port}`);
+
+  // Every public listing photo gets its smaller copies in the background, so
+  // guests don't wait for one to be made (server/media-variants.ts).
+  if (canUseSupabaseMediaStorage()) {
+    setTimeout(() => {
+      void collectListingPhotoUrls()
+        .then(prepareListingPhotos)
+        .catch((error) => console.warn("[MEDIA] Could not prepare listing photos:", error instanceof Error ? error.message : error));
+    }, 15_000).unref();
+  }
 })().catch((error) => {
   console.error("[SERVER] Failed to start:", error);
   process.exit(1);
