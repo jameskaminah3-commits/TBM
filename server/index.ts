@@ -17,6 +17,7 @@ import {
 } from "./media";
 import { getCanonicalRedirectUrl } from "./canonical-host";
 import { getSeoRedirect } from "./seo-redirects";
+import { apiNoIndexHeader } from "./robots-txt";
 import { prepareListingPhotos, registerPhotoVariantRoute } from "./media-variants";
 import { storage } from "./storage";
 import { registerRoutes } from "./routes";
@@ -120,6 +121,13 @@ app.use(applySecurityHeaders);
 // Pages, scripts, styles and API replies go out compressed (brotli or gzip):
 // a phone on a slow connection downloads a fraction of the bytes.
 app.use(compression());
+
+// API answers never appear in search results. (robots.txt leaves /api/ open,
+// because Google loads public pages' data from it: server/robots-txt.ts.)
+app.use("/api", (_req, res, next) => {
+  res.setHeader(apiNoIndexHeader.name, apiNoIndexHeader.value);
+  next();
+});
 
 app.use(express.json({
   limit: jsonBodyLimit,

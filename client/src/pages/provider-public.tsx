@@ -8,6 +8,8 @@ import { Eye, Languages, MapPin, MessageCircle, ShieldCheck, Star } from "lucide
 import { Button } from "@/components/ui/button";
 import { CurrencyAmount } from "@/components/currency-amount";
 import { SeoHead } from "@/components/seo-head";
+import { PageLoadError } from "@/components/page-load-error";
+import { HttpError, retryUnlessNotFound } from "@/lib/queryClient";
 import { ProviderAvatar, ProviderBadges, ProviderRatingLine } from "@/components/provider-public-bits";
 import { buildCanonicalUrl } from "@/lib/canonical-url";
 import { capturePageVisit, trackShareEvent, withShareRef } from "@/lib/marketing-attribution";
@@ -48,17 +50,17 @@ function Unavailable() {
 export default function ProviderPublicPage() {
   const { code = "" } = useParams<{ code: string }>();
   const [location, setLocation] = useLocation();
-  const { data, isLoading, isError } = useQuery<PageResponse | null>({
+  const { data, isLoading, isError, refetch } = useQuery<PageResponse | null>({
     queryKey: ["/api/public/providers", code],
     queryFn: async () => {
       const response = await fetch(`/api/public/providers/${encodeURIComponent(code)}`, { credentials: "include" });
       // Read the body either way, so the request is finished and the connection freed.
       const body = await response.json().catch(() => null);
       if (response.status === 404) return null;
-      if (!response.ok) throw new Error("Couldn't load this page");
+      if (!response.ok) throw new HttpError("Couldn't load this page", response.status);
       return body;
     },
-    retry: false,
+    retry: retryUnlessNotFound,
   });
   const provider = data?.provider;
 
@@ -77,7 +79,12 @@ export default function ProviderPublicPage() {
   if (isLoading) {
     return <div className="min-h-screen py-20 text-center text-muted-foreground">Loading…</div>;
   }
-  if (isError || !provider) {
+  // A 404 arrives as null; an error is a page that couldn't load, not one
+  // that's gone, so the server's robots and canonical tags stay.
+  if (isError) {
+    return <PageLoadError onRetry={() => void refetch()} browseHref="/accommodations" browseLabel="Browse stays" />;
+  }
+  if (!provider) {
     return <div className="min-h-screen"><Unavailable /></div>;
   }
 

@@ -34,6 +34,8 @@ import { StayRefundNote } from "@/components/stay-refund-note";
 import { readStaySearchState, toSearchSuffix } from "@/lib/stay-search";
 import type { StayWithRooms } from "@shared/schema";
 import { SeoHead } from "@/components/seo-head";
+import { PageLoadError } from "@/components/page-load-error";
+import { HttpError, isNotFoundError, retryUnlessNotFound } from "@/lib/queryClient";
 import { MealPlanChips } from "@/components/stay-kind";
 import { HotelRoomsSection } from "@/components/hotel-rooms-section";
 import { isHotelStay, summarizeHotelRooms } from "@shared/hotel-rooms";
@@ -113,13 +115,14 @@ export default function AccommodationDetail() {
   const { formatAmount } = useCurrency();
   const [datesOpen, setDatesOpen] = useState(false);
 
-  const { data: accommodation, isLoading } = useQuery<StayWithRooms & { seo?: PublicListingSeo | null }>({
+  const { data: accommodation, isLoading, error: accommodationError, refetch: refetchAccommodation } = useQuery<StayWithRooms & { seo?: PublicListingSeo | null }>({
     queryKey: ["/api/stays", id],
     queryFn: async () => {
       const response = await fetch(`/api/stays/${id}`);
-      if (!response.ok) throw new Error("Failed to fetch accommodation");
+      if (!response.ok) throw new HttpError("Failed to fetch accommodation", response.status);
       return response.json();
     },
+    retry: retryUnlessNotFound,
   });
   const ownsListing = useOwnsListing("stay", accommodation?.id);
 
@@ -237,6 +240,12 @@ export default function AccommodationDetail() {
         </div>
       </div>
     );
+  }
+
+  // Couldn't load (as opposed to "doesn't exist"): the page keeps the robots and
+  // canonical tags the server sent, so search engines aren't told it's gone.
+  if (!accommodation && accommodationError && !isNotFoundError(accommodationError)) {
+    return <PageLoadError onRetry={() => void refetchAccommodation()} browseHref={`/accommodations${staySearchSuffix}`} browseLabel="Browse places to stay" />;
   }
 
   if (!accommodation) {

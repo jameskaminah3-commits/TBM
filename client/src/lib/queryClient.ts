@@ -21,10 +21,33 @@ async function getResponseErrorMessage(res: Response) {
   return text;
 }
 
+/** A failed request, with its HTTP status (0 when it never reached the server). */
+export class HttpError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = "HttpError";
+  }
+}
+
+/**
+ * Only the server saying "not found" means a page is gone. A request that
+ * failed for any other reason (no connection, a server error, a crawler that
+ * isn't allowed to fetch it) says nothing about the page, so it must never
+ * mark the page as missing or keep search engines away from it.
+ */
+export function isNotFoundError(error: unknown) {
+  return error instanceof HttpError && (error.status === 404 || error.status === 410);
+}
+
+/** For a page's main data: try twice more, unless the server said it doesn't exist. */
+export function retryUnlessNotFound(failureCount: number, error: unknown) {
+  return !isNotFoundError(error) && failureCount < 2;
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const message = await getResponseErrorMessage(res);
-    throw new Error(message);
+    throw new HttpError(message, res.status);
   }
 }
 

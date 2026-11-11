@@ -8,6 +8,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "wouter";
 import { ArrowRight, MapPin, Sparkles, Star } from "lucide-react";
 import { SeoHead } from "@/components/seo-head";
+import { PageLoadError } from "@/components/page-load-error";
+import { isNotFoundError, retryUnlessNotFound } from "@/lib/queryClient";
 import { CurrencyAmount } from "@/components/currency-amount";
 import { Button } from "@/components/ui/button";
 import { buildCanonicalUrl } from "@/lib/canonical-url";
@@ -73,7 +75,7 @@ function ListingCard({ card }: { card: AreaCard }) {
 
 export default function ExploreArea() {
   const { area = "", service = "" } = useParams<{ area: string; service: string }>();
-  const { data, isLoading, isError } = useQuery<AreaPage>({ queryKey: ["/api/seo/areas", area, service], enabled: Boolean(area && service) });
+  const { data, isLoading, isError, error, refetch } = useQuery<AreaPage>({ queryKey: ["/api/seo/areas", area, service], enabled: Boolean(area && service), retry: retryUnlessNotFound });
   const canonicalUrl = buildCanonicalUrl(areaPagePath(area, service as SeoAreaService));
   const category = data ? seoCategoryPages[data.kind] : null;
   const structuredData = useMemo(() => (data && category ? {
@@ -98,6 +100,12 @@ export default function ExploreArea() {
   } : null), [canonicalUrl, category, data]);
 
   if (isLoading) return <div className="min-h-screen py-20 text-center text-muted-foreground">Loading…</div>;
+  // Couldn't load (as opposed to "doesn't exist"): the server's robots and
+  // canonical tags stay, so search engines aren't told the page is gone.
+  if (isError && !isNotFoundError(error)) {
+    return <PageLoadError onRetry={() => void refetch()} />;
+  }
+
   if (isError || !data || !category) {
     return (
       <div className="app-shell min-h-screen py-16">

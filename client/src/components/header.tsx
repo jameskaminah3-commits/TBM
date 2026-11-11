@@ -42,7 +42,14 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
 export function Header() {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
+  // The Sign in link points at plain /auth, so search engines see one sign-in
+  // page instead of a new /auth?next=… address on every page of the site; the
+  // way back to this page is added when someone actually clicks it.
+  const goToSignIn = (event: { preventDefault: () => void }) => {
+    event.preventDefault();
+    setLocation(`/auth?next=${encodeURIComponent(location)}`);
+  };
   const { open, setOpen } = useNavSheet();
   const isMobile = useIsMobile();
   const { user, isAuthenticated, isLoading, isAdmin, isProvider } = useAuth();
@@ -209,7 +216,7 @@ export function Header() {
                 aria-hidden={isLoading || undefined}
                 data-testid="button-login"
               >
-                <Link href={`/auth?next=${encodeURIComponent(location)}`}>
+                <Link href="/auth" onClick={goToSignIn}>
                   <LogIn className="h-4 w-4 mr-2" />
                   Sign in
                 </Link>
@@ -391,7 +398,7 @@ export function Header() {
                           asChild
                           data-testid="mobile-button-login"
                         >
-                          <Link href={`/auth?next=${encodeURIComponent(location)}`} onClick={() => setOpen(false)}>
+                          <Link href="/auth" onClick={(event) => { setOpen(false); goToSignIn(event); }}>
                             <LogIn className="h-4 w-4 mr-2" />
                             Sign in
                           </Link>

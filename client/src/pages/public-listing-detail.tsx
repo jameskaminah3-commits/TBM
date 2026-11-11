@@ -47,6 +47,8 @@ import { PremiumMediaGallery } from "@/components/premium-media-gallery";
 import { PublicReviewPreview } from "@/components/public-review-preview";
 import { YourHost } from "@/components/your-host";
 import { SeoHead } from "@/components/seo-head";
+import { PageLoadError } from "@/components/page-load-error";
+import { HttpError, isNotFoundError, retryUnlessNotFound } from "@/lib/queryClient";
 import { buildCanonicalUrl } from "@/lib/canonical-url";
 import { useCurrency } from "@/lib/currency";
 import { openZaina } from "@/lib/zaina";
@@ -261,14 +263,15 @@ export default function PublicListingDetail({ kind }: { kind: ListingKind }) {
   const requestedMode = useMemo(() => new URLSearchParams(search).get("mode"), [search]);
   const [chosenMode, setChosenMode] = useState<string | null>(null);
 
-  const { data: listing, isLoading, isError } = useQuery<PublicListing>({
+  const { data: listing, isLoading, isError, error: listingError, refetch: refetchListing } = useQuery<PublicListing>({
     queryKey: [endpoint, id],
     enabled: Boolean(id),
     queryFn: async () => {
       const response = await fetch(`${endpoint}/${encodeURIComponent(id || "")}`);
-      if (!response.ok) throw new Error("Listing not found");
+      if (!response.ok) throw new HttpError("Listing not found", response.status);
       return response.json();
     },
+    retry: retryUnlessNotFound,
   });
   const ownsListing = useOwnsListing(kind, listing?.id);
 
@@ -319,6 +322,12 @@ export default function PublicListingDetail({ kind }: { kind: ListingKind }) {
 
   if (isLoading) {
     return <div className="min-h-screen py-20 text-center text-muted-foreground">Loading listing details...</div>;
+  }
+
+  // Couldn't load (as opposed to "doesn't exist"): the server's robots and
+  // canonical tags stay, so search engines aren't told the listing is gone.
+  if (isError && !isNotFoundError(listingError)) {
+    return <PageLoadError onRetry={() => void refetchListing()} browseHref={category.href} browseLabel={`Browse ${category.label.toLowerCase()}`} />;
   }
 
   if (isError || !listing) {

@@ -109,6 +109,7 @@ import { isProviderSuspendedNow, isSuspendedProvider, noteProviderSuspension, st
 import { registerProviderPageRoutes } from "./provider-page-routes";
 import { registerReviewModerationRoutes } from "./review-moderation-routes";
 import { registerSeoRoutes } from "./seo-routes";
+import { buildRobotsTxt } from "./robots-txt";
 import { liveAreaPageCounts, publicListingSeo } from "./listing-seo-store";
 import { areaPagePath } from "@shared/listing-seo";
 import { clearProviderPageCache, listLiveProviderPages } from "./provider-pages";
@@ -3387,24 +3388,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   void ensureListingPublishedTracking().catch((error) => console.error("[LISTINGS] Couldn't set up first-published dates:", error));
 
   app.get("/robots.txt", (_req, res) => {
-    const baseUrl = getPublicSiteBaseUrl();
+    // /api/ stays open: Google loads public pages' data from it (server/robots-txt.ts).
     res
       .type("text/plain")
-      .send([
-        "User-agent: *",
-        "Allow: /",
-        "Disallow: /admin/",
-        "Disallow: /provider/",
-        "Disallow: /auth",
-        "Disallow: /api/",
-        "Disallow: /book/",
-        "Disallow: /bookings",
-        "Disallow: /b/",
-        "Disallow: /inbox",
-        "",
-        `Sitemap: ${baseUrl}/sitemap.xml`,
-        "",
-      ].join("\n"));
+      .set("Cache-Control", "public, max-age=3600")
+      .send(buildRobotsTxt(getPublicSiteBaseUrl()));
   });
 
   app.get("/sitemap.xml", async (_req, res) => {

@@ -18,6 +18,8 @@ import {
   trackMarketingPageView,
 } from "@/lib/marketing-attribution";
 import { SeoHead } from "@/components/seo-head";
+import { PageLoadError } from "@/components/page-load-error";
+import { isNotFoundError, retryUnlessNotFound } from "@/lib/queryClient";
 import { buildCanonicalUrl } from "@/lib/canonical-url";
 
 function slugify(value: string) {
@@ -109,9 +111,10 @@ export default function BlogPostDetail() {
   const params = useParams<{ slug: string }>();
   const slug = params.slug;
 
-  const { data: post, isLoading, error } = useQuery<BlogPost>({
+  const { data: post, isLoading, error, refetch } = useQuery<BlogPost>({
     queryKey: ["/api/blog", slug],
     enabled: !!slug,
+    retry: retryUnlessNotFound,
   });
 
   const articleMarkdown = useMemo(() => {
@@ -221,6 +224,12 @@ export default function BlogPostDetail() {
         </div>
       </div>
     );
+  }
+
+  // Couldn't load (as opposed to "doesn't exist"): the server's robots and
+  // canonical tags stay, so search engines aren't told the article is gone.
+  if (error && !isNotFoundError(error)) {
+    return <PageLoadError onRetry={() => void refetch()} browseHref="/blog" browseLabel="Browse the Travel Journal" />;
   }
 
   if (error || !post) {
