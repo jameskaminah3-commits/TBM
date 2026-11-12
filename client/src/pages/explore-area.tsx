@@ -6,72 +6,14 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "wouter";
-import { ArrowRight, MapPin, Sparkles, Star } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { SeoHead } from "@/components/seo-head";
 import { PageLoadError } from "@/components/page-load-error";
 import { isNotFoundError, retryUnlessNotFound } from "@/lib/queryClient";
-import { CurrencyAmount } from "@/components/currency-amount";
+import { AreaListingCard as ListingCard, type AreaPageData as AreaPage } from "@/components/area-listings";
 import { Button } from "@/components/ui/button";
 import { buildCanonicalUrl } from "@/lib/canonical-url";
-import { formatRating, hasPublicRating } from "@shared/review-eligibility";
 import { areaPagePath, seoCategoryPages, type SeoAreaService } from "@shared/listing-seo";
-import type { PublicListingKind } from "@shared/seo";
-import { photoSrcSet } from "@shared/photo-variants";
-
-type AreaCard = {
-  kind: PublicListingKind;
-  id: string;
-  name: string;
-  location: string;
-  imageUrl: string | null;
-  imageAlt: string;
-  path: string;
-  price: number | null;
-  priceUnit: string;
-  rating: number | null;
-  reviewCount: number;
-};
-
-type AreaPage = {
-  area: { key: string; name: string; landmarks: string[] };
-  service: SeoAreaService;
-  kind: PublicListingKind;
-  heading: string;
-  intro: string;
-  title: string;
-  description: string;
-  listings: AreaCard[];
-  otherServices: Array<{ service: string; heading: string; path: string; count: number }>;
-  otherAreas: Array<{ key: string; heading: string; path: string; count: number }>;
-};
-
-function ListingCard({ card }: { card: AreaCard }) {
-  const rated = hasPublicRating({ rating: card.rating ?? 0, reviewCount: card.reviewCount });
-  return (
-    <Link href={card.path} className="group flex min-w-0 flex-col overflow-hidden rounded-[1.5rem] border border-stone-200 bg-white transition hover:-translate-y-0.5 hover:border-teal-300 hover:shadow-[0_24px_50px_-40px_rgba(15,61,58,0.6)]" data-testid={`area-listing-${card.id}`}>
-      <div className="aspect-[4/3] overflow-hidden bg-stone-100">
-        {card.imageUrl ? <img src={card.imageUrl} srcSet={photoSrcSet(card.imageUrl)} sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw" alt={card.imageAlt} loading="lazy" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" /> : null}
-      </div>
-      <div className="flex flex-1 flex-col gap-1.5 p-4">
-        <h2 className="font-serif text-lg font-semibold leading-snug text-stone-950">{card.name}</h2>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-          <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" aria-hidden="true" />{card.location}</span>
-          <span className="inline-flex items-center gap-1">
-            {rated ? <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" aria-hidden="true" /> : <Sparkles className="h-3.5 w-3.5 text-primary" aria-hidden="true" />}
-            {rated ? `${formatRating(card.rating!)} · ${card.reviewCount} reviews` : "New on TBM"}
-          </span>
-        </div>
-        {card.price ? (
-          <div className="mt-auto flex items-baseline gap-1.5 pt-2 text-sm">
-            {card.priceUnit === "from" ? <span className="text-muted-foreground">From</span> : null}
-            <CurrencyAmount amountUsd={card.price} primaryClassName="font-semibold text-stone-950" />
-            {card.priceUnit !== "from" ? <span className="text-muted-foreground">{card.priceUnit}</span> : null}
-          </div>
-        ) : null}
-      </div>
-    </Link>
-  );
-}
 
 export default function ExploreArea() {
   const { area = "", service = "" } = useParams<{ area: string; service: string }>();
@@ -160,6 +102,22 @@ export default function ExploreArea() {
                 <Link key={other.path} href={other.path} className="inline-flex min-h-11 items-center rounded-full border border-stone-200 bg-white px-4 text-sm font-medium hover:border-teal-300">{other.heading} <span className="ml-2 text-xs text-muted-foreground">{other.count}</span></Link>
               ))}
             </div>
+          </section>
+        ) : null}
+
+        {data.articles?.length ? (
+          <section className="mt-12" data-testid="area-articles">
+            <h2 className="font-serif text-2xl font-semibold">Read before you go to {data.area.name}</h2>
+            <ul className="mt-4 grid gap-3 sm:grid-cols-2">
+              {data.articles.map((article) => (
+                <li key={article.path}>
+                  <Link href={article.path} className="block h-full rounded-[1.25rem] border border-stone-200 bg-white p-4 hover:border-teal-300">
+                    <span className="font-serif text-lg font-semibold text-stone-950">{article.title}</span>
+                    {article.excerpt ? <span className="mt-1 block text-sm text-muted-foreground">{article.excerpt}</span> : null}
+                  </Link>
+                </li>
+              ))}
+            </ul>
           </section>
         ) : null}
 

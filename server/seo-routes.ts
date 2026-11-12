@@ -21,6 +21,8 @@ import {
   type SeoAreaService,
 } from "@shared/listing-seo";
 import { requireAdmin } from "./middleware/auth";
+import { storage } from "./storage";
+import { articleSeoArea } from "@shared/internal-links";
 import { getAutoListingSeoText } from "./share-metadata";
 import {
   getAreaPageOverride,
@@ -284,10 +286,11 @@ export function registerSeoRoutes(app: Express) {
       const service = req.params.service;
       if (!area || !isSeoAreaService(service)) return res.status(404).json({ error: "Page not found" });
       const kind = seoKindByService[service];
-      const [override, listings, counts] = await Promise.all([
+      const [override, listings, counts, posts] = await Promise.all([
         getAreaPageOverride(area.key, service).catch(() => null),
         liveListingsInArea(area.key, service),
         liveAreaPageCounts(),
+        storage.getPublishedBlogPosts().catch(() => []),
       ]);
       const copy = defaultAreaPageCopy(area, service);
       const cards = await Promise.all(listings.map(async (listing) => {
@@ -330,6 +333,11 @@ export function registerSeoRoutes(app: Express) {
         otherAreas: seoAreas
           .filter((other) => other.key !== area.key && countOf(other.key, service) > 0)
           .map((other) => ({ key: other.key, heading: areaPageHeading(other, service), path: areaPagePath(other.key, service), count: countOf(other.key, service) })),
+        // Articles about this area: the page and the articles link to each other.
+        articles: posts
+          .filter((post) => post.status === "published" && articleSeoArea(post)?.key === area.key)
+          .slice(0, 6)
+          .map((post) => ({ title: post.title, path: `/blog/${post.slug}`, excerpt: post.excerpt })),
         kind,
         serviceForKind: seoServiceByKind[kind],
       });

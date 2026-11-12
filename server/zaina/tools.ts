@@ -70,6 +70,7 @@ import {
   type RequestDetail,
 } from "./custom-offer-intake";
 import { getPublicListingPath } from "@shared/seo";
+import { getCarDisplayName } from "@shared/listing-share";
 import { getRatingSummary } from "../review-ratings";
 import { isProviderSuspendedNow, managerNotSuspended } from "../provider-status";
 import { addCalendarDays, kenyaDateTimeToIso } from "@shared/calendar-dates";
@@ -762,7 +763,7 @@ export async function searchCars(
       location: c.location,
       seats: c.seats,
       transmission: c.transmission,
-      public_url: `${appBaseUrl()}${getPublicListingPath("car", c.id, `${c.make ? `${c.make} ` : ""}${c.model}`)}`,
+      public_url: `${appBaseUrl()}${getPublicListingPath("car", c.id, getCarDisplayName(c))}`,
       pricing: {
         self_drive_per_day: c.pricePerDay
           ? { usd: c.pricePerDay, display: await formatPrice(c.pricePerDay, sessionId, currency) }
@@ -1128,7 +1129,7 @@ export async function checkServiceAvailability(
     service_id: args.service_id,
     title: "title" in service ? service.title : "service",
     public_url: car
-      ? `${appBaseUrl()}${getPublicListingPath("car", car.id, `${car.make ? `${car.make} ` : ""}${car.model}`)}`
+      ? `${appBaseUrl()}${getPublicListingPath("car", car.id, getCarDisplayName(car))}`
       : cook
         ? `${appBaseUrl()}${getPublicListingPath("cook", cook.id, cook.title)}`
         : errand

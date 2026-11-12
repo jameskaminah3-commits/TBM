@@ -110,6 +110,7 @@ import { registerProviderPageRoutes } from "./provider-page-routes";
 import { registerReviewModerationRoutes } from "./review-moderation-routes";
 import { registerSeoRoutes } from "./seo-routes";
 import { buildRobotsTxt } from "./robots-txt";
+import { photoVariantPath } from "@shared/photo-variants";
 import { liveAreaPageCounts, publicListingSeo } from "./listing-seo-store";
 import { areaPagePath } from "@shared/listing-seo";
 import { clearProviderPageCache, listLiveProviderPages } from "./provider-pages";
@@ -3230,6 +3231,8 @@ function sitemapEntry(params: {
   changefreq: "daily" | "weekly" | "monthly";
   priority: string;
   lastmod?: string | null;
+  /** Photos on the page, for Google Images. */
+  images?: Array<string | null | undefined>;
 }) {
   const normalizedPath = params.path.startsWith("/") ? params.path : `/${params.path}`;
   const lastmod = toIsoDateTime(params.lastmod);
@@ -3239,9 +3242,28 @@ function sitemapEntry(params: {
     lastmod ? `    <lastmod>${lastmod}</lastmod>` : null,
     `    <changefreq>${params.changefreq}</changefreq>`,
     `    <priority>${params.priority}</priority>`,
+    ...sitemapImageUrls(params.baseUrl, params.images ?? []).map((url) => `    <image:image><image:loc>${escapeXml(url)}</image:loc></image:image>`),
     "  </url>",
   ].filter(Boolean).join("\n");
 }
+
+// A page's photos as Google Images should fetch them: our own 1200 px copy when
+// there is one (fast, and on the site's own address), else the photo itself.
+// Videos are left out. Up to 6 a page: the ones guests see first.
+function sitemapImageUrls(baseUrl: string, photos: Array<string | null | undefined>) {
+  const urls: string[] = [];
+  for (const photo of photos) {
+    const value = photo?.trim();
+    if (!value || /\.(mp4|webm|mov)(\?.*)?$/i.test(value)) continue;
+    const variant = photoVariantPath(value, 1200);
+    const url = variant ? `${baseUrl}${variant}` : /^https?:\/\//i.test(value) ? value : `${baseUrl}${value.startsWith("/") ? "" : "/"}${value}`;
+    if (!urls.includes(url)) urls.push(url);
+    if (urls.length === 6) break;
+  }
+  return urls;
+}
+
+const listingPhotos = (item: { imageUrl?: string | null; galleryUrls?: string[] | null }) => [item.imageUrl, ...(item.galleryUrls ?? [])];
 
 function isPublicManagedItem(item: { isPublic?: boolean | null; managerUserId?: string | null }) {
   return Boolean(item.isPublic && item.managerUserId?.trim() && !isSuspendedProvider(item.managerUserId));
@@ -3300,6 +3322,7 @@ async function buildSitemapXml() {
     changefreq: "weekly",
     priority: "0.85",
     lastmod: post.updatedAt ?? post.publishedAt,
+    images: [post.featuredImage],
   }));
 
   const listingEntries = [
@@ -3311,15 +3334,17 @@ async function buildSitemapXml() {
         changefreq: "weekly",
         priority: "0.8",
         lastmod: stay.updatedAt,
+        images: listingPhotos(stay),
       })),
     ...cars
       .filter(isPublicManagedItem)
       .map((car) => sitemapEntry({
         baseUrl,
-        path: getPublicListingPath("car", car.id, `${car.make ? `${car.make} ` : ""}${car.model}`),
+        path: getPublicListingPath("car", car.id, getCarDisplayName(car)),
         changefreq: "weekly",
         priority: "0.7",
         lastmod: car.updatedAt,
+        images: listingPhotos(car),
       })),
     ...cooks
       .filter(isPublicManagedItem)
@@ -3329,6 +3354,7 @@ async function buildSitemapXml() {
         changefreq: "weekly",
         priority: "0.7",
         lastmod: cook.updatedAt,
+        images: listingPhotos(cook),
       })),
     ...errands
       .filter(isPublicManagedItem)
@@ -3338,6 +3364,7 @@ async function buildSitemapXml() {
         changefreq: "weekly",
         priority: "0.7",
         lastmod: errand.updatedAt,
+        images: listingPhotos(errand),
       })),
     ...experiences
       .filter(isPublicManagedItem)
@@ -3347,6 +3374,7 @@ async function buildSitemapXml() {
         changefreq: "weekly",
         priority: "0.7",
         lastmod: experience.updatedAt,
+        images: listingPhotos(experience),
       })),
   ];
 
@@ -3361,7 +3389,7 @@ async function buildSitemapXml() {
 
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
-    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">',
     ...staticEntries,
     ...blogEntries,
     ...listingEntries,

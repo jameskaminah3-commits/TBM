@@ -46,6 +46,10 @@ type ShareMetadata = {
   author?: string | null;
   /** An image to fetch first: the home page's hero, which is the page's largest paint. */
   preloadImage?: { href: string; srcset: string; sizes: string } | null;
+  /** This isn't the page's address: send a 301 to this one instead (path and query). */
+  redirectTo?: string | null;
+  /** The page's main content as plain HTML, for crawlers that don't run scripts (server/seo-snapshot.ts). */
+  snapshotHtml?: string | null;
 };
 
 const siteName = "Tembea Bila Matata";
@@ -513,7 +517,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
       const metadata = buildStayMetadata(stay, baseUrl, canonicalUrl);
       metadata.robots = route.publicPath ? "index,follow" : "noindex,follow";
       metadata.structuredData = await getListingStructuredData("stay", stay, canonicalUrl);
-      return withListingSeo("stay", stay, metadata);
+      return withCanonicalRedirect(req, route, baseUrl, await withListingSeo("stay", stay, metadata));
     }
 
     if (route.kind === "car") {
@@ -525,7 +529,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
       const metadata = buildCarMetadata(car, baseUrl, canonicalUrl);
       metadata.robots = route.publicPath ? "index,follow" : "noindex,follow";
       metadata.structuredData = await getListingStructuredData("car", car, canonicalUrl);
-      return withListingSeo("car", car, metadata);
+      return withCanonicalRedirect(req, route, baseUrl, await withListingSeo("car", car, metadata));
     }
 
     if (route.kind === "cook") {
@@ -537,7 +541,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
       const metadata = buildCookMetadata(cook, baseUrl, canonicalUrl);
       metadata.robots = route.publicPath ? "index,follow" : "noindex,follow";
       metadata.structuredData = await getListingStructuredData("cook", cook, canonicalUrl);
-      return withListingSeo("cook", cook, metadata);
+      return withCanonicalRedirect(req, route, baseUrl, await withListingSeo("cook", cook, metadata));
     }
 
     if (route.kind === "errand") {
@@ -549,7 +553,7 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
       const metadata = buildErrandMetadata(errand, baseUrl, canonicalUrl);
       metadata.robots = route.publicPath ? "index,follow" : "noindex,follow";
       metadata.structuredData = await getListingStructuredData("errand", errand, canonicalUrl);
-      return withListingSeo("errand", errand, metadata);
+      return withCanonicalRedirect(req, route, baseUrl, await withListingSeo("errand", errand, metadata));
     }
 
     const experience = await resolveListing(route) as Experience | undefined;
@@ -560,11 +564,31 @@ export async function resolveShareMetadata(req: Request): Promise<ShareMetadata>
     const metadata = buildExperienceMetadata(experience, baseUrl, canonicalUrl);
     metadata.robots = route.publicPath ? "index,follow" : "noindex,follow";
     metadata.structuredData = await getListingStructuredData("experience", experience, canonicalUrl);
-    return withListingSeo("experience", experience, metadata);
+    return withCanonicalRedirect(req, route, baseUrl, await withListingSeo("experience", experience, metadata));
   } catch (error) {
     console.error("[SEO] Failed to resolve listing share metadata:", error);
     return fallback;
   }
+}
+
+/**
+ * A listing reached at an old or bare address (/accommodation/<id>, or a slug
+ * from before the title changed) moves permanently to its one address, keeping
+ * the query (?ref=…, ?mode=…). A 301 hands the page's ranking to that address;
+ * a canonical tag alone leaves Google to decide, and lists the old one as an
+ * "Alternate page" meanwhile.
+ */
+function withCanonicalRedirect(req: Request, route: ParsedListingRoute, baseUrl: string, metadata: ShareMetadata): ShareMetadata {
+  if (!route.publicPath || (req.method !== "GET" && req.method !== "HEAD")) return metadata;
+  const canonicalPath = metadata.canonicalUrl.startsWith(baseUrl) ? metadata.canonicalUrl.slice(baseUrl.length) : null;
+  if (!canonicalPath || canonicalPath === req.path) return metadata;
+  return { ...metadata, redirectTo: `${canonicalPath}${queryOf(req)}` };
+}
+
+/** The request's query string ("?ref=…"), or "". */
+function queryOf(req: Request) {
+  const rest = (req.originalUrl ?? req.url).slice(req.path.length);
+  return rest.startsWith("?") ? rest : "";
 }
 
 // TBM's own title, description and main-photo text for a listing, when an admin
@@ -688,6 +712,10 @@ async function resolveProviderPageMetadata(code: string, req: Request, fallback:
       canonicalUrl: `${baseUrl}${provider.path}`,
       type: "website",
       robots: "index,follow",
+      // An old or bare address (/p/<code>) moves permanently to the page's own.
+      redirectTo: req.path !== provider.path && (req.method === "GET" || req.method === "HEAD")
+        ? `${provider.path}${queryOf(req)}`
+        : null,
     };
   } catch (error) {
     console.error("[SEO] Failed to resolve provider page metadata:", error);
@@ -754,6 +782,7 @@ export function injectShareMetadata(html: string, metadata: ShareMetadata) {
   ].filter(Boolean).join("\n    ");
 
   return html
+    .replace("<!--seo-snapshot-->", metadata.snapshotHtml ?? "")
     .replace(/<title>[\s\S]*?<\/title>/i, `<title>${escapeHtml(metadata.title)}</title>`)
     .replace(/<meta\s+name="description"\s+content="[\s\S]*?"\s*\/?>/i, metaTag("name", "description", metadata.description))
     .replace("</head>", `    ${tags}\n  </head>`);

@@ -7,6 +7,7 @@ import { CustomServiceCta } from "@/components/custom-service-cta";
 import { ListingCard, ListingPrice } from "@/components/listing-card";
 import type { Car as CarType } from "@shared/schema";
 import { getPublicListingPath, getShortSeoLocation } from "@/lib/public-listing";
+import { getCarDisplayName } from "@shared/listing-share";
 
 type DriveMode = "driver" | "self" | "hourly";
 
@@ -133,7 +134,7 @@ export default function DrivePage() {
 
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {carListings.map((car, index) => {
-            const title = `${car.make ? `${car.make} ` : ""}${car.model}`;
+            const title = getCarDisplayName(car);
             const price = priceForMode(car, mode) ?? 0;
             return (
               <ListingCard

@@ -35,6 +35,7 @@ import { readStaySearchState, toSearchSuffix } from "@/lib/stay-search";
 import type { StayWithRooms } from "@shared/schema";
 import { SeoHead } from "@/components/seo-head";
 import { PageLoadError } from "@/components/page-load-error";
+import { AreaCrossLinks } from "@/components/area-listings";
 import { HttpError, isNotFoundError, retryUnlessNotFound } from "@/lib/queryClient";
 import { MealPlanChips } from "@/components/stay-kind";
 import { HotelRoomsSection } from "@/components/hotel-rooms-section";
@@ -260,7 +261,8 @@ export default function AccommodationDetail() {
   const canonicalUrl = buildCanonicalUrl(getPublicListingPath("stay", accommodation.id, accommodation.title));
   const location = formatSeoLocation(accommodation.location);
   // Filed under its area page ("Places to stay in Diani") when the area is known.
-  const crumb = listingBreadcrumb("stay", listingSeoArea(toSeoListingInput("stay", accommodation as unknown as Record<string, unknown>)));
+  const seoArea = listingSeoArea(toSeoListingInput("stay", accommodation as unknown as Record<string, unknown>));
+  const crumb = listingBreadcrumb("stay", seoArea);
   const roomTypes = accommodation.roomTypes ?? [];
   const hotelSummary = summarizeHotelRooms(roomTypes);
   const semanticSummary = isHotel
@@ -661,6 +663,10 @@ export default function AccommodationDetail() {
             </Card>
           </aside>
         </div>
+
+        {/* Other places in the same area, its area page and its other services:
+            every listing links to its neighbours, and they to it. */}
+        {seoArea ? <AreaCrossLinks areaKey={seoArea.key} service="stays" excludeId={accommodation.id} /> : null}
       </div>
 
       {/* Phones and tablets: the price and the next step stay in reach, above the tab bar. */}

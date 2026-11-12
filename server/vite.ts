@@ -7,6 +7,17 @@ import viteConfig from "../vite.config";
 import { nanoid } from "nanoid";
 import { injectHtmlSecurityContext } from "./security";
 import { injectShareMetadata, resolveShareMetadata } from "./share-metadata";
+import { buildSeoSnapshot } from "./seo-snapshot";
+
+/** The page's head tags, any redirect, and its content for crawlers (server/seo-snapshot.ts). */
+async function resolvePageMetadata(req: express.Request) {
+  const metadata = await resolveShareMetadata(req);
+  const snapshotHtml = await buildSeoSnapshot(req, metadata).catch((error) => {
+    console.error("[SEO] Couldn't build the page's crawlable content:", error);
+    return null;
+  });
+  return { ...metadata, snapshotHtml };
+}
 
 const viteLogger = createLogger();
 
@@ -65,7 +76,10 @@ export async function setupVite(app: Express, server: Server) {
         `src="/src/main.tsx?v=${nanoid()}"`,
       );
       template = injectHtmlSecurityContext(template, String(res.locals.cspNonce ?? ""));
-      const metadata = await resolveShareMetadata(req);
+      const metadata = await resolvePageMetadata(req);
+      if (metadata.redirectTo) {
+        return res.redirect(301, metadata.redirectTo);
+      }
       template = injectShareMetadata(template, metadata);
       const page = await vite.transformIndexHtml(url, template);
       res.status(metadata.statusCode ?? 200).set({ "Content-Type": "text/html" }).end(page);
@@ -90,7 +104,11 @@ export function serveStatic(app: Express) {
 
   const renderIndex = async (req: express.Request, res: express.Response) => {
     const securedTemplate = injectHtmlSecurityContext(indexTemplate, String(res.locals.cspNonce ?? ""));
-    const metadata = await resolveShareMetadata(req);
+    const metadata = await resolvePageMetadata(req);
+    if (metadata.redirectTo) {
+      // An old or bare address of the page: one permanent move to its own.
+      return res.redirect(301, metadata.redirectTo);
+    }
     const page = injectShareMetadata(securedTemplate, metadata);
 
     res

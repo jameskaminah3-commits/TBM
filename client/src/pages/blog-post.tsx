@@ -11,14 +11,15 @@ import { Button } from "@/components/ui/button";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Card, CardContent } from "@/components/ui/card";
 import {
-  buildTrackedHref,
   captureMarketingQueryParams,
   setMarketingAttributionContext,
   trackMarketingEvent,
   trackMarketingPageView,
 } from "@/lib/marketing-attribution";
 import { SeoHead } from "@/components/seo-head";
+import { articleSeoArea, cleanInternalHref } from "@shared/internal-links";
 import { PageLoadError } from "@/components/page-load-error";
+import { AreaCrossLinks } from "@/components/area-listings";
 import { isNotFoundError, retryUnlessNotFound } from "@/lib/queryClient";
 import { buildCanonicalUrl } from "@/lib/canonical-url";
 
@@ -147,18 +148,17 @@ export default function BlogPostDetail() {
     () => (articleMarkdown ? extractFaqSection(articleMarkdown) : null),
     [articleMarkdown],
   );
-  const trackedCtaHref = useMemo(() => {
-    if (!post?.primaryCtaHref) {
-      return null;
-    }
-
-    return buildTrackedHref(post.primaryCtaHref, {
-      sourceType: "blog",
-      sourceId: post.id,
-      sourceSlug: post.slug,
-      promoCode: post.primaryPromoCode ?? null,
-    });
-  }, [post?.id, post?.primaryCtaHref, post?.primaryPromoCode, post?.slug]);
+  // The area pages that have listings: a link to "stays in Nyali" goes to the
+  // Nyali area page, the page built to rank for it.
+  const { data: areaIndex } = useQuery<{ pages: Array<{ path: string }> }>({ queryKey: ["/api/seo/areas"], staleTime: 10 * 60_000 });
+  const liveAreaPaths = useMemo(() => new Set(areaIndex?.pages.map((page) => page.path) ?? []), [areaIndex]);
+  // The call to action links to the page's own address, with no tracking tags:
+  // the click itself records the article (and its promo code) for the booking.
+  const ctaHref = useMemo(
+    () => (post?.primaryCtaHref ? cleanInternalHref(post.primaryCtaHref, liveAreaPaths) : null),
+    [liveAreaPaths, post?.primaryCtaHref],
+  );
+  const articleArea = useMemo(() => (post ? articleSeoArea(post) : null), [post]);
 
   useEffect(() => {
     captureMarketingQueryParams();
@@ -302,7 +302,8 @@ export default function BlogPostDetail() {
       );
     },
     p: ({ children }: { children?: ReactNode }) => <p className="mb-5 leading-7 text-foreground sm:leading-8">{children}</p>,
-    a: ({ children, href }: { children?: ReactNode; href?: string }) => {
+    a: ({ children, href: rawHref }: { children?: ReactNode; href?: string }) => {
+      const href = rawHref ? cleanInternalHref(rawHref, liveAreaPaths) : rawHref;
       if (isInternalLink(href)) {
         if (href?.startsWith("#")) {
           return (
@@ -443,7 +444,7 @@ export default function BlogPostDetail() {
               ) : null}
             </div>
 
-            {post.primaryCtaLabel && trackedCtaHref ? (
+            {post.primaryCtaLabel && ctaHref ? (
               <Card className="surface-accent-card">
                 <CardContent className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
                   <div className="space-y-2">
@@ -451,10 +452,10 @@ export default function BlogPostDetail() {
                       Ready To Book?
                     </div>
                     <p className="max-w-2xl text-sm leading-7 text-muted-foreground">
-                      Move from inspiration into a real offer path while keeping this article linked to the eventual booking.
+                      See live prices and dates, then book with TBM and pay by M-Pesa or card.
                     </p>
                   </div>
-                  <Link href={trackedCtaHref}>
+                  <Link href={ctaHref}>
                     <a
                       className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
                       onClick={() => {
@@ -477,6 +478,12 @@ export default function BlogPostDetail() {
                   </Link>
                 </CardContent>
               </Card>
+            ) : null}
+
+            {/* An article about an area links to that area's live listings and
+                area page, so each new listing there is linked from it. */}
+            {articleArea ? (
+              <AreaCrossLinks areaKey={articleArea.key} service="stays" title={`Where to stay in ${articleArea.name}`} testId="article-area-stays" />
             ) : null}
 
             <footer className="border-t pt-8">

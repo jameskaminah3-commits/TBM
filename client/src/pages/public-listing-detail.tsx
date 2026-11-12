@@ -48,6 +48,7 @@ import { PublicReviewPreview } from "@/components/public-review-preview";
 import { YourHost } from "@/components/your-host";
 import { SeoHead } from "@/components/seo-head";
 import { PageLoadError } from "@/components/page-load-error";
+import { AreaCrossLinks } from "@/components/area-listings";
 import { HttpError, isNotFoundError, retryUnlessNotFound } from "@/lib/queryClient";
 import { buildCanonicalUrl } from "@/lib/canonical-url";
 import { useCurrency } from "@/lib/currency";
@@ -60,7 +61,7 @@ import { getCarDisplayName, getListingSharePrice } from "@shared/listing-share";
 import { ListingUnavailable } from "@/components/listing-unavailable";
 import { hasPublicRating, summarizeRatings } from "@shared/review-eligibility";
 import { ShareGiftBanner } from "@/components/share-gift-banner";
-import { autoListingSeoTitle, listingBreadcrumb, listingSeoArea, toSeoListingInput, type PublicListingSeo } from "@shared/listing-seo";
+import { autoListingSeoTitle, listingBreadcrumb, listingSeoArea, seoServiceByKind, toSeoListingInput, type PublicListingSeo } from "@shared/listing-seo";
 import { buildListingStructuredData } from "@shared/listing-structured-data";
 import {
   buildListingSeoDescription,
@@ -306,7 +307,8 @@ export default function PublicListingDetail({ kind }: { kind: ListingKind }) {
   const seoTitle = listing ? listing.seo?.title || autoListingSeoTitle(kind, listing as unknown as Record<string, unknown>) : "Listing not found | Tembea Bila Matata";
   const seoDescription = listing ? listing.seo?.description || buildListingSeoDescription([description]) : description;
   // Filed under its area page ("Things to do in Watamu") when the area is known, else the service page.
-  const crumb = listing ? listingBreadcrumb(kind, listingSeoArea(toSeoListingInput(kind, listing as unknown as Record<string, unknown>))) : { label: category.label, path: category.href };
+  const seoArea = listing ? listingSeoArea(toSeoListingInput(kind, listing as unknown as Record<string, unknown>)) : null;
+  const crumb = listing ? listingBreadcrumb(kind, seoArea) : { label: category.label, path: category.href };
   // The same structured data the server sends with the page (listing-structured-data.ts).
   const structuredData = useMemo(
     () => (listing ? buildListingStructuredData({
@@ -682,6 +684,10 @@ export default function PublicListingDetail({ kind }: { kind: ListingKind }) {
             </Card>
           </aside>
         </div>
+
+        {/* Others of this kind in the same area, its area page and its other
+            services: every listing links to its neighbours, and they to it. */}
+        {seoArea ? <AreaCrossLinks areaKey={seoArea.key} service={seoServiceByKind[kind]} excludeId={listing.id} /> : null}
       </div>
 
       {/* Phones and tablets: the price and Book stay in reach, above the tab bar. */}
