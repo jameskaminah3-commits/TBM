@@ -39,6 +39,7 @@ import { AreaCrossLinks } from "@/components/area-listings";
 import { HttpError, isNotFoundError, retryUnlessNotFound } from "@/lib/queryClient";
 import { MealPlanChips } from "@/components/stay-kind";
 import { HotelRoomsSection } from "@/components/hotel-rooms-section";
+import { StayLocationSection, StayThingsToKnow } from "@/components/stay-things-to-know";
 import { isHotelStay, summarizeHotelRooms } from "@shared/hotel-rooms";
 import { buildCanonicalUrl } from "@/lib/canonical-url";
 import {
@@ -457,6 +458,10 @@ export default function AccommodationDetail() {
                 </ul>
               </section>
             ) : null}
+
+            <StayLocationSection stay={accommodation} />
+
+            <StayThingsToKnow stay={{ ...accommodation, roomTypes }} />
 
             {/* Build the trip around the stay: checkout opens with these ready to choose. */}
             <section id="make-it-a-trip" aria-labelledby="trip-heading" className="scroll-mt-24 rounded-2xl border border-border/70 bg-muted/20 p-5 sm:p-6">

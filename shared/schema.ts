@@ -3,6 +3,9 @@ import { pgTable, text, varchar, integer, timestamp, boolean, jsonb, index, uniq
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { mealPlanCodes, stayPropertyTypes, type HotelPolicy, type HotelStaySnapshot, type RoomBed, type RoomRate } from "./hotel-rooms.ts";
+import { STAY_RULES_NOTE_MAX, allowedRules, childrenRules, smokingRules, type StayRules } from "./stay-rules.ts";
+import { normalizeGoogleMapsLink } from "./stay-location.ts";
+import { PUBLIC_CONTACT_REMOVED, removeContactDetails } from "./contact-redaction.ts";
 import { marketingAttributionEventTypes, marketingAttributionSourceTypes } from "./marketing-attribution-types.ts";
 
 // Replit Auth Integration: Session storage table
@@ -1561,6 +1564,13 @@ export const stays = pgTable("stays", {
   starRating: integer("star_rating"),
   // A hotel's rules about children (the ages its child prices are for).
   hotelPolicy: jsonb("hotel_policy").$type<HotelPolicy>(),
+  // What guests need to know before booking: children, the shortest stay,
+  // check-in, house rules (shared/stay-rules.ts).
+  rules: jsonb("rules").$type<StayRules>(),
+  // Where it is: a Google Maps link, and whether everyone sees the exact pin
+  // (null: a hotel's is public, a home's is shared once booked).
+  mapUrl: text("map_url"),
+  showExactLocation: boolean("show_exact_location"),
   // Kenya times, "HH:MM".
   checkInTime: text("check_in_time"),
   checkOutTime: text("check_out_time"),
@@ -1569,6 +1579,35 @@ export const stays = pgTable("stays", {
 });
 
 const clockTime = z.string().trim().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use a time like 14:00");
+
+export const stayRulesSchema = z.object({
+  minNights: z.number().int().min(1).max(60).nullable().optional(),
+  minBookingAge: z.number().int().min(16).max(30).nullable().optional(),
+  children: z.enum(childrenRules).nullable().optional(),
+  minChildAge: z.number().int().min(1).max(17).nullable().optional(),
+  infantsUnderAge: z.number().int().min(1).max(5).nullable().optional(),
+  pets: z.enum(allowedRules).nullable().optional(),
+  smoking: z.enum(smokingRules).nullable().optional(),
+  events: z.enum(allowedRules).nullable().optional(),
+  quietFrom: clockTime.nullable().optional(),
+  quietTo: clockTime.nullable().optional(),
+  idAtCheckIn: z.boolean().nullable().optional(),
+  // Guests read this: phone numbers and emails are taken out, as in any public text.
+  note: z.string().trim().max(STAY_RULES_NOTE_MAX).transform((note) => removeContactDetails(note, PUBLIC_CONTACT_REMOVED)).nullable().optional(),
+});
+
+// Only a Google Maps link is taken, so the button guests tap can't lead anywhere else.
+const googleMapsLink = z.string().trim().max(600).transform((value, context) => {
+  if (!value) {
+    return null;
+  }
+  const link = normalizeGoogleMapsLink(value);
+  if (!link.ok) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: link.error });
+    return z.NEVER;
+  }
+  return link.url;
+});
 
 export const insertStaySchema = createInsertSchema(stays).omit({
   id: true,
@@ -1587,6 +1626,9 @@ export const insertStaySchema = createInsertSchema(stays).omit({
   }).nullable().optional(),
   checkInTime: clockTime.nullable().optional(),
   checkOutTime: clockTime.nullable().optional(),
+  rules: stayRulesSchema.nullable().optional(),
+  mapUrl: googleMapsLink.nullable().optional(),
+  showExactLocation: z.boolean().nullable().optional(),
 });
 
 export type InsertStay = z.infer<typeof insertStaySchema>;

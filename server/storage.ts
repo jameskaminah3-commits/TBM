@@ -1683,7 +1683,13 @@ export class DatabaseStorage implements IStorage {
         ADD COLUMN IF NOT EXISTS standard_guests integer,
         ADD COLUMN IF NOT EXISTS gallery_urls text[] NOT NULL DEFAULT '{}'::text[];
       `);
-      await pool.query(`ALTER TABLE stays ADD COLUMN IF NOT EXISTS hotel_policy jsonb;`);
+      await pool.query(`
+        ALTER TABLE stays
+        ADD COLUMN IF NOT EXISTS hotel_policy jsonb,
+        ADD COLUMN IF NOT EXISTS rules jsonb,
+        ADD COLUMN IF NOT EXISTS map_url text,
+        ADD COLUMN IF NOT EXISTS show_exact_location boolean;
+      `);
       await pool.query(`
         ALTER TABLE stay_reservations
         ADD COLUMN IF NOT EXISTS feed_id varchar,
@@ -1734,6 +1740,9 @@ export class DatabaseStorage implements IStorage {
       columns.has("property_type") ? 'property_type AS "propertyType"' : '\'entire_place\'::text AS "propertyType"',
       columns.has("star_rating") ? 'star_rating AS "starRating"' : 'NULL::integer AS "starRating"',
       columns.has("hotel_policy") ? 'hotel_policy AS "hotelPolicy"' : 'NULL::jsonb AS "hotelPolicy"',
+      columns.has("rules") ? "rules" : "NULL::jsonb AS rules",
+      columns.has("map_url") ? 'map_url AS "mapUrl"' : 'NULL::text AS "mapUrl"',
+      columns.has("show_exact_location") ? 'show_exact_location AS "showExactLocation"' : 'NULL::boolean AS "showExactLocation"',
       columns.has("check_in_time") ? 'check_in_time AS "checkInTime"' : 'NULL::text AS "checkInTime"',
       columns.has("check_out_time") ? 'check_out_time AS "checkOutTime"' : 'NULL::text AS "checkOutTime"',
       columns.has("created_at") ? 'created_at AS "createdAt"' : 'NULL::text AS "createdAt"',

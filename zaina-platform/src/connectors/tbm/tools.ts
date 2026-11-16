@@ -43,6 +43,7 @@ import {
   type HotelStaySnapshot,
   type RoomClaim,
 } from "../../../../shared/hotel-rooms";
+import { checkBookingAgainstRules } from "../../../../shared/stay-rules";
 import {
   HELP_MAMA_HOURLY_MINIMUM_HOURS,
   calculateHouseCleaningPackagePrice,
@@ -1633,6 +1634,18 @@ export async function createDraftBooking(
   if (!stay) return { ok: false, error: "stay_not_found" };
   if (!stay.isPublic || !stay.managerUserId) {
     return { ok: false, error: "stay_not_bookable" };
+  }
+
+  // 4a. The stay's own rules, such as its shortest booking.
+  const ruleRefusal = checkBookingAgainstRules({ title: stay.title, rules: stay.rules, nights });
+  if (ruleRefusal) {
+    return {
+      ok: false,
+      error: "stay_rules_not_met",
+      reason: ruleRefusal,
+      hint: "Tell the customer why, then offer longer dates or another stay.",
+      tell_customer: ruleRefusal,
+    };
   }
 
   // 4b. A hotel: the customer's room and meal plan, priced from the hotel's

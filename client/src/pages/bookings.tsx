@@ -1590,6 +1590,14 @@ export default function Bookings() {
                   <MessageCircle className="mr-2 h-4 w-4" />
                   Ask Zaina about this trip
                 </Button>
+                {(booking as { stayMapUrl?: string | null }).stayMapUrl ? (
+                  <Button asChild variant="outline" className="h-11 w-full rounded-full">
+                    <a href={(booking as { stayMapUrl?: string | null }).stayMapUrl ?? undefined} target="_blank" rel="noopener noreferrer" data-testid={`link-directions-${booking.id}`}>
+                      <MapPin className="mr-2 h-4 w-4" />
+                      Get directions in Google Maps
+                    </a>
+                  </Button>
+                ) : null}
                 {booking.accommodationId ? <Button variant="outline" className="h-11 w-full rounded-full" onClick={() => setLocation(`/accommodation/${booking.accommodationId}`)}>View the stay</Button> : null}
                 {amountPaid > 0 ? (
                   <Button variant="outline" className="w-full rounded-full" onClick={() => downloadReceipt(booking)}>

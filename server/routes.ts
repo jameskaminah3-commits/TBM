@@ -94,6 +94,7 @@ import {
 } from "./hotel-calendar";
 import { startCalendarSync, syncCalendarFeed } from "./hotel-calendar-sync";
 import { PublicFetchError } from "./public-fetch";
+import { checkBookingAgainstRules } from "@shared/stay-rules";
 import { listUploads, saveBase64Upload } from "./media";
 import { warmPhotoVariants } from "./media-variants";
 import {
@@ -1998,6 +1999,32 @@ function decorateBookingWithOperationalStatus<T extends { status: string }>(book
     ...booking,
     status: getBookingOperationalStatus(booking),
   };
+}
+
+/**
+ * For a guest's own bookings: where the stay they've booked is, as its
+ * Google Maps link, once the booking is paid for (or its deposit is). A home
+ * shows only its area in public; this is how its guests get the exact pin.
+ */
+async function attachStayDirections<T extends { accommodationId?: string | null; status: string }>(bookingList: T[]): Promise<Array<T & { stayMapUrl?: string | null }>> {
+  const booked = bookingList.filter((booking) =>
+    booking.accommodationId
+    && booking.status !== "cancelled"
+    && (isBookingPaymentPaid(booking as any) || hasLockedInBookingDeposit(booking as any)));
+  if (booked.length === 0) {
+    return bookingList;
+  }
+  const mapUrls = new Map<string, string | null>();
+  try {
+    for (const stayId of Array.from(new Set(booked.map((booking) => booking.accommodationId as string)))) {
+      mapUrls.set(stayId, (await storage.getStay(stayId))?.mapUrl ?? null);
+    }
+  } catch (error) {
+    // Directions are a help, not the booking: the list still loads without them.
+    console.error("[BOOKINGS] Couldn't load stay locations:", error);
+    return bookingList;
+  }
+  return bookingList.map((booking) => (booked.includes(booking) ? { ...booking, stayMapUrl: mapUrls.get(booking.accommodationId as string) ?? null } : booking));
 }
 
 function toBookingMarketingSummary(
@@ -4106,7 +4133,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user.claims.sub;
       const bookings = await storage.getBookingsByUserId(userId);
-      res.json(await attachBookingMarketingAttributions(bookings.map(decorateBookingWithOperationalStatus)));
+      res.json(await attachStayDirections(await attachBookingMarketingAttributions(bookings.map(decorateBookingWithOperationalStatus))));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch bookings" });
     }
@@ -4121,7 +4148,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const booking = decorateBookingWithOperationalStatus(access.booking);
-      res.json(access.viewer === "provider" ? toProviderBooking(booking) : await attachBookingMarketingAttribution(booking));
+      // The guest (and the team) see where the stay is; a partner on the booking sees their job only.
+      res.json(access.viewer === "provider" ? toProviderBooking(booking) : (await attachStayDirections([await attachBookingMarketingAttribution(booking)]))[0]);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch booking" });
     }
@@ -4382,6 +4410,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         const occupiedDays = calculateChargeableDays(validatedData.checkIn, validatedData.checkOut);
         let accommodationTotal = occupiedDays * stay.price;
+
+        // The stay's own rules: its shortest booking, and adults only.
+        const ruleRefusal = checkBookingAgainstRules({
+          title: stay.title,
+          rules: stay.rules,
+          nights: occupiedDays,
+          children: Number.isInteger(req.body?.children) ? req.body.children : 0,
+        });
+        if (ruleRefusal) {
+          return res.status(400).json({ error: ruleRefusal });
+        }
 
         if (isHotelStay(stay)) {
           // A hotel: rooms of one type on one meal plan, priced from its rates,
@@ -8610,6 +8649,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         hotelPolicy,
         checkInTime,
         checkOutTime,
+        rules,
+        mapUrl,
+        showExactLocation,
       } = parsed;
 
       // A hotel's price, guests and rooms follow from its room types; its
@@ -8627,13 +8669,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         galleryUrls,
         mediaType,
         features,
-        ...(isHotel ? { starRating, hotelPolicy, checkInTime, checkOutTime } : {}),
+        // Every stay has its own check-in times, rules and place on the map.
+        checkInTime,
+        checkOutTime,
+        rules,
+        mapUrl,
+        showExactLocation,
+        ...(isHotel ? { starRating, hotelPolicy } : {}),
       });
 
       await recordProviderListingEdit(req, "stay", access.stay, updatedStay, access.stay.title);
       res.json(updatedStay);
     } catch (error) {
-      if (error instanceof Error) {
+      if (error instanceof z.ZodError) {
+        // Say what's wrong with the field, not the whole validation report.
+        res.status(400).json({ error: error.issues[0]?.message || "Check the details and try again." });
+      } else if (error instanceof Error) {
         res.status(400).json({ error: error.message });
       } else {
         res.status(500).json({ error: "Failed to update stay" });

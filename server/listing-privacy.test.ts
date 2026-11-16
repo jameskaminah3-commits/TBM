@@ -44,3 +44,17 @@ test("non-object bodies are left for validation to reject", () => {
   assert.equal(withoutProviderProtectedFields(null, false), null);
   assert.equal(withoutProviderProtectedFields("text", false), "text");
 });
+
+test("a home's exact pin stays out of its public listing; a hotel's, or one its owner shows, goes out", () => {
+  const pin = "https://maps.app.goo.gl/AbC123xyz";
+  const home = toPublicListing({ id: "s1", title: "Villa", propertyType: "entire_place", mapUrl: pin, showExactLocation: null });
+  assert.equal(home.mapUrl, null);
+  const shown = toPublicListing({ id: "s2", title: "Villa", propertyType: "entire_place", mapUrl: pin, showExactLocation: true });
+  assert.equal(shown.mapUrl, pin);
+  const hotel = toPublicListing({ id: "s3", title: "Hotel", propertyType: "hotel", mapUrl: pin, showExactLocation: null });
+  assert.equal(hotel.mapUrl, pin);
+  const hidden = toPublicListing({ id: "s4", title: "Hotel", propertyType: "hotel", mapUrl: pin, showExactLocation: false });
+  assert.equal(hidden.mapUrl, null);
+  // Listings without a place on the map are left as they are.
+  assert.equal("mapUrl" in toPublicListing({ id: "c1", model: "Prado" }), false);
+});

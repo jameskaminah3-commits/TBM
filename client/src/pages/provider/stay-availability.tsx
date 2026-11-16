@@ -19,6 +19,7 @@ import { Field } from "@/components/provider-hub/field";
 import { HubPageHeader } from "@/components/provider-hub/hub-ui";
 import { addCalendarDays, formatCalendarDate, formatCalendarDateRange } from "@shared/calendar-dates";
 import { ProviderHotelManage } from "@/components/provider-hotel-manage";
+import { StayRulesLocationCard } from "@/components/stay-rules-location-card";
 
 const dayLabel = (value: string | null | undefined) => (value ? formatCalendarDate(value, { day: "numeric", month: "short", year: "numeric" }, "en-GB") : "");
 
@@ -268,6 +269,8 @@ export default function ProviderStayAvailability() {
             </Button>
           </CardContent>
         </Card>
+
+        {stay ? <StayRulesLocationCard stay={stay} scope="provider" /> : null}
 
         <Card id="availability" className="scroll-mt-24">
           <CardHeader>

@@ -92,13 +92,16 @@ export function StayKindPicker({
   );
 }
 
-/** Admin: a hotel's star rating and its check-in and check-out times (Kenya time). */
+/** Admin: a stay's check-in and check-out times (Kenya time) and, for a hotel, its star rating. */
 export function HotelDetailsFields({
+  showStars = true,
   starRating,
   checkInTime,
   checkOutTime,
   onChange,
 }: {
+  /** A hotel has a star rating; an entire place doesn't. */
+  showStars?: boolean;
   starRating: number;
   checkInTime: string;
   checkOutTime: string;
@@ -106,6 +109,7 @@ export function HotelDetailsFields({
 }) {
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      {showStars ? (
       <div className="space-y-2">
         <Label htmlFor="hotel-star-rating">Star rating</Label>
         <Select value={String(starRating || 0)} onValueChange={(value) => onChange({ starRating: Number(value) })}>
@@ -120,6 +124,7 @@ export function HotelDetailsFields({
           </SelectContent>
         </Select>
       </div>
+      ) : null}
       <div className="space-y-2">
         <Label htmlFor="hotel-check-in">Check-in from</Label>
         <Input id="hotel-check-in" type="time" value={checkInTime} onChange={(event) => onChange({ checkInTime: event.target.value })} />
@@ -129,7 +134,9 @@ export function HotelDetailsFields({
         <Input id="hotel-check-out" type="time" value={checkOutTime} onChange={(event) => onChange({ checkOutTime: event.target.value })} />
       </div>
       <p className="text-sm text-muted-foreground sm:col-span-3">
-        Times are Kenya time. Tick the hotel's facilities (pool, restaurant, spa, Wi-Fi…) under Hotel facilities below.
+        {showStars
+          ? "Times are Kenya time. Tick the hotel's facilities (pool, restaurant, spa, Wi-Fi…) under Hotel facilities below."
+          : "Times are Kenya time. Leave them empty if the host hasn't said."}
       </p>
     </div>
   );

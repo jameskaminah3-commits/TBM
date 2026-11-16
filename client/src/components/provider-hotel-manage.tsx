@@ -18,31 +18,16 @@ import { Field } from "@/components/provider-hub/field";
 import { HubPageHeader } from "@/components/provider-hub/hub-ui";
 import { getListingSharePrice } from "@shared/listing-share";
 import { addCalendarDays, formatCalendarDate, formatCalendarDateRange } from "@shared/calendar-dates";
-import { DEFAULT_CHILD_MAX_AGE, describeChildPolicy } from "@shared/hotel-rooms";
+import { StayRulesLocationCard } from "@/components/stay-rules-location-card";
+import { hotelFacilityOptions } from "@/components/admin-stay-kind-fields";
 import type { Stay, StayRoomType } from "@shared/schema";
 
 const dayLabel = (value: string | null | undefined) => (value ? formatCalendarDate(value, { day: "numeric", month: "short", year: "numeric" }, "en-GB") : "");
 const errorText = (error: Error) => error.message.replace(/^\d+:\s*/, "");
 const selectClass = "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2";
 
-export const hotelFeatureOptions = [
-  "WiFi",
-  "Swimming Pool",
-  "Restaurant",
-  "Bar",
-  "Air Conditioning",
-  "Parking",
-  "Beach Access",
-  "Ocean View",
-  "Room Service",
-  "24-hour Reception",
-  "Airport Transfers",
-  "Spa",
-  "Gym",
-  "Conference Room",
-  "Kids' Play Area",
-  "Wheelchair Accessible",
-];
+/** The facilities a hotel can tick: the same list the team uses, so searches find them alike. */
+export const hotelFeatureOptions = hotelFacilityOptions;
 
 type HotelAvailability = {
   blockedRanges: Array<{
@@ -92,10 +77,6 @@ export function ProviderHotelManage({ stay }: { stay: Stay }) {
   const [locationValue, setLocationValue] = useState(stay.location);
   const [description, setDescription] = useState(stay.description);
   const [starRating, setStarRating] = useState(stay.starRating ? String(stay.starRating) : "");
-  const [checkInTime, setCheckInTime] = useState(stay.checkInTime ?? "");
-  const [checkOutTime, setCheckOutTime] = useState(stay.checkOutTime ?? "");
-  const [childMaxAge, setChildMaxAge] = useState(String(stay.hotelPolicy?.childMaxAge ?? DEFAULT_CHILD_MAX_AGE));
-  const [freeUnderAge, setFreeUnderAge] = useState(stay.hotelPolicy?.freeUnderAge ? String(stay.hotelPolicy.freeUnderAge) : "");
   const [features, setFeatures] = useState<string[]>(stay.features ?? []);
   const [imageUrl, setImageUrl] = useState(stay.imageUrl ?? "");
   const [galleryUrls, setGalleryUrls] = useState<string[]>(stay.galleryUrls ?? []);
@@ -106,25 +87,12 @@ export function ProviderHotelManage({ stay }: { stay: Stay }) {
     setLocationValue(stay.location);
     setDescription(stay.description);
     setStarRating(stay.starRating ? String(stay.starRating) : "");
-    setCheckInTime(stay.checkInTime ?? "");
-    setCheckOutTime(stay.checkOutTime ?? "");
-    setChildMaxAge(String(stay.hotelPolicy?.childMaxAge ?? DEFAULT_CHILD_MAX_AGE));
-    setFreeUnderAge(stay.hotelPolicy?.freeUnderAge ? String(stay.hotelPolicy.freeUnderAge) : "");
     setFeatures(stay.features ?? []);
     setImageUrl(stay.imageUrl ?? "");
     setGalleryUrls(stay.galleryUrls ?? []);
     setMediaType((stay.mediaType as "image" | "video") ?? "image");
   }, [stay]);
 
-  const policy = {
-    childMaxAge: /^\d+$/.test(childMaxAge.trim()) ? Number(childMaxAge) : null,
-    freeUnderAge: /^\d+$/.test(freeUnderAge.trim()) && Number(freeUnderAge) > 0 ? Number(freeUnderAge) : null,
-  };
-  const policyProblem = policy.childMaxAge !== null && (policy.childMaxAge < 1 || policy.childMaxAge > 17)
-    ? "The oldest child age is between 1 and 17."
-    : policy.freeUnderAge !== null && policy.freeUnderAge > (policy.childMaxAge ?? DEFAULT_CHILD_MAX_AGE)
-      ? "The age children stay free under can't be above the oldest child age."
-      : null;
   const featureChoices = [...hotelFeatureOptions, ...features.filter((feature) => !hotelFeatureOptions.includes(feature))];
 
   const updateHotelMutation = useMutation({
@@ -133,9 +101,6 @@ export function ProviderHotelManage({ stay }: { stay: Stay }) {
       location: locationValue,
       description,
       starRating: starRating ? Number(starRating) : null,
-      checkInTime: checkInTime || null,
-      checkOutTime: checkOutTime || null,
-      hotelPolicy: policy,
       features,
       imageUrl,
       galleryUrls,
@@ -289,6 +254,7 @@ export function ProviderHotelManage({ stay }: { stay: Stay }) {
     { href: "#details", label: "Details" },
     { href: "#rooms", label: "Rooms & rates" },
     { href: "#media", label: "Photos" },
+    { href: "#rules", label: "Location & rules" },
     { href: "#availability", label: "Closed dates" },
     { href: "#sync", label: "Calendar sync" },
   ];
@@ -335,7 +301,7 @@ export function ProviderHotelManage({ stay }: { stay: Stay }) {
         <Card id="details" className="scroll-mt-24">
           <CardHeader>
             <CardTitle>Hotel details</CardTitle>
-            <CardDescription>Changes go live when you save. TBM reviews your edits afterwards.</CardDescription>
+            <CardDescription>Changes go live when you save. TBM reviews your edits afterwards. Check-in times, children's ages and your rules are under Location &amp; rules.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="grid gap-4 md:grid-cols-2">
@@ -351,30 +317,6 @@ export function ProviderHotelManage({ stay }: { stay: Stay }) {
                   {[1, 2, 3, 4, 5].map((stars) => <option key={stars} value={stars}>{stars} star{stars === 1 ? "" : "s"}</option>)}
                 </select>
               </Field>
-              <div className="grid grid-cols-2 gap-4">
-                <Field id="hotel-check-in" label="Check-in from">
-                  <Input id="hotel-check-in" type="time" value={checkInTime} onChange={(event) => setCheckInTime(event.target.value)} />
-                </Field>
-                <Field id="hotel-check-out" label="Check-out by">
-                  <Input id="hotel-check-out" type="time" value={checkOutTime} onChange={(event) => setCheckOutTime(event.target.value)} />
-                </Field>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-border/70 bg-muted/20 p-5">
-              <div className="text-base font-medium text-foreground">Children</div>
-              <p className="text-sm text-muted-foreground">Who your child prices are for. Set the prices themselves on each room, under Rooms &amp; rates.</p>
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <Field id="hotel-child-max" label="Oldest age charged as a child" hint="Older guests pay as adults.">
-                  <Input id="hotel-child-max" type="number" inputMode="numeric" min="1" max="17" value={childMaxAge} onChange={(event) => setChildMaxAge(event.target.value)} />
-                </Field>
-                <Field id="hotel-free-under" label="Children under this age stay free" hint="Leave empty if every child pays.">
-                  <Input id="hotel-free-under" type="number" inputMode="numeric" min="1" max="17" placeholder="For example, 3" value={freeUnderAge} onChange={(event) => setFreeUnderAge(event.target.value)} />
-                </Field>
-              </div>
-              <p className="mt-3 text-sm text-foreground" data-testid="child-policy-preview">
-                {policyProblem ?? `Guests read: "${describeChildPolicy(policy)}"`}
-              </p>
             </div>
 
             <div className="space-y-3">
@@ -415,13 +357,15 @@ export function ProviderHotelManage({ stay }: { stay: Stay }) {
             <Field id="hotel-description" label="Description" hint="What makes the hotel special, who it suits, and what's nearby.">
               <Textarea id="hotel-description" value={description} onChange={(event) => setDescription(event.target.value)} rows={5} />
             </Field>
-            <Button onClick={() => updateHotelMutation.mutate()} disabled={updateHotelMutation.isPending || Boolean(policyProblem)} data-testid="button-save-hotel">
+            <Button onClick={() => updateHotelMutation.mutate()} disabled={updateHotelMutation.isPending} data-testid="button-save-hotel">
               {updateHotelMutation.isPending ? "Saving..." : "Save changes"}
             </Button>
           </CardContent>
         </Card>
 
         <HotelRoomsEditor stayId={id} scope="provider" />
+
+        <StayRulesLocationCard stay={stay} scope="provider" />
 
         <Card id="availability" className="scroll-mt-24">
           <CardHeader>

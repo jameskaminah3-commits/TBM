@@ -87,6 +87,7 @@ import {
 } from "@/lib/pending-booking";
 import { readStaySearchState, toSearchSuffix } from "@/lib/stay-search";
 import { HotelRoomPicker } from "@/components/hotel-room-picker";
+import { checkBookingAgainstRules, describeStayRules, takesChildren } from "@shared/stay-rules";
 import {
   describeChildPolicy,
   describeHotelStay,
@@ -742,7 +743,7 @@ export default function Booking() {
     [roomAvailability],
   );
   // A hotel with child prices asks for adults and children; the guests are both together.
-  const hotelTakesChildren = isHotel && hasChildRates(hotelRoomTypes);
+  const hotelTakesChildren = isHotel && hasChildRates(hotelRoomTypes) && takesChildren(accommodation?.rules);
   const childGuests = hotelTakesChildren ? Math.min(childGuestsChosen, Math.max(0, (Number(guestsValue) || 1) - 1)) : 0;
   childGuestsRef.current = childGuests;
   const hotelQuote = useMemo(() => {
@@ -756,6 +757,16 @@ export default function Booking() {
       nights: Math.max(1, nights),
     });
   }, [childGuests, guestsValue, isHotel, mealPlanValue, nights, roomCountValue, selectedRoomType]);
+
+  // The stay's own rules: what guests should know here, and whether these dates meet them.
+  const stayRuleLines = useMemo(() => {
+    if (!accommodation) return [];
+    const described = describeStayRules({ ...accommodation, roomTypes: hotelRoomTypes });
+    return [...described.arrival, ...described.children];
+  }, [accommodation, hotelRoomTypes]);
+  const stayRuleProblem = accommodation && nights > 0
+    ? checkBookingAgainstRules({ title: accommodation.title, rules: accommodation.rules, nights, children: childGuests })
+    : null;
 
   // Start on the room chosen on the hotel's page (or its first room and plan),
   // with enough rooms for the guests.
@@ -1073,6 +1084,11 @@ export default function Booking() {
   };
 
   const canProceedToCheckout = (data: BookingFormValues) => {
+    if (stayRuleProblem) {
+      toast({ title: "Check your dates", description: stayRuleProblem, variant: "destructive" });
+      return false;
+    }
+
     if (isHotel) {
       if (!hotelQuote || !hotelQuote.ok) {
         toast({
@@ -1334,6 +1350,9 @@ export default function Booking() {
                           {form.formState.errors.checkIn ? (
                             <p className="text-sm font-medium text-destructive">{form.formState.errors.checkIn.message}</p>
                           ) : null}
+                          {stayRuleProblem ? (
+                            <p className="text-sm font-medium text-destructive" role="alert" data-testid="booking-rule-problem">{stayRuleProblem}</p>
+                          ) : null}
                           <FormMessage />
                         </FormItem>
                       )}
@@ -1416,6 +1435,14 @@ export default function Booking() {
                       }}
                     />
                   </div>
+                  {stayRuleLines.length > 0 ? (
+                    <div className="border-t border-border/60 px-5 py-4 sm:px-6" data-testid="booking-good-to-know">
+                      <div className="text-sm font-medium text-foreground">Good to know</div>
+                      <ul className="mt-1.5 grid gap-x-6 gap-y-1 text-sm leading-6 text-muted-foreground sm:grid-cols-2">
+                        {stayRuleLines.map((line) => <li key={line}>{line}</li>)}
+                      </ul>
+                    </div>
+                  ) : null}
                   {isHotel ? (
                     <div className="border-t border-border/60 px-5 py-5 sm:px-6">
                       {hotelRoomTypes.length > 0 ? (

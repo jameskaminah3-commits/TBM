@@ -32,6 +32,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { insertStaySchema, type StayWithRooms, type ProviderAccountSummary } from "@shared/schema";
 import { isBookableRoomType, stayPropertyTypes, summarizeHotelRooms } from "@shared/hotel-rooms";
 import { HotelDetailsFields, StayKindPicker, hotelFacilityOptions } from "@/components/admin-stay-kind-fields";
+import { StayRulesLocationCard } from "@/components/stay-rules-location-card";
 import { AdminHotelRoomsEditor } from "@/components/admin-hotel-rooms-editor";
 
 type StayAvailability = {
@@ -451,8 +452,9 @@ export default function AdminStaysEdit() {
                   onChange={(value) => form.setValue("propertyType", value, { shouldDirty: true })}
                 />
 
-                {isHotel ? (
-                  <HotelDetailsFields
+                {/* Every stay has check-in and check-out times; a hotel also has stars. */}
+                <HotelDetailsFields
+                    showStars={isHotel}
                     starRating={form.watch("starRating")}
                     checkInTime={form.watch("checkInTime")}
                     checkOutTime={form.watch("checkOutTime")}
@@ -461,8 +463,7 @@ export default function AdminStaysEdit() {
                       if (next.checkInTime !== undefined) form.setValue("checkInTime", next.checkInTime, { shouldDirty: true });
                       if (next.checkOutTime !== undefined) form.setValue("checkOutTime", next.checkOutTime, { shouldDirty: true });
                     }}
-                  />
-                ) : null}
+                />
 
                 <FormField
                   control={form.control}
@@ -746,6 +747,12 @@ export default function AdminStaysEdit() {
             </Form>
           </CardContent>
         </Card>
+
+        {stay ? (
+          <div className="mt-8">
+            <StayRulesLocationCard key={stay.id} stay={stay} scope="admin" />
+          </div>
+        ) : null}
 
         {savedAsHotel && stayId ? (
           <div id="rooms" className="mt-8 scroll-mt-24">

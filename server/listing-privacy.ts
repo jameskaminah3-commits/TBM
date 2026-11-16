@@ -1,3 +1,5 @@
+import { isExactLocationPublic } from "../shared/stay-location.ts";
+
 // What the public and providers may see or set on a listing (stays, cars, cooks,
 // errands, experiences).
 
@@ -21,6 +23,11 @@ export function toPublicListing<T extends object>(listing: T): Omit<T, PrivateLi
   const publicListing: Record<string, unknown> = { ...(listing as Record<string, unknown>) };
   for (const field of privateListingFields) {
     delete publicListing[field];
+  }
+  // A stay's exact pin on the map: a hotel's is public; a home's goes to
+  // guests who have booked, unless its owner shows it to everyone.
+  if ("mapUrl" in publicListing && !isExactLocationPublic(publicListing)) {
+    publicListing.mapUrl = null;
   }
   return publicListing as Omit<T, PrivateListingField>;
 }
