@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import { useMutation } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
+import { useForm, type Resolver } from "react-hook-form";
 import { z } from "zod";
 import { ProviderLayout } from "@/components/provider-layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,7 +23,9 @@ import { AdminMediaField } from "@/components/admin-media-field";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrency } from "@/lib/currency";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { insertStaySchema } from "@shared/schema";
+import { insertStaySchema, type Stay } from "@shared/schema";
+import { hotelFeatureOptions } from "@/components/provider-hotel-manage";
+import { BedDouble, Home } from "lucide-react";
 
 const featureOptions = [
   "WiFi",
@@ -47,16 +49,33 @@ const formSchema = insertStaySchema.extend({
   bathrooms: z.coerce.number().min(1, "At least 1 bathroom required"),
 });
 
+// A hotel's price, guests and rooms come from the room types added next.
+const hotelFormSchema = insertStaySchema.extend({
+  price: z.coerce.number().optional(),
+  maxOccupancy: z.coerce.number().optional(),
+  bedrooms: z.coerce.number().optional(),
+  bathrooms: z.coerce.number().optional(),
+});
+
 type FormData = z.infer<typeof formSchema>;
+type StayKind = "entire_place" | "hotel";
+
+const stayKinds: Array<{ kind: StayKind; icon: typeof Home; name: string; what: string }> = [
+  { kind: "entire_place", icon: Home, name: "An entire place", what: "An apartment, villa or home. One booking takes the whole place, at one price a night." },
+  { kind: "hotel", icon: BedDouble, name: "A hotel", what: "A hotel, lodge, resort or guest house. Guests book rooms by type, with meal plans and rates for singles, couples and children." },
+];
 
 export default function ProviderStayNew() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { usdToKes } = useCurrency();
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
+  const [kind, setKind] = useState<StayKind>("entire_place");
+  const [starRating, setStarRating] = useState("");
+  const isHotel = kind === "hotel";
 
   const form = useForm<FormData>({
-    resolver: zodResolver(formSchema),
+    resolver: (isHotel ? zodResolver(hotelFormSchema) : zodResolver(formSchema)) as Resolver<FormData>,
     defaultValues: {
       title: "",
       price: 0,
@@ -74,9 +93,20 @@ export default function ProviderStayNew() {
   });
 
   const createStayMutation = useMutation({
-    mutationFn: async (data: FormData) => apiRequest("POST", "/api/provider/stays", data),
-    onSuccess: () => {
+    mutationFn: async (data: Record<string, unknown>) => {
+      const response = await apiRequest("POST", "/api/provider/stays", data);
+      return response.json() as Promise<Stay>;
+    },
+    onSuccess: (stay) => {
       queryClient.invalidateQueries({ queryKey: ["/api/provider/assignments"] });
+      if (stay.propertyType === "hotel") {
+        toast({
+          title: "Hotel created",
+          description: "Now add your rooms and rates. The hotel stays private until TBM reviews and publishes it.",
+        });
+        setLocation(`/provider/stays/${stay.id}/availability#rooms`);
+        return;
+      }
       toast({
         title: "Listing created",
         description: "Your stay was created as private and is waiting for admin review before going public.",
@@ -101,12 +131,34 @@ export default function ProviderStayNew() {
   };
 
   const onSubmit = async (data: FormData) => {
-    await createStayMutation.mutateAsync({
-      ...data,
-      price: Math.max(1, Math.round(data.price / usdToKes)),
-      isPublic: false,
-      features: selectedFeatures,
-    });
+    await createStayMutation.mutateAsync(isHotel
+      ? {
+          ...data,
+          propertyType: "hotel",
+          starRating: starRating ? Number(starRating) : null,
+          checkInTime: data.checkInTime || null,
+          checkOutTime: data.checkOutTime || null,
+          isPublic: false,
+          features: selectedFeatures,
+        }
+      : {
+          ...data,
+          propertyType: "entire_place",
+          checkInTime: null,
+          checkOutTime: null,
+          price: Math.max(1, Math.round(data.price / usdToKes)),
+          isPublic: false,
+          features: selectedFeatures,
+        });
+  };
+
+  const chooseKind = (next: StayKind) => {
+    setKind(next);
+    const allowed = next === "hotel" ? hotelFeatureOptions : featureOptions;
+    const kept = selectedFeatures.filter((feature) => allowed.includes(feature));
+    setSelectedFeatures(kept);
+    form.setValue("features", kept);
+    form.clearErrors();
   };
 
   return (
@@ -119,11 +171,36 @@ export default function ProviderStayNew() {
           </p>
         </div>
 
+        <div className="mb-6 grid gap-3 sm:grid-cols-2" role="radiogroup" aria-label="What are you listing?">
+          {stayKinds.map((option) => {
+            const selected = kind === option.kind;
+            return (
+              <button
+                key={option.kind}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => chooseKind(option.kind)}
+                className={`flex items-start gap-3 rounded-xl border p-4 text-left transition-colors ${selected ? "border-primary bg-primary/5 ring-1 ring-primary" : "bg-background hover:border-foreground/30"}`}
+                data-testid={`stay-kind-${option.kind}`}
+              >
+                <option.icon className={`mt-0.5 h-5 w-5 shrink-0 ${selected ? "text-primary" : "text-muted-foreground"}`} />
+                <span>
+                  <span className="block font-medium">{option.name}</span>
+                  <span className="block text-sm text-muted-foreground">{option.what}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
         <Card>
           <CardHeader>
-            <CardTitle>Stay Details</CardTitle>
+            <CardTitle>{isHotel ? "Hotel Details" : "Stay Details"}</CardTitle>
             <CardDescription>
-              Fill out the listing details and upload your property photos.
+              {isHotel
+                ? "Start with the hotel itself. You add its rooms, meal plans and prices on the next page."
+                : "Fill out the listing details and upload your property photos."}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -136,13 +213,56 @@ export default function ProviderStayNew() {
                     <FormItem>
                       <FormLabel>Title</FormLabel>
                       <FormControl>
-                        <Input placeholder="Luxury Beach Villa" {...field} />
+                        <Input placeholder={isHotel ? "Coral Cove Beach Hotel" : "Luxury Beach Villa"} {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
 
+                {isHotel ? (
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                    <div className="space-y-2">
+                      <label htmlFor="new-hotel-stars" className="text-sm font-medium leading-none">Star rating</label>
+                      <select
+                        id="new-hotel-stars"
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        value={starRating}
+                        onChange={(event) => setStarRating(event.target.value)}
+                      >
+                        <option value="">Not rated</option>
+                        {[1, 2, 3, 4, 5].map((stars) => <option key={stars} value={stars}>{stars} star{stars === 1 ? "" : "s"}</option>)}
+                      </select>
+                    </div>
+                    <FormField
+                      control={form.control}
+                      name="checkInTime"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Check-in from</FormLabel>
+                          <FormControl>
+                            <Input type="time" {...field} value={field.value ?? ""} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="checkOutTime"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Check-out by</FormLabel>
+                          <FormControl>
+                            <Input type="time" {...field} value={field.value ?? ""} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                ) : (
+                <>
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <FormField
                     control={form.control}
@@ -204,6 +324,8 @@ export default function ProviderStayNew() {
                     )}
                   />
                 </div>
+                </>
+                )}
 
                 <FormField
                   control={form.control}
@@ -224,7 +346,7 @@ export default function ProviderStayNew() {
                   name="imageUrl"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Property Media</FormLabel>
+                      <FormLabel>{isHotel ? "Hotel Photos" : "Property Media"}</FormLabel>
                       <FormControl>
                         <AdminMediaField
                           value={field.value}
@@ -238,7 +360,9 @@ export default function ProviderStayNew() {
                         />
                       </FormControl>
                       <FormDescription>
-                        Upload one or many property images. The app will optimize them before upload.
+                        {isHotel
+                          ? "The building, pool, restaurant and grounds. Each room gets its own photos on the next page."
+                          : "Upload one or many property images. The app will optimize them before upload."}
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -252,7 +376,7 @@ export default function ProviderStayNew() {
                     <FormItem>
                       <FormLabel>Description</FormLabel>
                       <FormControl>
-                        <Textarea placeholder="Describe the stay..." rows={5} {...field} />
+                        <Textarea placeholder={isHotel ? "Describe the hotel..." : "Describe the stay..."} rows={5} {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -262,7 +386,7 @@ export default function ProviderStayNew() {
                 <div className="space-y-4">
                   <FormLabel>Features & Amenities</FormLabel>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                    {featureOptions.map((feature) => (
+                    {(isHotel ? hotelFeatureOptions : featureOptions).map((feature) => (
                       <div key={feature} className="flex items-center space-x-2">
                         <Checkbox
                           checked={selectedFeatures.includes(feature)}
@@ -279,7 +403,7 @@ export default function ProviderStayNew() {
                     Cancel
                   </Button>
                   <Button type="submit" disabled={createStayMutation.isPending}>
-                    {createStayMutation.isPending ? "Creating..." : "Create Listing"}
+                    {createStayMutation.isPending ? "Creating..." : isHotel ? "Create hotel and add rooms" : "Create Listing"}
                   </Button>
                 </div>
               </form>

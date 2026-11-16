@@ -30,6 +30,7 @@ import {
   insertStaySchema,
   insertStayRoomTypeSchema,
   insertStayReservationSchema,
+  insertStayCalendarFeedSchema,
   insertCarReservationSchema,
   insertCarSchema,
   insertCookSchema,
@@ -64,10 +65,12 @@ import {
   type BookingServiceAssignmentStatus,
   type ProviderBookingAssignmentView,
   type Stay,
+  type StayCalendarFeed,
   type StayReservation,
   type StayRoomType,
 } from "@shared/schema";
 import {
+  checkRoomTypePricing,
   countRoomsLeft,
   findSoldOutNights,
   getBlockRoomClaim,
@@ -80,6 +83,17 @@ import {
   type HotelStaySnapshot,
   type RoomClaim,
 } from "@shared/hotel-rooms";
+import {
+  buildCalendar,
+  calendarLinkHost,
+  calendarLinkToken,
+  getTakenStretches,
+  isCalendarLinkToken,
+  loadCalendarEvents,
+  normalizeCalendarUrl,
+} from "./hotel-calendar";
+import { startCalendarSync, syncCalendarFeed } from "./hotel-calendar-sync";
+import { PublicFetchError } from "./public-fetch";
 import { listUploads, saveBase64Upload } from "./media";
 import { warmPhotoVariants } from "./media-variants";
 import {
@@ -2678,16 +2692,19 @@ async function getHotelAvailabilitySummary(stay: Stay, audience: "public" | "tea
       ...describeRooms(booking.roomTypeId, booking.roomCount ?? 1),
     }))
     .filter(isAvailabilityRangeCurrentOrFuture);
+  // Nights taken on another booking site come in from its calendar; the
+  // hotel frees them there, not here.
+  const feedNames = new Map((blocks.some((block) => block.feedId) ? await storage.getStayCalendarFeeds(stay.id) : []).map((feed) => [feed.id, feed.name]));
   const manualRanges = blocks
     .filter((block) => block.status === "blocked")
     .map((block) => ({
       id: block.id,
-      source: "manual" as const,
+      source: block.feedId ? "calendar" as const : "manual" as const,
       startDate: block.startDate,
       endDate: toIsoDate(getOccupiedEndDate(block.startDate, block.endDate)),
       checkoutDate: block.endDate,
       status: block.status,
-      guestName: "Manual block",
+      guestName: block.feedId ? `Booked on ${feedNames.get(block.feedId) ?? "another site"}` : "Manual block",
       ...describeRooms(block.roomTypeId, block.roomCount),
     }))
     .filter(isAvailabilityRangeCurrentOrFuture);
@@ -3402,6 +3419,7 @@ async function buildSitemapXml() {
 
 export async function registerRoutes(app: Express): Promise<Server> {
   startSuspendedProviderRefresh();
+  startCalendarSync();
   setupAuth(app);
   registerAuthRoutes(app);
   registerProviderHubRoutes(app);
@@ -4373,11 +4391,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (!roomType) {
             return res.status(400).json({ error: "Choose a room for your stay." });
           }
+          // Of the guests, how many are children: they're priced at the room's child rate.
+          const childGuests = Number.isInteger(req.body?.children) && req.body.children > 0 ? Math.min(req.body.children, 100) : 0;
           const quote = quoteHotelRooms({
             roomType,
             mealPlan: validatedData.mealPlan,
             rooms: validatedData.roomCount ?? 1,
             guests: validatedData.guests,
+            children: childGuests,
             nights: occupiedDays,
           });
           if (!quote.ok) {
@@ -7622,62 +7643,100 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/admin/stays/:id/room-types", requireAdmin, async (req, res) => {
+  // Adding, changing and removing a hotel's room types: the same rules for
+  // the team and for the hotel's owner.
+  async function createRoomType(stay: Stay, body: unknown, res: ExpressResponse) {
     try {
-      const stay = await getHotelForRoomTypes(req.params.id, res);
-      if (!stay) {
-        return;
+      const data = insertStayRoomTypeSchema.parse(body ?? {});
+      const problem = checkRoomTypePricing(data);
+      if (problem) {
+        res.status(400).json({ error: problem });
+        return null;
       }
-      const data = insertStayRoomTypeSchema.parse(req.body ?? {});
       const roomType = await storage.createStayRoomType(stay.id, { ...data, rates: sortRoomRates(data.rates) });
       res.status(201).json(roomType);
+      return roomType;
     } catch (error) {
       sendRoomTypeValidationError(error, res, "create");
+      return null;
     }
-  });
+  }
 
-  app.patch("/api/admin/stays/:id/room-types/:roomTypeId", requireAdmin, async (req, res) => {
+  async function updateRoomType(stay: Stay, roomTypeId: string, body: unknown, res: ExpressResponse) {
     try {
-      const stay = await getHotelForRoomTypes(req.params.id, res);
-      if (!stay) {
-        return;
-      }
-      const existing = await storage.getStayRoomType(req.params.roomTypeId);
+      const existing = await storage.getStayRoomType(roomTypeId);
       if (!existing || existing.stayId !== stay.id) {
-        return res.status(404).json({ error: "Room type not found" });
+        res.status(404).json({ error: "Room type not found" });
+        return null;
       }
-      const data = insertStayRoomTypeSchema.partial().parse(req.body ?? {});
+      const data = insertStayRoomTypeSchema.partial().parse(body ?? {});
+      const problem = checkRoomTypePricing({
+        maxGuests: data.maxGuests ?? existing.maxGuests,
+        standardGuests: data.standardGuests === undefined ? existing.standardGuests : data.standardGuests,
+        rates: data.rates ?? existing.rates,
+      });
+      if (problem) {
+        res.status(400).json({ error: problem });
+        return null;
+      }
       const roomType = await storage.updateStayRoomType(existing.id, data.rates ? { ...data, rates: sortRoomRates(data.rates) } : data);
       res.json(roomType);
+      return roomType ? { before: existing, after: roomType } : null;
     } catch (error) {
       sendRoomTypeValidationError(error, res, "update");
+      return null;
     }
-  });
+  }
 
-  app.delete("/api/admin/stays/:id/room-types/:roomTypeId", requireAdmin, async (req, res) => {
+  async function deleteRoomType(stay: Stay, roomTypeId: string, res: ExpressResponse) {
     try {
-      const stay = await getHotelForRoomTypes(req.params.id, res);
-      if (!stay) {
-        return;
-      }
-      const existing = await storage.getStayRoomType(req.params.roomTypeId);
+      const existing = await storage.getStayRoomType(roomTypeId);
       if (!existing || existing.stayId !== stay.id) {
-        return res.status(404).json({ error: "Room type not found" });
+        res.status(404).json({ error: "Room type not found" });
+        return null;
       }
       // Guests' bookings keep their room: stop selling it instead.
       const today = getTodayIsoDate();
       const upcoming = (await storage.getBookingsByAccommodationId(stay.id))
         .filter((booking) => booking.roomTypeId === existing.id && booking.status !== "cancelled" && booking.checkOut >= today);
       if (upcoming.length > 0) {
-        return res.status(409).json({
+        res.status(409).json({
           error: `${existing.name} has ${upcoming.length} upcoming booking${upcoming.length === 1 ? "" : "s"}. `
             + "Stop selling it instead: it stays on those bookings, and guests can't book it again.",
         });
+        return null;
+      }
+      // The calendars read for this room go with it.
+      for (const feed of (await storage.getStayCalendarFeeds(stay.id)).filter((entry) => entry.roomTypeId === existing.id)) {
+        await storage.deleteStayCalendarFeed(feed.id);
       }
       await storage.deleteStayRoomType(existing.id);
       res.status(204).send();
+      return existing;
     } catch (error) {
       res.status(500).json({ error: "Failed to delete room type" });
+      return null;
+    }
+  }
+
+  app.post("/api/admin/stays/:id/room-types", requireAdmin, async (req, res) => {
+    const stay = await getHotelForRoomTypes(req.params.id, res);
+    if (stay) {
+      await createRoomType(stay, req.body, res);
+    }
+  });
+
+  app.patch("/api/admin/stays/:id/room-types/:roomTypeId", requireAdmin, async (req, res) => {
+    const stay = await getHotelForRoomTypes(req.params.id, res);
+    if (stay) {
+      await updateRoomType(stay, req.params.roomTypeId, req.body, res);
+    }
+  });
+
+  app.delete("/api/admin/stays/:id/room-types/:roomTypeId", requireAdmin, async (req, res) => {
+    const stay = await getHotelForRoomTypes(req.params.id, res);
+    if (stay) {
+      await deleteRoomType(stay, req.params.roomTypeId, res);
     }
   });
 
@@ -8493,12 +8552,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "Only stay providers can create stay listings." });
       }
 
-      // Providers list entire places; the team sets up hotels, with their rooms and rates.
+      // An entire place, or a hotel. A hotel's price, guests and rooms come
+      // from the room types its owner adds next.
+      const isHotel = req.body?.propertyType === "hotel";
       const validatedData = insertStaySchema.parse({
         ...withoutProviderProtectedFields(req.body, req.user.claims.role === "admin"),
+        ...(isHotel ? { price: 0, maxOccupancy: 0, bedrooms: 0, bathrooms: 0 } : { starRating: null, hotelPolicy: null }),
         managerUserId: req.user.claims.sub,
         isPublic: false,
-        propertyType: "entire_place",
+        propertyType: isHotel ? "hotel" : "entire_place",
       });
       const stay = await storage.createStay(validatedData);
       res.status(201).json(stay);
@@ -8544,9 +8606,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         galleryUrls,
         mediaType,
         features,
+        starRating,
+        hotelPolicy,
+        checkInTime,
+        checkOutTime,
       } = parsed;
 
-      // A hotel's price, guests and rooms follow from its room types.
+      // A hotel's price, guests and rooms follow from its room types; its
+      // stars, check-in times and rules about children are the hotel's own.
       const isHotel = isHotelStay(access.stay);
       const updatedStay = await storage.updateStay(req.params.id, {
         title,
@@ -8560,6 +8627,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         galleryUrls,
         mediaType,
         features,
+        ...(isHotel ? { starRating, hotelPolicy, checkInTime, checkOutTime } : {}),
       });
 
       await recordProviderListingEdit(req, "stay", access.stay, updatedStay, access.stay.title);
@@ -8730,6 +8798,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!reservation) {
         return res.status(404).json({ error: "Availability block not found" });
       }
+      if (reservation.feedId) {
+        return res.status(409).json({ error: "These nights were taken on another booking site. Free them there, or remove that calendar link." });
+      }
 
       const deleted = await storage.deleteStayReservation(req.params.blockId);
       if (!deleted) {
@@ -8787,6 +8858,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!reservation) {
         return res.status(404).json({ error: "Availability block not found" });
       }
+      if (reservation.feedId) {
+        return res.status(409).json({ error: "These nights were taken on another booking site. Free them there, or remove that calendar link." });
+      }
 
       const deleted = await storage.deleteStayReservation(req.params.blockId);
       if (!deleted) {
@@ -8796,6 +8870,243 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete availability block" });
+    }
+  });
+
+  // ─── A hotel's owner: rooms, rates and calendars ──────────────────────
+
+  async function getProviderHotel(req: any, res: ExpressResponse): Promise<Stay | null> {
+    const access = await assertProviderCanAccessStay(req, req.params.id);
+    if ("error" in access) {
+      res.status(access.error!.status).json(access.error!.body);
+      return null;
+    }
+    if (!isHotelStay(access.stay)) {
+      res.status(409).json({ error: "Rooms, meal plans and calendar links are for hotels." });
+      return null;
+    }
+    return access.stay;
+  }
+
+  /** A room type in a line, for the team reviewing an owner's change. Prices are in US dollars. */
+  function describeRoomTypeForReview(roomType: StayRoomType): string {
+    const rates = sortRoomRates(roomType.rates).map((rate) => `${rate.mealPlan} $${rate.price}`).join(", ");
+    return `${roomType.roomCount} room${roomType.roomCount === 1 ? "" : "s"}, sleeps ${roomType.maxGuests}, ${rates}${roomType.isActive ? "" : ", not on sale"}`;
+  }
+
+  // Like the listing's own details, an owner's change to a room goes live at
+  // once and is logged for the team to review afterwards.
+  async function recordRoomTypeEdit(req: any, stay: Stay, name: string, before: StayRoomType | null, after: StayRoomType | null) {
+    if (req.user?.claims?.role === "admin") {
+      return;
+    }
+    const was = before ? describeRoomTypeForReview(before) : "not listed";
+    const is = after ? describeRoomTypeForReview(after) : "removed";
+    if (was === is && JSON.stringify(before) === JSON.stringify(after)) {
+      return;
+    }
+    try {
+      await storage.createListingEdit({
+        listingKind: "stay",
+        listingId: stay.id,
+        listingTitle: stay.title,
+        editorUserId: req.user.claims.sub,
+        changes: { [`room: ${name}`]: { before: was, after: was === is ? `${is} (details changed)` : is } },
+      });
+    } catch (error) {
+      console.error(`[LISTING_EDITS] Failed to log a room change at ${stay.title}:`, error);
+    }
+  }
+
+  app.get("/api/provider/stays/:id/room-types", requireProviderOrAdmin, async (req: any, res) => {
+    try {
+      const stay = await getProviderHotel(req, res);
+      if (!stay) {
+        return;
+      }
+      const roomTypes = await storage.getStayRoomTypes(stay.id);
+      res.json(roomTypes.map((roomType) => ({ ...roomType, rates: sortRoomRates(roomType.rates) })));
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch room types" });
+    }
+  });
+
+  app.post("/api/provider/stays/:id/room-types", requireProviderOrAdmin, async (req: any, res) => {
+    const stay = await getProviderHotel(req, res);
+    if (!stay) {
+      return;
+    }
+    const roomType = await createRoomType(stay, req.body, res);
+    if (roomType) {
+      await recordRoomTypeEdit(req, stay, roomType.name, null, roomType);
+    }
+  });
+
+  app.patch("/api/provider/stays/:id/room-types/:roomTypeId", requireProviderOrAdmin, async (req: any, res) => {
+    const stay = await getProviderHotel(req, res);
+    if (!stay) {
+      return;
+    }
+    const change = await updateRoomType(stay, req.params.roomTypeId, req.body, res);
+    if (change) {
+      await recordRoomTypeEdit(req, stay, change.after.name, change.before, change.after);
+    }
+  });
+
+  app.delete("/api/provider/stays/:id/room-types/:roomTypeId", requireProviderOrAdmin, async (req: any, res) => {
+    const stay = await getProviderHotel(req, res);
+    if (!stay) {
+      return;
+    }
+    const removed = await deleteRoomType(stay, req.params.roomTypeId, res);
+    if (removed) {
+      await recordRoomTypeEdit(req, stay, removed.name, removed, null);
+    }
+  });
+
+  // Calendars shared with other booking sites (server/hotel-calendar.ts).
+  // The link a hotel pastes is private to it: the hotel sees the site it's
+  // from, never the link again.
+  const MAX_CALENDAR_LINKS_PER_HOTEL = 30;
+
+  function toCalendarFeedView(feed: StayCalendarFeed, roomTypes: StayRoomType[]) {
+    const roomType = roomTypes.find((entry) => entry.id === feed.roomTypeId);
+    return {
+      id: feed.id,
+      name: feed.name,
+      site: calendarLinkHost(feed.url),
+      roomTypeId: feed.roomTypeId,
+      roomTypeName: roomType?.name ?? null,
+      roomsPerEvent: feed.roomsPerEvent,
+      lastSyncedAt: feed.lastSyncedAt,
+      lastError: feed.lastError,
+      stretchesBlocked: feed.eventCount,
+    };
+  }
+
+  app.get("/api/provider/stays/:id/calendar-sync", requireProviderOrAdmin, async (req: any, res) => {
+    try {
+      const stay = await getProviderHotel(req, res);
+      if (!stay) {
+        return;
+      }
+      const [roomTypes, feeds] = await Promise.all([storage.getStayRoomTypes(stay.id), storage.getStayCalendarFeeds(stay.id)]);
+      const base = getPublicSiteBaseUrl();
+      res.json({
+        feeds: feeds.map((feed) => toCalendarFeedView(feed, roomTypes)),
+        // TBM's own calendar for each room type, to paste into the other site.
+        exports: roomTypes.map((roomType) => ({
+          roomTypeId: roomType.id,
+          roomTypeName: roomType.name,
+          roomCount: roomType.roomCount,
+          url: `${base}/api/calendars/stays/${stay.id}/rooms/${roomType.id}/${calendarLinkToken(stay.id, roomType.id)}.ics`,
+        })),
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to load calendar links" });
+    }
+  });
+
+  app.post("/api/provider/stays/:id/calendar-sync/feeds", requireProviderOrAdmin, async (req: any, res) => {
+    try {
+      const stay = await getProviderHotel(req, res);
+      if (!stay) {
+        return;
+      }
+      const data = insertStayCalendarFeedSchema.parse(req.body ?? {});
+      const roomTypes = await storage.getStayRoomTypes(stay.id);
+      const roomType = roomTypes.find((entry) => entry.id === data.roomTypeId);
+      if (!roomType) {
+        return res.status(400).json({ error: "Choose the room this calendar is for." });
+      }
+      if (data.roomsPerEvent && data.roomsPerEvent > roomType.roomCount) {
+        return res.status(400).json({ error: `${roomType.name} has ${roomType.roomCount} room${roomType.roomCount === 1 ? "" : "s"}.` });
+      }
+      const existing = await storage.getStayCalendarFeeds(stay.id);
+      if (existing.length >= MAX_CALENDAR_LINKS_PER_HOTEL) {
+        return res.status(409).json({ error: "This hotel has as many calendar links as it can hold. Remove one you no longer use first." });
+      }
+      const url = normalizeCalendarUrl(data.url);
+      if (existing.some((feed) => feed.url === url && feed.roomTypeId === roomType.id)) {
+        return res.status(409).json({ error: `That calendar is already linked to ${roomType.name}.` });
+      }
+      const created = await storage.createStayCalendarFeed(stay.id, { ...data, url, roomTypeId: roomType.id });
+      // Read it straight away, so the hotel sees at once whether the link works.
+      const synced = await syncCalendarFeed(created);
+      res.status(201).json(toCalendarFeedView(synced, roomTypes));
+    } catch (error) {
+      if (error instanceof PublicFetchError) {
+        return res.status(400).json({ error: error.message });
+      }
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.issues[0]?.message || "Check the calendar link." });
+      }
+      console.error("Failed to add calendar link:", error);
+      res.status(500).json({ error: "Failed to add calendar link" });
+    }
+  });
+
+  app.post("/api/provider/stays/:id/calendar-sync/feeds/:feedId/sync", requireProviderOrAdmin, async (req: any, res) => {
+    try {
+      const stay = await getProviderHotel(req, res);
+      if (!stay) {
+        return;
+      }
+      const feed = await storage.getStayCalendarFeed(req.params.feedId);
+      if (!feed || feed.stayId !== stay.id) {
+        return res.status(404).json({ error: "Calendar link not found" });
+      }
+      const synced = await syncCalendarFeed(feed);
+      res.json(toCalendarFeedView(synced, await storage.getStayRoomTypes(stay.id)));
+    } catch (error) {
+      console.error("Failed to sync calendar:", error);
+      res.status(500).json({ error: "Failed to sync calendar" });
+    }
+  });
+
+  app.delete("/api/provider/stays/:id/calendar-sync/feeds/:feedId", requireProviderOrAdmin, async (req: any, res) => {
+    try {
+      const stay = await getProviderHotel(req, res);
+      if (!stay) {
+        return;
+      }
+      const feed = await storage.getStayCalendarFeed(req.params.feedId);
+      if (!feed || feed.stayId !== stay.id) {
+        return res.status(404).json({ error: "Calendar link not found" });
+      }
+      await storage.deleteStayCalendarFeed(feed.id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to remove calendar link" });
+    }
+  });
+
+  // TBM's calendar for one room type, read by other booking sites. It lists
+  // the nights every room of the type is taken here, and nothing about who by.
+  app.get("/api/calendars/stays/:stayId/rooms/:roomTypeId/:file", async (req, res) => {
+    try {
+      const token = String(req.params.file).replace(/\.ics$/i, "");
+      if (!isCalendarLinkToken(req.params.stayId, req.params.roomTypeId, token)) {
+        return res.status(404).send("Not found");
+      }
+      const [stay, roomType] = await Promise.all([storage.getStay(req.params.stayId), storage.getStayRoomType(req.params.roomTypeId)]);
+      if (!stay || !isHotelStay(stay) || !roomType || roomType.stayId !== stay.id) {
+        return res.status(404).send("Not found");
+      }
+      const [stayBookings, blocks] = await Promise.all([
+        storage.getBookingsByAccommodationId(stay.id),
+        storage.getStayReservations(stay.id),
+      ]);
+      // Only what was taken here: nights that came in from another site's
+      // calendar are never sent back out.
+      const ownClaims = getHotelRoomClaims(stayBookings, blocks.filter((block) => !block.feedId));
+      res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+      res.setHeader("Cache-Control", "private, max-age=300");
+      res.setHeader("X-Robots-Tag", "noindex");
+      res.send(buildCalendar({ name: `${stay.title}, ${roomType.name}`, events: getTakenStretches(roomType, ownClaims) }));
+    } catch (error) {
+      console.error("Failed to build calendar:", error);
+      res.status(500).send("Calendar unavailable");
     }
   });
 

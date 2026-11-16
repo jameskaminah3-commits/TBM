@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useParams, useLocation, useSearch } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useWatch } from "react-hook-form";
@@ -88,8 +88,10 @@ import {
 import { readStaySearchState, toSearchSuffix } from "@/lib/stay-search";
 import { HotelRoomPicker } from "@/components/hotel-room-picker";
 import {
+  describeChildPolicy,
   describeHotelStay,
   getRoomsNeeded,
+  hasChildRates,
   isBookableRoomType,
   isHotelStay,
   quoteHotelRooms,
@@ -188,6 +190,8 @@ const bookingFormSchema = insertBookingSchema.extend({
 
 type BookingFormValues = z.infer<typeof bookingFormSchema>;
 type StayBookingSubmission = BookingFormValues & {
+  /** At a hotel: how many of the guests are children. */
+  children?: number;
   promoCode?: string | null;
   marketingAttribution?: MarketingAttributionPayload;
   shareClaim?: ReturnType<typeof getBookingShareClaim>;
@@ -324,6 +328,9 @@ export default function Booking() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const { formatAmount } = useCurrency();
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
+  // At a hotel with child prices: how many of the guests are children.
+  const [childGuestsChosen, setChildGuestsChosen] = useState(0);
+  const childGuestsRef = useRef(0);
   const [stayServiceSelections, setStayServiceSelections] = useState<StayServiceSelection[]>([]);
   const [configuringServiceId, setConfiguringServiceId] = useState<string | null>(null);
   const [draftSelection, setDraftSelection] = useState<StayServiceSelection | null>(null);
@@ -440,6 +447,7 @@ export default function Booking() {
 
     return {
       ...values,
+      children: childGuestsRef.current,
       selectedServices: nextSelectedServices,
       stayServiceSelections: nextSelections,
       totalPrice,
@@ -733,6 +741,10 @@ export default function Booking() {
     () => (roomAvailability ? new Map(roomAvailability.rooms.map((room) => [room.roomTypeId, room.roomsLeft])) : undefined),
     [roomAvailability],
   );
+  // A hotel with child prices asks for adults and children; the guests are both together.
+  const hotelTakesChildren = isHotel && hasChildRates(hotelRoomTypes);
+  const childGuests = hotelTakesChildren ? Math.min(childGuestsChosen, Math.max(0, (Number(guestsValue) || 1) - 1)) : 0;
+  childGuestsRef.current = childGuests;
   const hotelQuote = useMemo(() => {
     if (!isHotel || !selectedRoomType) return null;
     return quoteHotelRooms({
@@ -740,9 +752,10 @@ export default function Booking() {
       mealPlan: mealPlanValue,
       rooms: roomCountValue ?? 1,
       guests: Number(guestsValue) || 0,
+      children: childGuests,
       nights: Math.max(1, nights),
     });
-  }, [guestsValue, isHotel, mealPlanValue, nights, roomCountValue, selectedRoomType]);
+  }, [childGuests, guestsValue, isHotel, mealPlanValue, nights, roomCountValue, selectedRoomType]);
 
   // Start on the room chosen on the hotel's page (or its first room and plan),
   // with enough rooms for the guests.
@@ -761,11 +774,12 @@ export default function Booking() {
     if (!isHotel || !selectedRoomType) return;
     const guests = Math.max(1, Number(guestsValue) || 1);
     const current = form.getValues("roomCount") ?? 0;
-    const next = Math.max(1, Math.min(Math.max(current, getRoomsNeeded(guests, selectedRoomType.maxGuests)), guests, selectedRoomType.roomCount));
+    // Every room has an adult in it.
+    const next = Math.max(1, Math.min(Math.max(current, getRoomsNeeded(guests, selectedRoomType.maxGuests)), guests - childGuests, selectedRoomType.roomCount));
     if (next !== current) {
       form.setValue("roomCount", next);
     }
-  }, [form, guestsValue, isHotel, selectedRoomType]);
+  }, [childGuests, form, guestsValue, isHotel, selectedRoomType]);
 
   const accommodationTotal = useMemo(
     () => (isHotel
@@ -1162,6 +1176,7 @@ export default function Booking() {
     };
 
     form.reset(restoredFormValues);
+    setChildGuestsChosen(typeof (payload as { children?: unknown }).children === "number" ? Math.max(0, (payload as { children: number }).children) : 0);
     setSelectedServices(restoredSelectedServices);
     setStayServiceSelections(restoredSelections);
     setPromoCode(restoredPromoCode);
@@ -1330,6 +1345,40 @@ export default function Booking() {
                       render={({ field }) => {
                         const guests = Number(field.value) || 1;
                         const maxGuests = Math.max(1, accommodation.maxOccupancy || 1);
+                        if (hotelTakesChildren) {
+                          const adults = guests - childGuests;
+                          const stepper = (label: string, value: number, testId: string, canLess: boolean, canMore: boolean, change: (by: number) => void) => (
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-sm font-medium">{label}</span>
+                              <span className="flex items-center gap-3">
+                                <Button type="button" variant="outline" size="icon" className="h-10 w-10 rounded-full" aria-label={`One fewer: ${label.toLowerCase()}`} disabled={!canLess} onClick={() => change(-1)}>
+                                  <Minus className="h-4 w-4" />
+                                </Button>
+                                <span className="min-w-[2ch] text-center text-lg font-semibold tabular-nums" aria-live="polite" data-testid={testId}>{value}</span>
+                                <Button type="button" variant="outline" size="icon" className="h-10 w-10 rounded-full" aria-label={`One more: ${label.toLowerCase()}`} disabled={!canMore} onClick={() => change(1)}>
+                                  <Plus className="h-4 w-4" />
+                                </Button>
+                              </span>
+                            </div>
+                          );
+                          return (
+                            <FormItem>
+                              <FormLabel>Guests</FormLabel>
+                              <div className="space-y-3">
+                                {stepper("Adults", adults, "input-booking-adults", adults > 1, guests < maxGuests, (by) => field.onChange(guests + by))}
+                                {stepper("Children", childGuests, "input-booking-children", childGuests > 0, guests < maxGuests, (by) => {
+                                  setChildGuestsChosen(childGuests + by);
+                                  field.onChange(guests + by);
+                                })}
+                              </div>
+                              <p className="text-xs text-muted-foreground" data-testid="booking-child-policy">
+                                {describeChildPolicy(accommodation.hotelPolicy)}
+                                {accommodation.hotelPolicy?.freeUnderAge ? " Don't count them here." : ""}
+                              </p>
+                              <FormMessage />
+                            </FormItem>
+                          );
+                        }
                         return (
                           <FormItem>
                             <FormLabel>Guests</FormLabel>

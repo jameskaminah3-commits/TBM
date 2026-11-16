@@ -13,7 +13,9 @@ import {
   ShieldCheck,
   Handshake,
   Wrench,
+  Building2,
 } from "lucide-react";
+import { isHotelStay } from "@shared/hotel-rooms";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ListingMedia } from "@/components/listing-media";
@@ -223,6 +225,7 @@ export default function Home() {
     refetchOnWindowFocus: false,
   });
   const stayAreas = useMemo(() => stayAreaCounts(stays), [stays]);
+  const hasHotels = useMemo(() => stays.some((stay) => isHotelStay(stay)), [stays]);
 
   // On phones Zaina's button steps aside while the opening section, with its own
   // "Tell us what you need", is on screen.
@@ -402,6 +405,17 @@ export default function Home() {
                       {area}
                     </Link>
                   ))}
+              {hasHotels ? (
+                <Link
+                  href={`/accommodations?${buildStaySearchParams({ stayType: "hotel" })}`}
+                  className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-amber-300/70 bg-amber-50 px-4 text-sm font-medium text-amber-900 transition-colors hover:border-amber-400 dark:border-amber-400/30 dark:bg-amber-500/15 dark:text-amber-100"
+                  aria-label="Hotels on the Kenyan Coast"
+                  data-testid="link-hero-hotels"
+                >
+                  <Building2 className="h-4 w-4" aria-hidden="true" />
+                  Hotels
+                </Link>
+              ) : null}
               <Link href="/accommodations" className="hidden min-h-11 items-center px-3 text-sm font-semibold text-primary hover:underline sm:inline-flex" data-testid="link-hero-all-stays">
                 All stays &rarr;
               </Link>

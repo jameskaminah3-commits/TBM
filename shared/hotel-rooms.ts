@@ -48,21 +48,124 @@ export function formatMealPlan(code: string | null | undefined): string {
 
 export type RoomRate = {
   mealPlan: MealPlanCode;
-  /** USD per room per night, for up to the room's maximum number of guests. */
+  /**
+   * USD per room per night for the guests the price covers: a couple in a
+   * double room (the room type's `standardGuests`), or, when the room type
+   * doesn't say, everyone the room sleeps.
+   */
   price: number;
-  /** USD per room per night when one guest has the room. The full price applies when it's unset. */
+  /** USD per room per night when one adult has the room. The full price applies when it's unset. */
   singlePrice?: number | null;
+  /** USD per night for each adult beyond the guests the price covers. */
+  extraAdultPrice?: number | null;
+  /**
+   * USD per night for each child sharing the room. 0 means children stay
+   * free; unset means a child is charged as an adult.
+   */
+  childPrice?: number | null;
 };
 
 /** What pricing and availability need to know about a room type. */
 export type RoomTypeForPricing = {
   id: string;
   name: string;
+  /** The most guests one room sleeps, adults and children together. */
   maxGuests: number;
   roomCount: number;
   rates: RoomRate[];
   isActive?: boolean | null;
+  /** How many guests the room's price covers (2 for a double). Unset: everyone it sleeps. */
+  standardGuests?: number | null;
 };
+
+/** How many guests a room's price covers: its standard occupancy, never more than it sleeps. */
+export function getCoveredGuests(roomType: Pick<RoomTypeForPricing, "maxGuests" | "standardGuests">): number {
+  const standard = roomType.standardGuests;
+  return standard && standard >= 1 && standard < roomType.maxGuests ? standard : roomType.maxGuests;
+}
+
+// ─── Beds, in feet ──────────────────────────────────────────────────────
+// Hotels here describe a bed by its width and length in feet: "6ft by 6ft".
+
+export type RoomBed = { widthFt: number; lengthFt: number; count: number };
+
+/** The bed sizes hotels pick from most; any other width and length can be typed. */
+export const bedSizePresets: ReadonlyArray<{ widthFt: number; lengthFt: number; name: string }> = [
+  { widthFt: 3, lengthFt: 6, name: "Single" },
+  { widthFt: 3.5, lengthFt: 6, name: "Single, wide" },
+  { widthFt: 4, lengthFt: 6, name: "Three-quarter" },
+  { widthFt: 5, lengthFt: 6, name: "Queen" },
+  { widthFt: 6, lengthFt: 6, name: "King" },
+];
+
+const feet = (value: number) => `${Number.isInteger(value) ? value : Number(value.toFixed(2))}ft`;
+
+/** "6ft by 6ft". */
+export function formatBedSize(bed: Pick<RoomBed, "widthFt" | "lengthFt">): string {
+  return `${feet(bed.widthFt)} by ${feet(bed.lengthFt)}`;
+}
+
+/** "1 bed, 6ft by 6ft" or "2 beds, 3.5ft by 6ft + 1 bed, 6ft by 6ft". */
+export function describeBeds(beds: RoomBed[] | null | undefined): string {
+  return (beds ?? [])
+    .filter((bed) => bed.count > 0 && bed.widthFt > 0 && bed.lengthFt > 0)
+    .map((bed) => `${bed.count} bed${bed.count === 1 ? "" : "s"}, ${formatBedSize(bed)}`)
+    .join(" + ");
+}
+
+/** A room's beds as guests read them: its sizes in feet, or the words the hotel typed before sizes were kept. */
+export function getRoomBedsLabel(roomType: { beds?: RoomBed[] | null; bedType?: string | null }): string {
+  return describeBeds(roomType.beds) || (roomType.bedType ?? "").trim();
+}
+
+// ─── Children ───────────────────────────────────────────────────────────
+
+/** A hotel's rules about children, which its child prices follow. */
+export type HotelPolicy = {
+  /** The oldest age charged as a child. Older guests pay as adults. */
+  childMaxAge?: number | null;
+  /** Children younger than this stay free and aren't counted as guests. */
+  freeUnderAge?: number | null;
+};
+
+export const DEFAULT_CHILD_MAX_AGE = 11;
+
+/** "Children are guests aged 3 to 11. Under 3s stay free." */
+export function describeChildPolicy(policy: HotelPolicy | null | undefined): string {
+  const maxAge = policy?.childMaxAge ?? DEFAULT_CHILD_MAX_AGE;
+  const freeUnder = policy?.freeUnderAge && policy.freeUnderAge > 0 && policy.freeUnderAge <= maxAge ? policy.freeUnderAge : null;
+  return freeUnder
+    ? `Children are guests aged ${freeUnder} to ${maxAge}. Under ${freeUnder}s stay free.`
+    : `Children are guests aged ${maxAge} and under.`;
+}
+
+/** Whether any of a hotel's rooms on sale has a price for children. */
+export function hasChildRates(roomTypes: Array<Pick<RoomTypeForPricing, "rates">>): boolean {
+  return roomTypes.some((roomType) => (roomType.rates ?? []).some((rate) => rate.childPrice !== null && rate.childPrice !== undefined));
+}
+
+/**
+ * What's wrong with a room type's occupancy and prices taken together, in
+ * words, or null when they agree. (Each field's own limits are checked by the
+ * schema.)
+ */
+export function checkRoomTypePricing(roomType: Pick<RoomTypeForPricing, "maxGuests" | "standardGuests" | "rates">): string | null {
+  const standard = roomType.standardGuests;
+  if (standard && standard > roomType.maxGuests) {
+    return "The guests the price covers can't be more than the room sleeps.";
+  }
+  const sleepsMore = Boolean(standard && standard < roomType.maxGuests);
+  for (const rate of roomType.rates ?? []) {
+    const plan = mealPlans[rate.mealPlan]?.name.toLowerCase() ?? rate.mealPlan;
+    if (rate.singlePrice && rate.singlePrice > rate.price) {
+      return `The ${plan} price for one guest can't be more than the room's price.`;
+    }
+    if (sleepsMore && !(rate.extraAdultPrice && rate.extraAdultPrice > 0)) {
+      return `The room sleeps more guests than its price covers: give the ${plan} price for each extra adult.`;
+    }
+  }
+  return null;
+}
 
 /** The room, meal plan and prices a hotel booking was made at: kept with the booking. */
 export type HotelStaySnapshot = {
@@ -70,8 +173,10 @@ export type HotelStaySnapshot = {
   roomTypeName: string;
   mealPlan: MealPlanCode;
   rooms: number;
-  /** Guests in each room, fullest first. */
+  /** Guests in each room, fullest first: adults and children together. */
   guestsPerRoom: number[];
+  /** Of those, the children in each room, in the same order (when the booking had any). */
+  childrenPerRoom?: number[];
   /** USD per night for each room, in the same order. */
   nightlyRoomPrices: number[];
   nights: number;
@@ -110,9 +215,54 @@ export function splitGuestsAcrossRooms(guests: number, rooms: number): number[] 
   return Array.from({ length: rooms }, (_, index) => base + (index < extra ? 1 : 0));
 }
 
-/** One room's price for a night, by how many guests have it. */
-export function getRoomNightPrice(rate: RoomRate, guestsInRoom: number): number {
-  return guestsInRoom === 1 && rate.singlePrice && rate.singlePrice > 0 ? rate.singlePrice : rate.price;
+/** One room's price for a night when everyone in it pays as an adult. */
+function getAdultsNightPrice(roomType: Pick<RoomTypeForPricing, "maxGuests" | "standardGuests">, rate: RoomRate, adults: number): number {
+  if (adults === 1 && rate.singlePrice && rate.singlePrice > 0) {
+    return rate.singlePrice;
+  }
+  const extraAdults = Math.max(0, adults - getCoveredGuests(roomType));
+  return rate.price + extraAdults * Math.max(0, rate.extraAdultPrice ?? 0);
+}
+
+/**
+ * One room's price for a night, by who has it. One adult alone pays the
+ * single price when the hotel set one; adults beyond the guests the price
+ * covers pay the extra-adult price; children pay the child price. A child
+ * never costs more than an adult in their place would.
+ */
+export function getRoomNightPrice(
+  roomType: Pick<RoomTypeForPricing, "maxGuests" | "standardGuests">,
+  rate: RoomRate,
+  adults: number,
+  children = 0,
+): number {
+  const allAsAdults = getAdultsNightPrice(roomType, rate, adults + children);
+  if (children <= 0 || rate.childPrice === null || rate.childPrice === undefined) {
+    return allAsAdults;
+  }
+  return Math.min(allAsAdults, getAdultsNightPrice(roomType, rate, adults) + children * Math.max(0, rate.childPrice));
+}
+
+/**
+ * Adults and children spread over rooms: adults as evenly as possible (every
+ * room has one), then each child into the room with the fewest people.
+ */
+export function splitPartyAcrossRooms(adults: number, children: number, rooms: number): Array<{ adults: number; children: number }> {
+  const adultsPerRoom = splitGuestsAcrossRooms(adults, rooms);
+  if (adultsPerRoom.length === 0 || adults < rooms || !Number.isInteger(children) || children < 0) {
+    return [];
+  }
+  const party = adultsPerRoom.map((count) => ({ adults: count, children: 0 }));
+  for (let placed = 0; placed < children; placed += 1) {
+    let emptiest = 0;
+    for (let index = 1; index < party.length; index += 1) {
+      if (party[index].adults + party[index].children < party[emptiest].adults + party[emptiest].children) {
+        emptiest = index;
+      }
+    }
+    party[emptiest].children += 1;
+  }
+  return party;
 }
 
 /** The fewest rooms that fit the guests, given how many one room sleeps. */
@@ -130,17 +280,21 @@ function plural(count: number, word: string) {
 
 /**
  * Prices rooms of one type on one meal plan for a number of nights. The
- * guests are spread over the rooms as evenly as possible; a room with one
- * guest is charged its single price when the hotel set one.
+ * guests (children among them) are spread over the rooms as evenly as
+ * possible, and each room is priced by who has it (getRoomNightPrice).
  */
 export function quoteHotelRooms(params: {
   roomType: RoomTypeForPricing;
   mealPlan: string | null | undefined;
   rooms: number | null | undefined;
+  /** Everyone staying: adults and children together. */
   guests: number;
+  /** How many of the guests are children. */
+  children?: number | null;
   nights: number;
 }): HotelRoomQuote {
   const { roomType, guests, nights } = params;
+  const children = params.children ?? 0;
   if (!isBookableRoomType(roomType)) {
     return { ok: false, error: `${roomType.name} can't be booked at the moment. Please choose another room.` };
   }
@@ -161,8 +315,14 @@ export function quoteHotelRooms(params: {
   if (!Number.isInteger(guests) || guests < 1) {
     return { ok: false, error: "Tell us how many guests are staying." };
   }
+  if (!Number.isInteger(children) || children < 0 || children >= guests) {
+    return { ok: false, error: "At least one adult needs to be staying." };
+  }
   if (guests < rooms) {
     return { ok: false, error: `Each room needs at least one guest: choose fewer rooms, or add guests.` };
+  }
+  if (guests - children < rooms) {
+    return { ok: false, error: "Each room needs at least one adult: choose fewer rooms, or add an adult." };
   }
   if (guests > rooms * roomType.maxGuests) {
     const needed = getRoomsNeeded(guests, roomType.maxGuests);
@@ -175,8 +335,9 @@ export function quoteHotelRooms(params: {
     return { ok: false, error: "Choose your check-in and check-out dates." };
   }
 
-  const guestsPerRoom = splitGuestsAcrossRooms(guests, rooms);
-  const nightlyRoomPrices = guestsPerRoom.map((guestsInRoom) => getRoomNightPrice(rate, guestsInRoom));
+  const party = splitPartyAcrossRooms(guests - children, children, rooms);
+  const guestsPerRoom = party.map((room) => room.adults + room.children);
+  const nightlyRoomPrices = party.map((room) => getRoomNightPrice(roomType, rate, room.adults, room.children));
   const nightlyTotal = nightlyRoomPrices.reduce((sum, price) => sum + price, 0);
   return {
     ok: true,
@@ -187,6 +348,7 @@ export function quoteHotelRooms(params: {
       mealPlan: params.mealPlan,
       rooms,
       guestsPerRoom,
+      ...(children > 0 ? { childrenPerRoom: party.map((room) => room.children) } : {}),
       nightlyRoomPrices,
       nights,
       accommodationTotal: nightlyTotal * nights,

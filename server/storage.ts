@@ -33,6 +33,8 @@ import {
   type InsertStay,
   type StayRoomType,
   type InsertStayRoomType,
+  type StayCalendarFeed,
+  type InsertStayCalendarFeed,
   type Car,
   type InsertCar,
   type Cook,
@@ -126,6 +128,7 @@ import {
   userPushDevices,
   userPushPreferences,
   stayReservations,
+  stayCalendarFeeds,
   carReservations,
   cookReservations,
   listingVerificationTasks,
@@ -1523,6 +1526,17 @@ export interface IStorage {
   getStayReservations(stayId: string): Promise<StayReservation[]>;
   createStayReservation(reservation: InsertStayReservation): Promise<StayReservation>;
   deleteStayReservation(id: string): Promise<boolean>;
+  // Calendars from other booking sites, and the blocks they bring in.
+  getStayCalendarFeeds(stayId: string): Promise<StayCalendarFeed[]>;
+  getAllStayCalendarFeeds(): Promise<StayCalendarFeed[]>;
+  getStayCalendarFeed(id: string): Promise<StayCalendarFeed | undefined>;
+  createStayCalendarFeed(stayId: string, feed: InsertStayCalendarFeed): Promise<StayCalendarFeed>;
+  deleteStayCalendarFeed(id: string): Promise<boolean>;
+  replaceCalendarFeedBlocks(
+    feed: StayCalendarFeed,
+    blocks: Array<{ startDate: string; endDate: string; externalUid: string }>,
+    outcome: { error: string | null },
+  ): Promise<void>;
   getCarReservations(carId: string): Promise<CarReservation[]>;
   createCarReservation(reservation: InsertCarReservation): Promise<CarReservation>;
   deleteCarReservation(id: string): Promise<boolean>;
@@ -1661,6 +1675,35 @@ export class DatabaseStorage implements IStorage {
         );
       `);
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_stay_room_types_stay ON stay_room_types (stay_id);`);
+      // Beds in feet, the guests a price covers, room photos; the hotel's child
+      // rules; and calendars from other booking sites.
+      await pool.query(`
+        ALTER TABLE stay_room_types
+        ADD COLUMN IF NOT EXISTS beds jsonb NOT NULL DEFAULT '[]'::jsonb,
+        ADD COLUMN IF NOT EXISTS standard_guests integer,
+        ADD COLUMN IF NOT EXISTS gallery_urls text[] NOT NULL DEFAULT '{}'::text[];
+      `);
+      await pool.query(`ALTER TABLE stays ADD COLUMN IF NOT EXISTS hotel_policy jsonb;`);
+      await pool.query(`
+        ALTER TABLE stay_reservations
+        ADD COLUMN IF NOT EXISTS feed_id varchar,
+        ADD COLUMN IF NOT EXISTS external_uid text;
+      `);
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS stay_calendar_feeds (
+          id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+          stay_id varchar NOT NULL,
+          room_type_id varchar,
+          name text NOT NULL,
+          url text NOT NULL,
+          rooms_per_event integer,
+          last_synced_at text,
+          last_error text,
+          event_count integer NOT NULL DEFAULT 0,
+          created_at text NOT NULL
+        );
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_stay_calendar_feeds_stay ON stay_calendar_feeds (stay_id);`);
     } catch (error) {
       console.error("[storage] Could not prepare the hotel tables:", error);
     }
@@ -1690,6 +1733,7 @@ export class DatabaseStorage implements IStorage {
       columns.has("features") ? "features" : '\'{}\'::text[] AS features',
       columns.has("property_type") ? 'property_type AS "propertyType"' : '\'entire_place\'::text AS "propertyType"',
       columns.has("star_rating") ? 'star_rating AS "starRating"' : 'NULL::integer AS "starRating"',
+      columns.has("hotel_policy") ? 'hotel_policy AS "hotelPolicy"' : 'NULL::jsonb AS "hotelPolicy"',
       columns.has("check_in_time") ? 'check_in_time AS "checkInTime"' : 'NULL::text AS "checkInTime"',
       columns.has("check_out_time") ? 'check_out_time AS "checkOutTime"' : 'NULL::text AS "checkOutTime"',
       columns.has("created_at") ? 'created_at AS "createdAt"' : 'NULL::text AS "createdAt"',
@@ -4725,6 +4769,7 @@ export class DatabaseStorage implements IStorage {
     if (result.rowCount) {
       await this.ensureHotelTables();
       await db.delete(stayRoomTypes).where(eq(stayRoomTypes.stayId, id));
+      await db.delete(stayCalendarFeeds).where(eq(stayCalendarFeeds.stayId, id));
     }
     return result.rowCount ? result.rowCount > 0 : false;
   }
@@ -5023,6 +5068,80 @@ export class DatabaseStorage implements IStorage {
   async deleteStayReservation(id: string): Promise<boolean> {
     const result = await db.delete(stayReservations).where(eq(stayReservations.id, id));
     return result.rowCount ? result.rowCount > 0 : false;
+  }
+
+  // Calendars from other booking sites
+  async getStayCalendarFeeds(stayId: string): Promise<StayCalendarFeed[]> {
+    await this.ensureHotelTables();
+    return await db.select().from(stayCalendarFeeds).where(eq(stayCalendarFeeds.stayId, stayId)).orderBy(asc(stayCalendarFeeds.createdAt));
+  }
+
+  async getAllStayCalendarFeeds(): Promise<StayCalendarFeed[]> {
+    await this.ensureHotelTables();
+    return await db.select().from(stayCalendarFeeds);
+  }
+
+  async getStayCalendarFeed(id: string): Promise<StayCalendarFeed | undefined> {
+    await this.ensureHotelTables();
+    const [feed] = await db.select().from(stayCalendarFeeds).where(eq(stayCalendarFeeds.id, id)).limit(1);
+    return feed;
+  }
+
+  async createStayCalendarFeed(stayId: string, data: InsertStayCalendarFeed): Promise<StayCalendarFeed> {
+    await this.ensureHotelTables();
+    const [feed] = await db.insert(stayCalendarFeeds).values({
+      stayId,
+      roomTypeId: data.roomTypeId ?? null,
+      name: data.name,
+      url: data.url,
+      roomsPerEvent: data.roomsPerEvent ?? null,
+      createdAt: new Date().toISOString(),
+    }).returning();
+    return feed;
+  }
+
+  /** Removes a calendar, and the nights it had blocked. */
+  async deleteStayCalendarFeed(id: string): Promise<boolean> {
+    await this.ensureHotelTables();
+    await db.delete(stayReservations).where(eq(stayReservations.feedId, id));
+    const result = await db.delete(stayCalendarFeeds).where(eq(stayCalendarFeeds.id, id));
+    return result.rowCount ? result.rowCount > 0 : false;
+  }
+
+  /**
+   * After reading a calendar: its blocks become exactly the nights it lists
+   * now (in one transaction, so the stay is never left without them halfway).
+   * When the calendar couldn't be read, the blocks it brought before stay and
+   * only the error is recorded.
+   */
+  async replaceCalendarFeedBlocks(
+    feed: StayCalendarFeed,
+    blocks: Array<{ startDate: string; endDate: string; externalUid: string }>,
+    outcome: { error: string | null },
+  ): Promise<void> {
+    await this.ensureHotelTables();
+    const now = new Date().toISOString();
+    if (outcome.error) {
+      await db.update(stayCalendarFeeds).set({ lastError: outcome.error.slice(0, 300), lastSyncedAt: now }).where(eq(stayCalendarFeeds.id, feed.id));
+      return;
+    }
+    await db.transaction(async (tx) => {
+      await tx.delete(stayReservations).where(eq(stayReservations.feedId, feed.id));
+      if (blocks.length > 0) {
+        await tx.insert(stayReservations).values(blocks.map((block) => ({
+          stayId: feed.stayId,
+          startDate: block.startDate,
+          endDate: block.endDate,
+          status: "blocked",
+          roomTypeId: feed.roomTypeId,
+          roomCount: feed.roomTypeId ? feed.roomsPerEvent : null,
+          feedId: feed.id,
+          externalUid: block.externalUid.slice(0, 300),
+          createdAt: now,
+        })));
+      }
+      await tx.update(stayCalendarFeeds).set({ lastError: null, lastSyncedAt: now, eventCount: blocks.length }).where(eq(stayCalendarFeeds.id, feed.id));
+    });
   }
 
   async getCarReservations(carId: string): Promise<CarReservation[]> {

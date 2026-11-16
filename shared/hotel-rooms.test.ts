@@ -1,15 +1,23 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  checkRoomTypePricing,
   countRoomsLeft,
+  describeBeds,
+  describeChildPolicy,
   describeHotelStay,
   findSoldOutNights,
   formatMealPlan,
+  getCoveredGuests,
   getOccupiedNights,
+  getRoomBedsLabel,
+  getRoomNightPrice,
+  hasChildRates,
   isBookableRoomType,
   quoteHotelRooms,
   sortRoomRates,
   splitGuestsAcrossRooms,
+  splitPartyAcrossRooms,
   summarizeHotelRooms,
   type RoomClaim,
   type RoomTypeForPricing,
@@ -194,4 +202,110 @@ test("a guest's booking request may name a room type, rooms and meal plan, never
     selectedServices: [],
     mealPlan: "XX",
   }));
+});
+
+// A triple: the price is for two sharing, a third adult pays extra, and
+// children have their own price on half board and stay free on bed & breakfast.
+const triple: RoomTypeForPricing = {
+  id: "rt-triple",
+  name: "Garden Triple",
+  maxGuests: 4,
+  standardGuests: 2,
+  roomCount: 2,
+  rates: [
+    { mealPlan: "HB", price: 200, singlePrice: 130, extraAdultPrice: 70, childPrice: 35 },
+    { mealPlan: "BB", price: 150, extraAdultPrice: 50, childPrice: 0 },
+    { mealPlan: "FB", price: 240, extraAdultPrice: 90 },
+  ],
+};
+
+test("a room's price covers its standard guests; a room that doesn't say covers everyone it sleeps", () => {
+  assert.equal(getCoveredGuests(triple), 2);
+  assert.equal(getCoveredGuests(deluxe), 2);
+  assert.equal(getCoveredGuests(family), 4);
+  assert.equal(getCoveredGuests({ maxGuests: 2, standardGuests: 5 }), 2);
+});
+
+test("a room is priced by who has it: one adult, a couple, extra adults and children", () => {
+  const hb = triple.rates[0];
+  assert.equal(getRoomNightPrice(triple, hb, 1), 130, "one adult: the single price");
+  assert.equal(getRoomNightPrice(triple, hb, 2), 200, "a couple: the room's price");
+  assert.equal(getRoomNightPrice(triple, hb, 3), 270, "a third adult pays the extra-adult price");
+  assert.equal(getRoomNightPrice(triple, hb, 2, 2), 270, "two children at the child price");
+  assert.equal(getRoomNightPrice(triple, hb, 1, 1), 165, "a parent alone and a child: single price and child price");
+  assert.equal(getRoomNightPrice(triple, triple.rates[1], 2, 2), 150, "children stay free on bed & breakfast");
+  assert.equal(getRoomNightPrice(triple, triple.rates[2], 2, 1), 330, "no child price: a child pays as an adult");
+});
+
+test("a child never costs more than an adult in their place", () => {
+  const dear = { mealPlan: "HB" as const, price: 200, extraAdultPrice: 40, childPrice: 90 };
+  assert.equal(getRoomNightPrice(triple, dear, 2, 1), 240);
+  // Sharing a double with a parent, a child is within the guests the price covers.
+  assert.equal(getRoomNightPrice(deluxe, { mealPlan: "BB", price: 110, childPrice: 30 }, 1, 1), 110);
+});
+
+test("adults are spread evenly and each child goes to the room with the fewest people", () => {
+  assert.deepEqual(splitPartyAcrossRooms(3, 2, 2), [{ adults: 2, children: 1 }, { adults: 1, children: 1 }]);
+  assert.deepEqual(splitPartyAcrossRooms(2, 3, 2), [{ adults: 1, children: 2 }, { adults: 1, children: 1 }]);
+  assert.deepEqual(splitPartyAcrossRooms(2, 0, 1), [{ adults: 2, children: 0 }]);
+  assert.deepEqual(splitPartyAcrossRooms(1, 2, 2), [], "every room needs an adult");
+});
+
+test("a hotel quote with children prices each room and keeps who is in it", () => {
+  const quote = quoteHotelRooms({ roomType: triple, mealPlan: "HB", rooms: 2, guests: 6, children: 2, nights: 2 });
+  assert.equal(quote.ok, true);
+  if (!quote.ok) return;
+  assert.deepEqual(quote.snapshot.guestsPerRoom, [3, 3]);
+  assert.deepEqual(quote.snapshot.childrenPerRoom, [1, 1]);
+  assert.deepEqual(quote.snapshot.nightlyRoomPrices, [235, 235]);
+  assert.equal(quote.snapshot.accommodationTotal, 940);
+
+  const adultsOnly = quoteHotelRooms({ roomType: triple, mealPlan: "HB", rooms: 1, guests: 3, nights: 1 });
+  assert.equal(adultsOnly.ok && adultsOnly.nightlyTotal, 270);
+  assert.equal(adultsOnly.ok && "childrenPerRoom" in adultsOnly.snapshot, false);
+
+  const noAdult = quoteHotelRooms({ roomType: triple, mealPlan: "HB", rooms: 1, guests: 2, children: 2, nights: 1 });
+  assert.equal(noAdult.ok, false);
+  assert.match(noAdult.ok ? "" : noAdult.error, /at least one adult/i);
+  const childAlone = quoteHotelRooms({ roomType: triple, mealPlan: "HB", rooms: 2, guests: 3, children: 2, nights: 1 });
+  assert.match(childAlone.ok ? "" : childAlone.error, /each room needs at least one adult/i);
+});
+
+test("beds read in feet, the way hotels here describe them", () => {
+  assert.equal(describeBeds([{ widthFt: 6, lengthFt: 6, count: 1 }]), "1 bed, 6ft by 6ft");
+  assert.equal(describeBeds([{ widthFt: 3.5, lengthFt: 6, count: 2 }, { widthFt: 5, lengthFt: 6, count: 1 }]), "2 beds, 3.5ft by 6ft + 1 bed, 5ft by 6ft");
+  assert.equal(describeBeds([]), "");
+  assert.equal(getRoomBedsLabel({ beds: [], bedType: "1 king bed" }), "1 king bed", "rooms saved before sizes keep their words");
+  assert.equal(getRoomBedsLabel({ beds: [{ widthFt: 4, lengthFt: 6, count: 1 }], bedType: "1 king bed" }), "1 bed, 4ft by 6ft");
+});
+
+test("a hotel's children rules read plainly", () => {
+  assert.equal(describeChildPolicy(null), "Children are guests aged 11 and under.");
+  assert.equal(describeChildPolicy({ childMaxAge: 12, freeUnderAge: 3 }), "Children are guests aged 3 to 12. Under 3s stay free.");
+  assert.equal(hasChildRates([triple]), true);
+  assert.equal(hasChildRates([deluxe, family]), false);
+});
+
+test("a room's occupancy and prices have to agree", () => {
+  assert.equal(checkRoomTypePricing(triple), null);
+  assert.equal(checkRoomTypePricing(deluxe), null);
+  assert.match(checkRoomTypePricing({ maxGuests: 2, standardGuests: 3, rates: [] }) ?? "", /can't be more than the room sleeps/);
+  assert.match(checkRoomTypePricing({ maxGuests: 2, rates: [{ mealPlan: "BB", price: 100, singlePrice: 120 }] }) ?? "", /one guest can't be more/);
+  assert.match(checkRoomTypePricing({ maxGuests: 3, standardGuests: 2, rates: [{ mealPlan: "BB", price: 100 }] }) ?? "", /each extra adult/);
+});
+
+test("a room type's beds, extra-adult and child prices are checked by the schema", () => {
+  const parsed = insertStayRoomTypeSchema.parse({
+    name: "Garden Triple",
+    maxGuests: 3,
+    standardGuests: 2,
+    roomCount: 2,
+    beds: [{ widthFt: 6, lengthFt: 6, count: 1 }, { widthFt: 3.5, lengthFt: 6, count: 1 }],
+    galleryUrls: ["https://cdn.example.com/a.jpg"],
+    rates: [{ mealPlan: "BB", price: 150, extraAdultPrice: 50, childPrice: 0 }],
+  });
+  assert.equal(parsed.rates[0].childPrice, 0);
+  assert.equal(parsed.beds?.length, 2);
+  assert.throws(() => insertStayRoomTypeSchema.parse({ name: "Odd", maxGuests: 2, roomCount: 1, beds: [{ widthFt: 40, lengthFt: 6, count: 1 }], rates: [{ mealPlan: "BB", price: 100 }] }));
+  assert.throws(() => insertStayRoomTypeSchema.parse({ name: "Odd", maxGuests: 2, roomCount: 1, rates: [{ mealPlan: "BB", price: 100, childPrice: -5 }] }));
 });

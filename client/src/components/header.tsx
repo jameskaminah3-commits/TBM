@@ -71,7 +71,7 @@ export function Header() {
 
   const navLinks = [
     { href: "/", label: "Home", description: "Featured stays and services", icon: House, testId: "link-nav-home" },
-    { href: "/accommodations", label: "Stay", description: "Villas, suites, and homes", icon: Building2, testId: "link-nav-stay" },
+    { href: "/accommodations", label: "Stay", description: "Hotels, villas and homes", icon: Building2, testId: "link-nav-stay" },
     { href: "/services/drive", label: "Drive", description: "Airport transfers and rides", icon: CarFront, testId: "link-nav-drive" },
     { href: "/services/dine", label: "Dine", description: "Private chefs and dining", icon: UtensilsCrossed, testId: "link-nav-dine" },
     { href: "/services/relax", label: "Relax", description: "Errands, laundry, and support", icon: Sparkles, testId: "link-nav-relax" },

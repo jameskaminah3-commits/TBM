@@ -2,7 +2,7 @@ import { BedDouble, Minus, Plus, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CurrencyAmount } from "@/components/currency-amount";
 import { cn } from "@/lib/utils";
-import { mealPlans, sortRoomRates, type HotelRoomQuote } from "@shared/hotel-rooms";
+import { getCoveredGuests, getRoomBedsLabel, mealPlans, sortRoomRates, type HotelRoomQuote } from "@shared/hotel-rooms";
 import type { StayRoomType } from "@shared/schema";
 
 /**
@@ -71,8 +71,8 @@ export function HotelRoomPicker({
                 </div>
                 <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
                   <span className="inline-flex items-center gap-1"><Users className="h-3.5 w-3.5 shrink-0" />Sleeps {roomType.maxGuests}</span>
-                  {roomType.bedType ? (
-                    <span className="inline-flex items-center gap-1"><BedDouble className="h-3.5 w-3.5 shrink-0" />{roomType.bedType}</span>
+                  {getRoomBedsLabel(roomType) ? (
+                    <span className="inline-flex items-center gap-1"><BedDouble className="h-3.5 w-3.5 shrink-0" />{getRoomBedsLabel(roomType)}</span>
                   ) : null}
                 </div>
                 {roomLeft !== undefined ? (
@@ -111,10 +111,21 @@ export function HotelRoomPicker({
                       <span className="ml-1.5 text-xs font-medium text-muted-foreground">({rate.mealPlan})</span>
                     </span>
                     <span className="block text-xs text-muted-foreground">{mealPlans[rate.mealPlan].includes}</span>
+                    {rate.singlePrice || rate.extraAdultPrice || (rate.childPrice !== null && rate.childPrice !== undefined) ? (
+                      <span className="mt-1 flex flex-wrap gap-x-2 text-[11px] text-muted-foreground">
+                        {rate.singlePrice && rate.singlePrice < rate.price ? <span>1 guest <CurrencyAmount amountUsd={rate.singlePrice} primaryClassName="font-normal" /></span> : null}
+                        {rate.extraAdultPrice && getCoveredGuests(selected) < selected.maxGuests ? <span>extra adult + <CurrencyAmount amountUsd={rate.extraAdultPrice} primaryClassName="font-normal" /></span> : null}
+                        {rate.childPrice !== null && rate.childPrice !== undefined ? (
+                          <span>{rate.childPrice === 0 ? "children free" : <>child + <CurrencyAmount amountUsd={rate.childPrice} primaryClassName="font-normal" /></>}</span>
+                        ) : null}
+                      </span>
+                    ) : null}
                   </span>
                   <span className="shrink-0 text-right">
                     <CurrencyAmount amountUsd={rate.price} primaryClassName="text-sm font-semibold" />
-                    <span className="block text-[11px] text-muted-foreground">per room / night</span>
+                    <span className="block text-[11px] text-muted-foreground">
+                      {getCoveredGuests(selected) === 1 ? "a night, 1 guest" : `a night, ${getCoveredGuests(selected)} sharing`}
+                    </span>
                   </span>
                 </button>
               );
@@ -174,6 +185,23 @@ export function HotelRoomPicker({
             </span>
             <CurrencyAmount amountUsd={quote.snapshot.accommodationTotal} primaryClassName="font-semibold" />
           </div>
+          {/* Each room's price for a night, by who has it. */}
+          <ul className="mt-1.5 space-y-0.5 text-xs text-muted-foreground" data-testid="picker-quote-rooms">
+            {quote.snapshot.nightlyRoomPrices.map((price, index) => {
+              const inRoom = quote.snapshot.guestsPerRoom[index] ?? 0;
+              const children = quote.snapshot.childrenPerRoom?.[index] ?? 0;
+              const adults = inRoom - children;
+              return (
+                <li key={index} className="flex flex-wrap justify-between gap-2">
+                  <span>
+                    {quote.snapshot.rooms > 1 ? `Room ${index + 1}: ` : ""}
+                    {adults} adult{adults === 1 ? "" : "s"}{children > 0 ? ` + ${children} child${children === 1 ? "" : "ren"}` : ""}
+                  </span>
+                  <span><CurrencyAmount amountUsd={price} primaryClassName="font-normal" /> a night</span>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       ) : null}
     </div>

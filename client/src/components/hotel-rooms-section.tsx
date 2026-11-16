@@ -1,10 +1,53 @@
+import { useState } from "react";
 import { BedDouble, Maximize2, Users } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CurrencyAmount } from "@/components/currency-amount";
-import { mealPlans, sortRoomRates, summarizeHotelRooms } from "@shared/hotel-rooms";
+import {
+  describeChildPolicy,
+  getCoveredGuests,
+  getRoomBedsLabel,
+  hasChildRates,
+  mealPlans,
+  sortRoomRates,
+  summarizeHotelRooms,
+  type HotelPolicy,
+} from "@shared/hotel-rooms";
 import type { StayRoomType } from "@shared/schema";
+
+/** A room's photos: the cover, and the others to look through. */
+function RoomPhotos({ roomType }: { roomType: StayRoomType }) {
+  const photos = roomType.imageUrl
+    ? [roomType.imageUrl, ...(roomType.galleryUrls ?? []).filter((url) => url && url !== roomType.imageUrl)]
+    : (roomType.galleryUrls ?? []).filter(Boolean);
+  const [shown, setShown] = useState(0);
+  if (photos.length === 0) {
+    return null;
+  }
+  const current = photos[Math.min(shown, photos.length - 1)];
+  return (
+    <div className="w-full sm:w-52 sm:shrink-0">
+      <img src={current} alt={roomType.name} loading="lazy" className="aspect-[16/10] w-full object-cover sm:aspect-[4/3]" />
+      {photos.length > 1 ? (
+        <div className="flex gap-1.5 overflow-x-auto p-2" aria-label={`Photos of ${roomType.name}`}>
+          {photos.map((url, index) => (
+            <button
+              key={url}
+              type="button"
+              onClick={() => setShown(index)}
+              aria-label={`Photo ${index + 1} of ${photos.length}`}
+              aria-pressed={index === shown}
+              className={`h-11 w-14 shrink-0 overflow-hidden rounded-md border-2 transition-colors ${index === shown ? "border-primary" : "border-transparent opacity-80 hover:opacity-100"}`}
+            >
+              <img src={url} alt="" loading="lazy" className="h-full w-full object-cover" />
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 /**
  * A hotel's rooms and what each costs per room per night on each meal plan,
@@ -14,36 +57,35 @@ import type { StayRoomType } from "@shared/schema";
 export function HotelRoomsSection({
   roomTypes,
   roomsLeft,
+  hotelPolicy,
   onBook,
 }: {
   roomTypes: StayRoomType[];
   roomsLeft?: Map<string, number>;
+  hotelPolicy?: HotelPolicy | null;
   onBook: (roomTypeId: string, mealPlan: string) => void;
 }) {
   const offeredPlans = summarizeHotelRooms(roomTypes).mealPlans;
+  const takesChildren = hasChildRates(roomTypes);
 
   return (
     <section id="rooms" className="scroll-mt-24" aria-labelledby="rooms-heading">
       <h2 id="rooms-heading" className="mb-2 font-serif text-2xl font-medium">Rooms &amp; rates</h2>
       <p className="mb-5 text-sm text-muted-foreground">
-        Prices are per room, per night, for up to the guests each room sleeps. Choose a room and a meal plan to book.
+        Prices are per room, per night, for the guests shown beside each price. Choose a room and a meal plan to book.
+        {takesChildren ? ` ${describeChildPolicy(hotelPolicy)}` : ""}
       </p>
 
       <div className="space-y-4">
         {roomTypes.map((roomType) => {
           const left = roomsLeft?.get(roomType.id);
           const soldOut = left === 0;
+          const covered = getCoveredGuests(roomType);
+          const beds = getRoomBedsLabel(roomType);
           return (
             <Card key={roomType.id} className="overflow-hidden" data-testid={`room-type-${roomType.id}`}>
               <div className="flex flex-col sm:flex-row">
-                {roomType.imageUrl ? (
-                  <img
-                    src={roomType.imageUrl}
-                    alt={roomType.name}
-                    loading="lazy"
-                    className="aspect-[16/10] w-full object-cover sm:aspect-auto sm:w-48 sm:shrink-0"
-                  />
-                ) : null}
+                <RoomPhotos roomType={roomType} />
                 <div className="min-w-0 flex-1 p-4 sm:p-5">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <h3 className="font-serif text-xl font-medium leading-tight">{roomType.name}</h3>
@@ -58,10 +100,10 @@ export function HotelRoomsSection({
                       <Users className="h-4 w-4 shrink-0" />
                       Sleeps {roomType.maxGuests}
                     </span>
-                    {roomType.bedType ? (
-                      <span className="inline-flex items-center gap-1">
+                    {beds ? (
+                      <span className="inline-flex items-center gap-1" data-testid={`room-beds-${roomType.id}`}>
                         <BedDouble className="h-4 w-4 shrink-0" />
-                        {roomType.bedType}
+                        {beds}
                       </span>
                     ) : null}
                     {roomType.sizeSqm ? (
@@ -100,12 +142,12 @@ export function HotelRoomsSection({
                           <div className="text-left min-[520px]:text-right">
                             <CurrencyAmount amountUsd={rate.price} primaryClassName="text-base font-semibold" />
                             <div className="text-[11px] text-muted-foreground">
-                              per room / night
-                              {roomType.maxGuests >= 2 ? (
+                              {covered === 1 ? "a night, for 1 guest" : `a night, for ${covered} sharing`}
+                              {covered >= 2 ? (
                                 <>
                                   {" · ≈ "}
-                                  <CurrencyAmount amountUsd={Math.round(rate.price / roomType.maxGuests)} primaryClassName="font-normal" />
-                                  {` per person sharing`}
+                                  <CurrencyAmount amountUsd={Math.round(rate.price / covered)} primaryClassName="font-normal" />
+                                  {` per person`}
                                 </>
                               ) : null}
                             </div>
@@ -113,6 +155,22 @@ export function HotelRoomsSection({
                               <div className="text-[11px] text-muted-foreground">
                                 {"One guest: "}
                                 <CurrencyAmount amountUsd={rate.singlePrice} primaryClassName="font-normal" />
+                              </div>
+                            ) : null}
+                            {rate.extraAdultPrice && covered < roomType.maxGuests ? (
+                              <div className="text-[11px] text-muted-foreground">
+                                {"Extra adult: + "}
+                                <CurrencyAmount amountUsd={rate.extraAdultPrice} primaryClassName="font-normal" />
+                              </div>
+                            ) : null}
+                            {rate.childPrice !== null && rate.childPrice !== undefined ? (
+                              <div className="text-[11px] text-muted-foreground">
+                                {rate.childPrice === 0 ? "Children stay free" : (
+                                  <>
+                                    {"Child: + "}
+                                    <CurrencyAmount amountUsd={rate.childPrice} primaryClassName="font-normal" />
+                                  </>
+                                )}
                               </div>
                             ) : null}
                           </div>

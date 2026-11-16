@@ -18,6 +18,7 @@ import { getListingSharePrice } from "@shared/listing-share";
 import { Field } from "@/components/provider-hub/field";
 import { HubPageHeader } from "@/components/provider-hub/hub-ui";
 import { addCalendarDays, formatCalendarDate, formatCalendarDateRange } from "@shared/calendar-dates";
+import { ProviderHotelManage } from "@/components/provider-hotel-manage";
 
 const dayLabel = (value: string | null | undefined) => (value ? formatCalendarDate(value, { day: "numeric", month: "short", year: "numeric" }, "en-GB") : "");
 
@@ -30,12 +31,8 @@ type StayAvailability = {
     checkoutDate: string;
     status: string;
     guestName: string;
-    // At a hotel: the rooms held (no room type: the whole hotel).
-    roomTypeName?: string | null;
-    rooms?: number | null;
   }>;
   availableFrom: string;
-  propertyType?: "hotel" | "entire_place";
 };
 
 export default function ProviderStayAvailability() {
@@ -67,7 +64,7 @@ export default function ProviderStayAvailability() {
     queryKey: ["/api/provider/stays", id],
     enabled: !!id,
   });
-  // A hotel's prices are per room and meal plan, set up by the team.
+  // A hotel has a page of its own: rooms, rates by meal plan, and calendars.
   const isHotel = isHotelStay(stay);
 
   useEffect(() => {
@@ -160,6 +157,10 @@ export default function ProviderStayAvailability() {
     },
   });
 
+  if (stay && isHotel) {
+    return <ProviderHotelManage stay={stay} />;
+  }
+
   return (
     <ProviderLayout title={stay?.title ?? "Stay"}>
       <div className="mx-auto max-w-5xl space-y-6 px-4 py-6 sm:px-6 sm:py-8">
@@ -182,7 +183,7 @@ export default function ProviderStayAvailability() {
           <CardContent className="space-y-4">
             <div className="grid gap-3 md:grid-cols-3">
               <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
-                <div className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">{isHotel ? "Rooms from (per night)" : "Nightly rate"}</div>
+                <div className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">Nightly rate</div>
                 <div className="mt-2 text-2xl font-semibold text-foreground">
                   {price && Number(price) > 0 ? `KSh ${Number(price).toLocaleString()}` : "Not set"}
                 </div>
@@ -207,8 +208,7 @@ export default function ProviderStayAvailability() {
               <Field id="stay-location" label="Area">
                 <Input id="stay-location" value={locationValue} onChange={(e) => setLocationValue(e.target.value)} placeholder="For example, Galu Beach, Diani" />
               </Field>
-              {isHotel ? null : (
-                <>
+              <>
                   <Field id="stay-guests" label="Most guests">
                     <Input id="stay-guests" type="number" inputMode="numeric" min="1" value={maxOccupancy} onChange={(e) => setMaxOccupancy(e.target.value)} />
                   </Field>
@@ -220,16 +220,8 @@ export default function ProviderStayAvailability() {
                       <Input id="stay-bathrooms" type="number" inputMode="numeric" min="0" value={bathrooms} onChange={(e) => setBathrooms(e.target.value)} />
                     </Field>
                   </div>
-                </>
-              )}
+              </>
             </div>
-            {isHotel ? (
-              <div id="pricing" className="scroll-mt-24 rounded-xl border border-border/70 bg-muted/20 p-5 text-sm text-muted-foreground">
-                <div className="mb-1 text-base font-medium text-foreground">Rooms and meal plans</div>
-                This is a hotel: its rooms, meal plans and prices per room per night are set up by the Tembea Bila Matata team.
-                Message the team to change them.
-              </div>
-            ) : (
             <div id="pricing" className="scroll-mt-24 rounded-xl border border-border/70 bg-muted/20 p-5">
               <div className="mb-4">
                 <div className="text-base font-medium text-foreground">Pricing</div>
@@ -249,7 +241,6 @@ export default function ProviderStayAvailability() {
                 </div>
               </div>
             </div>
-            )}
             <div id="media" className="scroll-mt-24 space-y-3 rounded-xl border border-border/70 bg-muted/20 p-5">
               <div>
                 <div className="text-base font-medium text-foreground">Photos</div>
@@ -311,11 +302,6 @@ export default function ProviderStayAvailability() {
                       ? `Blocked by you · free again ${dayLabel(range.checkoutDate)}`
                       : `${range.guestName} · checks out ${dayLabel(range.checkoutDate)}`}
                   </div>
-                  {availability?.propertyType === "hotel" ? (
-                    <div className="text-xs text-muted-foreground">
-                      {range.roomTypeName ? `${range.rooms ? `${range.rooms} × ` : "All "}${range.roomTypeName}` : "The whole hotel"}
-                    </div>
-                  ) : null}
                 </div>
                 {range.source === "manual" ? (
                   <Button variant="outline" size="sm" onClick={() => deleteBlockMutation.mutate(range.id)} disabled={deleteBlockMutation.isPending}>

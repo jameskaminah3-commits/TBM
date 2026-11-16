@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, integer, timestamp, boolean, jsonb, index, uniqueIndex, bigserial, bigint, primaryKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-import { mealPlanCodes, stayPropertyTypes, type HotelStaySnapshot, type RoomRate } from "./hotel-rooms.ts";
+import { mealPlanCodes, stayPropertyTypes, type HotelPolicy, type HotelStaySnapshot, type RoomBed, type RoomRate } from "./hotel-rooms.ts";
 import { marketingAttributionEventTypes, marketingAttributionSourceTypes } from "./marketing-attribution-types.ts";
 
 // Replit Auth Integration: Session storage table
@@ -1559,6 +1559,8 @@ export const stays = pgTable("stays", {
   propertyType: text("property_type").notNull().default("entire_place"),
   // A hotel's star rating (1–5), when it has one.
   starRating: integer("star_rating"),
+  // A hotel's rules about children (the ages its child prices are for).
+  hotelPolicy: jsonb("hotel_policy").$type<HotelPolicy>(),
   // Kenya times, "HH:MM".
   checkInTime: text("check_in_time"),
   checkOutTime: text("check_out_time"),
@@ -1577,6 +1579,12 @@ export const insertStaySchema = createInsertSchema(stays).omit({
   managerUserId: optionalManagerUserId,
   propertyType: z.enum(stayPropertyTypes).optional(),
   starRating: z.number().int().min(1).max(5).nullable().optional(),
+  hotelPolicy: z.object({
+    childMaxAge: z.number().int().min(1).max(17).nullable().optional(),
+    freeUnderAge: z.number().int().min(1).max(17).nullable().optional(),
+  }).refine((policy) => !policy.freeUnderAge || !policy.childMaxAge || policy.freeUnderAge <= policy.childMaxAge, {
+    message: "The age children stay free under can't be above the oldest child age.",
+  }).nullable().optional(),
   checkInTime: clockTime.nullable().optional(),
   checkOutTime: clockTime.nullable().optional(),
 });
@@ -1594,10 +1602,15 @@ export const stayRoomTypes = pgTable(
     name: text("name").notNull(),
     description: text("description").notNull().default(""),
     bedType: text("bed_type").notNull().default(""),
+    // The room's beds by size in feet: [{ widthFt: 6, lengthFt: 6, count: 1 }].
+    beds: jsonb("beds").$type<RoomBed[]>().notNull().default(sql`'[]'::jsonb`),
     sizeSqm: integer("size_sqm"),
     maxGuests: integer("max_guests").notNull(),
+    // How many guests the room's price covers (2 for a double); null: everyone it sleeps.
+    standardGuests: integer("standard_guests"),
     roomCount: integer("room_count").notNull(),
     imageUrl: text("image_url"),
+    galleryUrls: text("gallery_urls").array().notNull().default(sql`'{}'::text[]`),
     amenities: text("amenities").array().notNull().default(sql`'{}'::text[]`),
     rates: jsonb("rates").$type<RoomRate[]>().notNull().default(sql`'[]'::jsonb`),
     sortOrder: integer("sort_order").notNull().default(0),
@@ -1608,10 +1621,19 @@ export const stayRoomTypes = pgTable(
   (table) => [index("idx_stay_room_types_stay").on(table.stayId)],
 );
 
+export const roomBedSchema = z.object({
+  widthFt: z.number().min(2, "A bed is at least 2ft wide").max(12),
+  lengthFt: z.number().min(4, "A bed is at least 4ft long").max(12),
+  count: z.number().int().min(1).max(20),
+});
+
 export const roomRateSchema = z.object({
   mealPlan: z.enum(mealPlanCodes),
   price: z.number().int("Use whole US dollars").min(1, "A rate must be at least US$1").max(100_000),
   singlePrice: z.number().int("Use whole US dollars").min(1).max(100_000).nullable().optional(),
+  extraAdultPrice: z.number().int("Use whole US dollars").min(1).max(100_000).nullable().optional(),
+  // 0: children sharing the room stay free.
+  childPrice: z.number().int("Use whole US dollars").min(0).max(100_000).nullable().optional(),
 }).refine((rate) => !rate.singlePrice || rate.singlePrice <= rate.price, {
   message: "The price for one guest can't be more than the room's price.",
   path: ["singlePrice"],
@@ -1626,8 +1648,11 @@ export const insertStayRoomTypeSchema = createInsertSchema(stayRoomTypes).omit({
   name: z.string().trim().min(2, "Give the room type a name").max(120),
   description: z.string().trim().max(2000).optional(),
   bedType: z.string().trim().max(120).optional(),
+  beds: z.array(roomBedSchema).max(8).optional(),
   sizeSqm: z.number().int().min(1).max(10_000).nullable().optional(),
   maxGuests: z.number().int().min(1, "A room sleeps at least one guest").max(20),
+  standardGuests: z.number().int().min(1).max(20).nullable().optional(),
+  galleryUrls: z.array(z.string().trim().min(1).max(2000)).max(12).optional(),
   roomCount: z.number().int().min(1, "Sell at least one room of this type").max(500),
   imageUrl: z.string().trim().max(2000).nullable().optional(),
   amenities: z.array(z.string().trim().min(1).max(80)).max(40).optional(),
@@ -1657,12 +1682,18 @@ export const stayReservations = pgTable("stay_reservations", {
   // closes the whole hotel, and with no count every room of the type.
   roomTypeId: varchar("room_type_id"),
   roomCount: integer("room_count"),
+  // A block brought in from another booking site's calendar (stay_calendar_feeds):
+  // which calendar, and the event it came from. Hand-made blocks leave these empty.
+  feedId: varchar("feed_id"),
+  externalUid: text("external_uid"),
   createdAt: text("created_at").notNull(),
 });
 
 export const insertStayReservationSchema = createInsertSchema(stayReservations).omit({
   id: true,
   createdAt: true,
+  feedId: true,
+  externalUid: true,
 }).extend({
   roomTypeId: z.string().trim().min(1).max(100).nullable().optional(),
   roomCount: z.number().int().min(1).max(500).nullable().optional(),
@@ -1670,6 +1701,37 @@ export const insertStayReservationSchema = createInsertSchema(stayReservations).
 
 export type InsertStayReservation = z.infer<typeof insertStayReservationSchema>;
 export type StayReservation = typeof stayReservations.$inferSelect;
+
+// Calendars from other booking sites (Booking.com, Airbnb…), read as iCal
+// links: the nights taken there are blocked here, and kept in step. A link is
+// for one room type of a hotel, or (no room type) for the whole stay.
+export const stayCalendarFeeds = pgTable(
+  "stay_calendar_feeds",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    stayId: varchar("stay_id").notNull(),
+    roomTypeId: varchar("room_type_id"),
+    name: text("name").notNull(),
+    url: text("url").notNull(),
+    // At a hotel: how many rooms of the type each booking in the calendar takes. Null: every room of the type.
+    roomsPerEvent: integer("rooms_per_event"),
+    lastSyncedAt: text("last_synced_at"),
+    lastError: text("last_error"),
+    eventCount: integer("event_count").notNull().default(0),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [index("idx_stay_calendar_feeds_stay").on(table.stayId)],
+);
+
+export const insertStayCalendarFeedSchema = z.object({
+  roomTypeId: z.string().trim().min(1).max(100).nullable().optional(),
+  name: z.string().trim().min(2, "Say which site this calendar is from").max(60),
+  url: z.string().trim().min(10, "Paste the calendar link").max(2000),
+  roomsPerEvent: z.number().int().min(1).max(500).nullable().optional(),
+});
+
+export type InsertStayCalendarFeed = z.infer<typeof insertStayCalendarFeedSchema>;
+export type StayCalendarFeed = typeof stayCalendarFeeds.$inferSelect;
 
 export const carReservations = pgTable("car_reservations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

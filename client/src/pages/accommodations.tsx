@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
-import { ArrowUpDown, Bath, BedDouble, MapPin, Minus, Plus, SlidersHorizontal, Star, Users, WalletCards, X } from "lucide-react";
+import { ArrowRight, ArrowUpDown, Bath, BedDouble, Building2, MapPin, Minus, Plus, SlidersHorizontal, Star, Users, WalletCards, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
@@ -27,6 +27,7 @@ import { getPublicListingPath, getShortSeoLocation } from "@/lib/public-listing"
 import { MealPlanChips } from "@/components/stay-kind";
 import { isHotelStay, summarizeHotelRooms } from "@shared/hotel-rooms";
 import type { StaySearchType } from "@/lib/stay-search";
+import { photoVariantPath } from "@shared/photo-variants";
 
 const stayTypeOptions: Array<{ value: StaySearchType; label: string }> = [
   { value: "all", label: "All stays" },
@@ -186,6 +187,22 @@ export default function Accommodations() {
     return { all: searchMatchedAccommodations.length, hotel: hotels, entire_place: searchMatchedAccommodations.length - hotels };
   }, [searchMatchedAccommodations]);
 
+  // Among homes and villas, hotels get a line of their own: what booking one
+  // means here, and the way in.
+  const hotelIntro = useMemo(() => {
+    const hotels = searchMatchedAccommodations.filter((stay) => isHotelStay(stay));
+    if (hotels.length === 0 || hotels.length === searchMatchedAccommodations.length) {
+      return null;
+    }
+    const prices = hotels.map((hotel) => hotel.price).filter((price) => price > 0);
+    return {
+      count: hotels.length,
+      fromPrice: prices.length ? Math.min(...prices) : null,
+      photos: hotels.map((hotel) => hotel.imageUrl || hotel.galleryUrls?.[0]).filter((url): url is string => Boolean(url)).slice(0, 3),
+    };
+  }, [searchMatchedAccommodations]);
+  const hotelsOnly = staySearch.stayType === "hotel";
+
   // The heading names the place searched: an area as the Coast writes it, else the guest's words.
   const searchedPlace = useMemo(() => {
     const typed = staySearch.destination.trim();
@@ -256,10 +273,16 @@ export default function Accommodations() {
       <div className="container mx-auto px-4 md:px-8">
         <header className="mb-6">
           <h1 className="font-serif text-2xl font-medium leading-tight sm:text-3xl md:text-4xl" data-testid="text-stays-heading">
-            {searchedPlace ? `Places to stay in ${searchedPlace}` : "Places to stay on the Kenyan Coast"}
+            {hotelsOnly
+              ? (searchedPlace ? `Hotels in ${searchedPlace}` : "Hotels on the Kenyan Coast")
+              : (searchedPlace ? `Places to stay in ${searchedPlace}` : "Places to stay on the Kenyan Coast")}
           </h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base sm:leading-7">
-            {stayTypeCounts.hotel > 0 ? "Hotels, villas" : "Villas"}, apartments and holiday homes {searchedPlace ? `in ${searchedPlace}` : "along the Kenyan Coast"}. Add your dates to see the price for your whole stay.
+            {hotelsOnly ? (
+              <>Hotels, lodges and resorts {searchedPlace ? `in ${searchedPlace}` : "along the Kenyan Coast"}. Book one room or several on the meal plan you like, from room only to all inclusive, with rates for one guest, couples and children.</>
+            ) : (
+              <>{stayTypeCounts.hotel > 0 ? "Hotels, villas" : "Villas"}, apartments and holiday homes {searchedPlace ? `in ${searchedPlace}` : "along the Kenyan Coast"}. Add your dates to see the price for your whole stay.</>
+            )}
           </p>
         </header>
 
@@ -498,6 +521,43 @@ export default function Accommodations() {
               </button>
             ) : null}
           </div>
+
+          {hotelIntro && staySearch.stayType === "all" ? (
+            <button
+              type="button"
+              onClick={() => updateStaySearch({ stayType: "hotel" })}
+              className="group mb-6 flex w-full items-center gap-4 rounded-2xl border border-amber-300/60 bg-gradient-to-r from-amber-50 via-amber-50/40 to-background p-3 text-left transition-colors hover:border-amber-400 dark:border-amber-400/30 dark:from-amber-500/15 dark:via-amber-500/5 sm:p-4"
+              data-testid="hotel-intro"
+            >
+              {hotelIntro.photos.length > 0 ? (
+                <span className="flex shrink-0 -space-x-4" aria-hidden="true">
+                  {hotelIntro.photos.map((url, index) => (
+                    <img
+                      key={url}
+                      src={photoVariantPath(url, 240) ?? url}
+                      alt=""
+                      loading="lazy"
+                      className={`h-14 w-14 rounded-xl object-cover ring-2 ring-background sm:h-16 sm:w-16 ${index > 0 ? "hidden min-[420px]:block" : ""}`}
+                    />
+                  ))}
+                </span>
+              ) : null}
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-1.5 text-sm font-semibold text-amber-900 dark:text-amber-100 sm:text-base">
+                  <Building2 className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  Prefer a hotel? Rooms with meals, by the night
+                </span>
+                <span className="mt-0.5 block text-sm leading-5 text-muted-foreground">
+                  {hotelIntro.count} hotel{hotelIntro.count === 1 ? "" : "s"} {searchedPlace ? `in ${searchedPlace}` : "on the Coast"}: choose your room and meal plan, from bed &amp; breakfast to full board
+                  {hotelIntro.fromPrice ? <>, from <CurrencyAmount amountUsd={hotelIntro.fromPrice} primaryClassName="font-medium text-foreground" /> a room a night</> : null}.
+                </span>
+              </span>
+              <span className="hidden shrink-0 items-center gap-1 text-sm font-semibold text-primary group-hover:underline sm:inline-flex">
+                See hotels
+                <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              </span>
+            </button>
+          ) : null}
 
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {filteredAccommodations.map((accommodation, index) => {

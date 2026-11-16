@@ -30,7 +30,9 @@ import {
   formatMealPlan,
   getBlockRoomClaim,
   getBookingRoomClaim,
+  getCoveredGuests,
   getOccupiedNights,
+  getRoomBedsLabel,
   getRoomsNeeded,
   isBookableRoomType,
   isHotelStay,
@@ -316,7 +318,9 @@ async function describeHotelRooms(
     room_type_id: roomType.id,
     name: roomType.name,
     sleeps_per_room: roomType.maxGuests,
-    beds: roomType.bedType || undefined,
+    // The room's price is for this many guests; extra adults and children are priced beside it.
+    price_covers_guests: getCoveredGuests(roomType),
+    beds: getRoomBedsLabel(roomType) || undefined,
     ...(roomsLeft ? { rooms_left: roomsLeft.get(roomType.id) ?? 0 } : {}),
     rates: await Promise.all(sortRoomRates(roomType.rates).filter((rate) => rate.price > 0).map(async (rate) => ({
       meal_plan: rate.mealPlan,
@@ -325,6 +329,12 @@ async function describeHotelRooms(
       price_per_room_per_night_usd: rate.price,
       price_per_room_per_night_display: await formatPrice(rate.price, sessionId, currency),
       ...(rate.singlePrice ? { single_guest_price_display: await formatPrice(rate.singlePrice, sessionId, currency) } : {}),
+      ...(rate.extraAdultPrice && getCoveredGuests(roomType) < roomType.maxGuests
+        ? { extra_adult_price_display: await formatPrice(rate.extraAdultPrice, sessionId, currency) }
+        : {}),
+      ...(rate.childPrice === null || rate.childPrice === undefined
+        ? {}
+        : { child_price_display: rate.childPrice === 0 ? "Children stay free" : await formatPrice(rate.childPrice, sessionId, currency) }),
     }))),
   })));
 }

@@ -437,7 +437,7 @@ export default function AccommodationDetail() {
             </section>
 
             {isHotel ? (
-              <HotelRoomsSection roomTypes={roomTypes} roomsLeft={roomsLeft} onBook={bookRoom} />
+              <HotelRoomsSection roomTypes={roomTypes} roomsLeft={roomsLeft} hotelPolicy={accommodation.hotelPolicy} onBook={bookRoom} />
             ) : null}
 
             <PublicReviewPreview targetType="stay" targetId={accommodation.id} variant="open" maxItems={4} />
