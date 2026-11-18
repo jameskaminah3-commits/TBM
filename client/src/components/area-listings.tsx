@@ -92,7 +92,7 @@ export function AreaCrossLinks({ areaKey, service, excludeId, title, testId = "a
         <>
           <div className="flex flex-wrap items-end justify-between gap-3">
             <h2 id={`${testId}-heading`} className="font-serif text-2xl font-semibold text-stone-950">{title ?? `More ${data.heading.charAt(0).toLowerCase()}${data.heading.slice(1)}`}</h2>
-            <Link href={areaPath} className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">
+            <Link href={areaPath} className="inline-flex min-h-11 items-center gap-1 text-sm font-medium text-primary hover:underline">
               See all {data.listings.length} <ArrowRight className="h-4 w-4" aria-hidden="true" />
             </Link>
           </div>

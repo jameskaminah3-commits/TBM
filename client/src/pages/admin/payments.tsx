@@ -487,16 +487,16 @@ export default function AdminPayments() {
                 </div>
                 <div className="flex flex-wrap gap-2 text-xs">
                   <Badge variant="outline" className="border-stone-200 bg-white text-stone-700">
-                    {filteredProviderGroups.length} providers in view
+                    {filteredProviderGroups.length} {filteredProviderGroups.length === 1 ? "provider" : "providers"} in view
                   </Badge>
                   {data ? (
                     <Badge variant="outline" className="border-stone-200 bg-white text-stone-700">
-                      {data.unpaidPayoutCount} unpaid orders
+                      {data.unpaidPayoutCount} unpaid {data.unpaidPayoutCount === 1 ? "order" : "orders"}
                     </Badge>
                   ) : null}
                   {data?.partnersNeedingCommissionSetup ? (
                     <Badge className="border border-amber-200 bg-amber-50 text-amber-900">
-                      {data.partnersNeedingCommissionSetup} commission setups pending
+                      {data.partnersNeedingCommissionSetup} commission {data.partnersNeedingCommissionSetup === 1 ? "setup" : "setups"} pending
                     </Badge>
                   ) : null}
                 </div>

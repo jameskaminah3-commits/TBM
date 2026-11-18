@@ -133,7 +133,7 @@ export default function AdminReviews() {
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-5 px-4 py-4 sm:px-6 sm:py-6">
         <Card className="border-stone-200/80 bg-white shadow-sm">
           <CardHeader>
-            <CardTitle className="text-2xl">Reviews</CardTitle>
+            <h1 className="text-2xl font-semibold leading-none tracking-tight">Reviews</h1>
             <CardDescription className="leading-6">
               Approve providers' replies before they're public. Hide a review only if it's abusive, contains personal details, or isn't about this booking. Never hide one for being negative; the reason is recorded.
             </CardDescription>

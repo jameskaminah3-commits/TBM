@@ -111,7 +111,7 @@ export function ConciergeSearchBar({ currentSection }: { currentSection: Concier
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
                   placeholder={content.placeholder}
-                  className="h-11 rounded-full border-border/70 bg-background/92 pl-10 pr-4 text-sm shadow-[0_16px_24px_-22px_rgba(146,118,89,0.28)] placeholder:text-muted-foreground/85 dark:border-white/10 dark:bg-slate-950/36 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] min-[560px]:h-9"
+                  className="h-11 rounded-full border-border/70 bg-background/92 pl-10 pr-4 text-base sm:text-sm shadow-[0_16px_24px_-22px_rgba(146,118,89,0.28)] placeholder:text-muted-foreground/85 dark:border-white/10 dark:bg-slate-950/36 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] min-[560px]:h-9"
                   data-testid="input-concierge-search"
                 />
               </div>

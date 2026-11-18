@@ -39,7 +39,7 @@ export default function AdminFleetApplications() {
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-4 sm:px-6 sm:py-6 lg:gap-6 lg:px-8">
         <Card className="border-stone-200/80 bg-white shadow-sm">
           <CardHeader>
-            <CardTitle>Fleet Applications</CardTitle>
+            <h1 className="text-2xl font-semibold leading-none tracking-tight">Fleet Applications</h1>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex gap-2">

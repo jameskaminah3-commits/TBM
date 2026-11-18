@@ -35,9 +35,15 @@ if (testFiles.length === 0) {
   process.exit(0);
 }
 
+// Node 23.6+ spells it --test-isolation; Node 20 and 22 only know the
+// experimental name, and refuse to start with the other one.
+const isolation = process.allowedNodeEnvironmentFlags.has("--test-isolation")
+  ? "--test-isolation=none"
+  : "--experimental-test-isolation=none";
+
 const result = spawnSync(
   process.execPath,
-  ["--experimental-strip-types", "--test", "--test-concurrency=1", "--test-isolation=none", ...testFiles],
+  ["--experimental-strip-types", "--test", "--test-concurrency=1", isolation, ...testFiles],
   {
     cwd: projectRoot,
     stdio: "inherit",

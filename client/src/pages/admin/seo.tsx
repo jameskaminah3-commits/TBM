@@ -142,7 +142,7 @@ export default function AdminSeo() {
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-4 py-4 sm:px-6 sm:py-6">
         <Card className="border-stone-200/80 bg-white shadow-sm">
           <CardHeader>
-            <CardTitle className="text-2xl">SEO</CardTitle>
+            <h1 className="text-2xl font-semibold leading-none tracking-tight">SEO</h1>
             <CardDescription className="leading-6">
               Make every listing easy to find on Google. Each one gets search phrases its own facts back up, who it competes with, suggested titles and descriptions, and a score out of 100. Start with the lowest scores: they gain the most.
             </CardDescription>
@@ -175,7 +175,7 @@ export default function AdminSeo() {
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
                 <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by name or area" className="pl-9" aria-label="Search listings" />
               </div>
-              <select value={kind} onChange={(event) => setKind(event.target.value as typeof kind)} className="h-10 rounded-md border border-input bg-background px-3 text-sm" aria-label="Listing type">
+              <select value={kind} onChange={(event) => setKind(event.target.value as typeof kind)} className="h-10 rounded-md border border-input bg-background px-3 text-base sm:text-sm" aria-label="Listing type">
                 <option value="all">All types</option>
                 {Object.entries(kindLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </select>
